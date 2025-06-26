@@ -1,0 +1,119 @@
+apiVersion: builds.katanomi.dev/v1alpha1
+kind: Build
+spec:
+  runTemplate:
+    spec:
+      timeouts:
+        pipeline: 1h
+      workspaces:
+        - name: source
+          volumeClaimTemplate:
+            spec:
+              storageClassName: topolvm
+              accessModes:
+                - ReadWriteOnce
+              resources:
+                requests:
+                  storage: 10Gi
+        - name: cache
+          persistentVolumeClaim:
+            claimName: build-cache
+          subPath: yarn_cache
+  tasks:
+    - name: generate-custom-version
+      workspaces:
+        - name: source
+          workspace: source
+      params: 
+        - name: pr-id
+          value: $(build.git.pullRequest.id)
+        - name: commit-short-id
+          value: $(build.git.lastCommit.shortID)  
+      taskSpec:
+        params:
+        - name: pr-id
+          value: ""
+        - name: commit-short-id
+          value: "" 
+        results:
+        - name: custom-version
+          description: image tag
+          default: latest
+        description: generate image tag
+        workspaces:
+        - name: source
+          workspace: source
+        steps:
+        - image: registry.alauda.cn:60080/devops/kubectl-devops:master
+          name: generate-custom-version
+          imagePullPolicy: IfNotPresent
+          workingDir: $(workspaces.source.path)
+          script: |
+            #!/bin/sh
+            set -ex
+            if [ "$(params.pr-id)" == "" ]; then
+                echo -n  date-$(date +%s)-$(params.commit-short-id) > $(results.custom-version.path) 
+            else
+                echo -n pr-$(params.commit-short-id) > $(results.custom-version.path)
+            fi 
+    - name: build-docs
+      retries: 2
+      workspaces:
+        - name: source
+          workspace: source
+        - name: cache
+          workspace: cache
+      taskSpec:
+        steps:
+          - image: build-harbor.alauda.cn/frontend/playwright-runner:doom
+            imagePullPolicy: Always
+            name: install
+            resources:
+              limits:
+                cpu: 4
+                memory: 4Gi
+              requests:
+                cpu: 2
+                memory: 4Gi
+            script: >
+              # set -x
+
+              export COREPACK_NPM_REGISTRY=https://edge-nexus.alauda.cn/repository/cnpm
+
+              export YARN_GLOBAL_FOLDER=/workspace/yarn_cache/global
+
+              yarn config set npmRegistryServer https://edge-nexus.alauda.cn/repository/cnpm
+
+              yarn set version stable
+
+              yarn up @alauda/doom
+
+              yarn up -R '**'
+
+              yarn --immutable
+
+              yarn build
+            workingDir: $(workspaces.source.path)
+    - name: build-image
+      timeout: 30m
+      runAfter:
+        - build-docs
+        - generate-custom-version
+      retries: 0
+      taskRef:
+        kind: ClusterTask
+        name: alauda-build-image
+      workspaces:
+        - name: source
+          workspace: source
+      params:
+        - name: container-image
+          value: build-harbor.alauda.cn/middleware/knowledge
+        - name: dockerfile
+          value: ./Dockerfile
+        - name: labels
+          value:
+            - branch=$(build.git.branch.name)
+            - commit=$(build.git.lastCommit.id)
+        - name: container-image-tag
+          value: $(tasks.generate-custom-version.results.custom-version)

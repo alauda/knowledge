@@ -1,0 +1,98 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: knowledge-docs
+spec:
+  selector:
+    matchLabels:
+      service_name: alauda-product-docs
+  strategy:
+    rollingUpdate:
+      maxSurge: 25%
+      maxUnavailable: 25%
+    type: RollingUpdate
+  template:
+    metadata:
+      creationTimestamp: null
+      labels:
+        service_name: alauda-product-docs
+    spec:
+      containers:
+      - args:
+        - --log-level=info
+        - --log-disable-color
+        - --log-enable-caller
+        - --path-prefix=/knowledge/
+        - --assets-host-path=$(SHARED_FOLDER)
+        env:
+        - name: SHARED_FOLDER
+          value: /static
+        image: registry.alauda.cn:60080/alauda/alauda-console:v3.18.5
+        imagePullPolicy: IfNotPresent
+        name: alauda-console
+        ports:
+        - containerPort: 8080
+          protocol: TCP
+        resources:
+          limits:
+            cpu: "2"
+            memory: 4Gi
+          requests:
+            cpu: 25m
+            memory: 128Mi
+        volumeMounts:
+        - mountPath: /static
+          name: shared
+      dnsPolicy: ClusterFirst
+      initContainers:
+      - command:
+        - sh
+        - /config/copy_static.sh
+        env:
+        - name: SHARED_FOLDER
+          value: /static
+        - name: STATIC_FILES
+          value: /dist
+        image: registry.alauda.cn:60080/zlc/test:v0.0.3
+        imagePullPolicy: IfNotPresent
+        name: product-docs
+        volumeMounts:
+        - mountPath: /static
+          name: shared
+        - mountPath: /config
+          name: copy-static-script
+      restartPolicy: Always
+      schedulerName: default-scheduler
+      volumes:
+      - emptyDir: {}
+        name: shared
+      - configMap:
+          defaultMode: 420
+          name: knowledge-docs-copy-script
+        name: copy-static-script
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: knowledge-docs
+spec:
+  ports:
+  - name: http
+    port: 8080
+    protocol: TCP
+    targetPort: 8080
+  selector:
+    service_name: alauda-product-docs
+  type: NodePort
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: knowledge-docs-copy-script
+data:
+  copy_static.sh: |-
+    SHARED_FOLDER="${SHARED_FOLDER:-/shared}"
+    STATIC_FILES="${STATIC_FILES:-/files}"
+    env
+    cp -prv $STATIC_FILES/* $SHARED_FOLDER
