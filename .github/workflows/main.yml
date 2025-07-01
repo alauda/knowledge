@@ -1,14 +1,16 @@
 name: Build and Update
 
 on:
-  pull_request:
+  pull_request_target:
+    branches:
+      - main
     types: [opened, synchronize]
   workflow_dispatch:
 
 jobs:
   build:
     runs-on: ubuntu-latest
-
+    environment: translate
     permissions:
       contents: write  # 必需：允许 push 到 PR
       pull-requests: write 
@@ -40,6 +42,9 @@ jobs:
 
       - name: generate id
         run: ./add_id.sh docs/en/solutions
+
+      - name: translate
+        run: yarn translate -s en -t zh -g "*"
 
       - name: Build
         run: yarn build
