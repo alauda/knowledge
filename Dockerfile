@@ -1,4 +1,4 @@
-FROM registry.alauda.cn:60080/ops/alpine:3
+FROM build-harbor.alauda.cn/ops/alpine:3
 
 RUN mkdir -p /dist/
 
