@@ -22,8 +22,9 @@ export const PostList: FC<PostListProps> = ({ postList }) => {
       {notEmpty ? (
         postList.map((post) => {
           const { kinds, products } = post;
-
           const badges = [...kinds, ...products];
+          const href= `${base}${post.route}`.replaceAll("//", "/")
+
           return (
             <LinkCard
               style={{ borderWidth: "0 0 1px 0 ", borderRadius: 0 }}
@@ -50,7 +51,7 @@ export const PostList: FC<PostListProps> = ({ postList }) => {
                   </div>
                 </>
               }
-              href={`${base}${post.route}`.replaceAll("//", "/")}
+              href={href.endsWith('.html')?href:`${href}.html`}
               key={post.route}
             ></LinkCard>
           );

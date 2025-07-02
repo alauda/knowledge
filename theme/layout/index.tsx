@@ -1,9 +1,8 @@
 import { Badge, LastUpdated, Layout } from "rspress/theme";
 import { useI18n, usePageData } from "rspress/runtime";
-import { Fragment, useEffect, useMemo } from "react";
+import { useEffect, useMemo } from "react";
 import HomeLayout from "./HomeLayout";
 import { EditOnGithub } from "../components/EditOnGithub";
-import { SearchProvider } from "../hooks/Search";
 import { DocID } from "../components/DocID";
 import { BreadCrumb } from "../components/BreadCrumb";
 
@@ -18,8 +17,6 @@ export function normalizeTags(tags: string | string[]): string[] {
 }
 
 const Badges = () => {
-  const t = useI18n();
-
   const { page } = usePageData();
   const kinds = normalizeTags(
     ((page.frontmatter.kinds || page.frontmatter.kind) as any) || ""
@@ -57,42 +54,40 @@ export default () => {
   }, []);
 
   return (
-    <SearchProvider>
-      <Layout
-        uiSwitch={uiSwitch}
-        HomeLayout={HomeLayout}
-        beforeDocContent={
-          <>
-            <BreadCrumb></BreadCrumb>
-          </>
-        }
-        beforeDocFooter={<Badges></Badges>}
-        afterDocFooter={
-          <div className="flex justify-between">
-            <LastUpdated></LastUpdated>
-            <DocID></DocID>
-          </div>
-        }
-        beforeOutline={<EditOnGithub></EditOnGithub>}
-        // components={{
-        //   h1: (props: any) => {
-        //     const CustomMDXComponent = getDefaultCustomMDXComponent();
-        //     const { page } = usePageData();
-        //     return page.pageType === "doc" ? (
-        //       <>
-        //         <CustomMDXComponent.h1 {...props}   />
+    <Layout
+      uiSwitch={uiSwitch}
+      HomeLayout={HomeLayout}
+      beforeDocContent={
+        <>
+          <BreadCrumb></BreadCrumb>
+        </>
+      }
+      beforeDocFooter={<Badges></Badges>}
+      afterDocFooter={
+        <div className="flex justify-between">
+          <LastUpdated></LastUpdated>
+          <DocID></DocID>
+        </div>
+      }
+      beforeOutline={<EditOnGithub></EditOnGithub>}
+      // components={{
+      //   h1: (props: any) => {
+      //     const CustomMDXComponent = getDefaultCustomMDXComponent();
+      //     const { page } = usePageData();
+      //     return page.pageType === "doc" ? (
+      //       <>
+      //         <CustomMDXComponent.h1 {...props}   />
 
-        //         <div className="flex justify-between" style={{marginTop:'-1.5rem'}}>
-        //           <LastUpdated></LastUpdated>
-        //           <DocID></DocID>
-        //         </div>
-        //       </>
-        //     ) : (
-        //       <CustomMDXComponent.h1 {...props} />
-        //     );
-        //   },
-        // }}
-      ></Layout>
-    </SearchProvider>
+      //         <div className="flex justify-between" style={{marginTop:'-1.5rem'}}>
+      //           <LastUpdated></LastUpdated>
+      //           <DocID></DocID>
+      //         </div>
+      //       </>
+      //     ) : (
+      //       <CustomMDXComponent.h1 {...props} />
+      //     );
+      //   },
+      // }}
+    ></Layout>
   );
 };

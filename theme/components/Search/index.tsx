@@ -10,7 +10,7 @@ interface SearchProps {
 const Search: React.FC<SearchProps> = ({
   value,
   onSearch,
-  placeholder = "Search",
+  placeholder = "Search by ID or Content",
   className = "",
 }) => {
   return (
