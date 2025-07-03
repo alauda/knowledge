@@ -22,9 +22,4 @@ export default defineConfig({
       message: "© 2025 Alauda Inc. All Rights Reserved.",
     },
   },
-  builderConfig: {
-    output: {
-      assetPrefix: "/knowledge/",
-    },
-  },
 });

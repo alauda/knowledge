@@ -28,7 +28,7 @@ const Badges = () => {
   return page.pageType === "doc" ? (
     <div className="flex">
       {badges.map((badge) => (
-        <div className="mr-2">
+        <div className="mr-2" key={badge}>
           <Badge>{badge}</Badge>
         </div>
       ))}

@@ -1,4 +1,3 @@
-import { useSearchContext } from "../../hooks/Search";
 import Checkbox from "../Checkbox";
 import { Card, useFullTextSearch } from "rspress/theme";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -9,21 +8,31 @@ import { PostList } from "../PostList";
 import Search from "../Search";
 import Pagination from "../Pagination";
 import { useI18n, usePageData } from "rspress/runtime";
+import {
+  KEYWORD_SESSION_KEY,
+  KINDS_SESSION_KEY,
+  PRODUCTS_SESSION_KEY,
+  usePersistSearchParams,
+  useSessionStorage,
+} from "../../hooks/SessionStorage";
 
 const SEARCHED_LIMIT = 1000;
 const PAGE_SIZE = 10;
 
 export const HomeContent: React.FC = () => {
-  const {
-    products,
-    kinds,
-    keyword,
-    searchParams,
-    onSearchParamsChange,
-    onProductsChange,
-    onKindsChange,
-    onKeywordChange,
-  } = useSearchContext();
+  const [products, onProductsChange] = useSessionStorage<string[]>(
+    PRODUCTS_SESSION_KEY,
+    []
+  );
+  const [kinds, onKindsChange] = useSessionStorage<string[]>(
+    KINDS_SESSION_KEY,
+    []
+  );
+  const [keyword, onKeywordChange] = useSessionStorage<string>(
+    KEYWORD_SESSION_KEY,
+    ""
+  );
+  const [searchParams, onSearchParamsChange] = usePersistSearchParams();
 
   const { initialized, search } = useFullTextSearch();
   const [searchedPosts, setSearchedPosts] = useState<PostInfo[]>([]);
@@ -58,7 +67,7 @@ export const HomeContent: React.FC = () => {
         setSearchedPosts(searchPosts);
       }
     },
-    [initialized, siteData.base, page.lang, search]
+    [initialized, siteData.base, page.lang]
   );
 
   useEffect(() => {
@@ -66,14 +75,12 @@ export const HomeContent: React.FC = () => {
       history.go(0);
       return;
     }
-    setSearchInitialized([...searchInitialized, initialized]);
-  }, [initialized, page.lang]);
 
-  useEffect(() => {
-    if (keyword) {
+    if (keyword && initialized) {
       searchFull(keyword);
     }
-  }, [page.lang]);
+    setSearchInitialized([...searchInitialized, initialized]);
+  }, [initialized, page.lang]);
 
   const finalPosts = useMemo(() => {
     const filterPosts =
@@ -108,11 +115,6 @@ export const HomeContent: React.FC = () => {
     return page < 1 ? 1 : page;
   }, [searchParams]);
 
-  const pageChange = useCallback(
-    (number) => onSearchParamsChange({ page: `${number}` }),
-    [onSearchParamsChange]
-  );
-
   const currentPageData = useMemo(() => {
     return finalPosts.slice(
       (currentPage - 1) * PAGE_SIZE,
@@ -120,23 +122,24 @@ export const HomeContent: React.FC = () => {
     );
   }, [currentPage, finalPosts]);
 
+  const pageChange = (number: number) =>
+    onSearchParamsChange(new URLSearchParams({ page: `${number}` }));
+
   const productsChange = (value: string) => {
-    if (products.has(value)) {
-      products.delete(value);
-    } else {
-      products.add(value);
-    }
-    onProductsChange(new Set(products));
+    onProductsChange(
+      products.includes(value)
+        ? products.filter((product) => product !== value)
+        : [...products, value]
+    );
     pageChange(1);
   };
 
   const kindsChange = (value: string) => {
-    if (kinds.has(value)) {
-      kinds.delete(value);
-    } else {
-      kinds.add(value);
-    }
-    onKindsChange(new Set(kinds));
+    onKindsChange(
+      kinds.includes(value)
+        ? kinds.filter((kind) => kind !== value)
+        : [...kinds, value]
+    );
     pageChange(1);
   };
 
@@ -152,7 +155,7 @@ export const HomeContent: React.FC = () => {
                 <Checkbox
                   key={product}
                   className="mb-2 ml-2"
-                  checked={products.has(product)}
+                  checked={products.includes(product)}
                   label={product}
                   onChange={productsChange}
                 ></Checkbox>
@@ -169,7 +172,7 @@ export const HomeContent: React.FC = () => {
                 <Checkbox
                   key={kind}
                   className="mb-2 ml-2"
-                  checked={kinds.has(kind)}
+                  checked={kinds.includes(kind)}
                   label={kind}
                   onChange={kindsChange}
                 ></Checkbox>

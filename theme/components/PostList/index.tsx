@@ -1,8 +1,8 @@
 import { FC, useMemo } from "react";
 import { PostInfo } from "../../../plugins/plugin-post-resolver";
-import { Badge, LastUpdated, LinkCard, useLocaleSiteData } from "rspress/theme";
-import { Marked } from "@ts-stack/markdown";
+import { Badge, LinkCard, useLocaleSiteData } from "rspress/theme";
 import { useI18n, usePageData } from "rspress/runtime";
+import { Markdown } from "@alauda/doom/runtime";
 import EmptyState from "../Empty";
 import { DocID } from "../DocID";
 
@@ -39,16 +39,13 @@ export const PostList: FC<PostListProps> = ({ postList }) => {
               title={post.title}
               description={
                 <>
-                  <div
-                    className="line-clamp-2"
-                    dangerouslySetInnerHTML={{
-                      __html: Marked.parse(post.excerpt),
-                    }}
-                  ></div>
+                  <div className="line-clamp-2">
+                    <Markdown>{post.excerpt}</Markdown>
+                  </div>
 
                   <div className="flex mt-2">
                     {badges.map((badge) => (
-                      <div className="mr-2">
+                      <div className="mr-2" key={badge}>
                         <Badge>{badge}</Badge>
                       </div>
                     ))}
