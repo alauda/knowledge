@@ -20,10 +20,12 @@ export const useSessionStorage = <T>(
   const [value, setValue] = useState<T>(initialValue);
 
   useEffect(() => {
-    if (typeof window !== "undefined") {
-      const storedValue = sessionStorage.getItem(key);
-      if (storedValue !== null) {
-        setValue(parseJson(storedValue) as T);
+    const storedValue = sessionStorage.getItem(key);
+
+    if (storedValue) {
+      const value = parseJson<T>(storedValue);
+      if (value) {
+        setValue(value);
       }
     }
   }, [key]);

@@ -7,14 +7,6 @@
         "en": "Welcome to Alauda's Knowledgebase information center. Find resources for resolving problems and troubleshooting.",
         "zh": "欢迎访问 Alauda 的知识库信息中心。查找解决问题和排除故障的资源。"
     },
-    "doc_kinds": {
-        "en": "Kinds",
-        "zh": "Kinds"
-    },
-    "doc_products": {
-        "en": "Products",
-        "zh": "Products"
-    },
     "search_placeholder": {
         "en": "Search By ID or Content",
         "zh": "按 ID 或内容搜索"

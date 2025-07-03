@@ -20,14 +20,11 @@ const SEARCHED_LIMIT = 1000;
 const PAGE_SIZE = 10;
 
 export const HomeContent: React.FC = () => {
-  const [products, onProductsChange] = useSessionStorage<string[]>(
+  const [products, setProducts] = useSessionStorage<string[]>(
     PRODUCTS_SESSION_KEY,
     []
   );
-  const [kinds, onKindsChange] = useSessionStorage<string[]>(
-    KINDS_SESSION_KEY,
-    []
-  );
+  const [kinds, setKinds] = useSessionStorage<string[]>(KINDS_SESSION_KEY, []);
   const [keyword, onKeywordChange] = useSessionStorage<string>(
     KEYWORD_SESSION_KEY,
     ""
@@ -122,33 +119,42 @@ export const HomeContent: React.FC = () => {
     );
   }, [currentPage, finalPosts]);
 
-  const pageChange = (number: number) =>
-    onSearchParamsChange(new URLSearchParams({ page: `${number}` }));
+  const onPageChange = useCallback(
+    (number: number) =>
+      onSearchParamsChange(new URLSearchParams({ page: `${number}` })),
+    []
+  );
 
-  const productsChange = (value: string) => {
-    onProductsChange(
-      products.includes(value)
-        ? products.filter((product) => product !== value)
-        : [...products, value]
-    );
-    pageChange(1);
-  };
+  const onProductsChange = useCallback(
+    (value: string) => {
+      setProducts(
+        products.includes(value)
+          ? products.filter((product) => product !== value)
+          : [...products, value]
+      );
+      onPageChange(1);
+    },
+    [products]
+  );
 
-  const kindsChange = (value: string) => {
-    onKindsChange(
-      kinds.includes(value)
-        ? kinds.filter((kind) => kind !== value)
-        : [...kinds, value]
-    );
-    pageChange(1);
-  };
+  const onKindsChange = useCallback(
+    (value: string) => {
+      setKinds(
+        kinds.includes(value)
+          ? kinds.filter((kind) => kind !== value)
+          : [...kinds, value]
+      );
+      onPageChange(1);
+    },
+    [kinds]
+  );
 
   return (
     <div className="flex w-full relative">
       <div className="flex-1/4 mr-6 sticky">
         <Card
           style={{ marginBottom: "24px" }}
-          title={t("doc_products")}
+          title="Products"
           content={
             <>
               {postProducts.map((product) => (
@@ -157,7 +163,7 @@ export const HomeContent: React.FC = () => {
                   className="mb-2 ml-2"
                   checked={products.includes(product)}
                   label={product}
-                  onChange={productsChange}
+                  onChange={onProductsChange}
                 ></Checkbox>
               ))}
             </>
@@ -165,7 +171,7 @@ export const HomeContent: React.FC = () => {
         ></Card>
         <Card
           style={{ marginBottom: "24px" }}
-          title={t("doc_kinds")}
+          title="Kinds"
           content={
             <>
               {postKinds.map((kind) => (
@@ -174,7 +180,7 @@ export const HomeContent: React.FC = () => {
                   className="mb-2 ml-2"
                   checked={kinds.includes(kind)}
                   label={kind}
-                  onChange={kindsChange}
+                  onChange={onKindsChange}
                 ></Checkbox>
               ))}
             </>
@@ -192,7 +198,7 @@ export const HomeContent: React.FC = () => {
         <Pagination
           currentPage={currentPage}
           totalPage={totalPage}
-          onChange={pageChange}
+          onChange={onPageChange}
         ></Pagination>
       </div>
     </div>
