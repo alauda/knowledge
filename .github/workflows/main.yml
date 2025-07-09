@@ -12,6 +12,7 @@ on:
 
 jobs:
   build:
+    if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
     environment: translate
     env:
@@ -24,11 +25,10 @@ jobs:
       pull-requests: write 
 
     steps:
-      - name: Checkout PR branch
+      - name: Checkout 
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.head_ref }}  # 确保 checkout 到 PR 的分支
-          token: ${{ secrets.GITHUB_TOKEN }}
+          token: ${{ secrets.KNOWLEDGE_SECRET }}
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -60,9 +60,11 @@ jobs:
       - name: Commit and push changes
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git config user.name "alauda-github-idpbot"
+          git config user.email "alauda-github-idpbot@alauda.io"
 
           git add -A
           git commit -m "ci: update file from GitHub Action" || echo "Nothing to commit"
-          git push origin HEAD:${{ github.ref_name }}
+          git push origin HEAD:${{ github.head_ref }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.KNOWLEDGE_SECRET }} 
