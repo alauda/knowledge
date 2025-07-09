@@ -4,10 +4,10 @@ products:
   - Alauda Container Platform
 kind:
   - Solution
-sourceSHA: 88333cbed1e7ef3b873f7c8d29dd7393fb6a1efb68cfdf94fed42616fd13f11d
+sourceSHA: 32f20b6cc2456c14dfd46032b3a29098c18e8924ce567bb9291a4cfa22c3f07d
 ---
 
-# 应用高可用性测试解决方案
+# 原生应用高可用性测试解决方案
 
 # 1. 测试环境准备
 
@@ -17,54 +17,54 @@ sourceSHA: 88333cbed1e7ef3b873f7c8d29dd7393fb6a1efb68cfdf94fed42616fd13f11d
 
 ## **1.2 资源准备**
 
-| 资源             | **DC-A**                                                                      | **DC-B**                                                                       |
-| ---------------- | ----------------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
-| 业务集群数量     | 2                                                                             | 2                                                                              |
-| 节点数量         | 3 主节点 + 3 工作节点                                                         | 3 主节点 + 3 工作节点                                                          |
-| 节点角色规划     | - Kubernetes 角色（主节点/工作节点）<br>- 基础设施角色（ALB/Istio 网关/出口） | - Kubernetes 角色（主节点/工作节点）<br/>- 基础设施角色（ALB/Istio 网关/出口） |
-| CPU 规格         | 16C                                                                           | 16C                                                                            |
-| 内存规格         | 32GB                                                                          | 32GB                                                                           |
-| NIC 规格         | 10Gbps                                                                        | 10Gbps                                                                         |
-| 操作系统         | redhat810-enable\_security-boot\_disable-nopasswd-20250509-v2                 | redhat810-enable\_security-boot\_disable-nopasswd-20250509-v2                  |
-| 命名空间         | 应用命名空间：ha-cluster-ns                                                   | 应用命名空间：cluster-ns                                                       |
-| Metal LB         | Metalb 协议：ARP（L2）<br>IP 地址范围：192.168.170.0/24<br>部署规格：default  | Metalb 协议：ARP（L2）<br/>IP 地址范围：192.168.170.0/24<br/>部署规格：default |
-| Istio 网关       | 容器网络模式：2 副本<br>部署规格：1C/1G                                       | 容器网络模式：2 副本<br/>部署规格：1C/1G                                       |
-| Sidecar 代理     | 部署规格：default                                                             | 部署规格：default                                                              |
-| 东西向网关       | 容器网络模式：2+ 副本<br>部署规格：2c/2G                                      | 容器网络模式：2+ 副本<br/>部署规格：2c/2G                                      |
-| 出口网关         | 近源出口（本地出口）                                                          | 近源出口（本地出口）                                                           |
-| 数据中心网络延迟 | <50 ms                                                                        | <50 ms                                                                         |
-| 网络白名单激活   | 确保集中网关节点可以访问数据库                                                | 确保集中网关节点可以访问数据库                                                 |
-| 负载均衡器       | HAproxy                                                                       | HAproxy                                                                        |
+| 资源                          | **DC-A**                                                                                         | **DC-B**                                                                                           |
+| ---------------------------- | ------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------- |
+| 工作负载集群数量            | 2                                                                                                | 2                                                                                                  |
+| 节点数量                     | 3 主节点 + 3 工作节点                                                                            | 3 主节点 + 3 工作节点                                                                               |
+| 节点角色规划                 | - Kubernetes 角色（主节点/工作节点） <br>- 基础设施角色（ALB/Istio 网关/出口）                 | - Kubernetes 角色（主节点/工作节点） <br/>- 基础设施角色（ALB/Istio 网关/出口）                   |
+| CPU 规格                     | 16C                                                                                              | 16C                                                                                                |
+| 内存规格                    | 32GB                                                                                             | 32GB                                                                                               |
+| NIC 规格                     | 10Gbps                                                                                           | 10Gbps                                                                                             |
+| 操作系统                     | redhat810-enable_security-boot_disable-nopasswd-20250509-v2                                    | redhat810-enable_security-boot_disable-nopasswd-20250509-v2                                      |
+| 命名空间                     | 应用命名空间：ha-cluster-ns                                                                     | 应用命名空间：cluster-ns                                                                           |
+| Metal LB                     | Matelb 协议：ARP（L2）<br>IP 地址范围：192.168.170.0/24<br>部署规格：deafult                  | Matelb 协议：ARP（L2）<br/>IP 地址范围：192.168.170.0/24<br/>部署规格：deafult                   |
+| Istio 网关                   | 容器网络模式：2 副本<br>部署规格：1C/1G                                                         | 容器网络模式：2 副本<br/>部署规格：1C/1G                                                          |
+| Sidecar 代理                 | 部署规格：deafult                                                                                 | 部署规格：deafult                                                                                   |
+| 东西向网关                   | 容器网络模式：2+ 副本<br>部署规格：2c/2G                                                        | 容器网络模式：2+ 副本<br/>部署规格：2c/2G                                                         |
+| 出口网关                     | 近源出口（本地出口）                                                                               | 近源出口（本地出口）                                                                                 |
+| 数据中心网络延迟            | <50 ms                                                                                           | <50 ms                                                                                             |
+| 网络白名单激活              | 确保集中网关节点可以访问数据库                                                                    | 确保集中网关节点可以访问数据库                                                                      |
+| 负载均衡器                   | HAproxy                                                                                          | HAproxy                                                                                            |
 
 ## 1.3 配置说明
 
-| 资源                     | 配置信息                                                                              |
-| :----------------------- | :------------------------------------------------------------------------------------ |
-| DNS                      | TTL < 5m                                                                              |
-| GSLB（HAProxy）          | 4 个后端服务器轮询负载均衡；<br>如果连续 5 次健康检查失败，则标记为不可用。           |
-| Istio Mesh 断路器策略    | 每 10 秒检测一次。如果连续 5 次 5XX 错误，则 100% 的实例将在 300 秒内断路。           |
-| 区域标签配置             | 创建 DC-A 和 DC-B 区域标签；<br>业务集群 c1 和 c2 绑定到 DC-A，c3 和 c4 绑定到 DC-B。 |
-| 基于 Mesh 创建微服务应用 | 按顺序创建应用的 Deployment、Service 和 MicroService 资源。                           |
-| ovn 出口                 | 配置近源出口。                                                                        |
-| 配置监控面板             | 创建 ASM 性能监控面板；<br>创建流量指标图表。                                         |
+| 资源                                          | 配置信息                                                                                                           |
+| :-------------------------------------------- | :---------------------------------------------------------------------------------------------------------------- |
+| DNS                                          | TTL < 5m                                                                                                        |
+| GSLB(HAProxy)                                | 具有 4 个后端服务器的轮询负载均衡；<br>如果连续 5 次健康检查失败，则标记为不可用。                               |
+| Istio Mesh 断路器策略                       | 每 10 秒检测一次。如果出现 5 次连续的 5XX 错误，则 100% 的实例将在 300 秒内断路。                             |
+| 地域标签配置                                 | 创建 DC-A 和 DC-B 地域标签；<br>业务集群 c1 和 c2 绑定到 DC-A，c3 和 c4 绑定到 DC-B。                          |
+| 基于 Mesh 创建微服务应用                     | 按顺序创建应用的 Deployment、Service 和 MicroService 资源。                                                     |
+| ovn 出口                                     | 配置近源出口。                                                                                                   |
+| 配置监控仪表板                               | 创建 ASM 性能监控仪表板；<br>创建流量指标图表。                                                                |
 
 # 2. 测试数据准备
 
-## 2.1 创建区域 & 配置区域
+## 2.1 创建地域 & 配置地域
 
-**创建区域**：
+**创建地域**：
 
-- 在管理员页面的“系统设置”下，点击左侧导航中的“区域”。
+- 在管理员页面的“系统设置”下，点击左侧导航中的“地域”。
 - 在列表页面，点击“创建”按钮。在创建弹出页面中，在名称输入框中输入“dc-a”，然后点击“创建”按钮。
-- 继续点击“创建”按钮。通过相同步骤创建名称为“dc-b”的区域。
+- 继续点击“创建”按钮。通过相同步骤创建名称为“dc-b”的地域。
 
-**集群区域配置**：
+**集群地域配置**：
 
 - 在管理员页面的“集群”下，点击左侧导航中的“集群”。
-- 点击第一个集群“dbs-dca-c1”以访问其详细信息页面。点击“设置区域”按钮，选择“dc-a”，然后点击“设置”按钮。
-- 点击第二个集群“dbs-dca-c2”以访问其详细信息页面。点击“设置区域”按钮，选择“dc-a”，然后点击“设置”按钮。
-- 点击第三个集群“dbs-dca-c3”以访问其详细信息页面。点击“设置区域”按钮，选择“dc-b”，然后点击“设置”按钮。
-- 点击第四个集群“dbs-dca-c4”以访问其详细信息页面。点击“设置区域”按钮，选择“dc-b”，然后点击“设置”按钮。
+- 点击第一个集群“dbs-dca-c1”以访问其详细页面。点击“设置地域”按钮，选择“dc-a”，然后点击“设置”按钮。
+- 点击第二个集群“dbs-dca-c2”以访问其详细页面。点击“设置地域”按钮，选择“dc-a”，然后点击“设置”按钮。
+- 点击第三个集群“dbs-dca-c3”以访问其详细页面。点击“设置地域”按钮，选择“dc-b”，然后点击“设置”按钮。
+- 点击第四个集群“dbs-dca-c4”以访问其详细页面。点击“设置地域”按钮，选择“dc-b”，然后点击“设置”按钮。
 
 ## 2.2 创建测试服务
 
@@ -76,10 +76,10 @@ sourceSHA: 88333cbed1e7ef3b873f7c8d29dd7393fb6a1efb68cfdf94fed42616fd13f11d
 set -euo pipefail  # 更安全的脚本执行模式
  
 # 定义变量
-project="ha-cluster"                            # 项目名称（一般无需更改）。
-namespace="ha-cluster-ns"                       # 命名空间名称（一般无需更改）。
+project="ha-cluster"                            # 项目名称（一般不需要更改）。
+namespace="ha-cluster-ns"                       # 命名空间名称（一般不需要更改）。
 registry="152-231-registry.alauda.cn:60070"     # 需要与环境一致。
-services=("service-a" "service-b" "service-c")  # 定义服务列表（一般无需更改）
+services=("service-a" "service-b" "service-c")  # 定义服务列表（一般不需要更改）
  
 # 通用部署模板函数
 generate_deployment() {
@@ -155,12 +155,12 @@ for service in "${services[@]}"; do
    
   # 检查 kubectl 命令是否成功执行
   if [ $? -ne 0 ]; then
-    echo "错误：应用 ${service} 的部署配置失败。"
+    echo "错误：应用 ${service} 的 Deployment 配置失败。"
     exit 1
   fi
 done
  
-echo "所有部署配置应用成功。"
+echo "所有部署配置成功应用。"
 ```
 
 执行上述脚本，
@@ -254,7 +254,7 @@ main() {
     fi
   done
  
-  echo "所有服务配置应用成功。"
+  echo "所有服务配置成功应用。"
   exit 0
 }
  
@@ -347,12 +347,12 @@ main() {
     fi
   done
  
-  echo "成功应用 ${#SERVICES[@]} 个微服务："
+  echo "成功应用了 ${#SERVICES[@]} 个微服务："
   printf " - %s\n" "${SERVICES[@]}"
   exit 0
 }
  
-# 执行入口点
+# 执行入口
 main
 ```
 
@@ -364,37 +364,37 @@ bash microservice.sh
 
 ### 步骤 4. 创建 Ingress 网关
 
-在所有四个集群上执行相同的步骤以创建每个集群的网关路由。
+在所有四个集群上执行相同步骤以创建每个集群的网关路由。
 
-1. 转到 **Service Mesh** 管理视图，点击左侧导航中的网关。
+1. 转到 **Service Mesh** 管理视图，点击左侧导航中的 Gateways。
 
 2. 点击“**部署网关**”，填写：
 
-<!---->
-
-    - 名称：test-lb-gateway
-    - 命名空间：ha-cluster-ns   
-    - 部署节点：选择“node-role.kubernetes.io/master”
-
-​	点击“**创建**”按钮。
-
-3. 转到“test-lb-gateway”详细信息页面，点击“**网关配置**”选项卡，然后点击“**创建网关配置**”按钮。填写：
-
-<!---->
-
-    - 名称：test
-    - HTTP 端口：80
-    - 主机：*
+```
+- 名称: test-lb-gateway
+- 命名空间: ha-cluster-ns   
+- 部署节点: 选择 "node-role.kubernetes.io/master"
+```
 
 ​	点击“**创建**”按钮。
 
-4. 再次转到“test-lb-gateway”详细信息页面，点击“**虚拟服务**”选项卡，然后点击“**创建路由配置**”。填写：
+3. 转到“test-lb-gateway”详细页面，点击“**网关配置**”选项卡，然后点击“**创建网关配置**”按钮。填写：
 
-<!---->
+```
+- 名称: test
+- 端口 HTTP: 80
+- 主机: *
+```
 
-    - 名称：test
-    - 命名空间：ha-cluster-ns
-    - 目标：ha-cluster-ns service-a 80
+​	点击“**创建**”按钮。
+
+4. 再次转到“test-lb-gateway”详细页面，点击“**虚拟服务**”选项卡，然后点击“**创建路由配置**”。填写：
+
+```
+- 名称: test
+- 命名空间: ha-cluster-ns
+- 目标: ha-cluster-ns service-a 80
+```
 
 ​	点击“**创建**”按钮。
 
@@ -487,146 +487,164 @@ spec:
 EOF
  
  
-echo "所有部署配置应用成功。"
+echo "所有部署配置成功应用。"
 ```
 
 执行上述脚本，
 
-    bash fortio.sh
+```
+bash fortio.sh
+```
 
-## 2.3 可观测性指标配置
+## 2.3 可观察性指标配置
 
 ### 步骤 1. 创建 ASM 性能监控面板
 
-导航到 **管理员**，点击左侧导航中的 **操作中心** → **监控** → **监控面板**。点击右上角的 **“创建”** 按钮，填写以下表单，然后点击底部的 **“创建”** 按钮：
+导航到 **管理员**，点击左侧导航中的 **操作中心** → **监控** → **监控仪表板**。点击右上角的 **"创建"** 按钮，填写以下表单，然后点击底部的 **"创建"** 按钮：
 
-    - 名称：asm
-    - 面板名称：ASM 性能监控面板
-    - 文件夹：monitor
-    - 主面板：开启
+```
+- 名称: asm
+- 仪表板名称: ASM 性能监控仪表板
+- 文件夹: monitor
+- 主仪表板: 开
+```
 
 ### 步骤 2. 创建东西向流量指标
 
-#### 步骤 2-1. 创建“服务请求 TPS”图表
+#### 步骤 2-1. 创建 "服务请求 TPS" 图表
 
-在 *ASM 性能监控* 面板中，点击 **“添加图表”** 按钮，填写以下表单，然后点击 **“保存”** 按钮：
+在 *ASM 性能监控* 仪表板中，点击 **"添加图表"** 按钮，填写以下表单，然后点击 **"保存"** 按钮：
 
-    面板设置：
-    - 图表类型：趋势
-    - 名称：东西向流量 TPS（集群分组）
-    - 标准设置：自定义   qps
-    - 图例参数：图例位置右侧
+```
+面板设置：
+- 图表类型： 趋势
+- 名称：东西向流量 TPS (集群分组)
+- 标准设置： 自定义   qps
+- 图例参数: 图例位置 右
+```
 
-<!---->
+```
+指标：
+- 添加方法：原生
+- PromQL: sum by (source_app,destination_app) (rate(istio_requests_total{reporter="destination", source_app!="unknown", source_app!="fortio",source_app!="fortio-lb",destination_app=~"service-.*"}[5m]))
+- 图例参数：{{.source_app}}->{{.destination_app}}
+```
 
-    指标：
-    - 添加方法：原生
-    - PromQL: sum by (source_app,destination_app) (rate(istio_requests_total{reporter="destination", source_app!="unknown", source_app!="fortio",source_app!="fortio-lb",destination_app=~"service-.*"}[5m]))
-    - 图例参数：{{.source_app}}->{{.destination_app}}
+#### 步骤 2-2. 创建 "服务请求成功率" 图表
 
-#### 步骤 2-2. 创建“服务请求成功率”图表
+在 *ASM 性能监控* 仪表板中，点击 **"添加图表"** 按钮，填写以下表单，然后点击 **"保存"** 按钮：
 
-在 *ASM 性能监控* 面板中，点击 **“添加图表”** 按钮，填写以下表单，然后点击 **“保存”** 按钮：
+```
+面板设置：
+- 图表类型： 趋势
+- 名称：东西向流量成功率 (2xx/3xx 比率)
+- 标准设置： 其他 %
+- 图例参数: 图例位置 右
+```
 
-    面板设置：
-    - 图表类型：趋势
-    - 名称：东西向流量成功率（2xx/3xx 比率）
-    - 标准设置：其他 %
-    - 图例参数：图例位置右侧
+```
+指标：
+- 添加方法：原生
+- PromQL: sum by (source_app,destination_app) (rate(istio_requests_total{reporter="destination",response_code=~"2..|3.."}[5m]) )  /  sum by (source_app,destination_app) (rate(istio_requests_total{reporter="destination"}[5m]))
+- 图例参数：{{.source_app}}->{{.destination_app}}
+```
 
-<!---->
+#### 步骤 2-3. 创建 "服务延迟" 图表
 
-    指标：
-    - 添加方法：原生
-    - PromQL: sum by (source_app,destination_app) (rate(istio_requests_total{reporter="destination",response_code=~"2..|3.."}[5m]) )  /  sum by (source_app,destination_app) (rate(istio_requests_total{reporter="destination"}[5m]))
-    - 图例参数：{{.source_app}}->{{.destination_app}}
+在 *ASM 性能监控* 仪表板中，点击 **"添加图表"** 按钮，填写以下表单，然后点击 **"保存"** 按钮：
 
-#### 步骤 2-3. 创建“服务延迟”图表
+```
+面板设置：
+- 图表类型： 趋势
+- 名称：东西向流量 P99 服务延迟 (集群分组)
+- 标准设置： 时间   毫秒
+- 图例参数: 图例位置 右
+```
 
-在 *ASM 性能监控* 面板中，点击 **“添加图表”** 按钮，填写以下表单，然后点击 **“保存”** 按钮：
-
-    面板设置：
-    - 图表类型：趋势
-    - 名称：东西向流量 P99 服务延迟（集群分组）
-    - 标准设置：时间   毫秒
-    - 图例参数：图例位置右侧
-
-<!---->
-
-    指标：
-    - 添加方法：原生
-    - PromQL: histogram_quantile(0.99, sum by (le, source_app,destination_app) (rate(istio_request_duration_milliseconds_bucket{reporter="destination", source_app!="unknown"}[5m])))
-    - 图例参数：{{.source_app}}->{{.destination_app}}
+```
+指标：
+- 添加方法：原生
+- PromQL: histogram_quantile(0.99, sum by (le, source_app,destination_app) (rate(istio_request_duration_milliseconds_bucket{reporter="destination", source_app!="unknown"}[5m])))
+- 图例参数：{{.source_app}}->{{.destination_app}}
+```
 
 ### 步骤 3. 南北向流量指标
 
-#### 步骤 3-1. 创建“服务请求 TPS”图表
+#### 步骤 3-1. 创建 "服务请求 TPS" 图表
 
-在 *ASM 性能监控* 面板中，点击 **“添加图表”** 按钮，填写以下表单，然后点击 **“保存”** 按钮：
+在 *ASM 性能监控* 仪表板中，点击 **"添加图表"** 按钮，填写以下表单，然后点击 **"保存"** 按钮：
 
-    面板设置：
-    - 图表类型：趋势
-    - 名称：南北向流量 TPS（集群分组）
-    - 标准设置：自定义    qps
-    - 图例参数：图例位置右侧
+```
+面板设置：
+- 图表类型： 趋势
+- 名称：南北向流量 TPS (集群分组)
+- 标准设置： 自定义    qps
+- 图例参数: 图例位置 右
+```
 
-<!---->
+```
+指标：
+- 添加方法：原生
+- PromQL:  sum by (source_app,destination_app) (rate(istio_requests_total{reporter="destination",source_app="test-lb-gateway"}[5m]))
+- 图例参数：{{.source_app}}->{{.destination_app}}
+```
 
-    指标：
-    - 添加方法：原生
-    - PromQL:  sum by (source_app,destination_app) (rate(istio_requests_total{reporter="destination",source_app="test-lb-gateway"}[5m]))
-    - 图例参数：{{.source_app}}->{{.destination_app}}
+#### 步骤 3-2. 创建 "服务请求成功率" 图表
 
-#### 步骤 3-2. 创建“服务请求成功率”图表
+在 *ASM 性能监控* 仪表板中，点击 **"添加图表"** 按钮，填写以下表单，然后点击 **"保存"** 按钮：
 
-在 *ASM 性能监控* 面板中，点击 **“添加图表”** 按钮，填写以下表单，然后点击 **“保存”** 按钮：
+```
+面板设置：
+- 图表类型： 趋势
+- 名称：南北向流量成功率 (2xx/3xx)
+- 标准设置： 其他 %
+- 图例参数: 图例位置 右
+```
 
-    面板设置：
-    - 图表类型：趋势
-    - 名称：南北向流量成功率（2xx/3xx）
-    - 标准设置：其他 %
-    - 图例参数：图例位置右侧
+```
+指标：
+- 添加方法：原生
+- PromQL: sum by (source_app,destination_app) (rate(istio_requests_total{source_app="test-lb-gateway",reporter="destination",response_code=~"2..|3.."}[5m]))  /  sum by (source_app,destination_app) (rate(istio_requests_total{source_app="test-lb-gateway",reporter="destination"}[5m]))
+- 图例参数：{{.source_app}}→{{.destination_app}}
+```
 
-<!---->
+#### 步骤 3-3. 创建 "服务延迟" 图表
 
-    指标：
-    - 添加方法：原生
-    - PromQL: sum by (source_app,destination_app) (rate(istio_requests_total{source_app="test-lb-gateway",reporter="destination",response_code=~"2..|3.."}[5m]))  /  sum by (source_app,destination_app) (rate(istio_requests_total{source_app="test-lb-gateway",reporter="destination"}[5m]))
-    - 图例参数：{{.source_app}}→{{.destination_app}}
+在 *ASM 性能监控* 仪表板中，点击 **"添加图表"** 按钮，填写以下表单，然后点击 **"保存"** 按钮：
 
-#### 步骤 3-3. 创建“服务延迟”图表
+```
+面板设置：
+- 图表类型： 趋势
+- 名称：南北向流量 P99 服务延迟 (集群分组)
+- 标准设置： 时间   毫秒
+- 图例参数: 图例位置 右
+```
 
-在 *ASM 性能监控* 面板中，点击 **“添加图表”** 按钮，填写以下表单，然后点击 **“保存”** 按钮：
-
-    面板设置：
-    - 图表类型：趋势
-    - 名称：南北向流量 P99 服务延迟（集群分组）
-    - 标准设置：时间   毫秒
-    - 图例参数：图例位置右侧
-
-<!---->
-
-    指标：
-    - 添加方法：原生
-    - PromQL: histogram_quantile(0.99, sum by (le, source_app,destination_app) (rate(istio_request_duration_milliseconds_bucket{source_app="test-lb-gateway", reporter="destination"}[5m])))
-    - 图例参数：{{.source_app}}->{{.destination_app}}
+```
+指标：
+- 添加方法：原生
+- PromQL: histogram_quantile(0.99, sum by (le, source_app,destination_app) (rate(istio_request_duration_milliseconds_bucket{source_app="test-lb-gateway", reporter="destination"}[5m])))
+- 图例参数：{{.source_app}}->{{.destination_app}}
+```
 
 ### 步骤 4. 多集群流量分布指标
 
-在 *ASM 性能监控* 面板中，点击 **“添加图表”** 按钮，填写以下表单，然后点击 **“保存”** 按钮：
+在 *ASM 性能监控* 仪表板中，点击 **"添加图表"** 按钮，填写以下表单，然后点击 **"保存"** 按钮：
 
-    面板设置：
-    - 图表类型：趋势
-    - 名称：多集群流量分布
-    - 标准设置：自定义 qps
-    - 图例参数：图例位置右侧
+```
+面板设置：
+- 图表类型： 趋势
+- 名称：多集群流量分布
+- 标准设置： 自定义 qps
+- 图例参数: 图例位置 右
+```
 
-<!---->
-
-    指标：
-    - 添加方法：原生
-    - PromQL: sum by (destination_cluster) (rate(istio_requests_total{reporter="source",destination_cluster!="unknown"}[5m]) )
-    - 图例参数：{{.destination_cluster}}
+```
+指标：
+- 添加方法：原生
+- PromQL: sum by (destination_cluster) (rate(istio_requests_total{reporter="source",destination_cluster!="unknown"}[5m]) )
+- 图例参数：{{.destination_cluster}}
+```
 
 ## 2.4 基准测试
 
@@ -654,15 +672,15 @@ echo "所有部署配置应用成功。"
 
 - 这些请求在同一区域的两个集群之间以 10 qps 进行负载均衡。
 
-![image-test\_case1-2](../../en/assets/image-test_case1-2.png)
+![image-test_case1-2](../../en/assets/image-test_case1-2.png)
 
 服务请求成功率：
 
-***![image-test\_case1-3](../../en/assets/image-test_case1-3.png)***
+***![image-test_case1-3](../../en/assets/image-test_case1-3.png)***
 
 P99 服务延迟：
 
-![image-test\_case1-4](../../en/assets/image-test_case1-4.png)
+![image-test_case1-4](../../en/assets/image-test_case1-4.png)
 
 # 3. 测试场景 1: 数据中心级切换
 
@@ -670,112 +688,112 @@ P99 服务延迟：
 
 ![image-20250527194307277](../../en/assets/image-20250527194307277.png)
 
-验证跨区域数据中心级故障转移能力，RTO ≤ 90s，RPO = 0。
+验证跨区域数据中心级故障转移能力，RTO ≤ 90s 和 RPO = 0。
 
-| 指标 | 描述                                                   | 标准    |
-| ---- | ------------------------------------------------------ | ------- |
-| RTO  | 从故障发生时起，系统完全恢复业务功能的最大可接受时间。 | RTO≤90s |
-| RPO  | 故障期间可容忍的最大数据丢失，通常以时间来衡量。       | RPO=0   |
+| 指标   | 描述                                                                                                  | 标准     |
+| ------ | ----------------------------------------------------------------------------------------------------- | -------- |
+| RTO    | 从故障发生时起，系统完全恢复业务功能的最大可接受时间。                                               | RTO≤90s  |
+| RPO    | 故障期间最大可容忍的数据丢失，通常以时间来衡量。                                                    | RPO=0    |
 
 ## 3.2 测试前提
 
-- Fortio 性能测试工具以 40 qps 访问 haproxy，haproxy 将流量分配到 4 个业务集群，每个集群 10 qps。
+- Fortio 性能测试工具以 40 qps 访问 haproxy，haproxy 将流量以 10 qps 分配到 4 个业务集群。
 - 服务访问链如下：haproxy → metalab → ingress 网关 → service-a → service-b → service-c。
 
-## 3.3 可观测性指标准备
+## 3.3 可观察性指标准备
 
-| 指标                                 | 描述                                                      | 标准                     |
-| ------------------------------------ | --------------------------------------------------------- | ------------------------ |
-| 服务请求 TPS（集群分组）             | 使用 Fortio 性能测试工具对服务 a（a→b-c）的每秒调用次数。 | 流量波动在 10 qps 左右。 |
-| P99 服务延迟（集群分组）             | P99 服务延迟                                              | 抖动 < 5%                |
-| 服务请求成功率（2xx/3xx 响应的比例） | 服务请求成功率                                            | 100%                     |
+| 指标                                                        | 描述                                                                                          | 标准                               |
+| ----------------------------------------------------------- | --------------------------------------------------------------------------------------------- | ---------------------------------- |
+| 服务请求 TPS (集群分组)                                    | 使用 Fortio 性能测试工具对服务 a (a→b-c) 每秒的调用次数。                                   | 流量波动在 10 qps 左右。          |
+| P99 服务延迟 (集群分组)                                    | P99 服务延迟                                                                                  | 抖动 < 5%                          |
+| 服务请求成功率 (2xx/3xx 响应的比例)                        | 服务请求成功率                                                                                | 100%                               |
 
 ## 3.4 测试用例
 
 ### 案例 1: DC-A 故障转移测试
 
-**测试步骤**：
+**测试步骤：**
 
 - 关闭 DC-A 中所有集群的所有节点，等待 10 分钟。
 - 打开操作中心→监控→仪表板，在管理员页面中。
-- 在顶部导航栏中，选择来自 DC-B 区域的第一个业务集群并记录 ASM 监控仪表板。
+- 在顶部导航栏中，选择 DC-B 区域的第一个业务集群并记录 ASM 监控仪表板。
 
-**预期结果**：
+**预期结果：**
 
 - 当主中心 DC-A 发生停电并启动灾难恢复时，备份中心 DC-B 接管流量。
 - 服务请求成功率（2xx/3xx 响应的百分比）抖动 < 5%
 
-**实际结果**：
+**实际结果：**
 
-- DC-A 中所有集群停电后，haproxy 将请求导向 DC-B 区域的两个集群，每个集群的流量将增加 10 QPS。
+- 在 DC-A 中所有集群停电后，haproxy 将请求引导到 DC-B 区域的两个集群，每个集群的流量将增加 10 QPS。
 
-![image-test\_case2-1](../../en/assets/image-test_case2-1.png)
+![image-test_case2-1](../../en/assets/image-test_case2-1.png)
 
 - 每个集群的 20 qps 流量将在同一区域的两个集群之间进行负载均衡。
 
-![image-test\_case2-2](../../en/assets/image-test_case2-2.png)
+![image-test_case2-2](../../en/assets/image-test_case2-2.png)
 
 - 服务请求成功率
 
-![image-test\_case2-3](../../en/assets/image-test_case2-3.png)
+![image-test_case2-3](../../en/assets/image-test_case2-3.png)
 
 - P99 服务延迟
 
-![image-test\_case2-4](../../en/assets/image-test_case2-4.png)
+![image-test_case2-4](../../en/assets/image-test_case2-4.png)
 
 - 结果总结
 
-| 预期                          | 实际测试结果                                  | 满足预期 |
-| ----------------------------- | --------------------------------------------- | -------- |
-| 备份中心 DC-B 接管流量        | 20 qps 流量在 DC-B 的两个集群之间进行负载均衡 | ✅        |
-| 2xx/3xx 响应的百分比保持 100% | 成功率 100%                                   | ✅        |
-| P99 服务延迟抖动 < 5%         | 实际抖动 1%                                   | ✅        |
+| 期望                                      | 实际测试结果                                             | 满足期望 |
+| ----------------------------------------- | -------------------------------------------------------- | -------- |
+| 备份中心 DC-B 接管流量                   | 20 qps 流量在 DC-B 的 2 个集群之间进行负载均衡        | ✅       |
+| 2xx/3xx 响应的百分比保持 100%            | 成功率 100%                                             | ✅       |
+| P99 服务延迟抖动 < 5%                     | 实际抖动 1%                                            | ✅       |
 
 ### 案例 2: DC-A 恢复测试
 
-**测试步骤**：
+**测试步骤：**
 
 - 开启 DC-A 区域的所有集群并等待 10 分钟。
 - 打开操作中心→监控→仪表板，在管理员页面中。
-- 在顶部导航栏中，选择来自 DC-B 区域的第一个业务集群并记录 ASM 监控仪表板。
+- 在顶部导航栏中，选择 DC-B 区域的第一个业务集群并记录 ASM 监控仪表板。
 
-**预期结果**：
+**预期结果：**
 
-- 在故障恢复过程中，备份中心 DC-B 将释放一部分流量给 DC-A。
+- 在故障恢复过程中，备份中心 DC-B 将释放一部分流量到 DC-A。
 - 在故障恢复过程中，主中心 DC-A 将逐渐接管流量。
 
-**实际结果**：
+**实际结果：**
 
-- 备份中心 DC-B 将一部分流量释放给 DC-A。
+- 备份中心 DC-B 将一部分流量释放到 DC-A。
 
-![image-test\_case2-5](../../en/assets/image-test_case2-5.png)
+![image-test_case2-5](../../en/assets/image-test_case2-5.png)
 
 服务请求成功率
 
-![image-test\_case2-6](../../en/assets/image-test_case2-6.png)
+![image-test_case2-6](../../en/assets/image-test_case2-6.png)
 
 P99 服务延迟
 
-![image-test\_case2-7](../../en/assets/image-test_case2-7.png)
+![image-test_case2-7](../../en/assets/image-test_case2-7.png)
 
 - 主中心 DC-A 将逐渐接管流量。
 
-![image-test\_case2-8](../../en/assets/image-test_case2-8.png)
+![image-test_case2-8](../../en/assets/image-test_case2-8.png)
 
 服务请求成功率
 
-![image-test\_case2-9](../../en/assets/image-test_case2-9.png)
+![image-test_case2-9](../../en/assets/image-test_case2-9.png)
 
 P99 服务延迟
 
-![image-test\_case2-10](../../en/assets/image-test_case2-10.png)
+![image-test_case2-10](../../en/assets/image-test_case2-10.png)
 
 - 结果总结
 
-| 预期              | 实际测试结果              | 满足预期 |
-| ----------------- | ------------------------- | -------- |
-| DC-B 释放部分流量 | 每个网关的流量减少 10 QPS | ✅        |
-| DC-A 逐渐接管流量 | 每个网关的流量增加 10 QPS | ✅        |
+| 期望                                      | 实际测试结果                               | 满足期望 |
+| ----------------------------------------- | ------------------------------------------ | -------- |
+| DC-B 释放部分流量                        | 每个网关的流量减少 10 QPS                  | ✅       |
+| DC-A 逐渐接管流量                        | 每个网关的流量增加 10 QPS                  | ✅       |
 
 # 4. 测试场景 2: 集群级切换
 
@@ -785,51 +803,51 @@ P99 服务延迟
 
 验证双中心核心集群应用单节点故障的数据故障转移能力。
 
-| 指标 | 描述                                                   | 标准    |
-| ---- | ------------------------------------------------------ | ------- |
-| RTO  | 从故障发生时起，系统完全恢复业务功能的最大可接受时间。 | RTO≤90s |
-| RPO  | 故障期间可容忍的最大数据丢失，通常以时间来衡量。       | RPO=0   |
+| 指标   | 描述                                                                                                  | 标准     |
+| ------ | ----------------------------------------------------------------------------------------------------- | -------- |
+| RTO    | 从故障发生时起，系统完全恢复业务功能的最大可接受时间。                                               | RTO≤90s  |
+| RPO    | 故障期间最大可容忍的数据丢失，通常以时间来衡量。                                                    | RPO=0    |
 
 ## 4.2 测试前提
 
-- Fortio 性能测试工具以 40 qps 访问 haproxy，haproxy 将流量分配到 4 个业务集群，每个集群 10 qps。
+- Fortio 性能测试工具以 40 qps 访问 haproxy，haproxy 将流量以 10 qps 分配到 4 个业务集群。
 - 服务访问链如下：haproxy → metalab → ingress 网关 → service-a → service-b → service-c。
 
-## 4.3 可观测性指标准备
+## 4.3 可观察性指标准备
 
-| 指标                                 | 描述                                                      | 标准                     |
-| ------------------------------------ | --------------------------------------------------------- | ------------------------ |
-| 服务请求 TPS（集群分组）             | 使用 Fortio 性能测试工具对服务 a（a→b-c）的每秒调用次数。 | 流量波动在 10 qps 左右。 |
-| P99 服务延迟（集群分组）             | P99 服务延迟                                              | 抖动 < 5%                |
-| 服务请求成功率（2xx/3xx 响应的比例） | 服务请求成功率                                            | 100%                     |
+| 指标                                                        | 描述                                                                                          | 标准                               |
+| ----------------------------------------------------------- | --------------------------------------------------------------------------------------------- | ---------------------------------- |
+| 服务请求 TPS (集群分组)                                    | 使用 Fortio 性能测试工具对服务 a (a→b-c) 每秒的调用次数。                                   | 流量波动在 10 qps 左右。          |
+| P99 服务延迟 (集群分组)                                    | P99 服务延迟                                                                                  | 抖动 < 5%                          |
+| 服务请求成功率 (2xx/3xx 响应的比例)                        | 服务请求成功率                                                                                | 100%                               |
 
 ## 4.4 测试用例
 
 ### 案例 1: DC-B c4 集群故障
 
-**测试步骤**：关闭 DC-B 区域中集群 dbs-dca-c4 的所有节点
+**测试步骤**：DC-B 区域的集群 dbs-dca-c4 所有节点停电
 
 **预期结果**：集群 dbs-dca-c4 的流量被重定向到同一区域的热备集群。
 
 **实际结果**：
 
-- 关闭 dbs-dca-c4 集群后，流量切换到同一区域的另一个集群。
+- 在关闭 dbs-dca-c4 集群后，流量切换到同一区域的另一集群。
 
-![image-test\_case3-1](../../en/assets/image-test_case3-1.png)
+![image-test_case3-1](../../en/assets/image-test_case3-1.png)
 
 服务请求成功率
 
-![image-test\_case3-2](../../en/assets/image-test_case3-2.png)
+![image-test_case3-2](../../en/assets/image-test_case3-2.png)
 
 P99 服务延迟
 
-![image-test\_case3-3](../../en/assets/image-test_case3-3.png)
+![image-test_case3-3](../../en/assets/image-test_case3-3.png)
 
 - 结果总结
 
-| 预期                           | 实际测试结果                             | 满足预期 |
-| ------------------------------ | ---------------------------------------- | -------- |
-| 备份集群 c3 接管来自 c4 的流量 | c4 的流量降至 0<br>c3 的流量增加相同的值 | ✅        |
+| 期望                                      | 实际测试结果                                             | 满足期望 |
+| ----------------------------------------- | -------------------------------------------------------- | -------- |
+| 备份集群 c3 接管来自 c4 的流量          | c4 的流量降至 0<br>c3 的流量增加相同的值                | ✅       |
 
 ### 案例 2: DC-B c4 集群恢复
 
@@ -839,23 +857,23 @@ P99 服务延迟
 
 **实际结果**：
 
-- 流量在同一区域的两个集群（dbs-dca-c3，dbs-dca-c4）之间进行负载均衡。
+- 流量在同一区域的两个集群（dbs-dca-c3, dbs-dca-c4）之间进行负载均衡。
 
-![image-test\_case3-4](../../en/assets/image-test_case3-4.png)
+![image-test_case3-4](../../en/assets/image-test_case3-4.png)
 
 服务请求成功率
 
-![image-test\_case3-5](../../en/assets/image-test_case3-5.png)
+![image-test_case3-5](../../en/assets/image-test_case3-5.png)
 
 P99 服务延迟
 
-![image-test\_case3-6](../../en/assets/image-test_case3-6.png)
+![image-test_case3-6](../../en/assets/image-test_case3-6.png)
 
 - 结果总结
 
-| 预期                     | 实际测试结果                         | 满足预期 |
-| ------------------------ | ------------------------------------ | -------- |
-| 集群 c4 在恢复后接管流量 | 流量继续在 c3 和 c4 之间进行负载均衡 | ✅        |
+| 期望                                      | 实际测试结果                                  | 满足期望 |
+| ----------------------------------------- | ---------------------------------------------- | -------- |
+| 集群 c4 在恢复后接管流量                 | 流量继续在 c3 和 c4 之间进行负载均衡       | ✅       |
 
 ### 案例 3: DC-B c4 集群 istio-eastwestgateway 故障
 
@@ -880,23 +898,23 @@ spec:
 
 **实际结果**：
 
-- 核心集群的流量被热备集群接管。
+- 核心集群的流量由热备集群接管。
 
-![image-test\_case3-7](../../en/assets/image-test_case3-7.png)
+![image-test_case3-7](../../en/assets/image-test_case3-7.png)
 
 服务请求成功率
 
-![image-test\_case3-8](../../en/assets/image-test_case3-8.png)
+![image-test_case3-8](../../en/assets/image-test_case3-8.png)
 
 P99 服务延迟
 
-![image-test\_case3-9](../../en/assets/image-test_case3-9.png)
+![image-test_case3-9](../../en/assets/image-test_case3-9.png)
 
 - 结果总结
 
-| 预期                           | 实际测试结果                      | 满足预期 |
-| ------------------------------ | --------------------------------- | -------- |
-| 备份集群 c3 接管来自 c4 的流量 | c3 的流量增加了从 c4 重定向的 QPS | ✅        |
+| 期望                                      | 实际测试结果                               | 满足期望 |
+| ----------------------------------------- | ------------------------------------------- | -------- |
+| 备份集群 c3 接管来自 c4 的流量          | c3 的流量增加了从 c4 重定向的 QPS        | ✅       |
 
 # 5. 测试场景 3: 应用级切换
 
@@ -906,77 +924,77 @@ P99 服务延迟
 
 验证双中心核心集群应用单节点故障的数据故障转移能力。
 
-| 指标 | 描述                                                   | 标准    |
-| ---- | ------------------------------------------------------ | ------- |
-| RTO  | 从故障发生时起，系统完全恢复业务功能的最大可接受时间。 | RTO≤90s |
-| RPO  | 故障期间可容忍的最大数据丢失，通常以时间来衡量。       | RPO=0   |
+| 指标   | 描述                                                                                                  | 标准     |
+| ------ | ----------------------------------------------------------------------------------------------------- | -------- |
+| RTO    | 从故障发生时起，系统完全恢复业务功能的最大可接受时间。                                               | RTO≤90s  |
+| RPO    | 故障期间最大可容忍的数据丢失，通常以时间来衡量。                                                    | RPO=0    |
 
 ## 5.2 测试前提
 
-- Fortio 性能测试工具以 40 qps 访问 haproxy，haproxy 将流量分配到 4 个业务集群，每个集群 10 qps。
+- Fortio 性能测试工具以 40 qps 访问 haproxy，haproxy 将流量以 10 qps 分配到 4 个业务集群。
 - 服务访问链如下：haproxy → metalab → ingress 网关 → service-a → service-b → service-c。
 
-## 5.3 可观测性指标准备
+## 5.3 可观察性指标准备
 
-| 指标                                 | 描述                                                      | 标准                     |
-| ------------------------------------ | --------------------------------------------------------- | ------------------------ |
-| 服务请求 TPS（集群分组）             | 使用 Fortio 性能测试工具对服务 a（a→b-c）的每秒调用次数。 | 流量波动在 10 qps 左右。 |
-| P99 服务延迟（集群分组）             | P99 服务延迟                                              | 抖动 < 5%                |
-| 服务请求成功率（2xx/3xx 响应的比例） | 服务请求成功率                                            | 100%                     |
+| 指标                                                        | 描述                                                                                          | 标准                               |
+| ----------------------------------------------------------- | --------------------------------------------------------------------------------------------- | ---------------------------------- |
+| 服务请求 TPS (集群分组)                                    | 使用 Fortio 性能测试工具对服务 a (a→b-c) 每秒的调用次数。                                   | 流量波动在 10 qps 左右。          |
+| P99 服务延迟 (集群分组)                                    | P99 服务延迟                                                                                  | 抖动 < 5%                          |
+| 服务请求成功率 (2xx/3xx 响应的比例)                        | 服务请求成功率                                                                                | 100%                               |
 
 ## 5.4 测试用例
 
 ### 案例 1: DC-A c1 和 DC-B c4 双中心应用单节点故障
 
-**测试步骤**：
+**测试步骤：**
 
-- 在每个区域的核心集群（dbs-dca-c1，dbs-dca-c4）上，使用 Chaos Mesh 模拟 service-a 实例的 10 分钟故障。
+- 在每个区域的核心集群（dbs-dca-c1, dbs-dca-c4）上，使用 Chaos Mesh 模拟 service-a 实例的 10 分钟故障。
 
-<!---->
+```
+apiVersion: chaos-mesh.org/v1alpha1
+kind: PodChaos
+metadata:
+  name: pod-failure-example
+  namespace: ha-cluster-ns
+spec:
+  action: pod-failure
+  mode: one
+  duration: '600s'
+  selector:
+    labelSelectors:
+       service.cpaas.io/name: deployment-service-a
+```
 
-    apiVersion: chaos-mesh.org/v1alpha1
-    kind: PodChaos
-    metadata:
-      name: pod-failure-example
-      namespace: ha-cluster-ns
-    spec:
-      action: pod-failure
-      mode: one
-      duration: '600s'
-      selector:
-        labelSelectors:
-           service.cpaas.io/name: deployment-service-a
-
-**预期结果**：
+**预期结果：**
 
 - 流量在同一区域的备用集群之间进行负载均衡。
 
 - 服务请求成功率（2xx/3xx 响应的百分比）= 100%
 
-- 应用从故障中恢复后，流量在每个集群之间以 10 QPS 进行负载均衡。
+- 应用从故障中恢复后，流量以 10 QPS 在每个集群之间进行负载均衡。
 
-**实际结果**：
+**实际结果：**
 
 - 流量在同一区域的备用集群之间进行负载均衡。
-  备用集群的流量监控。
+  同一区域备用集群的流量监控。
 
-![image-test\_case4-1](../../en/assets/image-test_case4-1.png)
+![image-test_case4-1](../../en/assets/image-test_case4-1.png)
 
 服务请求成功率
 
-![image-test\_case4-2](../../en/assets/image-test_case4-2.png)
+![image-test_case4-2](../../en/assets/image-test_case4-2.png)
 
 P99 服务延迟
 
-![image-test\_case4-3](../../en/assets/image-test_case4-3.png)
+![image-test_case4-3](../../en/assets/image-test_case4-3.png)
 
 - 结果总结
 
-| 预期                                               | 实际测试结果                             | 满足预期 |
-| -------------------------------------------------- | ---------------------------------------- | -------- |
-| 流量在同一区域的备用集群之间进行负载均衡           | 入口网关到 service-a 的流量增加了 10 qps | ✅        |
-| 2xx/3xx 响应的百分比保持 100%                      | 成功率 100%                              | ✅        |
-| 应用从故障中恢复后，流量在每个集群之间进行负载均衡 | 每个集群的流量恢复到 10 qps              | ✅        |
+| 期望                                                                                     | 实际测试结果                              | 满足期望 |
+| ---------------------------------------------------------------------------------------- | ------------------------------------------ | -------- |
+| 流量在同一区域的备用集群之间进行负载均衡                                               | 入口网关的流量 → service-a 增加         | ✅       |
+| 2xx/3xx 响应的百分比保持 100%                                                           | 成功率 100%                                | ✅       |
+| 应用从故障中恢复后，流量在每个集群之间进行负载均衡                                     | 每个集群的流量恢复到 10 qps               | ✅       |
 
 # 6. 测试场景 4: 服务级切换
 
@@ -984,31 +1002,31 @@ P99 服务延迟
 
 ![image-20250527194146470](../../en/assets/image-20250527194146470.png)
 
-验证服务的最小可行生存和同一区域数据故障转移能力，RTO ≤ 90s，RPO = 0。
+验证服务的最小可行生存和同一区域数据故障转移能力，RTO ≤ 90s 和 RPO = 0。
 
-| 指标 | 描述                                                   | 标准    |
-| ---- | ------------------------------------------------------ | ------- |
-| RTO  | 从故障发生时起，系统完全恢复业务功能的最大可接受时间。 | RTO≤90s |
-| RPO  | 故障期间可容忍的最大数据丢失，通常以时间来衡量。       | RPO=0   |
+| 指标   | 描述                                                                                                  | 标准     |
+| ------ | ----------------------------------------------------------------------------------------------------- | -------- |
+| RTO    | 从故障发生时起，系统完全恢复业务功能的最大可接受时间。                                               | RTO≤90s  |
+| RPO    | 故障期间最大可容忍的数据丢失，通常以时间来衡量。                                                    | RPO=0    |
 
 ## 6.2 测试前提
 
-- Fortio 性能测试工具以 40 qps 访问 haproxy，haproxy 将流量分配到 4 个业务集群，每个集群 10 qps。
+- Fortio 性能测试工具以 40 qps 访问 haproxy，haproxy 将流量以 10 qps 分配到 4 个业务集群。
 - 服务访问链如下：haproxy → metalab → ingress 网关 → service-a → service-b → service-c。
 
-## 6.3 可观测性指标准备
+## 6.3 可观察性指标准备
 
-| 指标                                 | 描述                                                      | 标准                     |
-| ------------------------------------ | --------------------------------------------------------- | ------------------------ |
-| 服务请求 TPS（集群分组）             | 使用 Fortio 性能测试工具对服务 a（a→b-c）的每秒调用次数。 | 流量波动在 10 qps 左右。 |
-| P99 服务延迟（集群分组）             | P99 服务延迟                                              | 抖动 < 5%                |
-| 服务请求成功率（2xx/3xx 响应的比例） | 服务请求成功率                                            | 100%                     |
+| 指标                                                        | 描述                                                                                          | 标准                               |
+| ----------------------------------------------------------- | --------------------------------------------------------------------------------------------- | ---------------------------------- |
+| 服务请求 TPS (集群分组)                                    | 使用 Fortio 性能测试工具对服务 a (a→b-c) 每秒的调用次数。                                   | 流量波动在 10 qps 左右。          |
+| P99 服务延迟 (集群分组)                                    | P99 服务延迟                                                                                  | 抖动 < 5%                          |
+| 服务请求成功率 (2xx/3xx 响应的比例)                        | 服务请求成功率                                                                                | 100%                               |
 
 ## 6.4 测试用例
 
 ### 案例 1: DC-A 服务最小生存
 
-**测试步骤**：
+**测试步骤：**
 
 - 停止 dbs-dca-c1 集群上的 service-a 部署。
 - 在 dbs-dca-c2 集群上使用 Chaos Mesh 模拟其中一个 service-a 实例的 10 分钟故障。
@@ -1030,28 +1048,28 @@ spec:
 
 - 检查热备（dbs-dca-c1）集群监控。
 
-**预期结果**：
+**预期结果：**
 
 - 当服务故障时，流量由同一区域的热备集群接管。
 - 服务请求成功率（2xx/3xx 响应的百分比）= 100%。
 
-**实际结果**：
+**实际结果：**
 
 - 当服务故障时，流量由同一区域的热备集群接管。
 
-![image-test\_case5-1](../../en/assets/image-test_case5-1.png)
+![image-test_case5-1](../../en/assets/image-test_case5-1.png)
 
 服务请求成功率
 
-![image-test\_case5-2](../../en/assets/image-test_case5-2.png)
+![image-test_case5-2](../../en/assets/image-test_case5-2.png)
 
-南北向流量 P99 服务延迟（集群分组）
+南北向流量 P99 服务延迟 (集群分组)
 
-![image-test\_case5-3](../../en/assets/image-test_case5-3.png)
+![image-test_case5-3](../../en/assets/image-test_case5-3.png)
 
 - 结果总结
 
-| 预期                             | 实际测试结果                      | 满足预期 |
-| -------------------------------- | --------------------------------- | -------- |
-| 服务流量由同一区域的热备集群接管 | 另一个集群的实例流量增加了 10 qps | ✅        |
-| 2xx/3xx 响应的百分比保持 100%    | 成功率 100%                       | ✅        |
+| 期望                                                                 | 实际测试结果                                          | 满足期望 |
+| -------------------------------------------------------------------- | ----------------------------------------------------- | -------- |
+| 服务流量由同一区域的热备集群接管                                   | 另一个集群的实例流量增加了 10 qps                    | ✅       |
+| 2xx/3xx 响应的百分比保持 100%                                     | 成功率 100%                                          | ✅       |

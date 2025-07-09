@@ -1,4 +1,5 @@
 ---
+id: KB1752037962-6036
 products: 
    - Alauda Container Platform
    - Alauda Service Mesh
