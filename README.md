@@ -4,18 +4,18 @@ Alauda Knowledge hosts Alauda\'s solution articles and technical references.
 
 # Article Writing Guide
 ## Path Structure
-- \`docs/en/solutions\`\: This directory stores knowledge base articles displayed on Alauda Cloud\.
-- \`deprecated/\`\: This directory stores deprecated articles\. When articles become obsolete\, they must be moved here\.
+- \`docs/en/solutions\`\: This directory stores knowledge base articles displayed on Alauda Cloud.
+- \`hidden_docs/deprecated/\`\: This directory stores deprecated articles. When articles become obsolete, they must be moved here.
 
 Note：Chinese translations will be automatically executed in the pipeline. Submit English articles only.
 
 ## Writing Standards 
 
-Note：Knowledge base articles support MD format only\! 
+Note：Knowledge base articles support MD format only! 
 
 ## Properties
 
-Define article properties in frontmatter\:
+Define article properties in frontmatter:
 
 | Property    | Description |
 |-------------|-------------|
@@ -40,26 +40,30 @@ kind
 ## Referencing Resources
 ### Referencing Static Assets
 
-Two supported asset directory types\:
+Two supported asset directory types:
 
-- Global assets\: docs/public/
-    \* Use syntax\: \!\[\]\(/image\.png\)
-- Article\-specific assets\: 
-    \* Use syntax\: \!\[\]\(\./assets/image\.png\)
+- The public directory in the document root: `docs/public`
+
+    Use syntax:  `![](/xxx.png)`
+- The assets directory next to the specific document,example `docs/en/solutions/docname/assets`:
+  
+     Use syntax: `![](./assets/xxx.png)`
 
 Recommendation:
-- Use public/ for globally shared assets
-- Use assets/ for module/article\-specific resources
+- Use `public` for globally shared assets
+- Use `assets` for module/article\-specific resources
 
 Static assets require English versions only.
 
 ### Linking Within Site
 
-Link to other documents within the current site\:
-Use relative links\, for example\: \[docname\]\(\./module/guides/xxx\.md\)
+Link to other documents within the current site:
 
-Link to specific sections in other documents\:
-Add an anchor to the section heading\, then reference it using the anchor link\. For example\:
+- Use relative links, for example: `[docname](./module/guides/xxx.md)`
+
+Link to specific sections in other documents:
+
+- Add an anchor to the section heading, then reference it using the anchor link. For example:
 ```
     {/* Add anchor at referenced location */}
     ## Hello World \{#custom_id}
@@ -72,9 +76,9 @@ Anchor rules: Lowercase letters, numbers, underscores only.
  Prioritize English\-language sources when available.
 
 ### For large files
-Use public URLs if available.
+- Use public URLs if available.
 
-Contact administrators for storage need.
+- Contact administrators for storage need.
 
 # Templates
- A template for Solution\-type articles is provided at\: [templates/solution-template.md](https://github.com/alauda/knowledge/blob/d9cac8ab2bc2d899bd7cb4eda9f76501f03460d7/templates/solution-template.md)
+ A template for Solution\-type articles is provided at: [templates/solution-template.md](https://github.com/alauda/knowledge/blob/d9cac8ab2bc2d899bd7cb4eda9f76501f03460d7/templates/solution-template.md)
