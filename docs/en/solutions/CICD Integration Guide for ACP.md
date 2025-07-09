@@ -39,7 +39,7 @@ Having all the prerequisites in place, the process of deploying an application u
 5. Use the pipeline to deploy and manage your application
 
 
-![](../assets/blue-green-canary-pipeline.drawio.png)
+![](./assets/blue-green-canary-pipeline.drawio.png)
 
 
 ## Step 1: Choose a deployment strategy
