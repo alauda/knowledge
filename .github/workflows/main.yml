@@ -64,6 +64,6 @@ jobs:
 
           git add -A
           git commit -m "ci: update file from GitHub Action" || echo "Nothing to commit"
-          git push origin HEAD:main
+          git push https://x-access-token:${{ secrets.KNOWLEDGE_SECRET }}@github.com/alauda/knowledge.git HEAD:main
         env:
           GITHUB_TOKEN: ${{ secrets.KNOWLEDGE_SECRET }} 
