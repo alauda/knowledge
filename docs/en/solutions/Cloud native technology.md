@@ -4,11 +4,12 @@ products:
    - Alauda Service Mesh
 kind:
    - Solution
+   - Test
 ---
 
 # Cloud native technology: the core architecture for building modern applications
 
-![Schematic diagram of cloud native technology stack](./assets/ymyzd.png)  
+![Schematic diagram of cloud native technology stack](../assets/ymyzd.png)  
 
 ## 📌 What is cloud native?
 Cloud Native is a methodology for building and running applications that fully utilizes the advantages of the cloud computing delivery model to achieve elastic scaling, high availability, and fast iteration. It includes four pillars: containerization, microservices, DevOps, and continuous delivery.
