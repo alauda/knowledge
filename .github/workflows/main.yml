@@ -51,6 +51,7 @@ jobs:
         run: ./add_id.sh docs/en/solutions
 
       - name: translate
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: yarn translate -s en -t zh -g "*"
 
       - name: Build
