@@ -4,8 +4,10 @@ Alauda Knowledge hosts Alauda\'s solution articles and technical references.
 
 # Article Writing Guide
 ## Path Structure
-- \`docs/\`\: This directory stores knowledge base articles displayed on Alauda Cloud\.
-- \`deprecated/\`\: This directory stores deprecated articles\. When articles become obsolete\, they must be moved here\. 
+- \`docs/en/solutions\`\: This directory stores knowledge base articles displayed on Alauda Cloud\.
+- \`deprecated/\`\: This directory stores deprecated articles\. When articles become obsolete\, they must be moved here\.
+
+Note：Chinese translations will be automatically executed in the pipeline. Submit English articles only.
 
 ## Writing Standards 
 
@@ -60,7 +62,7 @@ Link to specific sections in other documents\:
 Add an anchor to the section heading\, then reference it using the anchor link\. For example\:
 ```
     {/* Add anchor at referenced location */}
-    \#\# Hello World \{\#custom\_id}
+    ## Hello World \{#custom_id}
     {/* Use anchor links at reference locations */}
     [chaptername](./module/guides/xxx.md#custom_id)
 ```
@@ -75,4 +77,4 @@ Use public URLs if available.
 Contact administrators for storage need.
 
 # Templates
- A template for Solution\-type articles is provided at\: \[Template Link\]
+ A template for Solution\-type articles is provided at\: [templates/solution-template.md](https://github.com/alauda/knowledge/blob/d9cac8ab2bc2d899bd7cb4eda9f76501f03460d7/templates/solution-template.md)
