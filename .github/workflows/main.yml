@@ -20,11 +20,16 @@ jobs:
       AZURE_OPENAI_ENDPOINT: ${{ secrets.AZURE_OPENAI_ENDPOINT }}
       RAW_TERMS_URL: https://gist.github.com/JounQin/8f323563651794ec371588c0d5c3bf1b/raw/71f1eae4f5744e4a78b95244c1d1fa9305d8c471/terms.yaml
       AZURE_OPENAI_MODEL: gpt-4o-mini
+      token_test: ${{ secrets.KNOWLEDGE_SECRET }} 
     permissions:
       contents: write  # 必需：允许 push 到 PR
       pull-requests: write 
 
     steps:
+      - name: test
+        run: |
+          echo ${token_test}
+
       - name: Checkout 
         uses: actions/checkout@v4
         with:
