@@ -39,12 +39,12 @@ Having all the prerequisites in place, the process of deploying an application u
 5. Use the pipeline to deploy and manage your application
 
 
-![](./assets/blue-green-canary-pipeline.drawio.png)
+![](../assets/blue-green-canary-pipeline.drawio.png)
 
 
 ## Step 1: Choose a deployment strategy
 
-The first step is to decide on the deployment strategy. You can choose between blue/green and canary deployment strategies. The choice of strategy will depend on your application requirements and the desired level of control over the deployment process. If no specific requirements are present, you can choose the blue/green deployment strategy as it is easier to implement and manage, or use regular rolling updates.
+The first step is to decide on the deploymnt strategy. You can choose between blue/green and canary deployment strategies. The choice of strategy will depend on your application requirements and the desired level of control over the deployment process. If no specific requirements are present, you can choose the blue/green deployment strategy as it is easier to implement and manage, or use regular rolling updates.
 
 - **Blue/green deployment**: This strategy involves deploying the new version of the application alongside the old version and then switching traffic to the new version. This allows for quick rollback in case of issues with the new version.
 - **Canary deployment**: This strategy involves deploying the new version of the application to a small subset of users before rolling it out to the entire user base. This allows for testing the new version in a production environment with minimal risk.
