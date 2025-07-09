@@ -42,6 +42,7 @@ sourceSHA: 5ade51c1294954c4d3affd7a0a69d9a827e1dd195ba4788d736ba4a1fd82ac44
 ## 🔧 技术实践指南
 
 ### 1. 容器化部署流程
+test
 
 ```bash
 # 构建 Docker 镜像
