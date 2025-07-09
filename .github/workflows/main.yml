@@ -26,14 +26,8 @@ jobs:
       pull-requests: write 
 
     steps:
-      - name: test
-        run: |
-          echo ${token_test}
-
       - name: Checkout 
         uses: actions/checkout@v4
-        with:
-          token: ${{ secrets.KNOWLEDGE_SECRET }}
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
