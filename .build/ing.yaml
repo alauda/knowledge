@@ -1,0 +1,26 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  annotations:
+    alb.ingress.cpaas.io/rewrite-response: |
+      {"headers":{"Content-Security-Policy": "", "X-Frame-Options":"SAMEORIGIN","X-Content-Type-Options":"nosniff","X-XSS-Protection":"1","Cache-Control":"no-cache","Pragma":"no-cache"}}
+  labels:
+    app: knowledge-docs
+  name: knowledge-docs
+  namespace: alaudacloud
+spec:
+  rules:
+  - host: cloud.alauda.io
+    http:
+      paths:
+      - backend:
+          service:
+            name: knowledge-docs
+            port:
+              number: 8080
+        path: /knowledge(/|$)(.*)
+        pathType: ImplementationSpecific
+  tls:
+  - hosts:
+    - cloud.alauda.io
+    secretName: alaudaio
