@@ -81,4 +81,4 @@ Anchor rules: Lowercase letters, numbers, underscores only.
 - Contact administrators for storage need.
 
 # Templates
- A template for Solution\-type articles is provided at: [templates/solution-template.md](https://github.com/alauda/knowledge/blob/d9cac8ab2bc2d899bd7cb4eda9f76501f03460d7/templates/solution-template.md)
+ A template for Solution\-type articles is provided at: [templates/solution-template.md](templates/solution-template.md)
