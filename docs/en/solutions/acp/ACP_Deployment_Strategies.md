@@ -1,4 +1,8 @@
 ---
+products: 
+   - Alauda Container Platform
+kind:
+   - Article
 id: KB1751435394-1D7E
 ---
 # ACP Deployment Strategies
