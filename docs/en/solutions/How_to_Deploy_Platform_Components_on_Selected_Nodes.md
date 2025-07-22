@@ -9,7 +9,7 @@ kind:
 
 ## Issue
 
-Some customers require platform components to run on dedicated nodes to isolate them from business applications, enabling differentiated resource allocation and operational assurance for different types of workloads.
+Some customers require platform components to run on dedicated nodes to isolate them from application workloads, enabling differentiated resource allocation and operational assurance for different types of workloads.
 
 ## Environment
 
