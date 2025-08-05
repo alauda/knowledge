@@ -23,7 +23,7 @@ Modify the minfo Prometheus configuration to add remoteWrite settings:
 #### Step 1: Get Prometheus minfo name
 
 ```shell
-kubectl get minfo -A | grep prometheus |grep <cluster-name>
+kubectl get minfo -A | grep prometheus | grep <cluster-name>
 ```
 
 #### Step 2: Add remoteWrite configuration to minfo (replace <minfo_name> with the name obtained in Step 1)
@@ -40,7 +40,10 @@ spec:
     ait/chart-kube-prometheus:
       prometheus:
         remoteWrite:
-        ### Required: Remote write endpoint URL of the third-party Prometheus.This address can serve for either Prometheus or VictoriaMetrics; if connecting to the platform monitoring component VictoriaMetrics, the address would be https://<platform-domain>/clusters/<clusters_name>/vminsert; if connecting to the platform monitoring component Prometheus, the address would be https://<platform-domain>/clusters/<clusters_name>/prometheus-0/api/v1/write.
+        ### Required: Remote write URL of third-party Prometheus.
+        ### This address can serve for either Prometheus or VictoriaMetrics:
+        ### - For VictoriaMetrics: https://<platform-domain>/clusters/<clusters_name>/vminsert
+        ### - For Prometheus: https://<platform-domain>/clusters/<clusters_name>/prometheus-0/api/v1/write
         - url: "https://192.168.18.250/clusters/region-1/prometheus-0/api/v1/write"
           ### Optional: Write timeout (default: 30s)
           remoteTimeout: 60s
@@ -110,7 +113,10 @@ spec：
     ### Optional: Disable certificate verification
     tlsConfig:
       insecureSkipVerify: true
-    ### Required: Remote write URL of third-party Prometheus.This address can serve for either Prometheus or VictoriaMetrics; if connecting to the platform monitoring component VictoriaMetrics, the address would be https://<platform-domain>/clusters/<clusters_name>/vminsert; if connecting to the platform monitoring component Prometheus, the address would be https://<platform-domain>/clusters/<clusters_name>/prometheus-0/api/v1/write.
+    ### Required: Remote write URL of third-party Prometheus.
+    ### This address can serve for either Prometheus or VictoriaMetrics:
+    ### - For VictoriaMetrics: https://<platform-domain>/clusters/<clusters_name>/vminsert
+    ### - For Prometheus: https://<platform-domain>/clusters/<clusters_name>/prometheus-0/api/v1/write
     url: https://192.168.177.92/clusters/region-1/prometheus-0/api/v1/write
     writeRelabelConfigs:
     ### Example: Discard both the nginx_http_connections metric and metrics starting with kube_, using regular expressions to match the metric names to discard. Multiple rules can be used for matching.
