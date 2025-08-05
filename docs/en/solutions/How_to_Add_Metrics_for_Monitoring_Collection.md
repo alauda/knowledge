@@ -41,7 +41,7 @@ kubectl get minfo -A | grep prometheus | grep <cluster-name>
 If the monitoring component is Victoriametrics
 
 ```shell
-kubectl get minfo -A | grep victoriametrics  |grep <cluster-name>
+kubectl get minfo -A | grep victoriametrics  | grep <cluster-name>
 ```
 
 ### Step 2: Edit the MInfo resource
