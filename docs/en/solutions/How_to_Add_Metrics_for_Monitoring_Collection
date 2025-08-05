@@ -50,60 +50,60 @@ kubectl edit minfo <global-e671599464a5b1717732c5ba36079795>
 Add the following content under spec, replacing <component-name> with the target component and <metric> with the metric to be added (ensure the metric is exposed by the component):
 If the monitoring component is Prometheus
 
-```shell
+```yaml
 valuesOverride:
   ait/chart-kube-prometheus:
     <component-name>:
-	  additionalKeepMetrics:
-	  - XXX
+      additionalKeepMetrics:
+        - XXX
 ```
 
 If the monitoring component is Victoriametrics
 
-```shell
+```yaml
 valuesOverride:
   ait/chart-victoriametrics:
     <component-name>:
-	  additionalKeepMetrics:
-	  - XXX
+      additionalKeepMetrics:
+        - XXX
 ```
 
 Example: Adding IPVS-related metrics for exporter-node
 
 If the monitoring component is Prometheus
 
-```shell
+```yaml
 spec:
   valuesOverride:
     ait/chart-kube-prometheus:
       exporter-node:
-      	additionalKeepMetrics:
-	    - node_ipvs_connections_total
-      	- node_ipvs_incoming_packets_total
-      	- node_ipvs_outgoing_packets_total
-      	- node_ipvs_incoming_bytes_total
-      	- node_ipvs_outgoing_bytes_total
-      	- node_ipvs_backend_connections_active
-      	- node_ipvs_backend_connections_inactive
-      	- node_ipvs_backend_weight
+        additionalKeepMetrics:
+        - node_ipvs_connections_total
+        - node_ipvs_incoming_packets_total
+        - node_ipvs_outgoing_packets_total
+        - node_ipvs_incoming_bytes_total
+        - node_ipvs_outgoing_bytes_total
+        - node_ipvs_backend_connections_active
+        - node_ipvs_backend_connections_inactive
+        - node_ipvs_backend_weight
 ```
 
 If the monitoring component is Victoriametrics
 
-```shell
+```yaml
 spec:
   valuesOverride:
     ait/chart-victoriametrics:
       exporter-node:
-      	additionalKeepMetrics:
-      	- node_ipvs_connections_total
-      	- node_ipvs_incoming_packets_total
-      	- node_ipvs_outgoing_packets_total
-      	- node_ipvs_incoming_bytes_total
-      	- node_ipvs_outgoing_bytes_total
-      	- node_ipvs_backend_connections_active
-      	- node_ipvs_backend_connections_inactive
-      	- node_ipvs_backend_weight
+        additionalKeepMetrics:
+        - node_ipvs_connections_total
+        - node_ipvs_incoming_packets_total
+        - node_ipvs_outgoing_packets_total
+        - node_ipvs_incoming_bytes_total
+        - node_ipvs_outgoing_bytes_total
+        - node_ipvs_backend_connections_active
+        - node_ipvs_backend_connections_inactive
+        - node_ipvs_backend_weight
 ```
 
 After configuration changes, ensure the AppRelease (AR) is updated and the monitoring component status is Ready:
