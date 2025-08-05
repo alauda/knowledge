@@ -1,8 +1,8 @@
 ---
 products: 
-   - Alauda Container Platform
+  - Alauda Container Platform
 kind:
-   - Solution
+  - Solution
 ---
 
 # How to Add Metrics for Monitoring Collection
@@ -13,21 +13,24 @@ If the allowlist in ServiceMonitor is directly modified to add metrics, more met
 
 ## Supported Platform Components
 
-exporter-coredns
-exporter-kube-controller-manager
-exporter-kube-dns
-exporter-kube-etcd
-exporter-kube-scheduler
-exporter-kube-state
-exporter-kubelets（Note: For Victoriametrics monitoring plugins, the corresponding resource type is VMNodeScrape, not ServiceMonitor）
-exporter-kubernetes
-exporter-node
+* exporter-coredns
+* exporter-kube-controller-manager
+* exporter-kube-dns
+* exporter-kube-etcd
+* exporter-kube-scheduler
+* exporter-kube-state
+* exporter-kubelets
+* exporter-kubernetes
+* exporter-node
+
+> **Note**  
+> For the VictoriaMetrics monitoring plugin, the resource type corresponding to exporter-kubelets is `VMNodeScrape`, rather than `ServiceMonitor`.
 
 ## Modification Steps
 
 Log in to the master node of the global cluster and modify the MInfo resource of Prometheus/Victoriametrics to add additionalKeepMetrics.
 
-### Step1: Retrieve the corresponding MInfo
+### Step 1: Retrieve the corresponding MInfo
 
 If the monitoring component is Prometheus
 
@@ -41,10 +44,10 @@ If the monitoring component is Victoriametrics
 kubectl get minfo -A | grep victoriametrics  |grep <cluster-name>
 ```
 
-### Step2: Edit the MInfo resource
+### Step 2: Edit the MInfo resource
 
 ```shell
-kubectl edit minfo <global-e671599464a5b1717732c5ba36079795>
+kubectl edit minfo <minfo-name>
 ```
 
 Add the following content under spec, replacing <component-name> with the target component and <metric> with the metric to be added (ensure the metric is exposed by the component):
