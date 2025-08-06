@@ -54,20 +54,22 @@ Add the following content under spec, replacing <component-name> with the target
 If the monitoring component is Prometheus
 
 ```yaml
-valuesOverride:
-  ait/chart-kube-prometheus:
-    <component-name>:
-      additionalKeepMetrics:
+spec:
+  valuesOverride:
+    ait/chart-kube-prometheus:
+      <component-name>:
+        additionalKeepMetrics:
         - XXX
 ```
 
 If the monitoring component is Victoriametrics
 
 ```yaml
-valuesOverride:
-  ait/chart-victoriametrics:
-    <component-name>:
-      additionalKeepMetrics:
+spec:
+  valuesOverride:
+    ait/chart-victoriametrics:
+      <component-name>:
+        additionalKeepMetrics:
         - XXX
 ```
 
