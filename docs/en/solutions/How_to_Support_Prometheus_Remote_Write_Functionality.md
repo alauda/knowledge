@@ -97,7 +97,7 @@ kubectl edit prometheus -n cpaas-system kube-prometheus-0
 Add the following content under `spec`:
 
 ```yaml
-spec：  
+spec:
   remoteWrite:
   - basicAuth:
       ### Optional: Username for authentication (name=secret name, key=username key)
