@@ -9,15 +9,17 @@ kind:
 
 ## Issue
 
-Some customers require platform components to run on dedicated nodes to isolate them from application workloads, enabling differentiated resource allocation and operational assurance for different types of workloads.
+Maybe：
+
+Platform components are required to run on dedicated nodes to isolate them from application workloads, enabling differentiated resource allocation and operational assurance for different types of workloads.
 
 ## Environment
 
-Supported Platform Version: v4.0.x
+Supported Version: v4.0.x
 
 ## Resolution
 
-### 1. Add the following labels to the specified nodes
+### 1. Add the following labels to the selected nodes
 
 ```yaml
 cpaas-system-alb: ""
@@ -29,7 +31,7 @@ Execute the following command on the workload cluster:
 kubectl label nodes NODE_NAME cpaas-system-alb="" node-role.kubernetes.io/cpaas-system=true
 ```
 
-### 2. Modify cluster-module-config
+### 2. Modify ConfigMap cluster-module-config
 
 Change the content of platformNodeSelector under globalConfig and platformConfig to '{"node-role.kubernetes.io/cpaas-system": "true"}'
 
@@ -102,7 +104,7 @@ Restart all alb Pods on the workload cluster using the following command:
 kubectl delete pods -n cpaas-system -l service_name=alb2-cpaas-system
 ```
 
-Note: Users may need to modify the external load balancer connected to alb to forward port 11780 to the new nodes.
+If an external load balancer is used to proxy port 11780, the backend server configuration of the external load balancer must also be updated to include the new nodes.
 
 ### 5. Verification
 
@@ -111,4 +113,13 @@ Execute the following command on the workload cluster to verify that Pods have b
 ```shell
 kubectl get pods -n cpaas-system -o wide
 kubectl get pods -n cert-manager -o wide
+```
+
+Output example is shown below. Please ensure the values in the NODE column are as expected.
+
+```shell
+NAME                                       READY   STATUS    RESTARTS   AGE    IP           NODE             NOMINATED NODE   READINESS GATES
+cert-manager-697748f676-lslwc              1/1     Running   0          6d2h   10.3.241.4   192.168.137.44   <none>           <none>
+cert-manager-cainjector-86c5cddcf4-vct7k   1/1     Running   0          6d2h   10.3.241.3   192.168.137.44   <none>           <none>
+cert-manager-webhook-b84f578c4-vzsdd       1/1     Running   0          6d2h   10.3.241.2   192.168.137.44   <none>           <none>
 ```
