@@ -9,8 +9,6 @@ kind:
 
 ## Issue
 
-Maybe：
-
 Platform components are required to run on dedicated nodes to isolate them from application workloads, enabling differentiated resource allocation and operational assurance for different types of workloads.
 
 ## Environment
