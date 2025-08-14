@@ -13,7 +13,7 @@ Platform components are required to run on dedicated nodes to isolate them from 
 
 ## Environment
 
-Supported Version: v4.0.x
+v4.0.x
 
 ## Resolution
 
