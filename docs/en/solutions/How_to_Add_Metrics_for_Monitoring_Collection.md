@@ -123,4 +123,4 @@ kubectl -n cpaas-system get ars
 
 ## Verification Steps
 
-Access the Prometheus UI page via https://<platform-domain>/clusters/<cluster-name>/prometheus-0, then query the additional metrics added through the aforementioned operation on the UI page. If data is returned normally, it confirms that the modification has taken effect.
+Access the Prometheus UI page via https://\<platform-domain\>/clusters/\<cluster-name\>/prometheus-0, then query the additional metrics added through the aforementioned operation on the UI page. If data is returned normally, it confirms that the modification has taken effect.
