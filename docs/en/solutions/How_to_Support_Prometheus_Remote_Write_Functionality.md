@@ -1,12 +1,12 @@
-# How to Support Prometheus Remote Write Functionality - Solution S2
+# How to Support Prometheus Remote Write Functionality
 
 ## Environment Information
 
-Applicable Versions: 3.10 - 4.0
+Applicable Versions: 4.0.x,4.1.x
 
 ## Feature Introduction
 
-Prometheus Remote Write is a feature that allows users to remotely send metrics data to external persistent storage systems instead of storing them locally in Prometheus' time-series database. This enables integration of Prometheus data with other monitoring systems or storage solutions, providing greater flexibility and scalability.
+Prometheus Remote Write is a feature that allows users to remotely send metrics data to external persistent storage systems instead of storing them locally in Prometheus time-series database. This enables integration of Prometheus data with other monitoring systems or storage solutions, providing greater flexibility and scalability.
 
 ## Configuration Methods
 
@@ -44,7 +44,7 @@ spec:
         ### This address can serve for either Prometheus or VictoriaMetrics:
         ### - For VictoriaMetrics: https://<platform-domain>/clusters/<clusters_name>/vminsert
         ### - For Prometheus: https://<platform-domain>/clusters/<clusters_name>/prometheus-0/api/v1/write
-        - url: "https://192.168.18.250/clusters/region-1/prometheus-0/api/v1/write"
+        - url: "https://x.x.x.x/clusters/region-1/prometheus-0/api/v1/write"
           ### Optional: Write timeout (default: 30s)
           remoteTimeout: 60s
           ### Optional: BasicAuth configuration for the URL. Requires creating a Secret in the `cpaas-system` namespace if authentication is enabled.
@@ -117,7 +117,7 @@ spec:
     ### This address can serve for either Prometheus or VictoriaMetrics:
     ### - For VictoriaMetrics: https://<platform-domain>/clusters/<clusters_name>/vminsert
     ### - For Prometheus: https://<platform-domain>/clusters/<clusters_name>/prometheus-0/api/v1/write
-    url: https://192.168.177.92/clusters/region-1/prometheus-0/api/v1/write
+    url: https://x.x.x.x/clusters/region-1/prometheus-0/api/v1/write
     writeRelabelConfigs:
     ### Example: Discard both the nginx_http_connections metric and metrics starting with kube_, using regular expressions to match the metric names to discard. Multiple rules can be used for matching.
     - action: drop
@@ -139,7 +139,6 @@ It is recommended to use the writeRelabelConfigs method for label addition, as i
 
 Using externalLabels to add distinguishing labels is discouraged. If this approach must be used, special attention is required: When the cluster's Prometheus operates in high availability mode with multiple instances, although remote writing is only configured for one instance, identical externalLabels must be added to all instances. Failure to do so may cause anomalies in platform monitoring data.
 
-[For detailed `remoteWrite` configuration, refer to:https://github.com/prometheus-operator/prometheus-operator/blob/main/Documentation/api-reference/api.md](https://github.com/prometheus-operator/prometheus-operator/blob/main/Documentation/api-reference/api.md)
 
 ## Verification method
 
