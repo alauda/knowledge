@@ -9,7 +9,11 @@ kind:
 
 ## Issue
 
-If the allowlist in ServiceMonitor is directly modified to add metrics, more metric data can be collected. However, this poses a risk: platform upgrades may cause ServiceMonitor to fail to update due to RPCH, resulting in platform monitoring failures. This document explains how to properly modify resources to collect additional metrics for platform components without affecting platform upgrades.
+If the allowlist in ServiceMonitor is directly modified to add metrics for Prometheus to collect, more metric data can be gathered for both Prometheus and VictoriaMetrics systems. However, this poses a risk: platform upgrades may cause ServiceMonitor to fail to update due to ResourcePatch(RPCH), resulting in failures in the integrated Prometheus and VictoriaMetrics monitoring.
+
+## Environment Information
+
+Applicable Versions: 4.0.x
 
 ## Supported Platform Components
 
@@ -30,7 +34,7 @@ If the allowlist in ServiceMonitor is directly modified to add metrics, more met
 
 Log in to the master node of the global cluster and modify the MInfo resource of Prometheus/Victoriametrics to add additionalKeepMetrics.
 
-### Step 1: Retrieve the corresponding MInfo
+### Step 1: Retrieve the corresponding ModuleInfo(minfo)
 
 If the monitoring component is Prometheus
 
@@ -119,4 +123,4 @@ kubectl -n cpaas-system get ars
 
 ## Verification Steps
 
-Check whether the metrics are collected via Prometheus or Grafana. If the metrics are successfully queried, the modification is confirmed to be effective.
+Access the Prometheus UI page via https://<platform-domain>/clusters/<cluster-name>/prometheus-0, then query the additional metrics added through the aforementioned operation on the UI page. If data is returned normally, it confirms that the modification has taken effect.
