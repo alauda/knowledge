@@ -13,7 +13,7 @@ If the allowlist in ServiceMonitor is directly modified to add metrics for Prome
 
 ## Environment Information
 
-Applicable Versions: 4.0.x
+Applicable Versions: 4.0.x,4.1.x
 
 ## Supported Platform Components
 
