@@ -1,3 +1,10 @@
+---
+products: 
+  - Alauda Container Platform
+kind:
+  - Solution
+---
+
 # How to Support Prometheus Remote Write Functionality
 
 ## Environment Information
