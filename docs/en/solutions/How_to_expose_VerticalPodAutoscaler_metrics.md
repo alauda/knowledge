@@ -224,7 +224,6 @@ kubectl edit deploy -n cpaas-system kube-prometheus-exporter-kube-state
 
 
 ```yaml
----
 spec:
   template:
     sepc:
@@ -245,7 +244,6 @@ spec:
           defaultMode: 420
           name: vpa-metrics-config
         name: vpa-config-volume
----
 ```
 
 ### Step 5: Add RBAC permissions.
