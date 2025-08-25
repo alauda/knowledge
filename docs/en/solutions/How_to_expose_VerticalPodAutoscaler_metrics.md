@@ -226,7 +226,7 @@ kubectl edit deploy -n cpaas-system kube-prometheus-exporter-kube-state
 ```yaml
 spec:
   template:
-    sepc:
+    spec:
       containers:
       - command:
         # 1.Add this parameter while retaining existing parameters.
@@ -313,7 +313,7 @@ EOF
 kubectl apply -f /root/vpa-test.yaml
 
 # Get pod IP
-kubectl get pod -Aowide|grep kube-prometheus-exporter-kube-state
+kubectl get pod -A -o wide | grep kube-prometheus-exporter-kube-state
 
 # Verify metrics exposure (replace <pod_ip>):
 curl -k -s http://<pod_ip>:8080/metrics | grep verticalpodautoscaler
