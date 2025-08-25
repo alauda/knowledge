@@ -20,7 +20,34 @@ Prometheus Remote Write is a feature that allows users to remotely send metrics 
 **Prerequisites**: The remote write solution requires a third-party Prometheus version **v2.25 or higher**, and parameters must be modified to enable remote write support.
 
 - When deploying Prometheus directly via StatefulSet: Set the startup parameter `--web.enable-remote-write-receiver`.
+
+  Example StatefulSet Snippet:
+
+```yaml
+apiVersion: apps/v1
+kind: StatefulSet
+spec:
+  template:
+    spec:
+      containers:
+      - name: prometheus
+        args:
+        - "--web.enable-remote-write-receiver"
+        # ... other args
+```
 - When deploying via Prometheus Operator: Add `enableRemoteWriteReceiver: true` to the `spec` section of the `prometheus.monitoring.coreos.com` resource.
+
+  Example Prometheus CR Snippet:
+
+```yaml
+apiVersion: monitoring.coreos.com/v1
+kind: Prometheus
+metadata:
+  name: prometheus
+spec:
+  enableRemoteWriteReceiver: true
+  # ... other spec fields
+```
 
 ### When Prometheus is a single-node deployment, it is recommended to use the following
 
@@ -49,9 +76,9 @@ spec:
         remoteWrite:
         ### Required: Remote write URL of third-party Prometheus.
         ### This address can serve for either Prometheus or VictoriaMetrics:
-        ### - For VictoriaMetrics: https://<platform-domain>/clusters/<clusters_name>/vminsert
-        ### - For Prometheus: https://<platform-domain>/clusters/<clusters_name>/prometheus-0/api/v1/write
-        - url: "https://x.x.x.x/clusters/region-1/prometheus-0/api/v1/write"
+        ### - For the platform monitoring component VictoriaMetrics: https://<platform-domain>/clusters/<clusters_name>/vminsert
+        ### - For the platform monitoring component Prometheus: https://<platform-domain>/clusters/<clusters_name>/prometheus-0/api/v1/write
+        - url: "https://x.x.x.x/prometheus/api/v1/write"
           ### Optional: Write timeout (default: 30s)
           remoteTimeout: 60s
           ### Optional: BasicAuth configuration for the URL. Requires creating a Secret in the `cpaas-system` namespace if authentication is enabled.
@@ -73,9 +100,9 @@ spec:
             regex: nginx_http_connections|kube_.+
             sourceLabels:
             - __name__
-          ### Example: Retain metrics starting with http_ and discard all others.
+          ### Example: Retain both the up metric and metrics starting with http_ and discard all others.
           - action: keep
-            regex: http_.+
+            regex: up|http_.+
             sourceLabels:
             - __name__
           ### Example: Add a label `clusters="test"` to distinguish data. This label is added ONLY to remotely written data; platform data remains unmodified.
@@ -122,18 +149,18 @@ spec:
       insecureSkipVerify: true
     ### Required: Remote write URL of third-party Prometheus.
     ### This address can serve for either Prometheus or VictoriaMetrics:
-    ### - For VictoriaMetrics: https://<platform-domain>/clusters/<clusters_name>/vminsert
-    ### - For Prometheus: https://<platform-domain>/clusters/<clusters_name>/prometheus-0/api/v1/write
-    url: https://x.x.x.x/clusters/region-1/prometheus-0/api/v1/write
+    ### - For the platform monitoring component VictoriaMetrics: https://<platform-domain>/clusters/<clusters_name>/vminsert
+    ### - For the platform monitoring component Prometheus: https://<platform-domain>/clusters/<clusters_name>/prometheus-0/api/v1/write
+    url: https://x.x.x.x/prometheus/api/v1/write
     writeRelabelConfigs:
     ### Example: Discard both the nginx_http_connections metric and metrics starting with kube_, using regular expressions to match the metric names to discard. Multiple rules can be used for matching.
     - action: drop
       regex: nginx_http_connections|kube_.+
       sourceLabels:
       - __name__
-    ### Example: Retain metrics starting with http_ and discard all others.
+    ### Example: Retain both the up metric and metrics starting with http_ and discard all others.
     - action: keep
-      regex: http_.+
+      regex: up|http_.+
       sourceLabels:
       - __name__
     ### Example: Add a clusters="test" label to distinguish data (applies only to remotely written data; platform data remains unmodified)
@@ -142,11 +169,11 @@ spec:
       targetLabel: clusters
 ```
 
-It is recommended to use the writeRelabelConfigs method for label addition, as it does not modify platform monitoring data.
-
-Using externalLabels to add distinguishing labels is discouraged. If this approach must be used, special attention is required: When the cluster's Prometheus operates in high availability mode with multiple instances, although remote writing is only configured for one instance, identical externalLabels must be added to all instances. Failure to do so may cause anomalies in platform monitoring data.
-
-
 ## Verification method
 
 Check by querying the platform Prometheus's metrics in the third-party Prometheus.
+
+```shell
+curl -k -s -u username:password https://x.x.x.x/prometheus/api/v1/query?query=up
+```
+Replace the address, authentication method, and the metric "up" with actual values. If this query command returns data normally, it indicates that the remote write was successful.
