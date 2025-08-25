@@ -9,7 +9,7 @@ kind:
 
 ## Background
 
-In exporter-kube-state v2.9.0 and later, the `verticalpodautoscalers` resource has been removed from the default resource list. This solution enables generating metrics for VerticalPodAutoscalers.
+In kube-state-metrics v2.9.0 and later, the `verticalpodautoscalers` resource was removed from the default resource list. This solution re-enables VerticalPodAutoscaler (VPA) metrics via the custom resource state config.
 
 ## Environment Information
 
@@ -215,7 +215,7 @@ EOF
 kubectl create configmap vpa-metrics-config --from-file=vpa-config.yaml=/root/vpa-metrics-config.yaml  -n cpaas-system 
 ```
 
-### Step 4: Edit the kube-prometheus-exporter-kube-state Deployment to add custom VPA metric configurations to kube-state-exporter
+### Step 4: Edit the kube-prometheus-exporter-kube-state Deployment to add custom VPA metric configurations to kube-state-metrics
 
 ```shell
 kubectl edit deploy -n cpaas-system kube-prometheus-exporter-kube-state
