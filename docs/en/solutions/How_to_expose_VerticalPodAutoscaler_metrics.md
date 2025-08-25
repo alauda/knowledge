@@ -17,9 +17,9 @@ Applicable Versions: 4.0.x,4.1.x
 
 ## Operational Steps
 
-### Step 1: Deploy the VPA plugin via Administrator → Marketplace → Cluster Plugins → Alauda Container Platform Vertical Pod Autoscaler.
+### Step 1: Deploy the VPA plugin via Administrator → Marketplace → Cluster Plugins → Alauda Container Platform Vertical Pod Autoscaler
 
-### Step 2: Create a Custom Resource State Metrics configuration file. Below is the complete CustomResourceStateMetrics to re-enable all VPA metrics removed from the default resource list. Customize metrics selection as needed.
+### Step 2: Create a Custom Resource State Metrics configuration file. Below is the complete CustomResourceStateMetrics to re-enable all VPA metrics removed from the default resource list. Customize metrics selection as needed
 
 ```shell
 cat  <<EOF> /root/vpa-metrics-config.yaml
@@ -195,7 +195,7 @@ spec:
                 container: [containerName]
               valueFrom: [uncappedTarget, memory]
         - name: "verticalpodautoscaler_status_recommendation_containerrecommendations_uncappedtarget_cpu"
-          help: "Target memory resources the VerticalPodAutoscaler recommends for the container ignoring bounds."
+          help: "Target cpu resources the VerticalPodAutoscaler recommends for the container ignoring bounds."
           commonLabels:
             unit: "core"
             resource: "cpu"
@@ -209,13 +209,13 @@ spec:
 EOF
 ```
 
-### Step 3: Create a ConfigMap to store the VPA monitoring metric rules.
+### Step 3: Create a ConfigMap to store the VPA monitoring metric rules
 
 ```shell
-kubectl create configmap vpa-metrics-config   --from-file=vpa-config.yaml=/root/vpa-metrics-config.yaml  -n cpaas-system 
+kubectl create configmap vpa-metrics-config --from-file=vpa-config.yaml=/root/vpa-metrics-config.yaml  -n cpaas-system 
 ```
 
-### Step 4: Edit the kube-prometheus-exporter-kube-state Deployment to add custom VPA metric configurations to kube-state-exporter.
+### Step 4: Edit the kube-prometheus-exporter-kube-state Deployment to add custom VPA metric configurations to kube-state-exporter
 
 ```shell
 kubectl edit deploy -n cpaas-system kube-prometheus-exporter-kube-state
@@ -238,7 +238,7 @@ spec:
           name: vpa-config-volume
           readOnly: true
 
-      # 3.Add under the volumes section..
+      # 3.Add under the volumes section.
       volumes:
       - configMap:
           defaultMode: 420
@@ -246,7 +246,7 @@ spec:
         name: vpa-config-volume
 ```
 
-### Step 5: Add RBAC permissions.
+### Step 5: Add RBAC permissions
 
 ```shell
 cat  <<EOF> /root/vpa-rbac.yaml
@@ -284,11 +284,11 @@ EOF
 kubectl apply -f /root/vpa-rbac-binding.yaml
 ```
 
-### Step 6: Modify the minfo resource to collect VPA metrics exposed by exporter-kube-state using the following solution:
+### Step 6: Modify the minfo resource to collect VPA metrics exposed by exporter-kube-state using the following solution
 
 Please refer to [How to Add Metrics for Monitoring Collection](How_to_Add_Metrics_for_Monitoring_Collection.md) for the implementation details.
 
-### Step 7: Verify successful metrics exposure:
+### Step 7: Verify successful metrics exposure
 
 ```shell
 # kube-state-metrics only collects existing resources. VPA metrics require actual VPA objects.
@@ -305,7 +305,8 @@ spec:
   targetRef:
     apiVersion: "apps/v1"
     kind: Deployment
-    name: apollo
+    # Replace with an existing Deployment name in cpaas-system
+    name: <your-deployment-name>
   updatePolicy:
     updateMode: "Auto"
 EOF
@@ -316,7 +317,7 @@ kubectl apply -f /root/vpa-test.yaml
 kubectl get pod -A -o wide | grep kube-prometheus-exporter-kube-state
 
 # Verify metrics exposure (replace <pod_ip>):
-curl -k -s http://<pod_ip>:8080/metrics | grep verticalpodautoscaler
+curl -s http://<pod_ip>:8080/metrics | grep '^kube_verticalpodautoscaler'
 
 # Further validate by querying metrics in Prometheus/VictoriaMetrics UI
 ```
