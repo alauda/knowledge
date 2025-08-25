@@ -284,7 +284,7 @@ EOF
 kubectl apply -f /root/vpa-rbac-binding.yaml
 ```
 
-### Step 6: Modify the minfo resource to collect VPA metrics exposed by exporter-kube-state using the following solution
+### Step 6: Modify the ModuleInfo(minfo) resource to collect VPA metrics exposed by exporter-kube-state using the following solution
 
 Please refer to [How to Add Metrics for Monitoring Collection](How_to_Add_Metrics_for_Monitoring_Collection.md) for the implementation details.
 
