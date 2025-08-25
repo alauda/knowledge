@@ -78,7 +78,7 @@ spec:
         ### This address can serve for either Prometheus or VictoriaMetrics:
         ### - For the platform monitoring component VictoriaMetrics: https://<platform-domain>/clusters/<clusters_name>/vminsert
         ### - For the platform monitoring component Prometheus: https://<platform-domain>/clusters/<clusters_name>/prometheus-0/api/v1/write
-        - url: "https://x.x.x.x/prometheus/api/v1/write"
+        - url: "https://x.x.x.x/api/v1/write"
           ### Optional: Write timeout (default: 30s)
           remoteTimeout: 60s
           ### Optional: BasicAuth configuration for the URL. Requires creating a Secret in the `cpaas-system` namespace if authentication is enabled.
@@ -151,7 +151,7 @@ spec:
     ### This address can serve for either Prometheus or VictoriaMetrics:
     ### - For the platform monitoring component VictoriaMetrics: https://<platform-domain>/clusters/<clusters_name>/vminsert
     ### - For the platform monitoring component Prometheus: https://<platform-domain>/clusters/<clusters_name>/prometheus-0/api/v1/write
-    url: https://x.x.x.x/prometheus/api/v1/write
+    url: https://x.x.x.x/api/v1/write
     writeRelabelConfigs:
     ### Example: Discard both the nginx_http_connections metric and metrics starting with kube_, using regular expressions to match the metric names to discard. Multiple rules can be used for matching.
     - action: drop
@@ -174,6 +174,6 @@ spec:
 Check by querying the platform Prometheus's metrics in the third-party Prometheus.
 
 ```shell
-curl -k -s -u username:password https://x.x.x.x/prometheus/api/v1/query?query=up
+curl -k -s -u username:password https://x.x.x.x/api/v1/query?query=up
 ```
 Replace the address, authentication method, and the metric "up" with actual values. If this query command returns data normally, it indicates that the remote write was successful.
