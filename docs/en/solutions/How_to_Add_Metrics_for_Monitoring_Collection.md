@@ -32,9 +32,9 @@ Applicable Versions: 4.0.x,4.1.x
 
 ## Modification Steps
 
-Log in to the master node of the global cluster and modify the MInfo resource of Prometheus/Victoriametrics to add additionalKeepMetrics.
+Log in to the master node of the global cluster and modify the ModuleInfo(minfo) resource of Prometheus/Victoriametrics to add additionalKeepMetrics.
 
-### Step 1: Retrieve the corresponding ModuleInfo(minfo)
+### Step 1: Retrieve the corresponding minfo
 
 If the monitoring component is Prometheus
 
