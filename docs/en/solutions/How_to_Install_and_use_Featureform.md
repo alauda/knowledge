@@ -352,8 +352,6 @@ To access the API within the cluster, you can access it through the `ClusterIP` 
 
 # Featureform Quickstart
 
-The [quickstart directory](../assets/featureform/quickstart/) contains a quick start demonstration of Featureform.
-
 ## Overview
 
 This Quickstart demonstration will walk you through the following three main steps:
@@ -368,13 +366,13 @@ Through this demonstration, you will learn how to use Featureform to build featu
 
 ## File Descriptions
 
-- [setup-env.sh](../assets/featureform/quickstart/setup-env.sh) - Sets environment variables used by the demo
-- [load-data.py](../assets/featureform/quickstart/load-data.py) - Database preparation script for connecting to PostgreSQL and executing data.sql
-- [data.sql](../assets/featureform/quickstart/data.sql) - PostgreSQL database dump file containing demo data
-- [definitions.py](../assets/featureform/quickstart/definitions.py) - Featureform resource definition file
-- [training.py](../assets/featureform/quickstart/training.py) - Training script
-- [serving.py](../assets/featureform/quickstart/serving.py) - Serving script
-- [requirements.txt](../assets/featureform/quickstart/requirements.txt) - Python dependency packages
+- [setup-env.sh](/featureform/quickstart/setup-env.sh) - Sets environment variables used by the demo
+- [load-data.py](/featureform/quickstart/load-data.py) - Database preparation script for connecting to PostgreSQL and executing data.sql
+- [data.sql](/featureform/quickstart/data.sql) - PostgreSQL database dump file containing demo data
+- [definitions.py](/featureform/quickstart/definitions.py) - Featureform resource definition file
+- [training.py](/featureform/quickstart/training.py) - Training script
+- [serving.py](/featureform/quickstart/serving.py) - Serving script
+- [requirements.txt](/featureform/quickstart/requirements.txt) - Python dependency packages
 
 ## Usage Steps
 
