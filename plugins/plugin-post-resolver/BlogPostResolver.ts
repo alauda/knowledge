@@ -33,19 +33,25 @@ export function blogPostResolver(options?: PluginOptions): RspressPlugin {
   const { postsDir = process.cwd() } = options || {};
   return {
     name: "@yangxiaolang/rspress-plugin-post-resolver",
-    beforeBuild() {
+    async addRuntimeModules() {
       resetPostInfo();
-      traverseFolder(postsDir, async (itemPath) => {
-        const postInfo = await getPostInfo(itemPath as string, postsDir);
-        if (!postInfo) {
-          return;
-        }
-        addPost(postInfo);
+
+      const promises: Promise<void>[] = [];
+      traverseFolder(postsDir, (itemPath) => {
+        const promise = getPostInfo(itemPath as string, postsDir).then(
+          (postInfo) => {
+            if (postInfo) {
+              addPost(postInfo);
+            }
+          }
+        );
+        promises.push(promise);
       });
 
+      await Promise.all(promises);
+
       sortPostInfos();
-    },
-    addRuntimeModules() {
+
       return {
         "virtual-post-data": `
           export const postInfos = ${JSON.stringify(postInfos)}
