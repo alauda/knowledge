@@ -22,7 +22,7 @@ Prepare the Kafka nodes to be scaled and follow the three-step procedure below:
 Step 1: Log into the global master node and locate the moduleinfo resource of the log storage plugin for the target cluster.
 
 ```shell
-➜ kubectl get moduleinfo | grep logcenter | grep <cluster_name>          
+kubectl get moduleinfo | grep logcenter | grep <cluster_name>          
 global-e671599464a5b1717732c5ba36079795   global    logcenter             logcenter                           Processing   v3.19.0-fix.359.1.g991a35b1-feat   v3.19.0-fix.359.1.g991a35b1-feat   v3.19.0-fix.359.1.g991a35b1-feat
 ```
 
