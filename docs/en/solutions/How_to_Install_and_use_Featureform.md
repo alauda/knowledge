@@ -286,7 +286,14 @@ Notes:
   ```yaml
   global:
     repo: <Image Repository Address>/3rdparty/featureformcom
-
+  ingress-nginx:
+    controller:
+      admissionWebhook:
+        patch:
+          image:
+            registry: <Image Repository Address>/3rdparty
+      image:
+        registry: <Image Repository Address>/3rdparty
   ```
 
   How to obtain the `Image Repository Address`:
