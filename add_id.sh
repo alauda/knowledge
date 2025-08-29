@@ -27,22 +27,37 @@ has_frontmatter() {
   head -1 "$1" | grep -q '^---'
 }
 
-# 检查是否已有 id 字段
+# 检查是否已有 id 字段（兼容 CRLF/LF 和行首空格）
 has_id() {
   awk '
-    NR==1 && $0!="---"          {exit 1}
-    NR>1 && /^---$/             {exit 1}
-    NR>1 && $0 ~ /^id:/         {exit 0}
+    BEGIN { in_front_matter=0; found=0 }
+    {
+      # 去掉行尾回车
+      sub(/\r$/, "")
+    }
+    /^\s*---\s*$/ {
+      if (in_front_matter==0) { in_front_matter=1; next }
+      else if (in_front_matter==1) { exit(found==1?0:1) }
+    }
+    in_front_matter==1 && $0 ~ /^\s*id:/ { found=1 }
+    END { exit(found==1?0:1) }
   ' "$1"
 }
 
-# 插入 id 到已有 front matter
+
+# 插入 id 到已有 front matter（放到 id 字段不存在时）
 insert_id() {
   local file="$1" new_id="$2"
   awk -v newid="$new_id" '
-    NR==1 {print; next}
-    NR==2 {print "id: " newid}
-          {print}
+    BEGIN { in_front_matter=0; added=0 }
+    {
+      if ($0 ~ /^\s*---\s*$/) {
+        if (in_front_matter==0) { in_front_matter=1; print; next }
+        else if (in_front_matter==1 && added==0) { print "id: " newid; added=1; print; in_front_matter=2; next }
+      }
+      if (in_front_matter==1 && added==0 && $0 ~ /^\s*$/) { print "id: " newid; added=1 }
+      print
+    }
   ' "$file" > "$file.tmp" && mv "$file.tmp" "$file"
 }
 
@@ -57,7 +72,6 @@ add_full_frontmatter() {
   } > "$file.tmp" && mv "$file.tmp" "$file"
 }
 
-# 主逻辑
 files=()
 for target in "$@"; do
   if [ -d "$target" ]; then
