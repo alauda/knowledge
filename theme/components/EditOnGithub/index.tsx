@@ -1,5 +1,4 @@
-import { useI18n, usePageData } from "rspress/runtime";
-import {} from "@rspress/theme-default";
+import { useI18n, usePageData } from "@rspress/core/runtime";
 
 const EDIT_LINK = {
   docRepoBaseUrl: "https://github.com/alauda/knowledge/",

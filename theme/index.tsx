@@ -1,6 +1,6 @@
-import HomeLayout from "./layout/HomeLayout";
 import Layout from "./layout";
+import HomeLayout from "./layout/HomeLayout";
 
-export { Layout, HomeLayout };
+export { HomeLayout, Layout };
 
-export * from "rspress/theme";
+export * from "@rspress/core/theme";

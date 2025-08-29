@@ -1,5 +1,5 @@
+import { useThemeState } from "@rspress/core/theme";
 import React from "react";
-import { useThemeState } from "rspress/theme";
 
 interface EmptyStateProps {
   title?: string;

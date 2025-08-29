@@ -1,5 +1,5 @@
+import { usePageData } from "@rspress/core/runtime";
 import { useMemo } from "react";
-import { usePageData } from "rspress/runtime";
 
 export const DocID = ({ id }: { id?: string }) => {
   const pageData = usePageData();
