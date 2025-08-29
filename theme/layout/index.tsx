@@ -1,10 +1,11 @@
-import { Badge, LastUpdated, Layout } from "rspress/theme";
-import { usePageData } from "rspress/runtime";
+import { usePageData } from "@rspress/core/runtime";
+import { Badge, LastUpdated, Layout } from "@rspress/core/theme";
 import { useEffect, useMemo } from "react";
-import HomeLayout from "./HomeLayout";
-import { EditOnGithub } from "../components/EditOnGithub";
-import { DocID } from "../components/DocID";
+
 import { BreadCrumb } from "../components/BreadCrumb";
+import { DocID } from "../components/DocID";
+import { EditOnGithub } from "../components/EditOnGithub";
+import HomeLayout from "./HomeLayout";
 
 export function normalizeTags(tags: string | string[]): string[] {
   if (!tags) {

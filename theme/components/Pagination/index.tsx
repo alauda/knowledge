@@ -1,6 +1,6 @@
-import { useMemo } from "react";
+import { useI18n } from "@rspress/core/runtime";
 import classnames from "classnames";
-import { useI18n } from "rspress/runtime";
+import { useMemo } from "react";
 
 interface PaginationProps {
   currentPage: number;

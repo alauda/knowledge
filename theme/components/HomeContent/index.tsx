@@ -1,13 +1,11 @@
-import Checkbox from "../Checkbox";
-import { Card, useFullTextSearch } from "rspress/theme";
+import { useI18n, usePageData } from "@rspress/core/runtime";
+import { Card, useFullTextSearch } from "@rspress/core/theme";
 import { useCallback, useEffect, useMemo, useState } from "react";
+
 import { PostInfo, postInfos } from "virtual-post-data";
-import { postProducts } from "virtual-post-postProducts";
 import { postKinds } from "virtual-post-postKinds";
-import { PostList } from "../PostList";
-import Search from "../Search";
-import Pagination from "../Pagination";
-import { useI18n, usePageData } from "rspress/runtime";
+import { postProducts } from "virtual-post-postProducts";
+
 import {
   KEYWORD_SESSION_KEY,
   KINDS_SESSION_KEY,
@@ -15,6 +13,10 @@ import {
   usePersistSearchParams,
   useSessionStorage,
 } from "../../hooks/SessionStorage";
+import Checkbox from "../Checkbox";
+import Pagination from "../Pagination";
+import { PostList } from "../PostList";
+import Search from "../Search";
 
 const SEARCHED_LIMIT = 1000;
 const PAGE_SIZE = 10;

@@ -1,5 +1,5 @@
+import { useI18n, usePageData } from "@rspress/core/runtime";
 import { useMemo } from "react";
-import { useI18n, usePageData } from "rspress/runtime";
 
 export const BreadCrumb = () => {
   const { page, siteData } = usePageData();

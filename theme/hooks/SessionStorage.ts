@@ -1,5 +1,5 @@
+import { useSearchParams } from "@rspress/core/runtime";
 import { useCallback, useEffect, useState } from "react";
-import { useSearchParams } from "rspress/runtime";
 
 export const SEARCH_PARAMS_SESSION_KEY = "ac-knowledge-searchParams";
 export const PRODUCTS_SESSION_KEY = "ac-knowledge-products";

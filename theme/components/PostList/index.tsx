@@ -1,10 +1,11 @@
-import { FC, useMemo } from "react";
-import { PostInfo } from "../../../plugins/plugin-post-resolver";
-import { Badge, LinkCard, useLocaleSiteData } from "rspress/theme";
-import { useI18n, usePageData } from "rspress/runtime";
 import { Markdown } from "@alauda/doom/runtime";
-import EmptyState from "../Empty";
+import { useI18n, useLocaleSiteData, usePageData } from "@rspress/core/runtime";
+import { Badge, LinkCard } from "@rspress/core/theme";
+import { FC, useMemo } from "react";
+
+import { PostInfo } from "../../../plugins/plugin-post-resolver";
 import { DocID } from "../DocID";
+import EmptyState from "../Empty";
 
 interface PostListProps {
   postList: PostInfo[];
