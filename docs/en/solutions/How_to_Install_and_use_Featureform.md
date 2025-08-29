@@ -352,7 +352,7 @@ To access the API within the cluster, you can access it through the `ClusterIP` 
 
 # Featureform Quickstart
 
-The [quickstart directory](featureform/quickstart/) contains a quick start demonstration of Featureform.
+The [quickstart directory](../assets/featureform/quickstart/) contains a quick start demonstration of Featureform.
 
 ## Overview
 
