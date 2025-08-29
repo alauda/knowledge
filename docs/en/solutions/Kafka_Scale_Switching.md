@@ -13,7 +13,7 @@ After ACP 3.18, the Log Storage Plugin no longer supports scaling Kafka during p
 
 ## Applicable Version
 
-4.0.x,4.1.x
+4.0.x, 4.1.x
 
 ## Kafka Scaling Steps
 
