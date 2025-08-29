@@ -432,6 +432,7 @@ export FEATUREFORM_HOST=localhost:7878
 export FEATUREFORM_VARIANT=demo
 
 # PostgreSQL database connection configuration
+export POSTGRES_HOST=localhost
 export POSTGRES_PORT=5432
 export POSTGRES_USER=postgres
 export POSTGRES_PASSWORD=password
@@ -506,6 +507,7 @@ postgres = ff.register_postgres(
     user=os.getenv("POSTGRES_USER", "postgres"),
     password=os.getenv("POSTGRES_PASSWORD", "password"),
     database=os.getenv("POSTGRES_DATABASE", "postgres"),
+    sslmode=os.getenv("POSTGRES_SSLMODE", "require"),
 )
 
 # Register Redis provider
@@ -513,6 +515,7 @@ redis = ff.register_redis(
     name=f"redis-{variant}",
     host=os.getenv("REDIS_HOST", "localhost"),
     port=int(os.getenv("REDIS_PORT", "6379")),
+    password=os.getenv("REDIS_PASSWORD", ""),
 )
 ```
 
@@ -630,7 +633,7 @@ python training.py
 
 ```python
 # Get the previously defined fraud_training training set
-dataset = client.get_training_set("fraud_training", variant)
+dataset = client.training_set("fraud_training", variant)
 ```
 
 #### 6.2 Training Loop
