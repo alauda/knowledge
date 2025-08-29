@@ -3,6 +3,7 @@ products:
   - Alauda Container Platform
 kind:
   - Solution
+id: KB1756448100-D4A2
 ---
 
 # How to Add Metrics for Monitoring Collection
