@@ -47,7 +47,7 @@ export const HomeContent: React.FC = () => {
         const searched = (
           (results[0].result || []) as Array<{ link: string }>
         ).map(({ link }) => {
-          return link.split(".html")[0];
+          return link.split(".html")[0].split("#")[0];
         });
         const searchPosts = postInfos
           .filter((post) => post.locale === page.lang)
