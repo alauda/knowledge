@@ -1,7 +1,8 @@
 ---
-products
+id: KB250500032
+products:
    - Alauda Container Platform
-kind
+kind:
    - Solution
 ---
 
@@ -55,7 +56,7 @@ Note​​: ConsoleYAMLSample is a cluster-scoped resource – do not specify a 
 
 Below is the field specification:
 | Field | Description |  Required/Optional |
-| --- | --- | --- |
+| --------- | --------- | ----------- |
 | title | The title of the sample as displayed in the web UI. | Required |
 | description | A detailed description of the sample. | Required |
 | targetResource | Specifies the target resource type using apiVersion and kind. This supports both native Kubernetes resources and Custom Resource Definitions (CRDs). | Required |
@@ -64,4 +65,3 @@ Below is the field specification:
 
 
 This resource allows users to seamlessly integrate custom YAML examples directly into the Alauda web console, improving usability and accelerating development workflows.
-
