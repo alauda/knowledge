@@ -5,7 +5,7 @@ kind:
   - Solution
 ---
 
-# ES_Scale_Switching
+# Elasticsearch Scale Switching
 
 ## Background
 
@@ -13,7 +13,7 @@ After version 4.0, the product prohibits switching between different scales and 
 
 ## Environment Information
 
-Applicable Versions: 4.0.x,4.1.x
+Applicable Versions: 4.0.x, 4.1.x
 
 ## Procedure
 
@@ -237,7 +237,7 @@ spec:
             cpu: 200m
             memory: 256Mi
         tcpPort: 9300
-        # Change the scale type from `single` to `normal` (**must be modified in minfo**)
+        # Change the scale type from `single` to `normal` (**must be modified in moduleinfo**)
         type: normal
 ```
 
