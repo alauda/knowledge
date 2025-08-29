@@ -10,16 +10,16 @@ kind:
 
 You can dynamically add YAML examples to any Kubernetes resources at any time. 
 
-## Rerequisites
+## Prerequisites
 
 - You must have cluster administrator privileges. 
-- The resource you want to add a sample for must already exist in the cluster.
+- Target for `Custom Resources`, ensure the CRD (apiVersion/kind) is already installed in the cluster.
 
 ## Resolution
 
-Creating a YAML example for the `Deployment` resource.
+1). Create a YAML example for the `Deployment` resource by defining a `ConsoleYAMLSample` object.
 
-Create a `ConsoleYAMLSample` object.
+2). Apply the object to the cluster:
 ```yaml
 apiVersion: console.alauda.io/v1
 kind: ConsoleYAMLSample
@@ -53,8 +53,7 @@ spec:
 
 Note​​: ConsoleYAMLSample is a cluster-scoped resource – do not specify a namespace during creation.
 
-
-Below is the field specification:
+Field specification:
 | Field | Description |  Required/Optional |
 | --------- | --------- | ----------- |
 | title | The title of the sample as displayed in the web UI. | Required |
@@ -62,6 +61,5 @@ Below is the field specification:
 | targetResource | Specifies the target resource type using apiVersion and kind. This supports both native Kubernetes resources and Custom Resource Definitions (CRDs). | Required |
 | yaml | The actual YAML template. Must conform to the schema of the target resource. | Required |
 | snippet | When set to true, only a code snippet is displayed instead of the full YAML. | Optional |
-
 
 This resource allows users to seamlessly integrate custom YAML examples directly into the Alauda web console, improving usability and accelerating development workflows.
