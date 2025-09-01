@@ -1,5 +1,4 @@
 import { forwardRef, useCallback } from "react";
-import { useI18n } from "rspress/runtime";
 
 export interface CheckboxProps {
   label: string;
@@ -29,7 +28,7 @@ export default forwardRef<HTMLInputElement, CheckboxProps>(
 
     return (
       <label
-        className={`flex items-center space-x-2 cursor-pointer ${
+        className={`flex items-start space-x-2 cursor-pointer ${
           disabled ? "opacity-50 cursor-not-allowed" : ""
         } ${className}`}
       >
@@ -40,7 +39,7 @@ export default forwardRef<HTMLInputElement, CheckboxProps>(
           onChange={handleChange}
           disabled={disabled}
           className={`
-            w-4 h-4 
+              w-4 h-4 
             rounded 
             border border-gray-300 
             bg-white 
@@ -52,6 +51,8 @@ export default forwardRef<HTMLInputElement, CheckboxProps>(
             transition-all 
             duration-200
             !mr-2
+            !mt-1
+            flex-shrink-0
             ${disabled ? "bg-gray-100" : "hover:border-gray-400"}
             ${checked ? "border-blue-600 bg-blue-600" : ""}
           `}
@@ -60,7 +61,7 @@ export default forwardRef<HTMLInputElement, CheckboxProps>(
         {label && (
           <span
             className={`
-              text-l font-medium 
+              text-l
               ${disabled ? "text-gray-500" : "text-black-700"}
               transition-colors duration-200
             `}

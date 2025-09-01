@@ -156,7 +156,7 @@ export const HomeContent: React.FC = () => {
       <div className="flex-1/4 mr-6 sticky">
         <Card
           style={{ marginBottom: "24px" }}
-          title="Products"
+          title={<div style={{ fontSize: "16px" }} className="font-medium ">Products</div>}
           content={
             <>
               {postProducts.map((product) => (
@@ -173,7 +173,7 @@ export const HomeContent: React.FC = () => {
         ></Card>
         <Card
           style={{ marginBottom: "24px" }}
-          title="Kinds"
+          title={<div style={{ fontSize: "16px" }} className="font-medium ">Kinds</div>}
           content={
             <>
               {postKinds.map((kind) => (

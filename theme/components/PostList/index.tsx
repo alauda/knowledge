@@ -27,7 +27,7 @@ export const PostList: FC<PostListProps> = ({ postList }) => {
     themeConfig?.lastUpdatedText || localesLastUpdatedText;
 
   return (
-    <div>
+    <div className="post-list">
       {notEmpty ? (
         postList.map((post) => {
           const { kinds, products } = post;

@@ -1,4 +1,4 @@
-import { useI18n, usePageData } from "@rspress/runtime";
+import { useI18n, usePageData, useSite } from "@rspress/runtime";
 
 interface StyledProps {
   className?: string;
@@ -10,6 +10,8 @@ interface BannerProps extends StyledProps {
 
 export const HomeBanner: React.FC<BannerProps> = ({ className }) => {
   const pageData = usePageData();
+  const siteData = useSite();
+  console.log(pageData, siteData);
   const t = useI18n();
 
   // const logo =
@@ -22,16 +24,16 @@ export const HomeBanner: React.FC<BannerProps> = ({ className }) => {
   return (
     <div className={className}>
       <div className="max-w-3/5">
-        <h1 className="!text-4xl !font-bold !mb-6">
+        <h1 className="!text-xl !font-semibold !mb-6">
           {/* {pageData.siteData.title} */}
           {t("knowledge_title")}
         </h1>
-        <p className="text-xl !font-semibold ">
+        <p className="">
           {/* {pageData.siteData.description} */}
           {t("knowledge_description")}
         </p>
       </div>
-      {/* <img width={240} src={logo}></img> */}
+      <img width={180} src={`${pageData.siteData.base}180.png`}></img>
     </div>
   );
 };
