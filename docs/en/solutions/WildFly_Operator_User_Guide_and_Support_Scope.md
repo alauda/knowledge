@@ -1,3 +1,6 @@
+---
+id: KB1756795269-F8EE
+---
 # WildFly Overview
 
 WildFly (formerly known as JBoss Application Server) is an open-source, lightweight, and high-performance Java EE / Jakarta EE application server developed under the leadership of Red Hat.  
