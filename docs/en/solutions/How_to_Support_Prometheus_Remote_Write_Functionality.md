@@ -175,5 +175,7 @@ Check by querying the platform Prometheus's metrics in the third-party Prometheu
 
 ```shell
 curl -k -s -u username:password https://x.x.x.x/api/v1/query?query=up
+
+{"status":"success","data":{xxxx}}
 ```
-Replace the address, authentication method, and the metric "up" with actual values. If this query command returns data normally, it indicates that the remote write was successful.
+Replace the address, authentication method, and the metric "up" with actual values. If the response status in the result is "success", it indicates that the remote write configuration is working correctly.
