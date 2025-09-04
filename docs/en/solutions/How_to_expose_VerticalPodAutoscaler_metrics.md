@@ -317,12 +317,8 @@ kubectl apply -f /root/vpa-test.yaml
 # Get pod IP
 kubectl get pod -A -o wide | grep kube-prometheus-exporter-kube-state
 
-# Verify metrics exposure (replace <container_ip>):
-curl -s http://<container_ip>:8080/metrics | grep '^kube_verticalpodautoscaler'
+# Verify the metrics exposure (replace <pod_ip>). If the following example content is returned normally, it proves that the exposure and collection are successful. You can also choose to further validate by querying metrics in the Prometheus/VictoriaMetrics UI.
+curl -s http://<pod_ip>:8080/metrics | grep '^kube_verticalpodautoscaler'
 
-# HELP kube_verticalpodautoscaler_annotations Kubernetes annotations converted to Prometheus labels.
-# TYPE kube_verticalpodautoscaler_annotations info
-kube_verticalpodautoscaler_annotations{annotation_kubectl_kubernetes_io_last_applied_configuration="{\"apiVersion\":\"autoscaling.k8s.io/v1\",\"kind\":\"VerticalPodAutoscaler\",\"metadata\":{\"annotations\":{},\"name\":\"test-vpa\",\"namespace\":\"cpaas-system\"},\"spec\":{\"targetRef\":{\"apiVersion\":\"apps/v1\",\"kind\":\"Deployment\",\"name\":\"\\u003cyour-deployment-name\\u003e\"},\"updatePolicy\":{\"updateMode\":\"Auto\"}}}\n",customresource_group="autoscaling.k8s.io",customresource_kind="VerticalPodAutoscaler",customresource_version="v1",name="test-vpa",namespace="cpaas-system",target_api_version="apps/v1",target_kind="Deployment",target_name="<your-deployment-name>",verticalpodautoscaler="test-vpa"} 1
-
-Further validate by querying metrics in Prometheus/VictoriaMetrics UI
+kube_verticalpodautoscaler_annotations{annotation_kubectl_kubernetes_io_last_applied_configuration="{\"apiVersion\":\"autoscaling.k8s.io/v1\",\"kind\":\"VerticalPodAutoscaler\",\"metadata\":{\"annotations\":{},\"name\":\"test-vpa\",\"namespace\":\"cpaas-system\"},\"spec\":{\"targetRef\":{\"apiVersion\":\"apps/v1\",\"kind\":\"Deployment\",\"name\":\"sentry\"},\"updatePolicy\":{\"updateMode\":\"Auto\"}}}\n",customresource_group="autoscaling.k8s.io",customresource_kind="VerticalPodAutoscaler",customresource_version="v1",name="test-vpa",namespace="cpaas-system",target_api_version="apps/v1",target_kind="Deployment",target_name="sentry",verticalpodautoscaler="test-vpa"} 1
 ```
