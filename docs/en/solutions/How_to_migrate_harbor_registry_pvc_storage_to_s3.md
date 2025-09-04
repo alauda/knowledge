@@ -5,7 +5,7 @@ kind:
    - Solution
 ---
 
-# How to Migrate Harbor Registry PVC Storage to S3
+# Harbor Registry Storage Migration: PVC to S3
 
 ## Issue
 
@@ -21,12 +21,11 @@ This solution is compatible with Alauda Build of Harbor v2.12.z.
 
 Before starting the migration, ensure you have:
 
-- **Important**: A fully deployed Harbor instance with `read-only mode` enabled. To enable read-only mode, Navigate to `Administration → Configuration → System Settings → Repository Read Only`.
+- **Important**: A fully deployed Harbor instance with `read-only mode` enabled. To enable read-only mode, Navigate to Harbor web `Administration → Configuration → System Settings → Repository Read Only`.
 - **Important**: Since Harbor needs to be set to read-only mode during migration, it's recommended to simulate this process in a test environment first, evaluate the migration time, and allocate sufficient maintenance window.
-- An S3-compatible storage service (MinIO, Ceph, AWS S3, etc.) with appropriate access credentials
-- A pre-created S3 bucket for storing Harbor registry data
-- Ensure sufficient resources are available in the cluster where Harbor is deployed.
-- The rclone migration tool image synced to your internal registry:
+- An S3-compatible storage service (MinIO, Ceph, AWS S3, etc.) with appropriate access credentials.
+- A pre-created S3 bucket for storing Harbor registry data.
+- Download and sync the rclone migration tool image to your internal registry for use in subsequent steps:
 
 ```txt
 # Download URL for China Region
@@ -34,8 +33,8 @@ https://cloud.alauda.cn/attachments/knowledge/337969938/rclone-amd64.tgz
 https://cloud.alauda.cn/attachments/knowledge/337969938/rclone-arm64.tgz
 
 # Download URLs for Other Regions
-https://cloud.alauda.io/attachments/knowledge/337969545/rclone-amd64.tgz
-https://cloud.alauda.io/attachments/knowledge/337969545/rclone-arm64.tgz
+https://cloud.alauda.io/attachments/knowledge/337969938/rclone-amd64.tgz
+https://cloud.alauda.io/attachments/knowledge/337969938/rclone-arm64.tgz
 ```
 
 ### S3 Region Configuration
@@ -43,20 +42,6 @@ https://cloud.alauda.io/attachments/knowledge/337969545/rclone-arm64.tgz
 #### How to Determine the Correct Region
 
 Please refer to your S3 provider's official documentation to determine the correct region for your specific service. Most providers will have this information available in their console, dashboard, or documentation.
-
-#### Region Configuration in Migration Script
-
-In the migration script, the region is configured via the `S3_REGION` environment variable:
-
-```bash
-export S3_REGION=us-east-1  # Set your actual region here
-```
-
-**Important Notes:**
-
-- If your S3 service doesn't use regions, you can leave this variable empty
-- If your S3 service requires a region, you must set the correct value
-- Incorrect region configuration may cause authentication or connection failures
 
 ### Migration Process
 
@@ -165,17 +150,15 @@ spec:
 EOF
 
 kubectl apply -f sync-and-check-s3.yaml
-
-# Monitor the migration progress
-kubectl logs -n $HARBOR_NS -l job-name=sync-and-check-s3 -c sync-data -f
 ```
 
-> **Note**: The migration job uses two containers:
->
-> - `sync-data` (init container): Performs the actual data synchronization
-> - `check-sync` (main container): Verifies data integrity after synchronization
+#### Migration Verification
 
-#### Verify Migration Success
+monitor the migration progress (optional)
+
+```bash
+kubectl logs -n $HARBOR_NS -l job-name=sync-and-check-s3 -c sync-data -f
+```
 
 The log containing "0 differences found" indicates successful synchronization.
 
@@ -218,15 +201,17 @@ spec:
   helmValues:
     persistence:
        enabled: true
-+      imageChartStorage:
-+        disableredirect: true
-+        s3:
-+          existingSecret: s3-secret # an secret for S3 accesskey and secretkey
-+          bucket: harbor # Storage bucket created in S3 cluster
-+          region: us-east-1 # S3 region (required for AWS S3, optional for MinIO/Ceph)
-+          regionendpoint: http://xxxxx # S3 cluster access address, note that the access port must be included
-+          v4auth: true
-+        type: s3
+# Add the following content 
+       imageChartStorage:
+         disableredirect: true
+         s3:
+           existingSecret: s3-secret # an secret for S3 accesskey and secretkey
+           bucket: harbor # Storage bucket created in S3 cluster
+           region: us-east-1 # S3 region (required for AWS S3, optional for MinIO/Ceph)
+           regionendpoint: http://xxxxx # S3 cluster access address, note that the access port must be included
+           v4auth: true
+         type: s3
+# END
 ```
 
 ### Verification and Testing
@@ -236,15 +221,3 @@ After completing the configuration update, verify that the migration was success
 1. **Test Docker Operations**: Log in to Harbor locally and verify that docker push/pull operations work correctly
 2. **Check Storage**: Confirm that new images are being stored in the S3 bucket
 3. **Verify Existing Images**: Ensure that previously migrated images can still be pulled successfully
-
-## Troubleshooting
-
-### Common Issues and Solutions
-
-If you encounter issues during the migration:
-
-- **S3 Connection Errors**: Check Harbor pod logs for any S3 connection errors
-- **Authentication Issues**: Verify S3 credentials and bucket permissions
-- **Network Connectivity**: Ensure the S3 endpoint is accessible from the Harbor cluster
-- **Data Integrity**: Review the migration job logs for any data integrity issues
-- **Upload Failures**: If upload fails, you can delete the job and recreate it. rclone will detect already transferred content and only transfer missing parts.
