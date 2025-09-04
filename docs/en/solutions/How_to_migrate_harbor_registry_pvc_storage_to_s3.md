@@ -3,6 +3,7 @@ products:
    - Alauda DevOps
 kind:
    - Solution
+id: KB1756983863-4270
 ---
 
 # Harbor Registry Storage Migration: PVC to S3
