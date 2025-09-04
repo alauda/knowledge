@@ -195,11 +195,11 @@ This document provides detailed instructions on how to deploy Featureform to a K
 
 ## Publishing
 
-Download the Featureform installation file: `featureform.amd64.v0.12.1-1.tgz`
+Download the Featureform installation file: `featureform.amd64.v0.12.1-2.tgz`
 
 Use the violet command to publish to the platform repository:
 ```bash
-violet push --platform-address=platform-access-address --platform-username=platform-admin --platform-password=platform-admin-password featureform.amd64.v0.12.1-1.tgz
+violet push --platform-address=platform-access-address --platform-username=platform-admin --platform-password=platform-admin-password featureform.amd64.v0.12.1-2.tgz
 ```
 
 ## Deployment
@@ -336,6 +336,20 @@ Notes:
   ```yaml
   global:
     storageClass: storage-class-name
+  ```
+
+### 3. Configuring Dashboard Authentication
+
+#### 3.1 Enabling Ingress Authentication
+
+  Add the following configuration to enable Basic authentication for the Dashboard. The default username and password are both `featureform`.
+
+  ```yaml
+  ingress:
+    auth:
+      enabled: true
+      username: featureform # Optional, default username is featureform
+      password: featureform # Optional, default password is featureform
   ```
 
 ## Access Addresses
@@ -718,13 +732,22 @@ Customer Result:
 
 ### 1. Error when executing apply:
   ```
+  "UNKNOWN:Error received from peer  {grpc_message:"grpc: error unmarshalling request: string field contains invalid UTF-8", grpc_status:13"
+  ```
+
+  - **Cause**: Featureform SDK version doesn't match the server version
+  - **Solution**: Update Featureform SDK version to 1.21.1
+
+
+### 2. Error when executing apply:
+  ```
   "UNKNOWN:Error received from peer  {grpc_message:"resource SOURCE_VARIANT xxxx (xxx) has changed. Please use a new variant.", grpc_status:13}"
   ```
 
   - **Cause**: The variant hasn't changed, but its associated content has changed.
   - **Solution**: Use a new variant to re-apply
 
-### 2. Error when executing apply:
+### 3. Error when executing apply:
   ```
   "UNKNOWN:Error received from peer  {grpc_message:"resource not found. LABEL_VARIANT xxxx (xxx) err: Key Not Found: LABEL_VARIANT__xxxxx__xxxx", grpc_status:5}"
   ```
@@ -732,7 +755,7 @@ Customer Result:
   - **Cause**: The referenced variant doesn't exist.
   - **Solution**: Use the correct variant to re-apply
 
-### 3. After apply completes, `Status` is `FAILED`, `Error` is:
+### 4. After apply completes, `Status` is `FAILED`, `Error` is:
   ```
   transformation failed to complete: job failed while running .....
   ```
@@ -740,7 +763,7 @@ Customer Result:
   - **Cause**: Kubernetes Job execution failed
   - **Solution**: Check Job events and logs in the Kubernetes cluster, and handle the failure based on relevant information
 
-### 4. After apply completes, `Status` is `FAILED`, `Error` contains the following information:
+### 5. After apply completes, `Status` is `FAILED`, `Error` contains the following information:
   ```
   ....create table error: unknown command `HEXISTS` .....
   ```
@@ -748,7 +771,7 @@ Customer Result:
   - **Cause**: Redis is incorrectly using Sentinel access address
   - **Solution**: Replace Redis instance or update Redis access address
 
-### 5. After apply completes, `Status` is `FAILED`, `Error` is:
+### 6. After apply completes, `Status` is `FAILED`, `Error` is:
   ```
   Featureform cannot connect to the provider during health check: (REDIS_ONLINE - client_initialization) dial tcp ......
   ```
@@ -756,7 +779,7 @@ Customer Result:
   - **Cause**: Redis address is unreachable
   - **Solution**: Check Redis status or update Redis access address
 
-### 6. After apply completes, `Status` is `FAILED`, `Error` is:
+### 7. After apply completes, `Status` is `FAILED`, `Error` is:
   ```
   Featureform cannot connect to the provider during health check: (POSTGRES_OFFLINE - ping) dial tcp:
   ```
@@ -764,10 +787,15 @@ Customer Result:
   - **Cause**: PostgreSQL address is unreachable
   - **Solution**: Check PostgreSQL status or update PostgreSQL access address
 
-### 7. After apply completes, `Status` is `FAILED`, `Error` is:
+### 8. After apply completes, `Status` is `FAILED`, `Error` is:
   ```
   Featureform cannot connect to the provider during health check: (POSTGRES_OFFLINE - ping) pq: pg_hba.conf rejects connection ....
   ```
 
   - **Cause**: PostgreSQL access is rejected
   - **Solution**: Check if the configured PostgreSQL username, password, and SSL mode are correct, and verify PostgreSQL database user permission settings
+
+### 9. After apply completes, `Status` gets stuck in `PENDING`, `coordinator` container restarts
+
+  - **Cause**: etcd watch interface cannot handle token auto-rotation, program exits with error after token expires
+  - **Solution**: Update variant and re-execute apply
