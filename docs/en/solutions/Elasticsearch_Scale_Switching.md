@@ -9,7 +9,7 @@ kind:
 
 ## Background
 
-After version 4.0, the product prohibits switching between different scales and only supports node expansion within the same scale. Manual operations are required to modify the scale if needed.
+The product's Elasticsearch log storage plugin offers single-node, small-scale, and large-scale deployment options. After version 4.0, the product prohibits switching between different scales on the interface and only supports node expansion within the same scale. Manual operations are required to modify the scale if needed.
 
 ## Environment Information
 
@@ -36,7 +36,7 @@ metadata:
     cpaas.io/display-name: logcenter
     cpaas.io/module-name: '{"en": "Alauda Container Platform Log Storage for Elasticsearch",
       "zh": "Alauda Container Platform Log Storage for Elasticsearch"}'
-  creationTimestamp: "2025-08-27T07:00:36Z"
+  creationTimestamp: "<20xx-xx-xxTxx:xx:xxZ>"
   finalizers:
   - moduleinfo
   generation: 3
@@ -50,7 +50,7 @@ metadata:
     manage-update-by: cluster-transformer
   name: global-e671599464a5b1717732c5ba36079795
   resourceVersion: "4202333"
-  uid: 8c7161a3-0573-4375-9b3c-0badb40864d9
+  uid: <Standed UUID>
 spec:
   config:
     clusterView:
@@ -107,7 +107,7 @@ metadata:
     cpaas.io/display-name: logcenter
     cpaas.io/module-name: '{"en": "Alauda Container Platform Log Storage for Elasticsearch",
       "zh": "Alauda Container Platform Log Storage for Elasticsearch"}'
-  creationTimestamp: "2025-08-27T07:00:36Z"
+  creationTimestamp: "<20xx-xx-xxTxx:xx:xxZ>"
   finalizers:
   - moduleinfo
   generation: 3
@@ -121,7 +121,7 @@ metadata:
     manage-update-by: cluster-transformer
   name: global-e671599464a5b1717732c5ba36079795
   resourceVersion: "4202333"
-  uid: 8c7161a3-0573-4375-9b3c-0badb40864d9
+  uid: <Standed UUID>
 spec:
   config:
     clusterView:
@@ -183,7 +183,7 @@ metadata:
     cpaas.io/display-name: logcenter
     cpaas.io/module-name: '{"en": "Alauda Container Platform Log Storage for Elasticsearch",
       "zh": "Alauda Container Platform Log Storage for Elasticsearch"}'
-  creationTimestamp: "2025-08-27T10:28:24Z"
+  creationTimestamp: "<20xx-xx-xxTxx:xx:xxZ>"
   finalizers:
   - moduleinfo
   generation: 1
@@ -202,7 +202,7 @@ metadata:
     name: business-1
     uid: 5f2d5e02-662d-4f06-9a27-17f756e8dbe3
   resourceVersion: "773014"
-  uid: 2358e122-bdc8-4739-94c1-6c88b44ae9c3
+  uid: <Standed UUID>
 spec:
   config:
     clusterView:
@@ -256,7 +256,7 @@ metadata:
     cpaas.io/display-name: logcenter
     cpaas.io/module-name: '{"en": "Alauda Container Platform Log Storage for Elasticsearch",
       "zh": "Alauda Container Platform Log Storage for Elasticsearch"}'
-  creationTimestamp: "2025-08-27T10:28:24Z"
+  creationTimestamp: "<20xx-xx-xxTxx:xx:xxZ>"
   finalizers:
   - moduleinfo
   generation: 1
@@ -275,7 +275,7 @@ metadata:
     name: business-1
     uid: 5f2d5e02-662d-4f06-9a27-17f756e8dbe3
   resourceVersion: "773014"
-  uid: 2358e122-bdc8-4739-94c1-6c88b44ae9c3
+  uid: <Standed UUID>
 spec:
   config:
     clusterView:
