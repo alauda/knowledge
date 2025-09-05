@@ -9,7 +9,15 @@ kind:
 
 ## Background
 
-The product's Elasticsearch log storage plugin offers single-node, small-scale, and large-scale deployment options. After version 4.0, the product prohibits switching between different scales on the interface and only supports node expansion within the same scale. Manual operations are required to modify the scale if needed.
+The product's Elasticsearch log storage plugin offers single-node, small-scale, and large-scale deployment options.
+
+Single-node deployment refers to a single ES instance, suitable for environments with up to 1400 items/s and total logs within 10 GB.
+
+Small-scale deployment requires at least 3 ES data nodes (without dedicated master nodes), suitable for environments with up to 12,000 items/s and total logs within 300 GB.
+
+Large-scale deployment requires at least 3 data nodes and 3 master nodes, suitable for environments exceeding 12,000 items/s and total logs of 300 GB or more.
+
+After version 4.0, the product prohibits switching between different scales on the interface and only supports node expansion within the same scale. If deployment scale adjustment is required, it must be modified through this solution.
 
 ## Environment Information
 
