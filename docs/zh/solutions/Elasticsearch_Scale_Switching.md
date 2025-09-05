@@ -1,40 +1,41 @@
 ---
-products: 
+products:
   - Alauda Container Platform
 kind:
   - Solution
 id: KB1757074735-2DA0
+sourceSHA: 1653e644918065cc94a266ee98dc69caeb7a5f6d0b0cb167ec4a7babae612809
 ---
 
-# Elasticsearch Scale Switching
+# Elasticsearch 规模切换
 
-## Background
+## 背景
 
-The product's Elasticsearch log storage plugin offers single-node, small-scale, and large-scale deployment options.
+该产品的 Elasticsearch 日志存储插件提供单节点、小规模和大规模部署选项。
 
-Single-node deployment refers to a single ES instance, suitable for environments with up to 1400 items/s and total logs within 10 GB.
+单节点部署指的是单个 ES 实例，适用于每秒最多 1400 项和总日志不超过 10 GB 的环境。
 
-Small-scale deployment requires at least 3 ES data nodes (without dedicated master nodes), suitable for environments with up to 12,000 items/s and total logs within 300 GB.
+小规模部署至少需要 3 个 ES 数据节点（没有专用主节点），适用于每秒最多 12,000 项和总日志不超过 300 GB 的环境。
 
-Large-scale deployment requires at least 3 data nodes and 3 master nodes, suitable for environments exceeding 12,000 items/s and total logs of 300 GB or more.
+大规模部署至少需要 3 个数据节点和 3 个主节点，适用于每秒超过 12,000 项和总日志 300 GB 或更多的环境。
 
-After version 4.0, the product prohibits switching between different scales on the interface and only supports node expansion within the same scale. If deployment scale adjustment is required, it must be modified through this solution.
+在 4.0 版本之后，该产品禁止在界面上切换不同规模，仅支持在同一规模内的节点扩展。如果需要调整部署规模，必须通过此解决方案进行修改。
 
-## Environment Information
+## 环境信息
 
-Applicable Versions: 4.0.x, 4.1.x
+适用版本：4.0.x, 4.1.x
 
-## Procedure
+## 操作步骤
 
-Log in to the **global master node**. Direct switching from a single-node to a large-scale configuration is technically unsupported.
+登录到 **全局主节点**。从单节点直接切换到大规模配置在技术上是不支持的。
 
-## Modification Steps for LocalVolume Storage Type
+## LocalVolume 存储类型的修改步骤
 
-### Switching from single-node to small-scale
+### 从单节点切换到小规模
 
 ```shell
-kubectl get moduleinfo -A | grep logcenter | grep <cluster-name>                     # Check the logcenter of the target cluster
-kubectl edit moduleinfo <moduleinfo_name>                                            # Edit the moduleinfo YAML and modify the following sections
+kubectl get moduleinfo -A | grep logcenter | grep <cluster-name>                     # 检查目标集群的 logcenter
+kubectl edit moduleinfo <moduleinfo_name>                                            # 编辑 moduleinfo YAML 并修改以下部分
 ```
 
 ```yaml
@@ -71,7 +72,7 @@ spec:
         hostpath: /cpaas/data/elasticsearch
         httpPort: 9200
         install: true
-        # Update the spec.config.components.elasticsearch.k8sNodes field to add ES nodes (optional in minfo; can be updated later via the plugin UI after scaling)
+        # 更新 spec.config.components.elasticsearch.k8sNodes 字段以添加 ES 节点（在 minfo 中可选；可以在扩展后通过插件 UI 更新）
         k8sNodes:
         - 1.1.1.1
         - 2.2.2.2
@@ -88,7 +89,7 @@ spec:
         masterStorageSize: 5
         nodeReplicas: 1
         nodeStorageSize: 200
-        # Adjust the spec.config.components.elasticsearch.resources.limits field to modify resource limits for ES data nodes (recommended to set at least the small-scale default of 2c4G; optional in minfo; can be updated later via the plugin UI)
+        # 调整 spec.config.components.elasticsearch.resources.limits 字段以修改 ES 数据节点的资源限制（建议至少设置为小规模默认的 2c4G；在 minfo 中可选；可以在扩展后通过插件 UI 更新）
         resources:
           limits:
             cpu: "2"
@@ -97,15 +98,15 @@ spec:
             cpu: 200m
             memory: 256Mi
         tcpPort: 9300
-        # Change the scale type from `single` to `normal` (**must be modified in minfo**)
+        # 将规模类型从 `single` 更改为 `normal` (**必须在 minfo 中修改**)
         type: normal
 ```
 
-### Switching from small-scale to large-scale
+### 从小规模切换到大规模
 
 ```shell
-kubectl get moduleinfo -A | grep logcenter | grep <cluster-name>                     # Check the logcenter of the target cluster
-kubectl edit moduleinfo <moduleinfo_name>                                            # Edit the moduleinfo YAML and modify the following sections
+kubectl get moduleinfo -A | grep logcenter | grep <cluster-name>                     # 检查目标集群的 logcenter
+kubectl edit moduleinfo <moduleinfo_name>                                            # 编辑 moduleinfo YAML 并修改以下部分
 ```
 
 ```yaml
@@ -142,7 +143,7 @@ spec:
         hostpath: /cpaas/data/elasticsearch
         httpPort: 9200
         install: true
-        # Update the spec.config.components.elasticsearch.k8sNodes field to add ES nodes and the spec.config.components.elasticsearch.masterK8sNodes field to add master nodes (optional in minfo; can be updated later via the plugin UI after scaling)
+        # 更新 spec.config.components.elasticsearch.k8sNodes 字段以添加 ES 节点，更新 spec.config.components.elasticsearch.masterK8sNodes 字段以添加主节点（在 minfo 中可选；可以在扩展后通过插件 UI 更新）
         k8sNodes:
         - 1.1.1.1
         - 2.2.2.2
@@ -162,7 +163,7 @@ spec:
         masterStorageSize: 5
         nodeReplicas: 1
         nodeStorageSize: 200
-        # Adjust the spec.config.components.elasticsearch.resources.limits field to modify resource limits for ES data nodes (recommended to set at least the large-scale default of 8c16G; optional in minfo; can be updated later via the plugin UI)
+        # 调整 spec.config.components.elasticsearch.resources.limits 字段以修改 ES 数据节点的资源限制（建议至少设置为大规模默认的 8c16G；在 minfo 中可选；可以在扩展后通过插件 UI 更新）
         resources:
           limits:
             cpu: "8"
@@ -171,17 +172,17 @@ spec:
             cpu: "1"
             memory: 2Gi
         tcpPort: 9300
-        # Change the scale type from `normal` to `big` (**must be modified in minfo**)
+        # 将规模类型从 `normal` 更改为 `big` (**必须在 minfo 中修改**)
         type: big
 ```
 
-## Modification Steps for StorageClass Storage Type
+## StorageClass 存储类型的修改步骤
 
-### Switching from single-node to small-scale
+### 从单节点切换到小规模
 
 ```shell
-kubectl get moduleinfo -A | grep logcenter | grep <cluster-name>                     # Check the logcenter of the target cluster
-kubectl edit moduleinfo <moduleinfo_name>                                            # Edit the moduleinfo YAML and modify the following sections
+kubectl get moduleinfo -A | grep logcenter | grep <cluster-name>                     # 检查目标集群的 logcenter
+kubectl edit moduleinfo <moduleinfo_name>                                            # 编辑 moduleinfo YAML 并修改以下部分
 ```
 
 ```yaml
@@ -234,10 +235,10 @@ spec:
             cpu: 200m
             memory: 256Mi
         masterStorageSize: 5
-        # Modify the spec.config.components.elasticsearch.nodeReplicas field to adjust the number of ES instances. The instance count can be customized with a minimum value of 3. Alternatively, this modification can be performed via the plugin interface after scaling.
+        # 修改 spec.config.components.elasticsearch.nodeReplicas 字段以调整 ES 实例的数量。实例数量可以自定义，最小值为 3。或者，此修改可以在扩展后通过插件界面进行。
         nodeReplicas: 3
         nodeStorageSize: 200
-        # Modify the spec.config.components.elasticsearch.resources.limits field to adjust resource quotas for ES data nodes. It is recommended to set at least the default small-scale configuration of 2c4G, which can be customized. Alternatively, this modification can also be performed via the plugin interface after scaling.
+        # 修改 spec.config.components.elasticsearch.resources.limits 字段以调整 ES 数据节点的资源配额。建议至少设置为默认的小规模配置 2c4G，可以自定义。或者，此修改也可以在扩展后通过插件界面进行。
         resources:
           limits:
             cpu: "2"
@@ -246,15 +247,15 @@ spec:
             cpu: 200m
             memory: 256Mi
         tcpPort: 9300
-        # Change the scale type from `single` to `normal` (**must be modified in moduleinfo**)
+        # 将规模类型从 `single` 更改为 `normal` (**必须在 moduleinfo 中修改**)
         type: normal
 ```
 
-### Switching from small-scale to large-scale
+### 从小规模切换到大规模
 
 ```shell
-kubectl get moduleinfo -A | grep logcenter | grep <cluster-name>                     # Check the logcenter of the target cluster
-kubectl edit moduleinfo <moduleinfo_name>                                            # Edit the moduleinfo YAML and modify the following sections
+kubectl get moduleinfo -A | grep logcenter | grep <cluster-name>                     # 检查目标集群的 logcenter
+kubectl edit moduleinfo <moduleinfo_name>                                            # 编辑 moduleinfo YAML 并修改以下部分
 ```
 
 ```yaml
@@ -298,7 +299,7 @@ spec:
         install: true
         k8sNodes: []
         masterK8sNodes: []
-        # Modify the spec.config.components.elasticsearch.masterReplicas field to adjust the number of ES master node instances (minimum 3), this modification can be performed via the plugin interface after scaling.
+        # 修改 spec.config.components.elasticsearch.masterReplicas 字段以调整 ES 主节点实例的数量（最小 3），此修改可以在扩展后通过插件界面进行。
         masterReplicas: 3
         masterResources:
           limits:
@@ -308,10 +309,10 @@ spec:
             cpu: 200m
             memory: 256Mi
         masterStorageSize: 5
-        # Modify the spec.config.components.elasticsearch.nodeReplicas field to adjust the number of ES data node instances (minimum 3), this modification can be performed via the plugin interface after scaling.
+        # 修改 spec.config.components.elasticsearch.nodeReplicas 字段以调整 ES 数据节点实例的数量（最小 3），此修改可以在扩展后通过插件界面进行。
         nodeReplicas: 3
         nodeStorageSize: 200
-        # Modify the spec.config.components.elasticsearch.resources.limits field to adjust resource quotas for ES data nodes. It is recommended to set at least the default large-scale configuration of 8c16G, which can be customized. This modification can also be performed via the plugin interface after scaling.
+        # 修改 spec.config.components.elasticsearch.resources.limits 字段以调整 ES 数据节点的资源配额。建议至少设置为默认的大规模配置 8c16G，可以自定义。此修改也可以在扩展后通过插件界面进行。
         resources:
           limits:
             cpu: "8"
@@ -320,10 +321,10 @@ spec:
             cpu: "1"
             memory: 2Gi
         tcpPort: 9300
-        # Change the scale type from `normal` to `big` (**must be modified in minfo**)
+        # 将规模类型从 `normal` 更改为 `big` (**必须在 minfo 中修改**)
         type: big
 ```
 
-## Verification Steps
+## 验证步骤
 
-After modification, check whether the changes have taken effect in the **Platform Management** **> Marketplace > Clusters Plugins > ACP Log Collector** section.
+修改后，检查在 **平台管理** **> Marketplace > Clusters Plugins > ACP Log Collector** 部分是否已生效。
