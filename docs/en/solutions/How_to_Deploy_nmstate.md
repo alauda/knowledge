@@ -236,10 +236,6 @@ The subsequent configuration is the same as normal underlay configuration steps:
 
 Configure deploy on the underlay subnet. If it starts successfully, it means the pod can connect to the gateway and the underlay network configuration is successful.
 
-### 3.5 Fault Testing
-
-After restarting the node, the deploy pod should still be able to restart.
-
 ## 4. Uninstall Commands
 
 ### 4.1 Using Offline Uninstallation Script

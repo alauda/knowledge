@@ -236,10 +236,6 @@ Wired connection 1  70e6cf1f-3a77-3ac0-ae87-c25f7700fac9  ethernet  --
 
 配置 deploy 在 underlay 的子网上，能够启动成功表示 pod 已经能连接到网关，underlay 网络配置成功。
 
-### 3.5 故障测试
-
-重启节点后，deploy 的 pod 仍然能够重新启动。
-
 ## 4. 卸载命令
 
 ### 4.1 使用离线卸载脚本
