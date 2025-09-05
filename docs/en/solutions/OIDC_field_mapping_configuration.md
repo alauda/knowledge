@@ -5,13 +5,15 @@ kind:
    - Solution
 ---
 
-# Docking Non-standard OIDC Service Field Mapping
+# OIDC Field Mapping Configuration
 
 ## Issue
 
 When integrating third-party OIDC (OpenID Connect) services, authentication callback failures are frequently encountered, with the error message typically being:
 
 `Internal error occurred: failed to authenticate: missing email claim, not found \"email\" key`
+
+The platform requests the default scopes `profile` and `email` during OIDC authentication. However, some third-party OIDC providers may not return standard fields in the expected format.
 
 **Common error messages:**
 
@@ -109,12 +111,6 @@ ID Tokens contain standard claims that assert which client app logged the user i
   "name": "Jane Doe"
 }
 ```
-
-**Required fields:**
-- sub: Unique identifier of the user (required)
-- email: User email (usually mandatory)
-- email_verified: Whether the email has been verified (usually mandatory)
-- name: User name
 
 ## Diagnostic Steps
 
