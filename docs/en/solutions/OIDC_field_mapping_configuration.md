@@ -3,6 +3,7 @@ products:
    - Alauda Container Platform
 kind:
    - Solution
+id: KB1757070945-89B1
 ---
 
 # OIDC Field Mapping Configuration
