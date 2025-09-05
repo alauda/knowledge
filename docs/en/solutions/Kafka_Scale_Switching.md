@@ -69,9 +69,9 @@ spec:
         exporterPort: 9308
         install: true
         k8sNodes:             # Add the scaled node names to the specified array.
-        - 192.168.179.86   
-        - 192.168.178.182
-        - 192.168.179.33
+        - 1.1.1.1   
+        - 2.2.2.2
+        - 3.3.3.3
         port: 9092
         storageSize: 10
         tls: true
