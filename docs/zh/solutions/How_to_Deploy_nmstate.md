@@ -65,11 +65,17 @@ sudo semodule -i nmstate-networkmanager-dbus.pp
 
 ## 2. 安装步骤
 
-### 2.1 使用安装脚本安装
+### 2.1 使用离线安装脚本安装
 
-参考文档：nmstate kubernetes-nmstate v0.84.0 版本
+**前提条件：** 确保安装脚本在附件目录中可用。
 
-**应用 nmstate CRD 和组件**
+**运行安装脚本**
+```bash
+attachments/nmstate/install.sh
+```
+
+### 2.2 使用开源方式安装（备选方案）
+
 ```bash
 kubectl apply -f https://github.com/nmstate/kubernetes-nmstate/releases/download/v0.84.0/nmstate.io_nmstates.yaml
 kubectl apply -f https://github.com/nmstate/kubernetes-nmstate/releases/download/v0.84.0/namespace.yaml
@@ -79,7 +85,7 @@ kubectl apply -f https://github.com/nmstate/kubernetes-nmstate/releases/download
 kubectl apply -f https://github.com/nmstate/kubernetes-nmstate/releases/download/v0.84.0/operator.yaml
 ```
 
-### 2.2 创建 NMState 实例
+### 2.3 创建 NMState 实例
 
 等待 nmstate-operator 部署完成后执行：
 
@@ -236,7 +242,16 @@ Wired connection 1  70e6cf1f-3a77-3ac0-ae87-c25f7700fac9  ethernet  --
 
 ## 4. 卸载命令
 
-**卸载 nmstate 组件**
+### 4.1 使用离线卸载脚本
+
+
+**运行卸载脚本**
+```bash
+attachments/nmstate/uninstall.sh
+```
+
+### 4.2 使用开源方式卸载 （备选方案）
+
 ```bash
 kubectl delete NMState nmstate
 kubectl delete -f https://github.com/nmstate/kubernetes-nmstate/releases/download/v0.84.0/nmstate.io_nmstates.yaml

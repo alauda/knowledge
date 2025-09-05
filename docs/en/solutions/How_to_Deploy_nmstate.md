@@ -65,11 +65,17 @@ sudo semodule -i nmstate-networkmanager-dbus.pp
 
 ## 2. Installation Steps
 
-### 2.1 Install Using Installation Script
+### 2.1 Install Using Offline Installation Script
 
-Reference documentation: nmstate kubernetes-nmstate v0.84.0 release
+**Prerequisites:** Ensure the installation script is available in the attachments directory.
 
-**Apply nmstate CRDs and Components**
+**Run Installation Script**
+```bash
+attachments/nmstate/install.sh
+```
+
+### 2.2 Install Using Open Source Method (Alternative)
+
 ```bash
 kubectl apply -f https://github.com/nmstate/kubernetes-nmstate/releases/download/v0.84.0/nmstate.io_nmstates.yaml
 kubectl apply -f https://github.com/nmstate/kubernetes-nmstate/releases/download/v0.84.0/namespace.yaml
@@ -79,7 +85,7 @@ kubectl apply -f https://github.com/nmstate/kubernetes-nmstate/releases/download
 kubectl apply -f https://github.com/nmstate/kubernetes-nmstate/releases/download/v0.84.0/operator.yaml
 ```
 
-### 2.2 Create NMState Instance
+### 2.3 Create NMState Instance
 
 After the nmstate-operator deployment is complete, execute:
 
@@ -93,7 +99,7 @@ metadata:
 EOF
 ```
 
-### 2.3 Verify Deployment
+### 2.4 Verify Deployment
 
 Start triggering the deployment of nmstate handler and related components, wait for deployment to complete:
 
@@ -236,7 +242,15 @@ After restarting the node, the deploy pod should still be able to restart.
 
 ## 4. Uninstall Commands
 
-**Uninstall nmstate Components**
+### 4.1 Using Offline Uninstallation Script
+
+**Run Uninstallation Script**
+```bash
+attachments/nmstate/uninstall.sh
+```
+
+### 4.2 Using Open Source Method (Alternative)
+
 ```bash
 kubectl delete NMState nmstate
 kubectl delete -f https://github.com/nmstate/kubernetes-nmstate/releases/download/v0.84.0/nmstate.io_nmstates.yaml
