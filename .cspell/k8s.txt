@@ -1,0 +1,9 @@
+clustertasks
+customruns
+devopsv
+pipelineruns
+resolutionrequests
+stepactions
+taskruns
+tekton
+verificationpolicies

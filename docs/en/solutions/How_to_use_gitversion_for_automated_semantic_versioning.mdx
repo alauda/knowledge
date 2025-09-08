@@ -1,0 +1,2172 @@
+---
+products:
+   - Alauda Container Platform
+kind:
+   - Solution
+---
+
+# `GitVersion` for Automated Semantic Versioning
+
+## Quick Reference
+
+### Key Concepts
+- **Semantic Versioning (SemVer)**: `MAJOR.MINOR.PATCH` format with optional pre-release labels
+- **Branch-based Versioning**: Different branch types generate different version patterns
+- **Strategy-driven Calculation**: Multiple strategies determine the base version
+- **Configuration Priority**: Namespace ConfigMap > Repository config > Default workflow
+
+### Common Use Cases
+
+| Scenario | Recommended Approach | Section Reference |
+|----------|---------------------|------------------|
+| **New Project Setup** | Start with GitHubFlow/v1, add initial tag | [Quick Start](#quick-start-guide) |
+| **Enterprise Deployment** | Use namespace-level ConfigMaps | [Configuration](#configuration-guide) |
+| **Complex Branching** | Implement GitFlow/v1 with custom branches | [Configuration](#configuration-guide) |
+| **CI/CD Integration** | Use complete pipeline examples | [Implementation](#implementation) |
+| **Version Not Incrementing** | Check shallow clone and tag issues | [Troubleshooting](#troubleshooting) |
+| **Custom Branch Names** | Configure regex patterns for branch matching | [Advanced Configuration](#advanced-configuration) |
+
+### Version Examples by Branch Type
+
+| Branch Type | Example Branch | Generated Version | Use Case |
+|-------------|---------------|------------------|----------|
+| `main` | `main` | `3.18.1-beta.8` | Production releases |
+| `develop` | `develop` | `3.19.0-develop.7` | Integration testing |
+| `release` | `release/3.16.0` | `3.16.0-rc.7` | Release preparation |
+| `feature` | `feature/user-auth` | `3.18.0-feature-user-auth.15` | Feature development |
+| `hotfix` | `hotfix/security-fix` | `3.15.1-hotfix-security-fix.3` | Emergency fixes |
+| `pull-request` | `pr/534` | `3.18.0-pr534.22` | Code review |
+
+## Problem Statement
+
+### The Challenge
+
+Managing version numbers manually in modern software development presents several critical challenges:
+
+- **Inconsistent Versioning**: Different developers may use different versioning schemes, leading to confusion and integration issues
+- **Manual Errors**: Human mistakes in version incrementation can cause deployment conflicts and dependency resolution problems
+- **Branch Management Complexity**: Coordinating version numbers across multiple branches (feature, release, hotfix) becomes increasingly difficult
+- **CI/CD Integration Gaps**: Manual version management doesn't scale with automated build and deployment pipelines
+- **Semantic Versioning Compliance**: Ensuring adherence to `SemVer` standards requires constant manual oversight
+
+### The Solution
+
+This guide provides a comprehensive solution for implementing `GitVersion` in your `CI/CD` pipeline to automate semantic versioning based on `Git` history. `GitVersion` eliminates manual version management by:
+
+- **Automatic Version Calculation**: Generates version numbers based on `Git` commit history and branch patterns
+- **Semantic Versioning Compliance**: Ensures all versions follow `SemVer` standards automatically
+- **Branch-Aware Versioning**: Different branch types automatically generate appropriate version patterns
+- **CI/CD Integration**: Seamless integration with `Tekton` pipelines and `Kubernetes` environments
+
+## What is `GitVersion`
+
+`GitVersion` is a tool that automatically generates `Semantic Version` numbers based on `Git` history. By analyzing the commit history and branch information of a `Git` repository, it generates version numbers that comply with semantic versioning standards for your project.
+
+### Key Features & Benefits
+
+- **Automated Version Management**: Automatically calculates version numbers based on `Git` history, eliminating the need for manual version information maintenance
+- **Consistency Guarantee**: The same `Git` tag always produces the same version number when rebuilt
+- **Branch Awareness**: Different branches can compute unique `Semantic Version` numbers, and version information will flow with branch merges
+- **Easy Integration**: Supports various usage methods, including command line, `MSBuild` tasks, and continuous integration
+- **Standards Compliance**: Fully adheres to `Semantic Versioning` (`SemVer`) standards, ensuring version number standardization
+
+### Use Cases
+
+- **Continuous Integration/Continuous Deployment**: Automatically generates version numbers within the `CI/CD` pipeline for build tagging and artifact version management
+- **Package Release**: Generates standardized version numbers for package management systems such as `npm`
+- **Assembly Version Control**: Automatically updates the version information of `.NET` assemblies
+- **Branch Development Management**: Generates appropriate pre-release version numbers on different types of branches such as feature branches and release branches
+
+### Architecture Overview
+
+The versioning calculation process involves these main steps:
+
+1. **Version Source Discovery**: GitVersion evaluates multiple [version strategies](#version-strategies) in priority order to determine the most appropriate base version
+
+2. **Base Version Selection**: Selects the most appropriate base version using [strategy priority rules](#strategy-priority-and-evaluation) and branch configuration
+
+3. **Version Calculation and Incrementing**: Computes the final version by:
+   - Applying increment rules based on branch configuration
+   - Adding pre-release labels and build metadata
+   - Ensuring semantic versioning compliance
+
+### Version Strategies Overview
+
+`GitVersion` uses multiple strategies to automatically determine version numbers based on your Git history and configuration. The system evaluates strategies in priority order to select the most appropriate version source.
+
+**Common Strategies:**
+- **Tagged Commits**: Uses existing Git tags (most common)
+- **Branch Configuration**: Branch-specific version rules
+- **Explicit Configuration**: Manually set versions in config
+- **Fallback**: Default starting version (0.0.0)
+
+For detailed strategy information, configuration examples, and advanced use cases, see [Advanced Configuration - Version Strategies](#version-strategies).
+
+## Quick Start Guide
+
+### 5-Minute Setup
+
+Follow these steps to get `GitVersion` running in your pipeline immediately:
+
+<Tabs>
+  <Tab label="Step 1: Repository Setup">
+
+Ensure your repository has at least one tag to establish a version baseline:
+
+```bash
+# Navigate to your Git repository
+cd /path/to/your/repository
+
+# Create an initial tag if none exists
+$ git tag v1.0.0
+$ git push origin v1.0.0
+
+# Verify tag creation
+$ git tag --list
+```
+
+</Tab>
+
+  <Tab label="Step 2: Task Installation">
+
+Install the `GitVersion` task in your `Kubernetes` namespace:
+
+```bash
+# First, download the GitVersion task definition
+# The Task definition can be found at `Basic Task Usage` section below
+
+# Apply the GitVersion task
+kubectl apply -f git-version.yaml
+
+# Verify installation
+kubectl get task git-version
+```
+
+</Tab>
+
+  <Tab label="Step 3: Basic Run">
+
+Create and run a basic `TaskRun` to test version calculation:
+
+> This example assumes you have a `PersistentVolumeClaim` named `git-source-pvc` containing your `Git` repository.
+
+```yaml
+apiVersion: tekton.dev/v1
+kind: TaskRun
+metadata:
+  name: test-gitversion
+spec:
+  taskRef:
+    name: git-version
+  workspaces:
+    - name: source
+      persistentVolumeClaim:
+        claimName: git-source-pvc
+```
+
+```bash
+# Apply and monitor the TaskRun
+$ kubectl apply -f taskrun.yaml
+```
+
+</Tab>
+
+  <Tab label="Step 4: Get Results">
+
+Retrieve the calculated version from task results:
+
+```bash
+# Check task results
+kubectl get taskrun test-gitversion -o jsonpath='{.status.results[?(@.name=="version")].value}'
+
+# View all version variables
+kubectl get taskrun test-gitversion -o jsonpath='{.status.results[?(@.name=="variables")].value}' | jq .
+```
+
+</Tab>
+</Tabs>
+
+### Prerequisites
+
+Before implementing `GitVersion`, ensure you have:
+
+- **Git Repository**: A `git` repository with at least one semantic version tag (e.g., `v1.0.0`)
+- **Tekton Operator**: Version `4.0.x` and above installed in your `Kubernetes` cluster
+- **Storage**: Persistent volume claims or workspaces for source code and configuration
+- **Git Credentials**: Properly configured `git` authentication if accessing private repositories
+- **Basic Understanding**: Familiarity with `Semantic Versioning` (`SemVer`) principles
+
+### Environment Requirements
+
+This solution is compatible with:
+- `Tektoncd Operator` `v4.0.x` and above
+- `GitVersion` `v6.4` and above
+- Various `Git` workflows: `GitFlow`, `GitHubFlow`, `TrunkBased`
+
+### Basic Concepts
+
+Understanding the core concepts is essential for effective GitVersion implementation:
+
+- **Semantic Versioning (SemVer)**: `GitVersion` follows `SemVer` standards (`MAJOR.MINOR.PATCH`)
+- **Branch-based Versioning**: Different branch types (`main`, `develop`, `feature`, `release`) generate different version patterns
+- **Strategy-driven Calculation**: `GitVersion` uses multiple strategies to determine the appropriate base version
+- **Configuration-driven Behavior**: Workflow and branch configurations control version increment rules
+
+## Configuration Guide
+
+### Workflow Types and Configuration Sources
+
+`GitVersion` has multiple built-in configurations:
+
+- **`GitFlow/v1`** (default): Traditional `GitFlow` workflow with `develop` and `release` branches
+- **`GitHubFlow/v1`**: Simplified workflow with feature branches merging directly to `main`
+- **`TrunkBased/v1`**: `Trunk-based` development with direct commits to `main`
+
+For detailed information about these branching strategies and their implementation patterns, see: [GitVersion Branching Strategies](https://gitversion.net/docs/learn/branching-strategies/)
+
+To override the default configuration, prepare a `GitVersion.yaml` file in your repository root.
+
+### Generating Full Workflow Configuration
+
+You can generate complete configuration for any workflow using `gitversion /showconfig`. This helps you understand all default settings and customize them for your needs.
+
+<Tabs>
+  <Tab label="GitFlow">
+
+Create a minimal `GitVersion.yaml`:
+
+```yaml
+workflow: GitFlow/v1
+```
+
+Generate complete configuration:
+
+```bash
+$ gitversion /showconfig
+```
+
+This outputs the full `GitFlow` configuration with all branch settings, increment rules, and default values that you can then modify.
+
+</Tab>
+
+  <Tab label="GitHubFlow">
+
+Create a minimal `GitVersion.yaml`:
+
+```yaml
+workflow: GitHubFlow/v1
+```
+
+Generate complete configuration:
+
+```bash
+$ gitversion /showconfig
+```
+
+This outputs the full `GitHubFlow` configuration optimized for feature branch workflows with direct main branch deployment.
+
+</Tab>
+
+  <Tab label="TrunkBased">
+
+Create a minimal `GitVersion.yaml`:
+
+```yaml
+workflow: TrunkBased/preview1
+```
+
+Generate complete configuration:
+
+```bash
+$ gitversion /showconfig
+```
+
+This outputs the full `trunk-based` configuration for continuous delivery with minimal branching.
+
+</Tab>
+</Tabs>
+
+## Implementation
+
+### Tekton Task Definition
+
+#### Task Configuration
+
+While `GitVersion` supports repository-level configuration files, **we recommend using a namespace-level `GitVersion` configuration approach** for enterprise environments to ensure consistency across multiple projects and pipelines within the same namespace.
+
+**Repository-level Configuration** (Basic approach - suitable for local debugging only):
+Create a `GitVersion.yaml` file in your repository root to customize GitVersion behavior.
+
+**Namespace-level Configuration** (Recommended for production):
+Store the `GitVersion` configuration in `Kubernetes` `ConfigMaps` for centralized management across pipelines within the same namespace. Note that `ConfigMaps` are namespace-scoped resources, providing unified management within a single namespace.
+
+<Tabs>
+  <Tab label="Incremental Configuration">
+
+    ```yaml
+    mode: ContinuousDelivery
+    # semantic-version-format: Loose
+    increment: Patch
+    # With this configuration, the result of `InformationalVersion` will have a suffix of `.g{ShortSha}` based on `FullSemVer`
+    assembly-informational-format: '{Major}.{Minor}.{Patch}-{PreReleaseTag}.g{ShortSha}'
+    branches:
+      # master -> 3.18.1-beta.8
+      main:
+        mode: ContinuousDelivery
+        regex: ^(main|master)$
+        label: "beta"
+        increment: Minor
+        track-merge-message: false
+        prevent-increment:
+          # of-merged-branch: true
+          when-current-commit-tagged: false
+      # release-3.16 -> 3.16.0-rc.7
+      release:
+        mode: ContinuousDelivery
+        regex: ^releases?[/-]v?(?<version>\d+\.\d+(?:\.\d+)?)$
+        label: "rc"
+        increment: Patch
+      # develop -> 3.19.0-develop.7
+      develop:
+        mode: ContinuousDelivery
+        regex: (?<BranchName>^dev(elop)?(ment)?$)
+        label: "{BranchName}"
+        increment: Minor
+      # pulls/534/merge -> 3.18.0-pr534.22
+      pull-request:
+        mode: ContinuousDelivery
+        regex: ^(pull-requests|pull|pr)[\/-](?<Number>\d*)
+        label: "pr{Number}"
+      # Conventional commits based branches: build/*, chore/*, ci/*, docs/*, feat/*, fix/*, hotfix/*, perf/*, refactor/*, revert/*, style/*, test/*
+      conventional:
+        mode: ContinuousDelivery
+        regex: ^(?<phase>(build|chore|ci|docs|feat(ures?)?|fix|hotfix|perf|refactor|revert|style|test))[/-](?<BranchName>.*)
+        label: "{phase}-{BranchName}"
+        increment: Patch
+      # abc/def -> 3.18.2-devdef.1
+      unknown:
+        mode: ContinuousDelivery
+        regex: (.*[-/])?(?<BranchName>.+)
+        label: "dev{BranchName}"
+        increment: Inherit
+    ```
+
+</Tab>
+
+  <Tab label="Full Configuration">
+
+    > The complete configuration can be viewed by executing `gitversion /showconfig`.
+
+    ```yaml
+    assembly-versioning-scheme: MajorMinorPatch
+    assembly-file-versioning-scheme: MajorMinorPatch
+    assembly-informational-format: '{Major}.{Minor}.{Patch}-{PreReleaseTag}.g{ShortSha}'
+    tag-prefix: '[vV]?'
+    version-in-branch-pattern: (?<version>[vV]?\d+(\.\d+)?(\.\d+)?).*
+    major-version-bump-message: \+semver:\s?(breaking|major)
+    minor-version-bump-message: \+semver:\s?(feature|minor)
+    patch-version-bump-message: \+semver:\s?(fix|patch)
+    no-bump-message: \+semver:\s?(none|skip)
+    tag-pre-release-weight: 60000
+    commit-date-format: yyyy-MM-dd
+    merge-message-formats: {}
+    update-build-number: true
+    semantic-version-format: Strict
+    strategies:
+    - Fallback
+    - ConfiguredNextVersion
+    - MergeMessage
+    - TaggedCommit
+    - TrackReleaseBranches
+    - VersionInBranchName
+    branches:
+      develop:
+        mode: ContinuousDelivery
+        label: '{BranchName}'
+        increment: Minor
+        prevent-increment:
+          when-current-commit-tagged: false
+        track-merge-target: true
+        track-merge-message: true
+        regex: (?<BranchName>^dev(elop)?(ment)?$)
+        source-branches:
+        - main
+        is-source-branch-for: []
+        tracks-release-branches: true
+        is-release-branch: false
+        is-main-branch: false
+        pre-release-weight: 0
+      main:
+        mode: ContinuousDelivery
+        label: beta
+        increment: Minor
+        prevent-increment:
+          of-merged-branch: true
+          when-current-commit-tagged: false
+        track-merge-target: false
+        track-merge-message: false
+        regex: ^(main|master)$
+        source-branches: []
+        is-source-branch-for: []
+        tracks-release-branches: false
+        is-release-branch: false
+        is-main-branch: true
+        pre-release-weight: 55000
+      release:
+        mode: ContinuousDelivery
+        label: rc
+        increment: Patch
+        prevent-increment:
+          of-merged-branch: true
+          when-current-commit-tagged: false
+        track-merge-target: false
+        regex: ^releases?[/-]v?(?<version>\d+\.\d+(?:\.\d+)?)$
+        source-branches:
+        - main
+        - support
+        is-source-branch-for: []
+        tracks-release-branches: false
+        is-release-branch: true
+        is-main-branch: false
+        pre-release-weight: 30000
+      feature:
+        mode: ManualDeployment
+        label: '{BranchName}'
+        increment: Inherit
+        prevent-increment:
+          when-current-commit-tagged: false
+        track-merge-message: true
+        regex: ^features?[\/-](?<BranchName>.+)
+        source-branches:
+        - develop
+        - main
+        - release
+        - support
+        - hotfix
+        is-source-branch-for: []
+        is-main-branch: false
+        pre-release-weight: 30000
+      pull-request:
+        mode: ContinuousDelivery
+        label: pr{Number}
+        increment: Inherit
+        prevent-increment:
+          of-merged-branch: true
+          when-current-commit-tagged: false
+        track-merge-message: true
+        regex: ^(pull-requests|pull|pr)[\/-](?<Number>\d*)
+        source-branches:
+        - develop
+        - main
+        - release
+        - feature
+        - support
+        - hotfix
+        is-source-branch-for: []
+        pre-release-weight: 30000
+      hotfix:
+        mode: ManualDeployment
+        label: beta
+        increment: Inherit
+        prevent-increment:
+          when-current-commit-tagged: false
+        regex: ^hotfix(es)?[\/-](?<BranchName>.+)
+        source-branches:
+        - main
+        - support
+        is-source-branch-for: []
+        is-release-branch: true
+        is-main-branch: false
+        pre-release-weight: 30000
+      support:
+        label: ''
+        increment: Patch
+        prevent-increment:
+          of-merged-branch: true
+        track-merge-target: false
+        regex: ^support[\/-](?<BranchName>.+)
+        source-branches:
+        - main
+        is-source-branch-for: []
+        tracks-release-branches: false
+        is-release-branch: false
+        is-main-branch: true
+        pre-release-weight: 55000
+      unknown:
+        mode: ContinuousDelivery
+        label: dev{BranchName}
+        increment: Inherit
+        prevent-increment:
+          when-current-commit-tagged: true
+        regex: (.*[-/])?(?<BranchName>.+)
+        source-branches:
+        - main
+        - develop
+        - release
+        - feature
+        - pull-request
+        - hotfix
+        - support
+        is-source-branch-for: []
+        is-main-branch: false
+      conventional:
+        mode: ContinuousDelivery
+        label: '{phase}-{BranchName}'
+        increment: Patch
+        prevent-increment: {}
+        regex: ^(?<phase>(build|chore|ci|docs|feat(ures?)?|fix|hotfix|perf|refactor|revert|style|test))[/-](?<BranchName>.*)
+        source-branches: []
+        is-source-branch-for: []
+    ignore:
+      sha: []
+      paths: []
+    mode: ContinuousDelivery
+    label: '{BranchName}'
+    increment: Patch
+    prevent-increment:
+      of-merged-branch: false
+      when-branch-merged: false
+      when-current-commit-tagged: true
+    track-merge-target: false
+    track-merge-message: true
+    commit-message-incrementing: Enabled
+    regex: ''
+    source-branches: []
+    is-source-branch-for: []
+    tracks-release-branches: false
+    is-release-branch: false
+    is-main-branch: false
+    ```
+
+</Tab>
+
+  <Tab label="Namespace-level Configuration">
+
+> **Why Choose Namespace-level Configuration?**
+>
+> - **Operational Efficiency**: Update versioning rules for all projects from one location instead of modifying individual repositories
+> - **Governance & Compliance**: Enforce consistent versioning policies across teams and projects within the namespace
+> - **Security & Access Control**: Leverage `Kubernetes` `RBAC` to control who can modify versioning configurations
+> - **Change Management**: Track configuration changes through `Kubernetes` events and audit logs
+> - **Developer Experience**: New projects automatically inherit established versioning patterns without additional setup
+
+**Step 1: Create `GitVersion` `ConfigMap`**
+
+Create a `Kubernetes` `ConfigMap` to store your `GitVersion` configuration. Note that `ConfigMaps` are namespace-scoped, so this configuration will be available to all pipelines within the same namespace:
+
+```yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: gitversion-namespace-config
+  namespace: <tekton-pipelines>
+data:
+  GitVersion.yaml: |
+    mode: ContinuousDelivery
+    increment: Patch
+    # Enhanced assembly informational format with git hash
+    assembly-informational-format: '{Major}.{Minor}.{Patch}-{PreReleaseTag}.g{ShortSha}'
+    branches:
+      # Main branch: 3.18.1-beta.8
+      main:
+        mode: ContinuousDelivery
+        regex: ^(main|master)$
+        label: "beta"
+        increment: Minor
+        track-merge-message: false
+        prevent-increment:
+          when-current-commit-tagged: false
+      # Release branch: 3.16.0-rc.7
+      release:
+        mode: ContinuousDelivery
+        regex: ^releases?[/-]v?(?<version>\d+\.\d+(?:\.\d+)?)$
+        label: "rc"
+        increment: Patch
+      # Development branch: 3.19.0-develop.7
+      develop:
+        mode: ContinuousDelivery
+        regex: (?<BranchName>^dev(elop)?(ment)?$)
+        label: "{BranchName}"
+        increment: Minor
+      # Pull request: 3.18.0-pr534.22
+      pull-request:
+        mode: ContinuousDelivery
+        regex: ^(pull-requests|pull|pr)[\/-](?<Number>\d*)
+        label: "pr{Number}"
+        increment: Inherit
+      # Conventional commits: build/*, chore/*, ci/*, docs/*, feat/*, fix/*, etc.
+      conventional:
+        mode: ContinuousDelivery
+        regex: ^(?<phase>(build|chore|ci|docs|feat(ures?)?|fix|hotfix|perf|refactor|revert|style|test))[/-](?<BranchName>.*)
+        label: "{phase}-{BranchName}"
+        increment: Patch
+      # Hotfix branches: hotfix/critical-fix -> 3.18.1-hotfix.1
+      hotfix:
+        mode: ManualDeployment
+        regex: ^hotfix(es)?[\/-](?<BranchName>.+)
+        label: "hotfix"
+        increment: Patch
+        is-release-branch: true
+      # Support branches: support/v2.0 -> 2.0.1
+      support:
+        mode: ContinuousDelivery
+        regex: ^support[\/-](?<BranchName>.+)
+        increment: Patch
+        is-main-branch: true
+      # Unknown branches: abc/def -> 3.18.2-devdef.1
+      unknown:
+        mode: ContinuousDelivery
+        regex: (.*[-/])?(?<BranchName>.+)
+        label: "dev{BranchName}"
+        increment: Inherit
+```
+
+**Step 2: Apply `ConfigMap`**
+
+```bash
+`kubectl apply -f gitversion-configmap.yaml`
+```
+
+**Step 3: Environment-specific Configurations**
+
+Create different `ConfigMaps` for different environments:
+
+```yaml
+# Development environment
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: gitversion-config-dev
+  namespace: <tekton-pipelines>
+data:
+  GitVersion.yaml: |
+    mode: ContinuousDelivery
+    increment: Patch
+    branches:
+      main:
+        label: "dev"
+        increment: Minor
+      develop:
+        label: "alpha"
+        increment: Minor
+---
+# Production environment
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: gitversion-config-prod
+  namespace: <tekton-pipelines>
+data:
+  GitVersion.yaml: |
+    mode: ContinuousDelivery
+    increment: Patch
+    branches:
+      main:
+        label: "beta"
+        increment: Minor
+        prevent-increment:
+          when-current-commit-tagged: false
+      release:
+        label: "rc"
+        increment: Patch
+        is-release-branch: true
+```
+
+</Tab>
+</Tabs>
+
+
+#### Configuration Explanation
+
+**Mode Configuration**:
+- `ContinuousDelivery`: Generates unique version for each commit
+- `ManualDeployment`: Version increments only on tag creation
+
+**Branch-Specific Settings**:
+
+**Main Branches**:
+- **`main` Branch**: Uses `beta` label with minor version increments (e.g., `3.18.1-beta.8`)
+  - Primary deployment branch for production releases
+  - Automatically increments minor version for new features
+  - Pre-release label helps identify unreleased changes
+
+- **`master` Branch**: Alternative to `main` with same behavior
+  - Legacy naming convention support
+  - Identical configuration to `main` branch
+  - Commonly used in older repositories
+
+**Development Branches**:
+- **`develop` Branch**: Uses branch name as label (e.g., `3.19.0-develop.7`)
+  - Integration branch for feature development
+  - Tracks upcoming release version
+  - Perfect for continuous integration testing
+
+**Release Branches**:
+- **`release` Branch**: Uses `rc` (Release Candidate) label with patch increments (e.g., `3.16.0-rc.7`)
+  - Dedicated branches for release preparation
+  - Version extracted from branch name (e.g., `release/3.16.0`)
+  - Marked as release branch (`is-release-branch: true`)
+  - Only patch-level changes allowed
+
+**Feature Branches**:
+- **`feature` Branch**: Uses branch name as version label (e.g., `3.18.0-feature-user-auth.15`)
+  - Development branches for new features
+  - Inherit version from source branch
+  - Useful for feature-specific testing and integration
+
+**Hotfix Branches**:
+- **`hotfix` Branch**: Uses branch name with patch increment (e.g., `3.15.1-hotfix-security-fix.3`)
+  - Emergency fixes for production issues
+  - Automatically increments patch version
+  - Can extract version from branch name pattern
+
+**Support Branches**:
+- **`support` Branch**: Long-term maintenance branches (e.g., `2.1.5-support-v2.8`)
+  - Maintenance of older major versions
+  - Version calculated from branch name or base tag
+  - Separate versioning timeline from main development
+
+**Pull Request Branches**:
+- **Pull Request**: Includes `PR` number in version (e.g., `3.18.0-pr534.22`)
+  - Temporary branches for code review
+  - Unique versioning for testing PR changes
+  - Automatic cleanup after merge
+
+**Advanced Configuration Options**:
+
+```yaml
+# Advanced increment prevention and merge handling
+prevent-increment:
+  of-merged-branch: true          # Prevent increment from merged branch commits
+  when-branch-merged: false       # Control increment behavior on merge
+  when-current-commit-tagged: true # Skip increment if commit is already tagged
+
+# Advanced tracking and source configuration
+track-merge-target: true          # Track merge target for version calculation
+track-merge-message: true         # Use merge messages for version hints
+source-branches: ['develop']      # Define valid source branches for this branch type
+pre-release-weight: 1000          # Control pre-release version ordering
+```
+
+**Configuration Priority and Override Logic**:
+- **Mounted Namespace ConfigMap** > **Repository GitVersion.yaml** > **Default Workflow**
+- Configuration uses **override logic**, not merge - the higher priority configuration completely replaces the lower one
+- Namespace ConfigMap only takes priority when mounted as a workspace in the TaskRun
+- Branch configurations inherit from global settings and can override specific properties
+- Use `increment: Inherit` to adopt the source branch's increment behavior
+
+### Branch Configuration
+
+#### Branch-Specific Settings
+
+The following sections provide comprehensive branch configuration patterns for different development workflows.
+
+<Tabs>
+  <Tab label="GitFlow Branches">
+
+**Main and Develop Branches**:
+```yaml
+branches:
+  main:
+    increment: Patch
+    prevent-increment:
+      of-merged-branch: true
+    track-merge-target: false
+    track-merge-message: true
+    regex: ^master$|^main$
+    source-branches: []
+    is-source-branch-for: []
+    tracks-release-branches: false
+    is-release-branch: false
+    is-main-branch: true
+    pre-release-weight: 55000
+  develop:
+    mode: ContinuousDelivery
+    label: alpha
+    increment: Minor
+    prevent-increment:
+      when-current-commit-tagged: false
+    track-merge-target: true
+    track-merge-message: true
+    regex: ^dev(elop)?(ment)?$
+    source-branches:
+    - main
+    is-source-branch-for: []
+    tracks-release-branches: true
+    is-release-branch: false
+    is-main-branch: false
+    pre-release-weight: 0
+```
+
+**Feature and Release Branches**:
+```yaml
+branches:
+  feature:
+    mode: ManualDeployment
+    label: '{BranchName}'
+    increment: Inherit
+    prevent-increment:
+      when-current-commit-tagged: false
+    track-merge-message: true
+    regex: ^features?[\/-](?<BranchName>.+)
+    source-branches:
+    - develop
+    - main
+    - release
+    - support
+    - hotfix
+    is-source-branch-for: []
+    is-main-branch: false
+    pre-release-weight: 30000
+  release:
+    mode: ManualDeployment
+    label: beta
+    increment: Minor
+    prevent-increment:
+      of-merged-branch: true
+      when-current-commit-tagged: false
+    track-merge-target: false
+    regex: ^releases?[\/-](?<BranchName>.+)
+    source-branches:
+    - main
+    - support
+    is-source-branch-for: []
+    tracks-release-branches: false
+    is-release-branch: true
+    is-main-branch: false
+    pre-release-weight: 30000
+```
+
+</Tab>
+
+  <Tab label="GitHubFlow Branches">
+
+**Simplified Branch Configuration**:
+```yaml
+branches:
+  main:
+    label: ''
+    increment: Patch
+    prevent-increment:
+      of-merged-branch: true
+    track-merge-target: false
+    track-merge-message: true
+    regex: ^master$|^main$
+    source-branches: []
+    is-source-branch-for: []
+    tracks-release-branches: false
+    is-release-branch: false
+    is-main-branch: true
+    pre-release-weight: 55000
+  feature:
+    mode: ManualDeployment
+    label: '{BranchName}'
+    increment: Inherit
+    prevent-increment:
+      when-current-commit-tagged: false
+    track-merge-message: true
+    regex: ^features?[\/-](?<BranchName>.+)
+    source-branches:
+    - main
+    - release
+    is-source-branch-for: []
+    is-main-branch: false
+    pre-release-weight: 30000
+  pull-request:
+    mode: ContinuousDelivery
+    label: PullRequest{Number}
+    increment: Inherit
+    prevent-increment:
+      of-merged-branch: true
+      when-current-commit-tagged: false
+    track-merge-message: true
+    regex: ^(pull-requests|pull|pr)[\/-](?<Number>\d*)
+    source-branches:
+    - main
+    - release
+    - feature
+    is-source-branch-for: []
+    pre-release-weight: 30000
+```
+
+</Tab>
+
+  <Tab label="TrunkBased Branches">
+
+**Minimal Branch Configuration**:
+```yaml
+branches:
+  main:
+    mode: ContinuousDeployment
+    label: ''
+    increment: Patch
+    prevent-increment:
+      of-merged-branch: true
+    track-merge-target: false
+    track-merge-message: true
+    regex: ^master$|^main$
+    source-branches: []
+    is-source-branch-for: []
+    tracks-release-branches: false
+    is-release-branch: false
+    is-main-branch: true
+    pre-release-weight: 55000
+  feature:
+    mode: ContinuousDelivery
+    label: '{BranchName}'
+    increment: Minor
+    prevent-increment:
+      when-current-commit-tagged: false
+    track-merge-message: true
+    regex: ^features?[\/-](?<BranchName>.+)
+    source-branches:
+    - main
+    is-source-branch-for: []
+    is-main-branch: false
+    pre-release-weight: 30000
+```
+
+</Tab>
+</Tabs>
+
+### Advanced Configuration
+
+#### Semantic Version Formats
+
+```yaml
+# Strict semantic versioning (recommended)
+semantic-version-format: Strict
+
+# Loose format allowing additional formats (use with caution)
+semantic-version-format: Loose
+```
+
+#### Commit Message Increment Control
+
+```yaml
+# Control version increments via commit messages
+major-version-bump-message: '\+semver:\s?(breaking|major)'
+minor-version-bump-message: '\+semver:\s?(feature|minor)'
+patch-version-bump-message: '\+semver:\s?(fix|patch)'
+no-bump-message: '\+semver:\s?(none|skip)'
+```
+
+#### Version Strategies
+
+`GitVersion` uses multiple strategies to determine the base version, evaluated in priority order. Understanding these strategies helps you configure versioning behavior effectively.
+
+**Strategy Priority and Evaluation**
+
+**Priority Order** (highest to lowest):
+1. **ConfiguredNextVersion Strategy** - Explicit version in configuration
+2. **TaggedCommit Strategy** - Version from Git tags
+3. **TrackReleaseBranches Strategy** - Release branch tracking
+4. **VersionInBranchName Strategy** - Version from branch names
+5. **MergeMessage Strategy** - Version from merge commit messages
+6. **Mainline Strategy** - Mainline branch increments
+7. **Fallback Strategy** - Default fallback version
+
+**Strategy Details and Use Cases**
+
+**1. ConfiguredNextVersion Strategy**
+- **Purpose**: Explicitly set version in `GitVersion.yaml` configuration
+- **Usage**: `next-version: 2.0.0` in config file
+- **Best for**: Major version upgrades, version resets
+- **Priority**: Highest - overrides all other strategies
+
+**2. TaggedCommit Strategy**
+- **Purpose**: Extract version from Git tags on current commit or reachable commits
+- **Usage**: Tags like `v1.2.3`, `1.2.3-alpha.1`
+- **Best for**: Release versioning, stable version references
+- **Priority**: Very high - provides concrete version history
+
+**3. TrackReleaseBranches Strategy**
+- **Purpose**: Track version from release branches when `track-release-branches: true`
+- **Usage**: Automatically inherits version from tracked release branches
+- **Best for**: Feature branches that need release branch version context
+- **Priority**: High - maintains version continuity
+
+**4. VersionInBranchName Strategy**
+- **Purpose**: Extract version from branch name patterns
+- **Usage**: Branch names like `release/v1.2.0`, `hotfix/1.1.5`
+- **Best for**: Release and hotfix branches with version in name
+- **Priority**: Medium-high - useful for release workflows
+- **Note**: Versions only available while branch exists
+
+**5. MergeMessage Strategy**
+- **Purpose**: Extract version from merge commit messages
+- **Usage**: Merge messages containing version patterns
+- **Best for**: Automated merges with version information
+- **Priority**: Medium - secondary version source
+
+**6. Mainline Strategy**
+- **Purpose**: Increment version on each commit for mainline branches
+- **Usage**: Configured with `is-main-branch: true`
+- **Best for**: Continuous delivery on main branches
+- **Priority**: Medium-low - provides continuous incrementing
+
+**7. Fallback Strategy**
+- **Purpose**: Provides default `0.0.0` when no other strategy succeeds
+- **Usage**: Always active as last resort
+- **Best for**: New repositories without tags or configuration
+- **Priority**: Lowest - only when all other strategies fail
+
+**Strategy Configuration Examples**
+
+```yaml
+# Explicit version override
+next-version: 2.0.0
+
+# Track release branches
+branches:
+  feature:
+    track-release-branches: true
+
+# Enable mainline strategy
+branches:
+  main:
+    is-main-branch: true
+
+# Version extraction patterns
+version-in-branch-pattern: (?<version>[vV]?\d+(\.\d+)?(\.\d+)?).*
+
+# Configure strategy order
+strategies:
+  - ConfiguredNextVersion    # Highest priority
+  - TaggedCommit            # Tagged commits
+  - TrackReleaseBranches    # Release branch tracking
+  - VersionInBranchName     # Version from branch names
+  - MergeMessage           # Version from merge messages
+  - Fallback               # Default fallback (0.0.0)
+```
+
+### Usage Examples
+
+#### Basic Task Usage
+
+You can add `Tekton` task for `GitVersion` integration. The `git-version` task automates semantic versioning calculation based on `Git` history.
+
+<Tabs>
+  <Tab label="Task Definition">
+
+The `GitVersion` `Task` provides comprehensive version calculation capabilities with automatic shallow clone detection and configuration management:
+
+```yaml
+apiVersion: tekton.dev/v1
+kind: Task
+metadata:
+  name: git-version
+  labels:
+    app.kubernetes.io/version: "0.2"
+  annotations:
+    tekton.dev/pipelines.minVersion: "0.53.0"
+    tekton.dev/displayName: "git version"
+    tekton.dev/categories: Git
+    tekton.dev/tags: git
+    tekton.dev/platforms: "linux/amd64,linux/arm64"
+spec:
+  description: >-
+    This task can be used to create a version from git history
+  params:
+    - name: gitversion-image
+      default: gittools/gitversion:6.4.0-alpine.3.21-8.0
+      description: The git-version image utilized for calculating git version.
+      type: string
+    - name: yq-image
+      default: mikefarah/yq:4.44.6
+      description: The yq image utilized for formatting the git version.
+      type: string
+    - name: commit
+      type: string
+      description: Optional commit to reset a copy of the repository to and regenarating a version from previous commits. This will not affect current source workspace.
+      default: ''
+    - name: config-file
+      type: string
+      description: Config file name in optional config workspace to be used as override. Defaults to 'GitVersion.yaml'
+      default: 'GitVersion.yaml'
+    - name: pre-command
+      type: string
+      default: ""
+      description: |
+        Commands to execute before running GitVersion.
+        This environment variables can be used in the pre-command:
+        - `GITVERSION_BINARY`: Path to the GitVersion binary.
+        - `CUSTOM_CONFIG`: Path to the custom config file.
+        - `FINAL_GITVERSION_CONFIG`: Path to the final GitVersion config file.
+        - `FINAL_RESULTS_PATH`: Path to the final results file.
+    - name: post-command
+      type: string
+      default: ""
+      description: |
+        Commands to execute after running GitVersion.
+        This environment variables can be used in the post-command:
+        - `GITVERSION_BINARY`: Path to the GitVersion binary.
+        - `CUSTOM_CONFIG`: Path to the custom config file.
+        - `FINAL_GITVERSION_CONFIG`: Path to the final GitVersion config file.
+        - `FINAL_RESULTS_PATH`: Path to the final results file.
+  results:
+    - name: version
+      description: The calculated git version you could use for git tagging e.g. "0.1.0-tektonize.1-188". It uses the FullSemVer variable value.
+
+    - name: variables
+      description: Stores all variables generated from GitVersion. For a complete reference see https://gitversion.net/5.12.0/docs/reference/variables
+      type: object
+      properties:
+        AssemblySemFileVer: {}
+        BranchName: {}
+        FullSemVer: {}
+        SemVer: {}
+        InformationalVersion: {}
+        PreReleaseLabel: {}
+        PreReleaseTag: {}
+        Major: {}
+        Minor: {}
+        Patch: {}
+        Sha: {}
+        ShortSha: {}
+
+  steps:
+    - image: $(params.gitversion-image)
+      name: calculate-version
+      workingDir: $(workspaces.source.path)
+      computeResources:
+        requests:
+          cpu: "250m"
+          memory: "256Mi"
+        limits:
+          cpu: "500m"
+          memory: "512Mi"
+      # Because we are using an open source image, the default user is root. Temporarily do not enable the following configuration.
+      # securityContext:
+      #   runAsNonRoot: true
+      env:
+      ### !!! copied from git clone to solve git fetching credentials in basic auth
+      - name: WORKSPACE_BASIC_AUTH_DIRECTORY_BOUND
+        value: $(workspaces.basic-auth.bound)
+      - name: WORKSPACE_BASIC_AUTH_DIRECTORY_PATH
+        value: $(workspaces.basic-auth.path)
+      script: |
+        #!/usr/bin/env sh
+        set -e
+
+        # If the user's home directory is not writable, create a temporary directory.
+        if [ ! -w "$HOME" ]; then
+          export HOME=$(mktemp -d /tmp/gitversion-home-XXXXXX)
+        fi
+
+        # Auto-detect GitVersion binary location
+        if command -v gitversion >/dev/null 2>&1; then
+          echo "==> Using gitversion from PATH"
+        elif [ -x "/tools/dotnet-gitversion" ]; then
+          echo "==> Using /tools/dotnet-gitversion as GitVersion binary"
+          mkdir -p ~/.bin
+          export PATH="$HOME/.bin:/tools:$PATH"
+          ln -sf /tools/dotnet-gitversion ~/.bin/gitversion
+        else
+          echo "ERROR: GitVersion binary not found"
+          exit 1
+        fi
+
+        ### !!! copied from git clone to solve git fetching credentials in basic auth
+        if [ "${WORKSPACE_BASIC_AUTH_DIRECTORY_BOUND}" = "true" ] ; then
+          if [ -f "${WORKSPACE_BASIC_AUTH_DIRECTORY_PATH}/.git-credentials" ] ; then
+            cp "${WORKSPACE_BASIC_AUTH_DIRECTORY_PATH}/.git-credentials" "${HOME}/.git-credentials"
+            chmod 400 "${HOME}/.git-credentials"
+          fi
+          if [ -f "${WORKSPACE_BASIC_AUTH_DIRECTORY_PATH}/.gitconfig" ] ; then
+            cp "${WORKSPACE_BASIC_AUTH_DIRECTORY_PATH}/.gitconfig" "${HOME}/.gitconfig"
+            chmod 400 "${HOME}/.gitconfig"
+          fi
+        fi
+
+        # Check if this is a shallow clone
+        git config --global --add safe.directory $(workspaces.source.path)
+        if [ -f .git/shallow ]; then
+          echo "==> Detected shallow clone, fetching complete history..."
+          git fetch --unshallow --tags --no-recurse-submodules
+        fi
+
+        export FINAL_GITVERSION_CONFIG=/shared/GitVersion.yaml
+        export FINAL_RESULTS_PATH=/shared/results.json
+
+        export GITVERSION_BINARY="gitversion"
+        # export GITVERSION=$(gitversion -config $FINAL_GITVERSION_CONFIG)
+        export CUSTOM_CONFIG=$(workspaces.config.path)/$(params.config-file)
+
+        ## Checking if there is a config in the repo
+        if [  -f GitVersion.yaml ]; then
+          echo "==> Found GitVersion.yaml in repository..."
+          cp GitVersion.yaml $FINAL_GITVERSION_CONFIG
+        else
+          echo "==> No GitVersion.yaml in repository... generating default config..."
+          $(gitversion -showconfig) > $FINAL_GITVERSION_CONFIG || true
+        fi
+        ## Checking for a custom overrided config
+        if [ "$(workspaces.config.bound)" = "true" ] && [ -f "$CUSTOM_CONFIG" ]; then
+          echo "==> Found custom config $(params.config-file) in config workspace as $CUSTOM_CONFIG ..."
+          cp -f $CUSTOM_CONFIG $FINAL_GITVERSION_CONFIG
+        elif [ "$(workspaces.config.bound)" = "true" ] && [ ! -f "$CUSTOM_CONFIG" ]; then
+          echo "==! config workspace is bound but no $(params.config-file) file was found... ignoring config workspace..."
+        fi
+
+        # Check if we need to reset the git commit
+        # 1. If the commit is empty, we don't need to reset
+        # 2. If the current commit is the expected one, we don't need to reset
+        reset_git_commit=true
+        current_commit=$(git rev-parse HEAD | tr -d '\n')
+        if [ -z "$(params.commit)" ] || [ "${current_commit}" = "$(params.commit)" ]; then
+          reset_git_commit=false
+        fi
+
+        export REPO_PATH=$(workspaces.source.path)
+        if [ "${reset_git_commit}" = "true" ]; then
+          echo "==> Requested version from a specific commit $(params.commit) is different with current commit ${current_commit}. Will copy the .git directory and reset to specified commit..."
+          # Create target directory and copy .git directly
+          mkdir -p /shared/repo/source
+          cp -r $(workspaces.source.path)/.git /shared/repo/source/
+          export REPO_PATH=/shared/repo/source
+          echo "==> Reseting to commit $(params.commit)..."
+          git -C $REPO_PATH reset $(params.commit) --hard
+        fi
+
+        # Execute pre-command if specified
+        $(params.pre-command)
+
+        echo "==> calculating gitversion..."
+        echo -n "$(gitversion $REPO_PATH /nocache /config $FINAL_GITVERSION_CONFIG)" | tee $FINAL_RESULTS_PATH || true
+        chmod a+rw $FINAL_RESULTS_PATH     # Make sure the results file is writable for the next step
+        echo ""
+
+        # Execute post-command if specified
+        $(params.post-command)
+
+      volumeMounts:
+      - mountPath: /shared
+        name: shared
+    - image: $(params.yq-image)
+      name: format-content
+      securityContext:
+        runAsNonRoot: true
+      script: |
+        #!/bin/sh
+        set -e
+
+        yq --version
+
+        echo "==> converting all values to string..."
+        yq e '.[] |= to_string' -o=json -I=0 --inplace /shared/results.json
+        cp /shared/results.json $(results.variables.path)
+
+        echo "==> git version variables:"
+        yq /shared/results.json
+
+        echo "==> saving fullSemVer result..."
+        yq e '.FullSemVer' /shared/results.json > $(results.version.path)
+      volumeMounts:
+      - mountPath: /shared
+        name: shared
+
+  workspaces:
+    - name: source
+      description: A workspace that contains the fetched git repository to create a version for.
+    - name: config
+      description : Workspace hosting an optional `GitVersion.yaml`
+      optional: true
+    - name: basic-auth
+      optional: true
+      description: >
+        A Workspace containing a .gitconfig and .git-credentials file. These
+        will be copied to the user's home before any git commands are run. Any
+        other files in this Workspace are ignored.
+  volumes:
+  - name: shared
+    emptyDir: {}
+```
+
+**Task Parameters**:
+- `gitversion-image`: The `GitVersion` `Docker` image (default: `gittools/gitversion:6.4.0-alpine.3.21-8.0`)
+- `yq-image`: The yq image for formatting output (default: `mikefarah/yq:4.44.6`)
+- `commit`: Optional specific commit to calculate version from
+- `config-file`: Custom config file name (default: `GitVersion.yaml`)
+- `pre-command`: Commands to execute before GitVersion calculation
+- `post-command`: Commands to execute after GitVersion calculation
+
+**Task Results**:
+- `version`: The calculated git version (FullSemVer format)
+- `variables`: Complete set of `GitVersion` variables as `JSON` object
+
+</Tab>
+
+  <Tab label="TaskRun Example">
+
+> This example assumes you have a `PersistentVolumeClaim` named `git-source-pvc` containing your `Git` repository.
+
+**Basic TaskRun** (Repository-based config):
+
+```yaml
+apiVersion: tekton.dev/v1
+kind: TaskRun
+metadata:
+  name: gitversion-basic-example
+spec:
+  taskRef:
+    name: git-version
+  workspaces:
+    - name: source
+      persistentVolumeClaim:
+        claimName: git-source-pvc
+    - name: basic-auth
+      secret:
+        secretName: git-credentials
+  params:
+    - name: gitversion-image
+      value: "gittools/gitversion:6.4.0-alpine.3.21-8.0"
+    - name: yq-image
+      value: "mikefarah/yq:4.44.6"
+```
+
+**Advanced TaskRun** (Namespace-level ConfigMap configuration - Recommended):
+
+```yaml
+apiVersion: tekton.dev/v1
+kind: TaskRun
+metadata:
+  name: gitversion-namespace-config-example
+spec:
+  taskRef:
+    name: git-version
+  workspaces:
+    - name: source
+      persistentVolumeClaim:
+        claimName: git-source-pvc
+    - name: config
+      configMap:
+        name: gitversion-namespace-config  # Reference to namespace ConfigMap
+    - name: basic-auth
+      secret:
+        secretName: git-credentials
+  params:
+    - name: gitversion-image
+      value: "gittools/gitversion:6.4.0-alpine.3.21-8.0"
+    - name: yq-image
+      value: "mikefarah/yq:4.44.6"
+    - name: config-file
+      value: "GitVersion.yaml"
+    - name: commit
+      value: "abc123def456"  # Optional: specific commit
+    - name: pre-command
+      value: |
+        echo "==> Using namespace-level GitVersion configuration"
+        echo "==> Current commit: $(git rev-parse HEAD)"
+        echo "==> Config file: $FINAL_GITVERSION_CONFIG"
+    - name: post-command
+      value: |
+        echo "==> Version calculation completed successfully"
+        echo "==> Results saved to: $FINAL_RESULTS_PATH"
+        echo "==> Generated version: $(cat $FINAL_RESULTS_PATH | grep -w 'FullSemVer')"
+```
+
+**Environment-specific TaskRun**:
+
+```yaml
+apiVersion: tekton.dev/v1
+kind: TaskRun
+metadata:
+  name: gitversion-prod-example
+spec:
+  taskRef:
+    name: git-version
+  workspaces:
+    - name: source
+      persistentVolumeClaim:
+        claimName: git-source-pvc
+    - name: config
+      configMap:
+        name: gitversion-config-prod  # Production-specific config
+    - name: basic-auth
+      secret:
+        secretName: git-credentials
+  params:
+    - name: config-file
+      value: "GitVersion.yaml"
+```
+
+</Tab>
+
+  <Tab label="Pipeline Integration">
+
+**Pipeline** (Namespace-level ConfigMap approach - Recommended):
+
+```yaml
+apiVersion: tekton.dev/v1
+kind: Pipeline
+metadata:
+  name: enterprise-build-with-gitversion
+spec:
+  params:
+    - name: git-url
+      type: string
+      description: Git repository URL
+    - name: git-revision
+      type: string
+      default: main
+      description: Git revision to checkout
+  workspaces:
+    - name: shared-data
+      description: Workspace for sharing data between tasks
+    - name: git-credentials
+      description: Git credentials workspace
+      optional: true
+    - name: gitversion-config
+      description: Optional configmap or secret containing GitVersion.yaml configuration file
+      optional: true
+  tasks:
+    - name: git-clone
+      taskRef:
+        name: git-clone
+      workspaces:
+        - name: output
+          workspace: shared-data
+        - name: basic-auth
+          workspace: git-credentials
+      params:
+        - name: url
+          value: $(params.git-url)
+        - name: revision
+          value: $(params.git-revision)
+
+    - name: calculate-version
+      taskRef:
+        name: git-version
+        kind: Task
+      runAfter: ["git-clone"]
+      workspaces:
+        - name: source
+          workspace: shared-data
+        - name: config
+          workspace: gitversion-config
+        - name: basic-auth
+          workspace: git-credentials
+      params:
+        - name: gitversion-image
+          value: "gittools/gitversion:6.4.0-alpine.3.21-8.0"
+        - name: yq-image
+          value: "mikefarah/yq:4.44.6"
+
+    - name: create-git-tag
+      taskRef:
+        name: git-cli
+      runAfter: ["calculate-version"]
+      workspaces:
+        - name: source
+          workspace: shared-data
+        - name: basic-auth
+          workspace: git-credentials
+      params:
+        - name: GIT_USER_NAME
+          value: "GitVersion Pipeline"
+        - name: GIT_USER_EMAIL
+          value: "gitversion@company.com"
+        - name: GIT_SCRIPT
+          value: |
+            # Create and push semantic version tag
+            VERSION=$(tasks.calculate-version.results.variables.SemVer)
+            FULL_VERSION=$(tasks.calculate-version.results.version)
+
+            echo "Creating tag: v${VERSION}"
+            git tag "v${VERSION}" -m "Release ${FULL_VERSION} from CI"
+            git push origin "v${VERSION}"
+```
+
+</Tab>
+
+  <Tab label="PipelineRun Example">
+
+```yaml
+apiVersion: tekton.dev/v1
+kind: PipelineRun
+metadata:
+  name: enterprise-build-with-gitversion
+spec:
+  pipelineRef:
+    name: enterprise-build-with-gitversion
+  params:
+    - name: git-url
+      value: "<YOUR_GIT_REPO_URL>"
+    - name: git-revision
+      value: "<YOUR_GIT_BRANCH_OR_COMMIT>"
+  workspaces:
+    - name: shared-data
+      volumeClaimTemplate:
+        spec:
+          accessModes:
+            - ReadWriteMany
+          resources:
+            requests:
+              storage: 1Gi
+          storageClassName: <YOUR_STORAGE_CLASS>
+    - name: git-credentials
+      secret:
+        secretName: git-credentials
+    - name: gitversion-config
+      configMap:
+        name: gitversion-namespace-config
+```
+
+</Tab>
+
+  <Tab label="Using Results">
+
+**Version Information Display Task**:
+
+```yaml
+- name: display-version-info
+  runAfter: ["calculate-version"]
+  params:
+    - name: text
+      value: |
+        ========================================
+        GitVersion Results Summary
+        ========================================
+        Full Semantic Version: $(tasks.calculate-version.results.version)
+        SemVer: $(tasks.calculate-version.results.variables.SemVer)
+        Major: $(tasks.calculate-version.results.variables.Major)
+        Minor: $(tasks.calculate-version.results.variables.Minor)
+        Patch: $(tasks.calculate-version.results.variables.Patch)
+        PreReleaseTag: $(tasks.calculate-version.results.variables.PreReleaseTag)
+        InformationalVersion: $(tasks.calculate-version.results.variables.InformationalVersion)
+        BranchName: $(tasks.calculate-version.results.variables.BranchName)
+        Commit SHA: $(tasks.calculate-version.results.variables.Sha)
+        Short SHA: $(tasks.calculate-version.results.variables.ShortSha)
+        AssemblySemFileVer: $(tasks.calculate-version.results.variables.AssemblySemFileVer)
+        ========================================
+  taskSpec:
+    params:
+      - name: text
+        type: string
+    steps:
+      - name: print
+        image: alpine:latest
+        script: |
+          #!/bin/sh
+          echo "$(params.text)"
+```
+
+**Using GitVersion Variables in Different Contexts**:
+
+| Variable | Example Value | Use Case |
+|----------|---------------|-----------|
+| `$(tasks.calculate-version.results.version)` | `1.2.3-beta.5` | `Docker` image tags, full version display |
+| `$(tasks.calculate-version.results.variables.SemVer)` | `1.2.3-beta.5` | Git tags, package versions |
+| `$(tasks.calculate-version.results.variables.Major)` | `1` | Major version checks, breaking changes |
+| `$(tasks.calculate-version.results.variables.Minor)` | `2` | Minor version checks, feature additions |
+| `$(tasks.calculate-version.results.variables.Patch)` | `3` | Patch version checks, bug fixes |
+| `$(tasks.calculate-version.results.variables.InformationalVersion)` | `1.2.3-beta.5.g1234567` | Assembly info, detailed versioning |
+| `$(tasks.calculate-version.results.variables.BranchName)` | `main` | Branch-specific logic, deployment routing |
+| `$(tasks.calculate-version.results.variables.ShortSha)` | `1234567` | Commit identification, traceability |
+
+</Tab>
+</Tabs>
+
+## Best Practices
+
+### Development Best Practices
+
+#### Repository Setup
+- **Initialize with Semantic Tags**: Start your repository with a proper semantic version tag (e.g., `v1.0.0`)
+- **Consistent Branching Strategy**: Choose one workflow (`GitFlow`, `GitHubFlow`, or `TrunkBased`) and stick to it across the team
+- **Meaningful Commit Messages**: Use conventional commit formats to trigger appropriate version increments
+
+#### Pipeline Integration
+- **Cache Configuration**: Store `GitVersion.yaml` in namespace-level `ConfigMaps` for consistency across projects
+- **Error Handling**: Always include proper error handling and logging in your pipeline steps
+- **Resource Limits**: Set appropriate CPU and memory limits for `GitVersion` tasks
+
+#### Version Management
+- **Regular Tagging**: Tag release branches when deploying to production environments
+- **Pre-release Labels**: Use meaningful pre-release labels (`alpha`, `beta`, `rc`) for different environments
+- **Hotfix Handling**: Ensure hotfix branches are properly configured to increment patch versions
+
+
+### Production Deployment Guidelines
+
+#### Pre-deployment Checklist
+- ✅ **Repository Tags**: Verify initial semantic version tags exist
+- ✅ **ConfigMap Setup**: Namespace-level configuration deployed and tested
+- ✅ **Pipeline Integration**: GitVersion task integrated in CI/CD workflows
+- ✅ **Branch Configurations**: All team branch patterns properly configured
+- ✅ **Access Controls**: Proper RBAC setup for ConfigMap modifications
+
+#### Operational Recommendations
+- **Monitoring**: Set up alerts for version calculation failures
+- **Backup**: Regular backup of namespace ConfigMaps
+- **Documentation**: Maintain team documentation for branching strategies
+- **Training**: Ensure team understands semantic versioning principles
+
+## Frequently Asked Questions (FAQ)
+
+### Why is my version number not incrementing?
+
+Version increments are controlled by commit messages (`+semver: major/minor/patch`), branch configuration, and proper Git tagging. Tags are essential for version progression. See [Troubleshooting](#troubleshooting) for detailed solutions.
+
+### How does `GitVersion` work with shallow clones?
+
+GitVersion requires complete Git history. Use `git fetch --unshallow --tags` for shallow clones. The git-version task automatically handles this. See [Troubleshooting](#troubleshooting) for platform-specific solutions.
+
+### Why does my release branch show unexpected version numbers?
+
+Branch names must use complete semantic versions (e.g., `release/v1.2.0`, not `release/v1.2`). Use tags for version specification if needed. See [Troubleshooting](#troubleshooting) for detailed solutions.
+
+### Why should I avoid using branch names for version sources?
+
+Branch names are unstable version sources because branches are often deleted after merging. Use Git tags for persistent version references.
+
+## Reference
+
+### Configuration Parameters
+
+**Core Settings**:
+- `mode`: `ContinuousDelivery` | `ManualDeployment`
+- `increment`: `Major` | `Minor` | `Patch` | `Inherit` | `None`
+- `semantic-version-format`: `Strict` | `Loose`
+- `next-version`: Explicit version override (e.g., `2.0.0`)
+- `assembly-versioning-scheme`: `MajorMinorPatch` | `MajorMinor` | `Major` | `None`
+
+**Branch Configuration**:
+- `regex`: Regular expression for branch name matching
+- `label`: Pre-release label pattern (e.g., `"beta"`, `"{BranchName}"`)
+- `prevent-increment.when-current-commit-tagged`: `true` | `false`
+- `track-merge-target`: `true` | `false`
+- `is-main-branch`: `true` | `false`
+- `is-release-branch`: `true` | `false`
+
+**Version Control**:
+- `tag-prefix`: Pattern for version tags (default: `'[vV]?'`)
+- `major-version-bump-message`: Regex for major version commits
+- `minor-version-bump-message`: Regex for minor version commits
+- `patch-version-bump-message`: Regex for patch version commits
+- `no-bump-message`: Regex to skip version increment
+
+### GitVersion Variables
+
+**Primary Version Variables**:
+- `FullSemVer`: Complete semantic version (e.g., `0.0.1-test-git-revision.15`)
+- `SemVer`: Standard semantic version (e.g., `0.0.1-test-git-revision.15`)
+- `Major`: Major version number (e.g., `0`)
+- `Minor`: Minor version number (e.g., `0`)
+- `Patch`: Patch version number (e.g., `1`)
+- `MajorMinorPatch`: Version without pre-release (e.g., `0.0.1`)
+
+**Pre-release Variables**:
+- `PreReleaseTag`: Pre-release identifier (e.g., `test-git-revision.15`)
+- `PreReleaseLabel`: Pre-release label only (e.g., `test-git-revision`)
+- `PreReleaseNumber`: Pre-release build number (e.g., `15`)
+- `PreReleaseLabelWithDash`: Pre-release with dash prefix (e.g., `-test-git-revision`)
+- `PreReleaseTagWithDash`: Full pre-release with dash (e.g., `-test-git-revision.15`)
+- `WeightedPreReleaseNumber`: Weighted pre-release number (e.g., `15`)
+
+**Assembly and Build Variables**:
+- `AssemblySemVer`: Assembly version format (e.g., `0.0.1.0`)
+- `AssemblySemFileVer`: Assembly file version format (e.g., `0.0.1.0`)
+- `InformationalVersion`: Extended version with metadata (e.g., `0.0.1-test-git-revision.15.gf73e634`)
+
+**Source Control Variables**:
+- `BranchName`: Current branch name (e.g., `test/git-revision`)
+- `EscapedBranchName`: URL-safe branch name (e.g., `test-git-revision`)
+- `Sha`: Full commit SHA (e.g., `f73e634c8c8ca928aa0cb06ee8f0d8ce282f11c9`)
+- `ShortSha`: Short commit SHA (e.g., `f73e634`)
+- `CommitDate`: Commit date (e.g., `2025-09-08`)
+- `CommitsSinceVersionSource`: Commits since version source (e.g., `15`)
+- `VersionSourceSha`: SHA of version source commit
+- `UncommittedChanges`: Number of uncommitted changes (e.g., `0`)
+
+**Metadata Variables**:
+- `BuildMetaData`: Build metadata (if available)
+- `FullBuildMetaData`: Complete build metadata with branch and SHA
+
+### Command Line Options
+
+**Essential Commands**:
+- `gitversion`: Calculate version for current directory
+- `gitversion /showconfig`: Display complete configuration
+- `gitversion /nocache`: Calculate without using cache
+- `gitversion /output json`: Output in JSON format
+- `gitversion /config <path>`: Use custom configuration file
+
+**Task Parameters**:
+- `gitversion-image`: GitVersion Docker image version
+- `yq-image`: yq image for JSON processing
+- `commit`: Specific commit to calculate version from
+- `config-file`: Custom configuration file name
+- `pre-command`/`post-command`: Custom scripts for advanced processing
+
+### Workflow Templates
+
+**GitFlow Configuration**:
+```yaml
+workflow: GitFlow/v1
+# Suitable for: Traditional development with develop/release branches
+# Main branches: main, develop, release/*, feature/*, hotfix/*
+```
+
+**GitHubFlow Configuration**:
+```yaml
+workflow: GitHubFlow/v1
+# Suitable for: Simplified workflow with feature branches to main
+# Main branches: main, feature/*, pull-request/*
+```
+
+**TrunkBased Configuration**:
+```yaml
+workflow: TrunkBased/v1
+# Suitable for: Continuous integration with minimal branching
+# Main branches: main, short-lived feature branches
+```
+
+## Troubleshooting
+
+### Quick Problem Diagnosis
+
+Use this decision tree to quickly identify your issue and find the appropriate solution:
+
+**Version not changing?**
+- New repository without tags? → [Initial Setup](#initial-setup-issues)
+- Commits not triggering increments? → [Version Increment Issues](#version-increment-issues)
+- Shallow clone error? → [Repository Issues](#repository-issues)
+- Branch name not working? → [Branch Configuration Issues](#branch-configuration-issues)
+- Unexpected version format? → [Configuration Issues](#configuration-issues-1)
+
+**Quick Diagnostic Commands**:
+```bash
+# Check current status
+$ gitversion                    # Current calculated version
+$ git tag --list --sort=-version:refname | head -5  # Recent tags
+$ git log --oneline -5          # Recent commits
+
+# Debug configuration
+$ gitversion /showconfig        # Current GitVersion config
+$ gitversion /nocache           # Force recalculation
+```
+
+### Initial Setup Issues
+
+**Symptoms**: `0.0.1` version, no version progression, new repository
+
+**Root Cause**: Missing initial tags or improper repository setup
+
+**Detection Commands**:
+```bash
+# Check if tags exist
+$ git tag --list --sort=-version:refname
+
+# Expected: List of version tags like v1.0.0, v0.1.0
+# Problem: Empty output or non-semantic tags
+```
+
+**Solution**:
+```bash
+# Create initial semantic version tag
+$ git tag v1.0.0
+$ git push origin v1.0.0
+
+# Verify version calculation now works
+$ gitversion  # Should show 1.0.1 or similar increment
+```
+
+### Version Increment Issues
+
+**Symptoms**: Version stays the same after commits, `+semver:` not working
+
+**1. Commit Message Issues**
+```bash
+# Check recent commit messages
+$ git log --oneline -5
+
+# If commits lack +semver: or conventional format
+# Solution: Use semantic commit messages
+$ git commit -m "feat: add feature +semver: minor"
+$ git commit -m "fix: bug fix +semver: patch"
+$ git commit -m "feat!: breaking change +semver: major"
+```
+
+**2. Branch Configuration Issues**
+```bash
+# Check if branch increment is disabled
+$ gitversion /showconfig
+
+# Look for prevent-increment settings
+# Solution: Update GitVersion.yml
+branches:
+  main:
+    increment: Minor
+    prevent-increment:
+      when-current-commit-tagged: false
+```
+
+**3. Missing Tag After +semver**
+```bash
+# After using +semver: minor, tag the result
+$ git commit -m "feat: new feature +semver: minor"
+$ gitversion  # Shows new version e.g., 1.2.0
+$ git tag v1.2.0  # Tag with calculated version
+$ git push origin v1.2.0
+```
+
+### Repository Issues
+
+**Symptoms**: "Shallow repository" errors, missing Git history
+
+**Root Cause**: Repository cloned without full history, missing tags
+
+**Detection Commands**:
+```bash
+# Check if repository is shallow
+$ if [ -f .git/shallow ]; then echo "Repository is shallow"; fi
+
+# Check available history
+$ git log --oneline | wc -l  # Should show full commit count
+```
+
+**Solutions by Platform**:
+
+**Local/Manual Fix**:
+```bash
+# Fetch complete history and tags
+$ git fetch --unshallow --tags --no-recurse-submodules
+$ gitversion /nocache  # Verify fix
+```
+
+**GitHub Actions**:
+```yaml
+- name: Checkout
+  uses: actions/checkout@v4
+  with:
+    fetch-depth: 0      # Full clone
+    fetch-tags: true    # Include all tags
+```
+
+```yaml
+# Tekton git-clone with full history
+- name: git-clone
+  taskRef:
+    name: git-clone
+  params:
+    - name: depth
+      value: "0"        # Full clone
+    - name: fetchTags
+      value: "true"     # Fetch all tags
+```
+
+> **Note**: The git-version task automatically detects and fixes shallow clones
+
+### Branch Configuration Issues
+
+**Problem**: Created a `release-v0.65` branch, but version is not `0.65.x`
+
+**Root Cause**: The `semantic-version-format: Strict` setting requires complete semantic versions. `0.65` doesn't meet strict format requirements.
+
+<Tabs>
+  <Tab label="Complete Semantic Version">
+
+**Best Practice Solution** - Use complete semantic versions in branch names:
+
+```bash
+# Instead of: release-v0.65
+$ git checkout -b release-v0.65.0
+
+# Verify version calculation
+$ gitversion
+# Expected output: 0.65.0-rc.1
+```
+
+**Why this works**:
+- `0.65.0` is a valid semantic version format
+- Matches `semantic-version-format: Strict` requirements
+- Branch regex can extract version correctly
+
+</Tab>
+
+  <Tab label="Use Tags Instead">
+
+**Alternative Solution** - Use tags for version specification:
+
+```bash
+# Create release branch with any name
+$ git checkout -b release-v0.65
+
+# Add semantic version tag to establish base version
+$ git tag v0.65.0-alpha.0
+$ git push origin v0.65.0-alpha.0
+
+# Verify version calculation
+$ gitversion
+# Expected output: 0.65.0-rc.1
+```
+
+**Benefits**:
+- Tags persist after branch deletion
+- More flexible branch naming
+- Clear version history
+
+</Tab>
+
+  <Tab label="Loose Format (Caution)">
+
+**Configuration Change** - Enable loose format:
+
+```yaml
+# GitVersion.yaml
+semantic-version-format: Loose
+```
+
+**⚠️ Use with extreme caution**:
+
+Loose format can cause unintended side effects:
+
+```bash
+# Example problematic scenario
+$ git checkout -b hotfix/12345
+
+# With Strict mode: No version extracted (correct)
+# With Loose mode: Extracts version 12345.0.0 (incorrect!)
+```
+
+**Problems**:
+- Branch `hotfix/12345` matches `hotfix` configuration
+- Since `12345` doesn't look like a version, Strict mode ignores it
+- Loose mode incorrectly interprets `12345` as version `12345.0.0`
+
+</Tab>
+</Tabs>
+
+### Configuration Issues
+
+**Symptoms**: Unexpected version numbers, wrong increments, strategy conflicts
+
+**Root Cause**: Misconfigured branch patterns, increment rules, or version strategies
+
+**Common Issues & Solutions**:
+
+**1. Feature Branch Version Issues**
+```bash
+# Check branch configuration
+$ gitversion /showconfig | grep -A 10 feature
+
+# Common fix: Update branch regex and increment
+branches:
+  feature:
+    regex: ^features?[/\-](?<BranchName>.+)
+    increment: Inherit        # Use source branch increment
+    label: "{BranchName}"     # Use branch name as pre-release label
+```
+
+**2. Main Branch Not Incrementing**
+```bash
+# Verify main branch settings
+branches:
+  main:
+    increment: Minor
+    prevent-increment:
+      when-current-commit-tagged: false    # Critical setting
+    is-main-branch: true
+```
+
+**3. Version Strategy Conflicts**
+```bash
+# Debug version calculation steps
+$ gitversion /nocache /output buildserver
+
+# Check strategy priority
+$ gitversion /showconfig | grep -A 10 strategies
+
+# Review and adjust strategy order if needed
+```
+
+### Diagnostic Toolkit
+
+**Essential Diagnostic Commands** (use these first):
+```bash
+# 1. Current version and basic info
+$ gitversion                              # Current calculated version
+$ gitversion /showconfig                  # Current configuration
+$ gitversion /nocache                     # Force recalculation
+
+# 2. Repository state analysis
+$ git status                              # Working directory state
+$ git log --oneline -5                    # Recent commits
+$ git tag --list --sort=-version:refname | head -5  # Recent tags
+$ git branch -a                           # All branches
+
+# 3. Advanced debugging (when needed)
+$ gitversion /output json | jq            # All version variables
+$ gitversion /nocache /output buildserver # Detailed calculation steps
+```
+
+**Problem-Specific Commands**:
+```bash
+# For shallow clone issues
+$ if [ -f .git/shallow ]; then echo "Shallow detected"; fi
+
+# For branch configuration issues
+$ gitversion /showconfig | grep -A 10 branches
+
+# For strategy debugging
+$ gitversion /showconfig | grep -A 10 strategies
+```
+
+## Testing & Verification
+
+After implementing GitVersion, verify your setup with these comprehensive tests:
+
+### Local Testing Commands
+
+```bash
+# Check current GitVersion state
+$ gitversion /nocache /output json
+
+# Test version calculation locally
+$ gitversion
+
+# Verify repository setup
+$ git log --oneline -10
+$ git tag --list --sort=-version:refname | head -5
+
+# Test configuration
+$ gitversion /showconfig
+
+# Debug version calculation details
+$ gitversion /nocache /output buildserver
+```
+
+### Branch-Specific Testing
+
+```bash
+# Test different branch scenarios
+$ git checkout -b feature/test-versioning
+$ gitversion
+
+$ git checkout main
+$ gitversion
+
+# Test release branch versioning
+$ git checkout -b release/v1.2.0
+$ gitversion
+```
+
+### CI/CD Pipeline Validation
+
+**Tekton Pipeline Testing**:
+```bash
+# Test GitVersion TaskRun
+$ kubectl apply -f your-gitversion-taskrun.yaml
+
+# Monitor task execution
+$ kubectl get taskrun -w
+
+# Check results
+$ kubectl get taskrun test-gitversion -o jsonpath='{.status.results[?(@.name=="version")].value}'
+```
+
+**Validation Checklist**:
+- ✅ Version information appears in build logs
+- ✅ Version numbers increment correctly across branches
+- ✅ Tag-based version generation works as expected
+- ✅ Version information appears in build artifacts
+- ✅ Namespace ConfigMaps are properly loaded
+- ✅ Branch regex patterns match your naming conventions
+
+### Integration Testing
+
+```bash
+# Test full pipeline integration
+$ git commit -m "feat: new feature +semver: minor"
+$ git push origin feature/test-versioning
+
+# Verify version increment behavior
+$ gitversion
+# Should show incremented minor version
+
+# Test production tagging
+$ git tag v1.2.0
+$ gitversion
+# Should show stable version without pre-release label
+```
+
+## Summary
+
+### What We've Solved
+
+This comprehensive guide has addressed the following critical challenges in modern software development:
+
+**✅ Version Management Automation**
+- Eliminated manual version incrementation and human errors
+- Automated semantic versioning based on `Git` history and branch patterns
+- Ensured consistent version calculation across different environments
+
+**✅ CI/CD Pipeline Integration**
+- Seamless integration with `Tekton` pipelines and `Kubernetes` environments
+- Namespace-level configuration management for team consistency
+- Complete pipeline examples from version calculation to deployment
+
+**✅ Branch Strategy Implementation**
+- Support for multiple branching strategies (`GitFlow`, `GitHubFlow`, `TrunkBased`)
+- Flexible branch-specific configuration for different development patterns
+- Comprehensive examples for all common branch types
+
+### Implementation Path
+
+The solution follows a structured approach:
+
+1. **Foundation Setup** (5 minutes)
+   - Repository initialization with semantic tags
+   - Task installation and basic testing
+   - Quick verification of version calculation
+
+2. **Configuration Management**
+   - Workflow selection and full configuration generation
+   - Namespace-level `ConfigMap` setup for team standards
+   - Branch-specific customization for project needs
+
+3. **Production Integration**
+   - Complete pipeline implementation examples
+   - Environment-specific configuration handling
+   - Automated tagging and release management
+
+4. **Operational Excellence**
+   - Best practices for repository and pipeline management
+   - Comprehensive troubleshooting for common issues
+   - Advanced configuration patterns for complex workflows
+
+### Key Benefits Achieved
+
+- **Zero-Touch Versioning**: Automatic version calculation without manual intervention
+- **Semantic Compliance**: Full adherence to `SemVer` standards across all releases
+- **Team Consistency**: Standardized versioning across all projects and environments
+- **Pipeline Reliability**: Robust error handling and diagnostic capabilities
+- **Scalable Architecture**: Enterprise-ready solution supporting complex branching strategies
+
+This implementation provides a complete, production-ready semantic versioning solution that scales with your development team and organizational requirements.
+
+## References
+
+### `GitVersion` Documentation
+- [`GitVersion` Official Documentation](https://gitversion.net/docs/) - Complete reference for `GitVersion` features and configuration
+- [`GitVersion` Configuration Reference](https://gitversion.net/docs/reference/configuration) - Detailed configuration options and examples
+- [`GitVersion` Variables Reference](https://gitversion.net/docs/reference/variables) - Complete list of available version variables
+- [`GitVersion` Branching Strategies](https://gitversion.net/docs/learn/branching-strategies/) - `GitFlow`, `GitHub Flow`, and `trunk-based` development patterns
+
+### Semantic Versioning
+- [Semantic Versioning Specification](https://semver.org/) - Official `SemVer` specification and guidelines
+- [Introduction to Semantic Versioning](https://gitversion.net/docs/learn/intro-to-semver) - `GitVersion`'s guide to understanding `SemVer`
+
+### Version Incrementing and Tagging
+- [Version Incrementing](https://gitversion.net/docs/reference/version-increments) - Understanding how versions are calculated and incremented
+- [Commit Message Convention](https://www.conventionalcommits.org/) - Conventional commit format for automated version bumping
+
+### `CI/CD` Integration
+- [`Tekton Pipelines` Documentation](https://tekton.dev/docs/pipelines/) - Official `Tekton Pipelines` documentation
+- [`Kubernetes ConfigMap` Documentation](https://kubernetes.io/docs/concepts/configuration/configmap/) - `ConfigMap` usage and best practices
+
+### `Git` and Repository Management
+- [`Git` Documentation](https://git-scm.com/docs) - Official `Git` documentation
+- [`Git` Branching Strategies](https://www.atlassian.com/git/tutorials/comparing-workflows) - Comparison of different `Git` workflows
