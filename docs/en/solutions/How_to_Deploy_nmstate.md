@@ -19,6 +19,7 @@ This document explains how to deploy nmstate on Alauda Container Platform to ena
 #### Operating System Requirements
 
 Supported operating systems:
+
 **Red Hat Reference Environment Configuration:**
 - Operating System: Red Hat 8.7
 - NetworkManager Version: 1.40.0-1.el8
@@ -198,7 +199,7 @@ ip link show bond0
 **Bond Interface Status Output Example**
 ```
 bond0: <BROADCAST,MULTICAST,MASTER,UP,LOWER_UP> mtu 1500 qdisc noqueue state UP mode DEFAULT group default qlen 1000
-    link/ether 52:54:00:61:e5:29 brd ff:ff:ff:ff:ff:ff
+    link/ether xx:xx:xx:xx:xx:xx brd ff:ff:ff:ff:ff:ff
 ```
 
 And you can see the network card is managed by NetworkManager:
@@ -211,11 +212,9 @@ nmcli connection show
 **NetworkManager Connections Output Example**
 ```
 NAME                UUID                                  TYPE      DEVICE
-eth1                fd473133-8e47-42c2-bb7e-44a5bd8439bb  ethernet  eth1
-bond0               256d0da6-a3c4-4752-881d-acc9d5f1b406  bond      bond0
-Wired connection 2  e18df776-bfca-32df-95dc-14effbff880b  ethernet  eth2
-Wired connection 3  c09edc4a-3b4b-3b1b-b376-117bcd5832fb  ethernet  eth3
-Wired connection 1  70e6cf1f-3a77-3ac0-ae87-c25f7700fac9  ethernet  --
+bond0               xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx  bond      bond0
+Wired connection 2  xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx  ethernet  eth2
+Wired connection 3  xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx  ethernet  eth3
 ```
 
 **Note:** The persistence is not very good. If you manually bring down the network card, it won't automatically come back up. You need to reconfigure the policy or restart nmstate-handler.
