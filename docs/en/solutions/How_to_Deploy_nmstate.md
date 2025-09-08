@@ -1,23 +1,33 @@
 ---
 kind:
-  - How to
-products:
-  - Alauda Container Platform
+   - How To
+products: 
+   - Alauda Container Platform
 ProductsVersion:
-  - 4.1.0,4.2.x
+   - 4.1.0,4.2.x
 ---
+# How to Deploy nmstate
 
-# nmstate Deployment Guide
+## Purpose
 
-## 1. Deployment Prerequisites
+This document explains how to deploy nmstate on Alauda Container Platform to enable network state management and configuration capabilities. nmstate is a declarative network manager API that allows you to manage network configuration in a consistent way across different Linux distributions.
 
-### 1.1 Operating System Requirements
+## Resolution
+
+### Prerequisites
+
+#### Operating System Requirements
 
 Supported operating systems:
-- Red Hat
-- MicroOS
+**Red Hat Reference Environment Configuration:**
+- Operating System: Red Hat 8.7
+- NetworkManager Version: 1.40.0-1.el8
 
-### 1.2 System Dependencies
+**MicroOS Reference Environment Configuration:**
+- Operating System Version: SUSE Linux Enterprise Micro 5.5
+- NetworkManager Version: 1.38.6
+
+#### System Dependencies
 
 NetworkManager must be installed on the nodes. You can check it with the following command:
 
@@ -28,15 +38,9 @@ systemctl status NetworkManager
 
 Expected output: NetworkManager service status should be `active (running)`
 
-**Red Hat Reference Environment Configuration:**
-- Operating System: Red Hat 8.7
-- NetworkManager Version: 1.40.0-1.el8
 
-**MicroOS Reference Environment Configuration:**
-- Operating System Version: SUSE Linux Enterprise Micro 5.5
-- NetworkManager Version: 1.38.6
 
-### 1.3 SELinux Configuration
+#### SELinux Configuration
 
 If SELinux exists in the environment, additional permissive policies need to be configured. If not permitted, during deployment, dbus messages from NetworkManager to nm_handler will be rejected, causing nm_handler to remain in 0/1 state. This issue has only been encountered in MicroOS, not in Red Hat.
 
@@ -63,9 +67,9 @@ semodule_package -o nmstate-networkmanager-dbus.pp -m nmstate-networkmanager-dbu
 sudo semodule -i nmstate-networkmanager-dbus.pp
 ```
 
-## 2. Installation Steps
+### Installation Steps
 
-### 2.1 Install Using Offline Installation Script
+#### Install Using Offline Installation Script
 
 **Prerequisites:** Ensure the installation script is available in the attachments directory.
 
@@ -74,7 +78,7 @@ sudo semodule -i nmstate-networkmanager-dbus.pp
 attachments/nmstate/install.sh
 ```
 
-### 2.2 Install Using Open Source Method (Alternative)
+#### Install Using Open Source Method (Alternative)
 
 ```bash
 kubectl apply -f https://github.com/nmstate/kubernetes-nmstate/releases/download/v0.84.0/nmstate.io_nmstates.yaml
@@ -85,7 +89,7 @@ kubectl apply -f https://github.com/nmstate/kubernetes-nmstate/releases/download
 kubectl apply -f https://github.com/nmstate/kubernetes-nmstate/releases/download/v0.84.0/operator.yaml
 ```
 
-### 2.3 Create NMState Instance
+#### Create NMState Instance
 
 After the nmstate-operator deployment is complete, execute:
 
@@ -99,7 +103,7 @@ metadata:
 EOF
 ```
 
-### 2.4 Verify Deployment
+#### Verify Deployment
 
 Start triggering the deployment of nmstate handler and related components, wait for deployment to complete:
 
@@ -119,9 +123,9 @@ nmstate-operator-56cc699fcf-9jcjc      1/1     Running   0          40h
 nmstate-webhook-54d8bd69b7-4lml4       1/1     Running   0          2d19h
 ```
 
-## 3. Test Scenario: Using nmstate to Configure Bond Network Cards for OVN Underlay Subnets
+### Test Scenario: Using nmstate to Configure Bond Network Cards for OVN Underlay Subnets
 
-### 3.1 nmstatectl show Command
+#### nmstatectl show Command
 
 Enter any nmstate-handler pod:
 
@@ -141,12 +145,12 @@ kubectl get NodeNetworkState
 **Node Network State Output Example**
 ```
 NAME              AGE
-192.168.132.204   2d19h
-192.168.134.35    2d19h
-192.168.143.191   2d19h
+node1          2d19h
+node2           2d19h
+node3           2d19h
 ```
 
-### 3.2 Configure Underlay Bond Network Card
+#### Configure Underlay Bond Network Card
 
 **Prerequisites:** The underlay physical network cards must not be mounted on any OVS. You can check with `ip l show {network_card} |grep ovs`. If the output is empty, it means it's not mounted.
 
@@ -216,7 +220,7 @@ Wired connection 1  70e6cf1f-3a77-3ac0-ae87-c25f7700fac9  ethernet  --
 
 **Note:** The persistence is not very good. If you manually bring down the network card, it won't automatically come back up. You need to reconfigure the policy or restart nmstate-handler.
 
-### 3.3 Configure Underlay Network
+#### Configure Underlay Network
 
 The subsequent configuration is the same as normal underlay configuration steps:
 
@@ -232,20 +236,20 @@ The subsequent configuration is the same as normal underlay configuration steps:
    - Navigation path: **Platform Management** → **Networking** → **Subnets** → **Create Subnet**
    - Configuration: Select **Underlay** transmission mode, specify gateway IP and VLAN
 
-### 3.4 Verify Underlay Network
+#### Verify Underlay Network
 
 Configure deploy on the underlay subnet. If it starts successfully, it means the pod can connect to the gateway and the underlay network configuration is successful.
 
-## 4. Uninstall Commands
+### Uninstall Commands
 
-### 4.1 Using Offline Uninstallation Script
+#### Using Offline Uninstallation Script
 
 **Run Uninstallation Script**
 ```bash
 attachments/nmstate/uninstall.sh
 ```
 
-### 4.2 Using Open Source Method (Alternative)
+#### Using Open Source Method (Alternative)
 
 ```bash
 kubectl delete NMState nmstate
