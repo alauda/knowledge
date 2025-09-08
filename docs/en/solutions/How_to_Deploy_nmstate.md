@@ -259,3 +259,8 @@ kubectl delete -f https://github.com/nmstate/kubernetes-nmstate/releases/downloa
 kubectl delete -f https://github.com/nmstate/kubernetes-nmstate/releases/download/v0.84.0/role_binding.yaml
 kubectl delete -f https://github.com/nmstate/kubernetes-nmstate/releases/download/v0.84.0/operator.yaml
 ```
+
+## Related Information
+
+- [kubernetes-nmstate GitHub Repository](https://github.com/nmstate/kubernetes-nmstate) - Declarative node network configuration driven through Kubernetes API
+
