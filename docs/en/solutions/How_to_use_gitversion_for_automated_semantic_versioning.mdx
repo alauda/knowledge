@@ -136,10 +136,10 @@ Install the `GitVersion` task in your `Kubernetes` namespace:
 # The Task definition can be found at `Basic Task Usage` section below
 
 # Apply the GitVersion task
-kubectl apply -f git-version.yaml
+$ kubectl apply -f git-version.yaml
 
 # Verify installation
-kubectl get task git-version
+$ kubectl get task git-version
 ```
 
 </Tab>
@@ -177,10 +177,10 @@ Retrieve the calculated version from task results:
 
 ```bash
 # Check task results
-kubectl get taskrun test-gitversion -o jsonpath='{.status.results[?(@.name=="version")].value}'
+$ kubectl get taskrun test-gitversion -o jsonpath='{.status.results[?(@.name=="version")].value}'
 
 # View all version variables
-kubectl get taskrun test-gitversion -o jsonpath='{.status.results[?(@.name=="variables")].value}' | jq .
+$ kubectl get taskrun test-gitversion -o jsonpath='{.status.results[?(@.name=="variables")].value}' | jq .
 ```
 
 </Tab>
@@ -220,7 +220,7 @@ Understanding the core concepts is essential for effective GitVersion implementa
 
 - **`GitFlow/v1`** (default): Traditional `GitFlow` workflow with `develop` and `release` branches
 - **`GitHubFlow/v1`**: Simplified workflow with feature branches merging directly to `main`
-- **`TrunkBased/v1`**: `Trunk-based` development with direct commits to `main`
+- **`TrunkBased/preview1`**: `Trunk-based` development with direct commits to `main`
 
 For detailed information about these branching strategies and their implementation patterns, see: [GitVersion Branching Strategies](https://gitversion.net/docs/learn/branching-strategies/)
 
@@ -301,7 +301,7 @@ Create a `GitVersion.yaml` file in your repository root to customize GitVersion 
 Store the `GitVersion` configuration in `Kubernetes` `ConfigMaps` for centralized management across pipelines within the same namespace. Note that `ConfigMaps` are namespace-scoped resources, providing unified management within a single namespace.
 
 <Tabs>
-  <Tab label="Incremental Configuration">
+  <Tab label="Incremental Configuration `GitVersion.yaml`">
 
     ```yaml
     mode: ContinuousDelivery
@@ -562,69 +562,13 @@ metadata:
   namespace: <tekton-pipelines>
 data:
   GitVersion.yaml: |
-    mode: ContinuousDelivery
-    increment: Patch
-    # Enhanced assembly informational format with git hash
-    assembly-informational-format: '{Major}.{Minor}.{Patch}-{PreReleaseTag}.g{ShortSha}'
-    branches:
-      # Main branch: 3.18.1-beta.8
-      main:
-        mode: ContinuousDelivery
-        regex: ^(main|master)$
-        label: "beta"
-        increment: Minor
-        track-merge-message: false
-        prevent-increment:
-          when-current-commit-tagged: false
-      # Release branch: 3.16.0-rc.7
-      release:
-        mode: ContinuousDelivery
-        regex: ^releases?[/-]v?(?<version>\d+\.\d+(?:\.\d+)?)$
-        label: "rc"
-        increment: Patch
-      # Development branch: 3.19.0-develop.7
-      develop:
-        mode: ContinuousDelivery
-        regex: (?<BranchName>^dev(elop)?(ment)?$)
-        label: "{BranchName}"
-        increment: Minor
-      # Pull request: 3.18.0-pr534.22
-      pull-request:
-        mode: ContinuousDelivery
-        regex: ^(pull-requests|pull|pr)[\/-](?<Number>\d*)
-        label: "pr{Number}"
-        increment: Inherit
-      # Conventional commits: build/*, chore/*, ci/*, docs/*, feat/*, fix/*, etc.
-      conventional:
-        mode: ContinuousDelivery
-        regex: ^(?<phase>(build|chore|ci|docs|feat(ures?)?|fix|hotfix|perf|refactor|revert|style|test))[/-](?<BranchName>.*)
-        label: "{phase}-{BranchName}"
-        increment: Patch
-      # Hotfix branches: hotfix/critical-fix -> 3.18.1-hotfix.1
-      hotfix:
-        mode: ManualDeployment
-        regex: ^hotfix(es)?[\/-](?<BranchName>.+)
-        label: "hotfix"
-        increment: Patch
-        is-release-branch: true
-      # Support branches: support/v2.0 -> 2.0.1
-      support:
-        mode: ContinuousDelivery
-        regex: ^support[\/-](?<BranchName>.+)
-        increment: Patch
-        is-main-branch: true
-      # Unknown branches: abc/def -> 3.18.2-devdef.1
-      unknown:
-        mode: ContinuousDelivery
-        regex: (.*[-/])?(?<BranchName>.+)
-        label: "dev{BranchName}"
-        increment: Inherit
+    # Use the configuration from "Incremental Configuration GitVersion.yaml" tab above
 ```
 
 **Step 2: Apply `ConfigMap`**
 
 ```bash
-`kubectl apply -f gitversion-configmap.yaml`
+$ kubectl apply -f gitversion-configmap.yaml
 ```
 
 **Step 3: Environment-specific Configurations**
@@ -680,6 +624,7 @@ data:
 
 **Mode Configuration**:
 - `ContinuousDelivery`: Generates unique version for each commit
+- `ContinuousDeployment`: Increments pre-release version on every commit, ideal for development branches where final release version is unknown
 - `ManualDeployment`: Version increments only on tag creation
 
 **Branch-Specific Settings**:
@@ -1078,7 +1023,7 @@ spec:
       type: string
     - name: commit
       type: string
-      description: Optional commit to reset a copy of the repository to and regenarating a version from previous commits. This will not affect current source workspace.
+      description: Optional commit to reset a copy of the repository to and regenerating a version from previous commits. This does not affect the current source workspace.
       default: ''
     - name: config-file
       type: string
@@ -1089,7 +1034,7 @@ spec:
       default: ""
       description: |
         Commands to execute before running GitVersion.
-        This environment variables can be used in the pre-command:
+        These environment variables can be used in the pre-command:
         - `GITVERSION_BINARY`: Path to the GitVersion binary.
         - `CUSTOM_CONFIG`: Path to the custom config file.
         - `FINAL_GITVERSION_CONFIG`: Path to the final GitVersion config file.
@@ -1099,7 +1044,7 @@ spec:
       default: ""
       description: |
         Commands to execute after running GitVersion.
-        This environment variables can be used in the post-command:
+        These environment variables can be used in the post-command:
         - `GITVERSION_BINARY`: Path to the GitVersion binary.
         - `CUSTOM_CONFIG`: Path to the custom config file.
         - `FINAL_GITVERSION_CONFIG`: Path to the final GitVersion config file.
@@ -1109,7 +1054,7 @@ spec:
       description: The calculated git version you could use for git tagging e.g. "0.1.0-tektonize.1-188". It uses the FullSemVer variable value.
 
     - name: variables
-      description: Stores all variables generated from GitVersion. For a complete reference see https://gitversion.net/5.12.0/docs/reference/variables
+      description: Stores all variables generated from GitVersion. For a complete reference see https://gitversion.net/docs/reference/variables
       type: object
       properties:
         AssemblySemFileVer: {}
@@ -1199,14 +1144,14 @@ spec:
           cp GitVersion.yaml $FINAL_GITVERSION_CONFIG
         else
           echo "==> No GitVersion.yaml in repository... generating default config..."
-          $(gitversion -showconfig) > $FINAL_GITVERSION_CONFIG || true
+          gitversion /showconfig > $FINAL_GITVERSION_CONFIG
         fi
-        ## Checking for a custom overrided config
+        ## Checking for a custom overridden config
         if [ "$(workspaces.config.bound)" = "true" ] && [ -f "$CUSTOM_CONFIG" ]; then
           echo "==> Found custom config $(params.config-file) in config workspace as $CUSTOM_CONFIG ..."
           cp -f $CUSTOM_CONFIG $FINAL_GITVERSION_CONFIG
         elif [ "$(workspaces.config.bound)" = "true" ] && [ ! -f "$CUSTOM_CONFIG" ]; then
-          echo "==! config workspace is bound but no $(params.config-file) file was found... ignoring config workspace..."
+          echo "WARN: config workspace is bound but no $(params.config-file) file was found... ignoring config workspace..."
         fi
 
         # Check if we need to reset the git commit
@@ -1225,7 +1170,7 @@ spec:
           mkdir -p /shared/repo/source
           cp -r $(workspaces.source.path)/.git /shared/repo/source/
           export REPO_PATH=/shared/repo/source
-          echo "==> Reseting to commit $(params.commit)..."
+          echo "==> Resetting to commit $(params.commit)..."
           git -C $REPO_PATH reset $(params.commit) --hard
         fi
 
@@ -1233,7 +1178,7 @@ spec:
         $(params.pre-command)
 
         echo "==> calculating gitversion..."
-        echo -n "$(gitversion $REPO_PATH /nocache /config $FINAL_GITVERSION_CONFIG)" | tee $FINAL_RESULTS_PATH || true
+        gitversion $REPO_PATH /output json /nocache /config $FINAL_GITVERSION_CONFIG | tr -d '\n' | tee $FINAL_RESULTS_PATH
         chmod a+rw $FINAL_RESULTS_PATH     # Make sure the results file is writable for the next step
         echo ""
 
@@ -1258,7 +1203,7 @@ spec:
         cp /shared/results.json $(results.variables.path)
 
         echo "==> git version variables:"
-        yq /shared/results.json
+        yq e '.' /shared/results.json
 
         echo "==> saving fullSemVer result..."
         yq e '.FullSemVer' /shared/results.json > $(results.version.path)
@@ -1718,7 +1663,7 @@ workflow: GitHubFlow/v1
 
 **TrunkBased Configuration**:
 ```yaml
-workflow: TrunkBased/v1
+workflow: TrunkBased/preview1
 # Suitable for: Continuous integration with minimal branching
 # Main branches: main, short-lived feature branches
 ```
