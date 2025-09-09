@@ -3,6 +3,7 @@ products:
    - Alauda Container Platform
 kind:
    - Solution
+id: KB1757400201-59DE
 ---
 # How to add a health check for ACP clusters
 ## Overview
