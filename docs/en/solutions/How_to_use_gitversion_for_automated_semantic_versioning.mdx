@@ -1138,20 +1138,20 @@ spec:
         # export GITVERSION=$(gitversion -config $FINAL_GITVERSION_CONFIG)
         export CUSTOM_CONFIG=$(workspaces.config.path)/$(params.config-file)
 
-        ## Checking if there is a config in the repo
-        if [  -f GitVersion.yaml ]; then
+        ## Checking for config priority: custom config > repo config > default config
+        if [ "$(workspaces.config.bound)" = "true" ] && [ -f "$CUSTOM_CONFIG" ]; then
+          echo "==> Found custom config $(params.config-file) in config workspace as $CUSTOM_CONFIG ..."
+          cp $CUSTOM_CONFIG $FINAL_GITVERSION_CONFIG
+        elif [ -f GitVersion.yaml ]; then
           echo "==> Found GitVersion.yaml in repository..."
           cp GitVersion.yaml $FINAL_GITVERSION_CONFIG
         else
-          echo "==> No GitVersion.yaml in repository... generating default config..."
+          echo "==> No GitVersion.yaml found, generating default config..."
           gitversion /showconfig > $FINAL_GITVERSION_CONFIG
         fi
-        ## Checking for a custom overridden config
-        if [ "$(workspaces.config.bound)" = "true" ] && [ -f "$CUSTOM_CONFIG" ]; then
-          echo "==> Found custom config $(params.config-file) in config workspace as $CUSTOM_CONFIG ..."
-          cp -f $CUSTOM_CONFIG $FINAL_GITVERSION_CONFIG
-        elif [ "$(workspaces.config.bound)" = "true" ] && [ ! -f "$CUSTOM_CONFIG" ]; then
-          echo "WARN: config workspace is bound but no $(params.config-file) file was found... ignoring config workspace..."
+
+        if [ "$(workspaces.config.bound)" = "true" ] && [ ! -f "$CUSTOM_CONFIG" ]; then
+          echo "WARN: config workspace is bound but no $(params.config-file) file was found... using fallback config..."
         fi
 
         # Check if we need to reset the git commit
@@ -1178,9 +1178,20 @@ spec:
         $(params.pre-command)
 
         echo "==> calculating gitversion..."
-        gitversion $REPO_PATH /output json /nocache /config $FINAL_GITVERSION_CONFIG | tr -d '\n' | tee $FINAL_RESULTS_PATH
-        chmod a+rw $FINAL_RESULTS_PATH     # Make sure the results file is writable for the next step
-        echo ""
+        if gitversion $REPO_PATH /output json /nocache /config $FINAL_GITVERSION_CONFIG > $FINAL_RESULTS_PATH; then
+          # Success: display the results and format
+          cat $FINAL_RESULTS_PATH
+          chmod a+rw $FINAL_RESULTS_PATH     # Make sure the results file is writable for the next step
+          echo ""
+        else
+          # Failure: still display any output but exit with error
+          echo "ERROR: GitVersion command failed"
+          if [ -s $FINAL_RESULTS_PATH ]; then
+            echo "Partial output:"
+            cat $FINAL_RESULTS_PATH
+          fi
+          exit 1
+        fi
 
         # Execute post-command if specified
         $(params.post-command)
@@ -1192,6 +1203,13 @@ spec:
       name: format-content
       securityContext:
         runAsNonRoot: true
+      computeResources:
+        requests:
+          cpu: "50m"
+          memory: "64Mi"
+        limits:
+          cpu: "100m"
+          memory: "128Mi"
       script: |
         #!/bin/sh
         set -e
