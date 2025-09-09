@@ -222,7 +222,7 @@ Understanding the core concepts is essential for effective GitVersion implementa
 - **`GitHubFlow/v1`**: Simplified workflow with feature branches merging directly to `main`
 - **`TrunkBased/preview1`**: `Trunk-based` development with direct commits to `main`
 
-For detailed information about these branching strategies and their implementation patterns, see: [GitVersion Branching Strategies](https://gitversion.net/docs/learn/branching-strategies/)
+For detailed information about these branching strategies and their implementation patterns, see: [GitVersion Branching Strategies](https://gitversion.net/docs/learn/branching-strategies/overview)
 
 To override the default configuration, prepare a `GitVersion.yaml` file in your repository root.
 
@@ -900,7 +900,7 @@ no-bump-message: '\+semver:\s?(none|skip)'
 
 `GitVersion` uses multiple strategies to determine the base version, evaluated in priority order. Understanding these strategies helps you configure versioning behavior effectively.
 
-**Strategy Priority and Evaluation**
+##### Strategy Priority and Evaluation
 
 **Priority Order** (highest to lowest):
 1. **ConfiguredNextVersion Strategy** - Explicit version in configuration
@@ -1697,7 +1697,7 @@ Use this decision tree to quickly identify your issue and find the appropriate s
 - Commits not triggering increments? → [Version Increment Issues](#version-increment-issues)
 - Shallow clone error? → [Repository Issues](#repository-issues)
 - Branch name not working? → [Branch Configuration Issues](#branch-configuration-issues)
-- Unexpected version format? → [Configuration Issues](#configuration-issues-1)
+- Unexpected version format? → [Configuration Issues](#configuration-issues)
 
 **Quick Diagnostic Commands**:
 ```bash
@@ -1758,7 +1758,7 @@ $ git commit -m "feat!: breaking change +semver: major"
 $ gitversion /showconfig
 
 # Look for prevent-increment settings
-# Solution: Update GitVersion.yml
+# Solution: Update GitVersion.yaml
 branches:
   main:
     increment: Minor
@@ -2116,7 +2116,7 @@ This implementation provides a complete, production-ready semantic versioning so
 - [`GitVersion` Official Documentation](https://gitversion.net/docs/) - Complete reference for `GitVersion` features and configuration
 - [`GitVersion` Configuration Reference](https://gitversion.net/docs/reference/configuration) - Detailed configuration options and examples
 - [`GitVersion` Variables Reference](https://gitversion.net/docs/reference/variables) - Complete list of available version variables
-- [`GitVersion` Branching Strategies](https://gitversion.net/docs/learn/branching-strategies/) - `GitFlow`, `GitHub Flow`, and `trunk-based` development patterns
+- [`GitVersion` Branching Strategies](https://gitversion.net/docs/learn/branching-strategies/overview) - `GitFlow`, `GitHub Flow`, and `trunk-based` development patterns
 
 ### Semantic Versioning
 - [Semantic Versioning Specification](https://semver.org/) - Official `SemVer` specification and guidelines
