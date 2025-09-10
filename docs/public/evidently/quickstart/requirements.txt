@@ -1,0 +1,4 @@
+# Evidently LLM Demo Requirements
+evidently[llm]==0.7.14
+litellm>=1.70.0
+numpy>=1.22.0,<2.0.0
