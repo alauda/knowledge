@@ -215,48 +215,8 @@ violet push --platform-address=platform-access-address --platform-username=platf
 ### Storage Preparation
 
   Featureform data is stored in etcd, which requires persistent storage for data persistence.
-  The cluster needs to have CSI installed or `create local storage` (method described below, limited to non-production environments).
+  The cluster needs to have CSI pre-installed or `PersistentVolume` pre-prepared.
 
-#### Creating Local Storage
-
-  Use kubectl create to create the following resources, which can prepare local directories as PersistentVolumes for use.
-
-```yaml
----
-apiVersion: v1
-kind: PersistentVolume
-metadata:
-  name: etcd-1
-spec:
-  capacity:
-    storage: 10Gi
-  accessModes:
-    - ReadWriteOnce
-  persistentVolumeReclaimPolicy: Retain
-  local:
-    path: /var/lib/etcd-1
-  nodeAffinity:
-    required:
-      nodeSelectorTerms:
-      - matchExpressions:
-        - key: kubernetes.io/hostname
-          operator: In
-          values:
-          - xxx.xxx.xxx.xxx
-```
-Notes:
-
-  1. The path specified in spec.local.path must exist and be set to 777 permissions, for example:
-    ```bash
-    mkdir -p /var/lib/etcd-1
-    chmod 777 /var/lib/etcd-1
-    ```
-
-  2. Replace the placeholder values xxx.xxx.xxx.xxx in matchExpressions according to your environment.
-
-  3. When deploying high-availability etcd, prepare multiple `PersistentVolume` according to the number of replicas.
-
-###
 
 ### Creating Application
 
