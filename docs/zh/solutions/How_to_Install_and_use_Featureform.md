@@ -6,7 +6,7 @@ kind:
 ProductsVersion:
   - 4.x
 id: KB1756692696-9DEE
-sourceSHA: 2c04e20c0e77cfa334efb5e60d6f9e185917c6747f93b8b93d07cccb4241db9e
+sourceSHA: c3d1cd1e8c5104b89d7c476d381b93e0ebee74bf02704bcc11575f884272fe46
 ---
 
 # Featureform
@@ -21,13 +21,13 @@ Featureform 是一个开源的机器学习特征平台，旨在构建、管理�
 
 ### 特征
 
-特征是机器学习模型用于进行预测的输入数据。在 Featureform 中，特征包含以下核心组件：
+特征是机器学习模型用于做出预测的输入数据。在 Featureform 中，特征包含以下核心组件：
 
 - **实体列**：作为主键或索引，标识特征所属的对象
 - **值列**：特征的具体数值或类别值
 - **时间戳列**：可选的时间信息，用于跟踪特征随时间的变化
 
-特征是机器学习模型训练和推理的核心输入，与实体相关联，以提供进行预测所需的信息。
+特征是机器学习模型训练和推理的核心输入，与实体关联，以提供预测所需的信息。
 
 特征不是原始数据，而是数据源处理和转换的结果。
 
@@ -35,7 +35,7 @@ Featureform 是一个开源的机器学习特征平台，旨在构建、管理�
 
 例如：
 
-- 在欺诈检测中，原始数据由用户交易记录组成，包括交易金额、客户出生日期、客户位置等，但用于训练的特征是客户的平均交易金额。
+- 在欺诈检测中，原始数据包括用户交易记录，如交易金额、客户出生日期、客户位置等，但用于训练的特征是客户的平均交易金额。
 
 ### 标签
 
@@ -53,7 +53,7 @@ Featureform 是一个开源的机器学习特征平台，旨在构建、管理�
 
 - **客户**：用户 ID、客户 ID 等。
 
-实体作为连接特征和标签的桥梁，允许多个特征和标签组织在一起形成完整的训练数据。在 Featureform 中，实体通过装饰器定义，并可以与多个特征和标签关联。
+实体作为连接特征和标签的桥梁，允许多个特征和标签组织在一起，形成完整的训练数据。在 Featureform 中，实体通过装饰器定义，并可以与多个特征和标签关联。
 
 ### 训练集
 
@@ -62,12 +62,12 @@ Featureform 是一个开源的机器学习特征平台，旨在构建、管理�
 - **特征值**：模型训练的输入数据
 - **标签值**：模型旨在预测的目标值
 
-训练集将特征、标签和实体组织在一起，提供完整的数据结构以进行模型训练。实体关联通过在定义特征和标签时指定实体列（如用户 ID、产品 ID 等）来实现。Featureform 系统根据这些实体列自动连接数据。
+训练集将特征、标签和实体组织在一起，为模型训练提供完整的数据结构。实体关联通过在定义特征和标签时指定实体列（如用户 ID、产品 ID 等）来实现。Featureform 系统根据这些实体列自动连接数据。
 
 ## 核心概念关系
 
 - **实体**是数据的主体，定义了我们想要分析的对象
-- **特征**与实体相关联，提供进行预测所需的属性信息
+- **特征**与实体相关联，提供预测所需的属性信息
 - **标签**是我们想要预测的目标
 - **训练集**将特征、标签和实体组织在一起，形成完整的训练数据
 
@@ -83,14 +83,14 @@ Featureform 是一个开源的机器学习特征平台，旨在构建、管理�
 
 ## 不可变 API 设计
 
-Featureform 采用不可变 API 设计，这是其与其他特征平台的关键区别。在 Featureform 中，所有特征、标签和训练集在创建后都是不可变的，这意味着：
+Featureform 采用不可变 API 设计，这是其与其他特征平台的一个关键区别。在 Featureform 中，所有特征、标签和训练集在创建后都是不可变的，这意味着：
 
 - **资源不能被修改**：一旦特征、标签或训练集被创建和应用，其定义和逻辑不能更改
 - **版本管理**：如果需要修改，必须创建新变体，而不是覆盖现有资源
-- **协作安全**：团队成员可以安全地使用他人创建的资源，而无需担心上游逻辑的变化
-- **实验管理**：支持为实验创建多个变体，每个变体具有独立的生命周期
+- **协作安全**：团队成员可以安全地使用其他人创建的资源，而无需担心上游逻辑的变化
+- **实验管理**：支持为实验创建多个变体，每个变体都有独立的生命周期
 
-这种设计确保了机器学习资源的一致性和可靠性，避免了由于资源修改导致的训练失败或推理错误。通过变体系统，数据科学家可以管理不同版本的资源，同时保持生产环境的稳定性。
+这种设计确保了机器学习资源的一致性和可靠性，避免了由于资源修改导致的训练失败或推理错误。通过变体系统，数据科学家可以管理资源的不同版本，同时保持生产环境的稳定性。
 
 ## 变体
 
@@ -100,23 +100,23 @@ Featureform 采用不可变 API 设计，这是其与其他特征平台的关键
 
 - **版本管理**：为同一资源创建不同版本，支持 A/B 测试和实验
 - **实验支持**：允许数据科学家尝试不同的特征工程方法，而不影响生产环境
-- **协作开发**：团队成员可以并行开发不同的变体，而不相互干扰
-- **回滚支持**：当新版本出现问题时，快速回滚到之前的稳定版本
+- **协作开发**：团队成员可以并行开发不同的变体，而不会相互干扰
+- **回滚支持**：当新版本出现问题时，可以快速回滚到先前的稳定版本
 
 ## 文档和参考
 
-Featureform 提供全面的官方文档和 SDK 参考，以帮助用户有效理解和使用平台特性：
+Featureform 提供全面的官方文档和 SDK 参考，帮助用户有效理解和使用平台特性：
 
 ### 官方文档
 
-- **主文档**：<https://docs.featureform.com/>
-  - 对 Featureform 核心概念和工作流程的全面介绍
+- **主文档**： <https://docs.featureform.com/>
+  - Comprehensive introduction to Featureform's core concepts and workflows
   - 包括架构设计、部署指南和最佳实践
   - 提供常见用例和示例代码
 
 ### SDK 参考
 
-- **Python SDK**：<https://sdk.featureform.com/>
+- **Python SDK**： <https://sdk.featureform.com/>
   - 完整的 Python API 参考文档
   - 支持本地模式和托管实例
   - 包括所有操作的详细描述，如注册、应用和服务
@@ -144,7 +144,7 @@ Featureform 采用微服务架构，具有以下核心组件：
 
 4. **元数据服务**
    - 提供用于元数据管理的 gRPC 接口
-   - 存储所有资源（特征、标签、训练集、源数据等）的定义和元数据
+   - 存储所有资源的定义和元数据（特征、标签、训练集、源数据等）
    - 管理资源之间的依赖关系和状态
 
 ### 数据存储
@@ -156,7 +156,7 @@ Featureform 采用微服务架构，具有以下核心组件：
 2. **Meilisearch**
    - 提供特征和元数据的搜索功能
    - 支持全文搜索和模糊匹配
-   - 数据源：元数据服务在资源变化时自动写入，元数据仪表板在标签更新时写入
+   - 数据源：当资源更改时，元数据服务自动写入，元数据仪表板在标签更新时写入
 
 ### 监控和可观察性
 
@@ -165,7 +165,7 @@ Featureform 采用微服务架构，具有以下核心组件：
    - 为仪表板提供指标查询支持
 
 2. **仪表板**
-   - 提供用于查看系统状态的 Web 界面
+   - 提供查看系统状态的 Web 界面
    - 显示特征统计、性能指标和资源信息
    - 纯前端页面，仅提供只读查看功能
 
@@ -185,15 +185,15 @@ Featureform 采用微服务架构，具有以下核心组件：
 ## 组件调用关系
 
 ```
-User → Dashboard
+用户 → 仪表板
           ↓
-   Ingress Controller (Nginx)
+   Ingress 控制器（Nginx）
      ↓                   ↓
-  Prometheus       Metadata Dashboard → Meilisearch
+  Prometheus       元数据仪表板 → Meilisearch
      │                ↓        ↓        ↑
-     │ Coordinator → etcd ← Metadata Service ← API Server ← SDK Client
+     │ 协调器 → etcd ← 元数据服务 ← API 服务器 ← SDK 客户端
      │                ↑        ↑                  │
-     └────────────→ Feature Server ←──────────────┘
+     └────────────→ 特征服务器 ←──────────────┘
 
 ```
 
@@ -203,7 +203,7 @@ User → Dashboard
 
 ## 发布
 
-下载 Featureform 安装文件：`featureform.amd64.v0.12.1-2.tgz`
+下载 Featureform 安装文件： `featureform.amd64.v0.12.1-2.tgz`
 
 使用 violet 命令发布到平台仓库：
 
@@ -223,62 +223,20 @@ violet push --platform-address=platform-access-address --platform-username=platf
 
 ### 存储准备
 
-Featureform 数据存储在 etcd 中，需要持久存储以确保数据持久性。
-集群需要安装 CSI 或 `创建本地存储`（方法如下所述，仅限于非生产环境）。
-
-#### 创建本地存储
-
-使用 kubectl create 创建以下资源，以准备本地目录作为 PersistentVolumes 供使用。
-
-```yaml
----
-apiVersion: v1
-kind: PersistentVolume
-metadata:
-  name: etcd-1
-spec:
-  capacity:
-    storage: 10Gi
-  accessModes:
-    - ReadWriteOnce
-  persistentVolumeReclaimPolicy: Retain
-  local:
-    path: /var/lib/etcd-1
-  nodeAffinity:
-    required:
-      nodeSelectorTerms:
-      - matchExpressions:
-        - key: kubernetes.io/hostname
-          operator: In
-          values:
-          - xxx.xxx.xxx.xxx
-```
-
-注意：
-
-1. 在 spec.local.path 中指定的路径必须存在并设置为 777 权限，例如：
-   `bash
-       mkdir -p /var/lib/etcd-1
-       chmod 777 /var/lib/etcd-1
-       `
-
-2. 根据您的环境替换 matchExpressions 中的占位符值 xxx.xxx.xxx.xxx。
-
-3. 部署高可用 etcd 时，根据副本数量准备多个 `PersistentVolume`。
-
-###
+Featureform 数据存储在 etcd 中，这需要持久存储以确保数据持久性。
+集群需要预先安装 CSI 或准备好 `PersistentVolume`。
 
 ### 创建应用
 
-1. 转到 `Alauda Container Platform` 视图，选择将部署 Featureform 的命名空间。
+1. 转到 `Alauda Container Platform` 视图，选择将要部署 Featureform 的命名空间。
 
-2. 在左侧导航中选择 `Applications` / `Applications`，然后单击打开页面右侧的 `Create` 按钮。
+2. 在左侧导航中选择 `Applications` / `Applications`，然后点击打开页面右侧的 `Create` 按钮。
 
-3. 在弹出对话框中，选择 `Create from Catalog`，然后页面将跳转到 `Catalog` 视图。
+3. 在弹出对话框中选择 `Create from Catalog`，然后页面将跳转到 `Catalog` 视图。
 
-4. 找到 `3rdparty/chart-featureform`，然后单击 `Create` 创建此应用。
+4. 找到 `3rdparty/chart-featureform`，然后点击 `Create` 创建此应用。
 
-5. 在 `Catalog` / `Create featureform` 表单中，填写 `Name`（建议填写为 `featureform`）和 `Values` 中的自定义配置，然后单击 `Create` 按钮完成创建。`Custom` 的内容将在下面描述。您也可以通过 `Update` 应用方法在创建后进行修改。
+5. 在 `Catalog` / `Create featureform` 表单中，填写 `Name`（建议填写为 `featureform`）和 `Values` 中的 `Custom` 配置，然后点击 `Create` 按钮完成创建。`Custom` 的内容将在下面描述。您也可以通过 `Update` 应用方法在创建后进行修改。
 
 ## 配置
 
@@ -288,7 +246,7 @@ spec:
 
 #### 1.1 配置镜像仓库地址
 
-尽管 `Chart` 已经配置了 `ImageWhiteList` 以自动替换工作负载使用的镜像。
+虽然 `Chart` 已经配置了 `ImageWhiteList` 以自动替换工作负载使用的镜像。
 
 但是，当使用 Kubernetes Jobs 运行 `Featureform` 任务时，镜像拉取失败可能导致任务失败。因此，建议配置正确的镜像注册表地址。
 
@@ -296,24 +254,24 @@ spec:
 
 ```yaml
 global:
-  repo: <Image Repository Address>/3rdparty/featureform
+  repo: <镜像仓库地址>/3rdparty/featureform
 ingress-nginx:
   controller:
     admissionWebhook:
       patch:
         image:
-          registry: <Image Repository Address>/3rdparty
+          registry: <镜像仓库地址>/3rdparty
     image:
-      registry: <Image Repository Address>/3rdparty
+      registry: <镜像仓库地址>/3rdparty
 ```
 
-如何获取 `Image Repository Address`：
+如何获取 `镜像仓库地址`：
 
-- 在 `Administrator` 视图中，检查相应集群详情页面的 `Overview` 标签页下的 `Image Repository Address` 字段。
+- 在 `Administrator` 视图中，检查相应集群详细信息页面的 `Overview` 标签页下的 `镜像仓库地址` 字段。
 
 #### 1.2 配置镜像仓库拉取凭证
 
-如果在从镜像仓库拉取镜像时需要身份验证，请添加以下配置：
+如果从镜像仓库拉取镜像时需要身份验证，请添加以下配置：
 
 ```yaml
 global:
@@ -335,7 +293,7 @@ meilisearch:
 
 #### 2.1 配置反亲和性
 
-当使用本地节点磁盘上的存储（例如，topolvm）时，为确保高可用性，etcd pod 需要在不同节点上运行。添加以下配置以实现此目的：
+当在本地节点磁盘上使用存储时（例如，topolvm），为了确保高可用性，etcd pod 需要在不同节点上运行。添加以下配置以实现此目的：
 
 ```yaml
 etcd:
@@ -371,7 +329,7 @@ ingress:
 
 `Featureform` 通过 `nginx-ingress-controller` 提供外部访问。检查其 `Service` 以获取访问地址。
 
-`Service` 名称为：`application-name-ingress-nginx-controller`。
+`Service` 名称为： `application-name-ingress-nginx-controller`。
 
 此 `Service` 类型为 `LoadBalancer`。如果环境中没有提供外部 IP 的 `LoadBalancer` 控制器，您可以通过 `node IP` 加上其 `NodePort` 进行访问。
 
@@ -383,7 +341,7 @@ ingress:
 
 **注意：**
 
-尽管 ingress 配置包含 API 访问地址，但由于 ingress 启用了客户端证书验证机制，而 Featureform SDK 目前不支持配置客户端证书，因此无法通过 ingress 路径访问 API 服务。
+尽管 ingress 配置包含 API 访问地址，但由于 ingress 启用了客户端证书验证机制，而 Featureform SDK 当前不支持配置客户端证书，因此无法通过 ingress 路径访问 API 服务。
 
 # Featureform 快速入门
 
@@ -417,9 +375,9 @@ ingress:
 
 #### 准备 PostgreSQL
 
-使用 `Data Services` 提供的 `PostgreSQL operator` 创建一个 `PostgreSQL cluster`。
+使用 `Data Services` 提供的 `PostgreSQL operator` 创建一个 `PostgreSQL 集群`。
 
-在 `Data Services` 的 `PostgreSQL` 实例详情中检查访问地址和访问密码。
+在 `Data Services` 的 `PostgreSQL` 实例详细信息中检查访问地址和访问密码。
 
 #### 准备 Redis
 
@@ -431,9 +389,9 @@ ingress:
 
   1. 创建 `Redis` 实例时，选择 `Redis Sentinel` 作为 `Architecture`。
 
-  2. 设置所有参数后，切换到 `YAML` 模式，将 `spec.arch` 更改为 `standalone`，然后单击 `Create` 按钮。
+  2. 设置所有参数后，切换到 `YAML` 模式，将 `spec.arch` 更改为 `standalone`，然后点击 `Create` 按钮。
 
-  3. 创建后，切换到 `Alauda Container Platform` 视图，查找名为 `rfr-<Redis instance name>-read-write` 的 `Service`，这是此 Redis 实例的访问地址。
+  3. 创建后，切换到 `Alauda Container Platform` 视图，查找名为 `rfr-<Redis 实例名称>-read-write` 的 `Service`，这是该 Redis 实例的访问地址。
 
 ### 2. 安装依赖
 
@@ -485,7 +443,7 @@ export REDIS_PASSWORD=""
 
 - **FEATUREFORM_HOST**：`Featureform` API 地址，请根据您的环境进行配置
 
-- **FEATUREFORM_VARIANT**：由于 Featureform 采用不可变 API，不提供删除和更新接口，因此要重新执行，请将此值修改为新值，然后重新执行 `source setup-env.sh`，否则可能会发生错误
+- **FEATUREFORM_VARIANT**：由于 Featureform 采用不可变 API，未提供删除和更新接口，因此要重新执行，请将此值修改为新的值，然后重新执行 `source setup-env.sh`，否则可能会出现错误
 
 - **POSTGRES_xx**：请根据您的环境进行配置
 
@@ -526,7 +484,7 @@ python load-data.py
 python definitions.py
 ```
 
-此脚本是 Featureform 演示的核心，将注册和定义所有必要的资源。主要组件如下：
+此脚本是 Featureform 演示的核心，将注册和定义所有必要的资源。主要组件包括：
 
 #### 5.1 注册用户和提供者
 
@@ -618,7 +576,7 @@ client = ff.Client(host=os.getenv("FEATUREFORM_HOST", "localhost:7878"), insecur
 client.apply()
 ```
 
-`client.apply()` 默认是同步的，这将等待 Featureform 开始处理训练集，并等待处理完成。这意味着脚本将阻塞，直到所有资源（包括训练集）处理完成。
+`client.apply()` 默认是同步的，这将等待 Featureform 开始处理训练集并等待处理完成。这意味着脚本将阻塞，直到所有资源（包括训练集）被处理。
 
 成功执行将输出如下结果：
 
@@ -647,7 +605,7 @@ COMPLETED
 
 在处理期间，`Status` 将显示为 `PENDING`。
 
-当处理失败时，`Status` 将显示为 `FAILED`，并且 `Error` 将包含相关错误日志。
+当处理失败时，`Status` 将显示为 `FAILED`，`Error` 将包含相关错误日志。
 
 **此脚本演示了 Featureform 的核心概念：**
 
@@ -664,12 +622,12 @@ COMPLETED
 python training.py
 ```
 
-此脚本演示了如何使用 Featureform 获取训练数据。让我们看一下其主要组件：
+此脚本演示了如何使用 Featureform 获取训练数据。让我们看看它的主要组件：
 
 #### 6.1 获取训练集
 
 ```python
-# 获取先前定义的 fraud_training 训练集
+# 获取之前定义的 fraud_training 训练集
 dataset = client.training_set("fraud_training", variant)
 ```
 
@@ -691,7 +649,7 @@ for i, data in enumerate(dataset):
 
 - 连接到 Featureform 服务
 - 获取名为 "fraud_training" 的训练集
-- 遍历训练数据，其中每个 `data` 包含特征和标签
+- 迭代训练数据，其中每个 `data` 包含特征和标签
 - 在实际应用中，这里数据将真正提交给模型的训练任务
 
 **输出示例：**
@@ -713,7 +671,7 @@ Features: [array([566.])] , Label: [False]
 python serving.py
 ```
 
-此脚本演示了如何使用 Featureform 进行特征查询和推理。让我们看一下其主要组件：
+此脚本演示了如何使用 Featureform 进行特征查询和推理。让我们看看它的主要组件：
 
 #### 7.1 特征查询
 
@@ -724,7 +682,7 @@ customer_feat = client.features(
     entities={"customer": "C1214240"},
 )
 
-print("Customer Result: ")
+print("客户结果: ")
 print(customer_feat)
 
 ```
@@ -738,15 +696,15 @@ print(customer_feat)
 **输出示例：**
 
 ```
-Customer Result:
+客户结果:
 [319.0]
 ```
 
 **实际应用场景：**
 
 - 当新客户进行交易时，实时查询客户的平均交易金额特征
-- 结合其他特征，用于欺诈检测的实时推理
-- 支持对多个客户的批量特征查询
+- 与其他特征结合，用于欺诈检测的实时推理
+- 支持批量查询多个客户的特征
 
 # 常见问题解答
 
@@ -786,7 +744,7 @@ transformation failed to complete: job failed while running .....
 ```
 
 - **原因**：Kubernetes Job 执行失败
-- **解决方案**：检查 Kubernetes 集群中的 Job 事件和日志，并根据相关信息处理故障
+- **解决方案**：检查 Kubernetes 集群中的 Job 事件和日志，并根据相关信息处理失败
 
 ### 5. apply 完成后，`Status` 为 `FAILED`，`Error` 包含以下信息：
 
