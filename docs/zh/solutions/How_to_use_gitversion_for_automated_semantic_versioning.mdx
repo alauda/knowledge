@@ -1,0 +1,2169 @@
+---
+products:
+  - Alauda DevOps
+kind:
+  - Solution
+id: KB250900007
+sourceSHA: 6cd2efb714b2cf3d00284e007e5e824947e1c3c3ad5d518afdca366e0a5272b9
+---
+
+# `GitVersion` 用于自动语义版本控制
+
+## 背景
+
+### 挑战
+
+在现代软件开发中，手动管理版本号面临几个关键挑战：
+
+- **版本不一致**：不同的开发人员可能使用不同的版本控制方案，导致混淆和集成问题
+- **人工错误**：版本递增中的人为错误可能导致部署冲突和依赖解析问题
+- **分支管理复杂性**：在多个分支（功能、发布、热修复）之间协调版本号变得越来越困难
+- **CI/CD 集成缺口**：手动版本管理无法与自动构建和部署管道扩展
+- **遵循语义版本控制**：确保遵循 `SemVer` 标准需要持续的人工监督
+
+### 解决方案
+
+本指南提供了在您的 `CI/CD` 管道中实施 `GitVersion` 的全面解决方案，以基于 `Git` 历史自动化语义版本控制。`GitVersion` 通过以下方式消除了手动版本管理：
+
+- **自动版本计算**：根据 `Git` 提交历史和分支模式生成版本号
+- **遵循语义版本控制**：确保所有版本自动遵循 `SemVer` 标准
+- **分支感知版本控制**：不同类型的分支自动生成适当的版本模式
+- **CI/CD 集成**：与 `Tekton` 管道和 `Kubernetes` 环境无缝集成
+
+## 环境信息
+
+适用版本：4.0.x, 4.1.x
+
+## 快速参考
+
+### 关键概念
+
+- **语义版本控制 (SemVer)**：`MAJOR.MINOR.PATCH` 格式，带可选的预发布标签
+- **基于分支的版本控制**：不同的分支类型生成不同的版本模式
+- **策略驱动计算**：多种策略决定基础版本
+- **配置优先级**：命名空间 ConfigMap > 仓库配置 > 默认工作流
+
+### 常见用例
+
+| 场景                       | 推荐方法                               | 部分参考                                      |
+| -------------------------- | -------------------------------------- | --------------------------------------------- |
+| **新项目设置**            | 从 GitHubFlow/v1 开始，添加初始标签   | [快速开始](#quick-start-guide)               |
+| **企业部署**              | 使用命名空间级别的 ConfigMaps         | [配置](#configuration-guide)                 |
+| **复杂分支管理**          | 实施 GitFlow/v1 和自定义分支         | [配置](#configuration-guide)                 |
+| **CI/CD 集成**            | 使用完整的管道示例                     | [实施](#implementation)                       |
+| **版本未递增**            | 检查浅克隆和标签问题                   | [故障排除](#troubleshooting)                 |
+| **自定义分支名称**        | 配置正则表达式模式以匹配分支         | [高级配置](#advanced-configuration)         |
+
+### 按分支类型的版本示例
+
+| 分支类型      | 示例分支            | 生成的版本                  | 用例                  |
+| -------------- | ------------------- | --------------------------- | --------------------- |
+| `main`         | `main`              | `3.18.1-beta.8`             | 生产发布              |
+| `develop`      | `develop`           | `3.19.0-develop.7`          | 集成测试              |
+| `release`      | `release/3.16.0`    | `3.16.0-rc.7`               | 发布准备              |
+| `feature`      | `feature/user-auth` | `3.18.0-feature-user-auth.15`| 功能开发              |
+| `hotfix`       | `hotfix/security-fix`| `3.15.1-hotfix-security-fix.3`| 紧急修复              |
+| `pull-request` | `pr/534`            | `3.18.0-pr534.22`           | 代码审查              |
+
+## 什么是 `GitVersion`
+
+`GitVersion` 是一个工具，基于 `Git` 历史自动生成 `语义版本` 号。通过分析 `Git` 仓库的提交历史和分支信息，它生成符合语义版本控制标准的版本号。
+
+### 关键特性与优势
+
+- **自动版本管理**：根据 `Git` 历史自动计算版本号，消除手动维护版本信息的需要
+- **一致性保证**：相同的 `Git` 标签在重建时始终产生相同的版本号
+- **分支感知**：不同的分支可以计算唯一的 `语义版本` 号，版本信息将在分支合并时流动
+- **易于集成**：支持多种使用方法，包括命令行、`MSBuild` 任务和持续集成
+- **标准遵循**：完全遵循 `语义版本控制` (`SemVer`) 标准，确保版本号标准化
+
+### 用例
+
+- **持续集成/持续部署**：在 `CI/CD` 管道中自动生成版本号，用于构建标记和工件版本管理
+- **包发布**：为 `npm` 等包管理系统生成标准化版本号
+- **程序集版本控制**：自动更新 `.NET` 程序集的版本信息
+- **分支开发管理**：在不同类型的分支（如功能分支和发布分支）上生成适当的预发布版本号
+
+### 架构概述
+
+版本计算过程涉及以下主要步骤：
+
+1. **版本源发现**：GitVersion 按优先顺序评估多种 [版本策略](#version-strategies)，以确定最合适的基础版本
+
+2. **基础版本选择**：使用 [策略优先级规则](#strategy-priority-and-evaluation) 和分支配置选择最合适的基础版本
+
+3. **版本计算和递增**：通过以下方式计算最终版本：
+   - 根据分支配置应用递增规则
+   - 添加预发布标签和构建元数据
+   - 确保遵循语义版本控制
+
+### 版本策略概述
+
+`GitVersion` 使用多种策略根据您的 Git 历史和配置自动确定版本号。系统按优先顺序评估策略，以选择最合适的版本源。
+
+**常见策略：**
+
+- **标记提交**：使用现有的 Git 标签（最常见）
+- **分支配置**：特定于分支的版本规则
+- **显式配置**：在配置中手动设置版本
+- **回退**：默认起始版本（0.0.0）
+
+有关详细策略信息、配置示例和高级用例，请参见 [高级配置 - 版本策略](#version-strategies)。
+
+## 快速开始指南
+
+### 5分钟设置
+
+按照以下步骤立即在您的管道中运行 `GitVersion`：
+
+<Tabs>
+  <Tab label="步骤 1：仓库设置">
+    确保您的仓库至少有一个标签以建立版本基线：
+
+    ```bash
+    # 导航到您的 Git 仓库
+    cd /path/to/your/repository
+
+    # 如果没有标签，则创建初始标签
+    $ git tag v1.0.0
+    $ git push origin v1.0.0
+
+    # 验证标签创建
+    $ git tag --list
+    ```
+  </Tab>
+
+  <Tab label="步骤 2：任务安装">
+    在您的 `Kubernetes` 命名空间中安装 `GitVersion` 任务：
+
+    ```bash
+    # 首先，下载 GitVersion 任务定义
+    # 任务定义可以在下面的 `基本任务用法` 部分找到
+
+    # 应用 GitVersion 任务
+    $ kubectl apply -f git-version.yaml
+
+    # 验证安装
+    $ kubectl get task git-version
+    ```
+  </Tab>
+
+  <Tab label="步骤 3：基本运行">
+    创建并运行基本的 `TaskRun` 以测试版本计算：
+
+    > 此示例假设您有一个名为 `git-source-pvc` 的 `PersistentVolumeClaim`，其中包含您的 `Git` 仓库。
+
+    ```yaml
+    apiVersion: tekton.dev/v1
+    kind: TaskRun
+    metadata:
+      name: test-gitversion
+    spec:
+      taskRef:
+        name: git-version
+      workspaces:
+        - name: source
+          persistentVolumeClaim:
+            claimName: git-source-pvc
+    ```
+
+    ```bash
+    # 应用并监视 TaskRun
+    $ kubectl apply -f taskrun.yaml
+    ```
+  </Tab>
+
+  <Tab label="步骤 4：获取结果">
+    从任务结果中检索计算的版本：
+
+    ```bash
+    # 检查任务结果
+    $ kubectl get taskrun test-gitversion -o jsonpath='{.status.results[?(@.name=="version")].value}'
+
+    # 查看所有版本变量
+    $ kubectl get taskrun test-gitversion -o jsonpath='{.status.results[?(@.name=="variables")].value}' | jq .
+    ```
+  </Tab>
+</Tabs>
+
+### 先决条件
+
+在实施 `GitVersion` 之前，请确保您拥有：
+
+- **Git 仓库**：一个具有至少一个语义版本标签（例如 `v1.0.0`）的 `git` 仓库
+- **Tekton Operator**：在您的 `Kubernetes` 集群中安装版本 `4.0.x` 及以上
+- **存储**：用于源代码和配置的持久卷声明或工作区
+- **Git 凭据**：如果访问私有仓库，则正确配置 `git` 身份验证
+- **基本理解**：熟悉 `语义版本控制` (`SemVer`) 原则
+
+### 环境要求
+
+此解决方案与以下内容兼容：
+
+- `Tektoncd Operator` `v4.0.x` 及以上
+- `GitVersion` `v6.4` 及以上
+- 各种 `Git` 工作流：`GitFlow`、`GitHubFlow`、`TrunkBased`
+
+### 基本概念
+
+理解核心概念对于有效实施 GitVersion 至关重要：
+
+- **语义版本控制 (SemVer)**：`GitVersion` 遵循 `SemVer` 标准（`MAJOR.MINOR.PATCH`）
+- **基于分支的版本控制**：不同的分支类型（`main`、`develop`、`feature`、`release`）生成不同的版本模式
+- **策略驱动计算**：`GitVersion` 使用多种策略来确定适当的基础版本
+- **配置驱动行为**：工作流和分支配置控制版本递增规则
+
+## 配置指南
+
+### 工作流类型和配置源
+
+`GitVersion` 有多种内置配置：
+
+- **`GitFlow/v1`**（默认）：传统的 `GitFlow` 工作流，具有 `develop` 和 `release` 分支
+- **`GitHubFlow/v1`**：简化的工作流，功能分支直接合并到 `main`
+- **`TrunkBased/preview1`**：`Trunk-based` 开发，直接提交到 `main`
+
+有关这些分支策略及其实施模式的详细信息，请参见：[GitVersion 分支策略](https://gitversion.net/docs/learn/branching-strategies/overview)
+
+要覆盖默认配置，请在您的仓库根目录中准备一个 `GitVersion.yaml` 文件。
+
+### 生成完整的工作流配置
+
+您可以使用 `gitversion /showconfig` 生成任何工作流的完整配置。这有助于您了解所有默认设置并根据需要进行自定义。
+
+<Tabs>
+  <Tab label="GitFlow">
+    创建一个最小的 `GitVersion.yaml`：
+
+    ```yaml
+    workflow: GitFlow/v1
+    ```
+
+    生成完整配置：
+
+    ```bash
+    $ gitversion /showconfig
+    ```
+
+    这将输出完整的 `GitFlow` 配置，包含所有分支设置、递增规则和默认值，您可以进行修改。
+  </Tab>
+
+  <Tab label="GitHubFlow">
+    创建一个最小的 `GitVersion.yaml`：
+
+    ```yaml
+    workflow: GitHubFlow/v1
+    ```
+
+    生成完整配置：
+
+    ```bash
+    $ gitversion /showconfig
+    ```
+
+    这将输出针对功能分支工作流优化的完整 `GitHubFlow` 配置，直接部署到主分支。
+  </Tab>
+
+  <Tab label="TrunkBased">
+    创建一个最小的 `GitVersion.yaml`：
+
+    ```yaml
+    workflow: TrunkBased/preview1
+    ```
+
+    生成完整配置：
+
+    ```bash
+    $ gitversion /showconfig
+    ```
+
+    这将输出用于持续交付的完整 `trunk-based` 配置，具有最小的分支。
+  </Tab>
+</Tabs>
+
+## 实施
+
+### Tekton 任务定义
+
+#### 任务配置
+
+虽然 `GitVersion` 支持仓库级别的配置文件，但 **我们建议在企业环境中使用命名空间级别的 `GitVersion` 配置方法**，以确保在同一命名空间内多个项目和管道之间的一致性。
+
+**仓库级别配置**（基本方法 - 仅适用于本地调试）：
+在您的仓库根目录中创建一个 `GitVersion.yaml` 文件，以自定义 GitVersion 行为。
+
+**命名空间级别配置**（推荐用于生产）：
+将 `GitVersion` 配置存储在 `Kubernetes` `ConfigMaps` 中，以便在同一命名空间内的管道之间进行集中管理。请注意，`ConfigMaps` 是命名空间范围的资源，提供在单个命名空间内的统一管理。
+
+<Tabs>
+  <Tab label="增量配置 `GitVersion.yaml`">
+    ```yaml
+    mode: ContinuousDelivery
+    # semantic-version-format: Loose
+    increment: Patch
+    # 使用此配置，`InformationalVersion` 的结果将基于 `FullSemVer` 具有 `.g{ShortSha}` 后缀
+    assembly-informational-format: '{Major}.{Minor}.{Patch}-{PreReleaseTag}.g{ShortSha}'
+    branches:
+      # master -> 3.18.1-beta.8
+      main:
+        mode: ContinuousDelivery
+        regex: ^(main|master)$
+        label: "beta"
+        increment: Minor
+        track-merge-message: false
+        prevent-increment:
+          # of-merged-branch: true
+          when-current-commit-tagged: false
+      # release-3.16 -> 3.16.0-rc.7
+      release:
+        mode: ContinuousDelivery
+        regex: ^releases?[/-]v?(?<version>\d+\.\d+(?:\.\d+)?)$
+        label: "rc"
+        increment: Patch
+      # develop -> 3.19.0-develop.7
+      develop:
+        mode: ContinuousDelivery
+        regex: (?<BranchName>^dev(elop)?(ment)?$)
+        label: "{BranchName}"
+        increment: Minor
+      # pulls/534/merge -> 3.18.0-pr534.22
+      pull-request:
+        mode: ContinuousDelivery
+        regex: ^(pull-requests|pull|pr)[\/-](?<Number>\d*)
+        label: "pr{Number}"
+      # 基于约定的提交分支：build/*、chore/*、ci/*、docs/*、feat/*、fix/*、hotfix/*、perf/*、refactor/*、revert/*、style/*、test/*
+      conventional:
+        mode: ContinuousDelivery
+        regex: ^(?<phase>(build|chore|ci|docs|feat(ures?)?|fix|hotfix|perf|refactor|revert|style|test))[/-](?<BranchName>.*)
+        label: "{phase}-{BranchName}"
+        increment: Patch
+      # abc/def -> 3.18.2-devdef.1
+      unknown:
+        mode: ContinuousDelivery
+        regex: (.*[-/])?(?<BranchName>.+)
+        label: "dev{BranchName}"
+        increment: Inherit
+    ```
+  </Tab>
+
+  <Tab label="完整配置">
+    > 完整配置可以通过执行 `gitversion /showconfig` 查看。
+
+    ```yaml
+    assembly-versioning-scheme: MajorMinorPatch
+    assembly-file-versioning-scheme: MajorMinorPatch
+    assembly-informational-format: '{Major}.{Minor}.{Patch}-{PreReleaseTag}.g{ShortSha}'
+    tag-prefix: '[vV]?'
+    version-in-branch-pattern: (?<version>[vV]?\d+(\.\d+)?(\.\d+)?).*
+    major-version-bump-message: \+semver:\s?(breaking|major)
+    minor-version-bump-message: \+semver:\s?(feature|minor)
+    patch-version-bump-message: \+semver:\s?(fix|patch)
+    no-bump-message: \+semver:\s?(none|skip)
+    tag-pre-release-weight: 60000
+    commit-date-format: yyyy-MM-dd
+    merge-message-formats: {}
+    update-build-number: true
+    semantic-version-format: Strict
+    strategies:
+    - Fallback
+    - ConfiguredNextVersion
+    - MergeMessage
+    - TaggedCommit
+    - TrackReleaseBranches
+    - VersionInBranchName
+    branches:
+      develop:
+        mode: ContinuousDelivery
+        label: '{BranchName}'
+        increment: Minor
+        prevent-increment:
+          when-current-commit-tagged: false
+        track-merge-target: true
+        track-merge-message: true
+        regex: (?<BranchName>^dev(elop)?(ment)?$)
+        source-branches:
+        - main
+        is-source-branch-for: []
+        tracks-release-branches: true
+        is-release-branch: false
+        is-main-branch: false
+        pre-release-weight: 0
+      main:
+        mode: ContinuousDelivery
+        label: beta
+        increment: Minor
+        prevent-increment:
+          of-merged-branch: true
+          when-current-commit-tagged: false
+        track-merge-target: false
+        track-merge-message: false
+        regex: ^(main|master)$
+        source-branches: []
+        is-source-branch-for: []
+        tracks-release-branches: false
+        is-release-branch: false
+        is-main-branch: true
+        pre-release-weight: 55000
+      release:
+        mode: ContinuousDelivery
+        label: rc
+        increment: Patch
+        prevent-increment:
+          of-merged-branch: true
+          when-current-commit-tagged: false
+        track-merge-target: false
+        regex: ^releases?[/-]v?(?<version>\d+\.\d+(?:\.\d+)?)$
+        source-branches:
+        - main
+        - support
+        is-source-branch-for: []
+        tracks-release-branches: false
+        is-release-branch: true
+        is-main-branch: false
+        pre-release-weight: 30000
+      feature:
+        mode: ManualDeployment
+        label: '{BranchName}'
+        increment: Inherit
+        prevent-increment:
+          when-current-commit-tagged: false
+        track-merge-message: true
+        regex: ^features?[\/-](?<BranchName>.+)
+        source-branches:
+        - develop
+        - main
+        - release
+        - support
+        - hotfix
+        is-source-branch-for: []
+        is-main-branch: false
+        pre-release-weight: 30000
+      pull-request:
+        mode: ContinuousDelivery
+        label: pr{Number}
+        increment: Inherit
+        prevent-increment:
+          of-merged-branch: true
+          when-current-commit-tagged: false
+        track-merge-message: true
+        regex: ^(pull-requests|pull|pr)[\/-](?<Number>\d*)
+        source-branches:
+        - develop
+        - main
+        - release
+        - feature
+        - support
+        - hotfix
+        is-source-branch-for: []
+        pre-release-weight: 30000
+      hotfix:
+        mode: ManualDeployment
+        label: beta
+        increment: Inherit
+        prevent-increment:
+          when-current-commit-tagged: false
+        regex: ^hotfix(es)?[\/-](?<BranchName>.+)
+        source-branches:
+        - main
+        - support
+        is-source-branch-for: []
+        is-release-branch: true
+        is-main-branch: false
+        pre-release-weight: 30000
+      support:
+        label: ''
+        increment: Patch
+        prevent-increment:
+          of-merged-branch: true
+        track-merge-target: false
+        regex: ^support[\/-](?<BranchName>.+)
+        source-branches:
+        - main
+        is-source-branch-for: []
+        tracks-release-branches: false
+        is-release-branch: false
+        is-main-branch: true
+        pre-release-weight: 55000
+      unknown:
+        mode: ContinuousDelivery
+        label: dev{BranchName}
+        increment: Inherit
+        prevent-increment:
+          when-current-commit-tagged: true
+        regex: (.*[-/])?(?<BranchName>.+)
+        source-branches:
+        - main
+        - develop
+        - release
+        - feature
+        - pull-request
+        - hotfix
+        - support
+        is-source-branch-for: []
+        is-main-branch: false
+      conventional:
+        mode: ContinuousDelivery
+        label: '{phase}-{BranchName}'
+        increment: Patch
+        prevent-increment: {}
+        regex: ^(?<phase>(build|chore|ci|docs|feat(ures?)?|fix|hotfix|perf|refactor|revert|style|test))[/-](?<BranchName>.*)
+        source-branches: []
+        is-source-branch-for: []
+    ignore:
+      sha: []
+      paths: []
+    mode: ContinuousDelivery
+    label: '{BranchName}'
+    increment: Patch
+    prevent-increment:
+      of-merged-branch: false
+      when-branch-merged: false
+      when-current-commit-tagged: true
+    track-merge-target: false
+    track-merge-message: true
+    commit-message-incrementing: Enabled
+    regex: ''
+    source-branches: []
+    is-source-branch-for: []
+    tracks-release-branches: false
+    is-release-branch: false
+    is-main-branch: false
+    ```
+  </Tab>
+
+  <Tab label="命名空间级别配置">
+    > **为什么选择命名空间级别配置？**
+    >
+    > - **操作效率**：从一个位置更新所有项目的版本控制规则，而不是修改单个仓库
+    > - **治理与合规**：在命名空间内强制执行一致的版本控制政策
+    > - **安全性与访问控制**：利用 `Kubernetes` `RBAC` 控制谁可以修改版本控制配置
+    > - **变更管理**：通过 `Kubernetes` 事件和审计日志跟踪配置更改
+    > - **开发人员体验**：新项目自动继承已建立的版本控制模式，无需额外设置
+
+    **步骤 1：创建 `GitVersion` `ConfigMap`**
+
+    创建一个 `Kubernetes` `ConfigMap` 来存储您的 `GitVersion` 配置。请注意，`ConfigMaps` 是命名空间范围的，因此此配置将对同一命名空间内的所有管道可用：
+
+    ```yaml
+    apiVersion: v1
+    kind: ConfigMap
+    metadata:
+      name: gitversion-namespace-config
+      namespace: <tekton-pipelines>
+    data:
+      GitVersion.yaml: |
+        # 使用上面“增量配置 GitVersion.yaml”选项卡中的配置
+    ```
+
+    **步骤 2：应用 `ConfigMap`**
+
+    ```bash
+    $ kubectl apply -f gitversion-configmap.yaml
+    ```
+
+    **步骤 3：特定环境的配置**
+
+    为不同环境创建不同的 `ConfigMaps`：
+
+    ```yaml
+    # 开发环境
+    apiVersion: v1
+    kind: ConfigMap
+    metadata:
+      name: gitversion-config-dev
+      namespace: <tekton-pipelines>
+    data:
+      GitVersion.yaml: |
+        mode: ContinuousDelivery
+        increment: Patch
+        branches:
+          main:
+            label: "dev"
+            increment: Minor
+          develop:
+            label: "alpha"
+            increment: Minor
+    ---
+    # 生产环境
+    apiVersion: v1
+    kind: ConfigMap
+    metadata:
+      name: gitversion-config-prod
+      namespace: <tekton-pipelines>
+    data:
+      GitVersion.yaml: |
+        mode: ContinuousDelivery
+        increment: Patch
+        branches:
+          main:
+            label: "beta"
+            increment: Minor
+            prevent-increment:
+              when-current-commit-tagged: false
+          release:
+            label: "rc"
+            increment: Patch
+            is-release-branch: true
+    ```
+  </Tab>
+</Tabs>
+
+#### 配置说明
+
+**模式配置**：
+
+- `ContinuousDelivery`：为每个提交生成唯一版本
+- `ContinuousDeployment`：在每次提交时递增预发布版本，适合最终发布版本未知的开发分支
+- `ManualDeployment`：仅在创建标签时递增版本
+
+**分支特定设置**：
+
+**主分支**：
+
+- **`main` 分支**：使用 `beta` 标签，进行小版本递增（例如 `3.18.1-beta.8`）
+  - 生产发布的主要部署分支
+  - 自动为新功能递增小版本
+  - 预发布标签有助于识别未发布的更改
+
+- **`master` 分支**：与 `main` 相同的行为的替代方案
+  - 旧命名约定支持
+  - 与 `main` 分支的配置相同
+  - 通常用于较旧的仓库
+
+**开发分支**：
+
+- **`develop` 分支**：使用分支名称作为标签（例如 `3.19.0-develop.7`）
+  - 功能开发的集成分支
+  - 跟踪即将发布的版本
+  - 非常适合持续集成测试
+
+**发布分支**：
+
+- **`release` 分支**：使用 `rc`（发布候选）标签进行补丁递增（例如 `3.16.0-rc.7`）
+  - 用于发布准备的专用分支
+  - 从分支名称提取版本（例如 `release/3.16.0`）
+  - 标记为发布分支（`is-release-branch: true`）
+  - 仅允许补丁级更改
+
+**功能分支**：
+
+- **`feature` 分支**：使用分支名称作为版本标签（例如 `3.18.0-feature-user-auth.15`）
+  - 新功能的开发分支
+  - 从源分支继承版本
+  - 适用于功能特定的测试和集成
+
+**热修复分支**：
+
+- **`hotfix` 分支**：使用分支名称进行补丁递增（例如 `3.15.1-hotfix-security-fix.3`）
+  - 生产问题的紧急修复
+  - 自动递增补丁版本
+  - 可以从分支名称模式提取版本
+
+**支持分支**：
+
+- **`support` 分支**：长期维护分支（例如 `2.1.5-support-v2.8`）
+  - 旧主要版本的维护
+  - 从分支名称或基础标签计算版本
+  - 与主要开发分支分开版本时间线
+
+**拉取请求分支**：
+
+- **拉取请求**：在版本中包含 `PR` 编号（例如 `3.18.0-pr534.22`）
+  - 用于代码审查的临时分支
+  - 测试 PR 更改的唯一版本
+  - 合并后自动清理
+
+**高级配置选项**：
+
+```yaml
+# 高级递增预防和合并处理
+prevent-increment:
+  of-merged-branch: true          # 防止从合并分支提交递增
+  when-branch-merged: false       # 控制合并时的递增行为
+  when-current-commit-tagged: true # 如果提交已标记，则跳过递增
+
+# 高级跟踪和源配置
+track-merge-target: true          # 跟踪合并目标以进行版本计算
+track-merge-message: true         # 使用合并消息进行版本提示
+source-branches: ['develop']      # 定义此分支类型的有效源分支
+pre-release-weight: 1000          # 控制预发布版本排序
+```
+
+**配置优先级和覆盖逻辑**：
+
+- **挂载的命名空间 ConfigMap** > **仓库 GitVersion.yaml** > **默认工作流**
+- 配置使用 **覆盖逻辑**，而不是合并 - 优先级较高的配置完全替换较低的配置
+- 命名空间 ConfigMap 仅在作为工作区挂载到 TaskRun 时优先
+- 分支配置从全局设置继承，并可以覆盖特定属性
+- 使用 `increment: Inherit` 采用源分支的递增行为
+
+### 分支配置
+
+#### 分支特定设置
+
+以下部分提供不同开发工作流的全面分支配置模式。
+
+<Tabs>
+  <Tab label="GitFlow 分支">
+    **主分支和开发分支**：
+
+    ```yaml
+    branches:
+      main:
+        increment: Patch
+        prevent-increment:
+          of-merged-branch: true
+        track-merge-target: false
+        track-merge-message: true
+        regex: ^master$|^main$
+        source-branches: []
+        is-source-branch-for: []
+        tracks-release-branches: false
+        is-release-branch: false
+        is-main-branch: true
+        pre-release-weight: 55000
+      develop:
+        mode: ContinuousDelivery
+        label: alpha
+        increment: Minor
+        prevent-increment:
+          when-current-commit-tagged: false
+        track-merge-target: true
+        track-merge-message: true
+        regex: ^dev(elop)?(ment)?$
+        source-branches:
+        - main
+        is-source-branch-for: []
+        tracks-release-branches: true
+        is-release-branch: false
+        is-main-branch: false
+        pre-release-weight: 0
+    ```
+
+    **功能和发布分支**：
+
+    ```yaml
+    branches:
+      feature:
+        mode: ManualDeployment
+        label: '{BranchName}'
+        increment: Inherit
+        prevent-increment:
+          when-current-commit-tagged: false
+        track-merge-message: true
+        regex: ^features?[\/-](?<BranchName>.+)
+        source-branches:
+        - develop
+        - main
+        - release
+        - support
+        - hotfix
+        is-source-branch-for: []
+        is-main-branch: false
+        pre-release-weight: 30000
+      release:
+        mode: ManualDeployment
+        label: beta
+        increment: Minor
+        prevent-increment:
+          of-merged-branch: true
+          when-current-commit-tagged: false
+        track-merge-target: false
+        regex: ^releases?[\/-](?<BranchName>.+)
+        source-branches:
+        - main
+        - support
+        is-source-branch-for: []
+        tracks-release-branches: false
+        is-release-branch: true
+        is-main-branch: false
+        pre-release-weight: 30000
+    ```
+  </Tab>
+
+  <Tab label="GitHubFlow 分支">
+    **简化的分支配置**：
+
+    ```yaml
+    branches:
+      main:
+        label: ''
+        increment: Patch
+        prevent-increment:
+          of-merged-branch: true
+        track-merge-target: false
+        track-merge-message: true
+        regex: ^master$|^main$
+        source-branches: []
+        is-source-branch-for: []
+        tracks-release-branches: false
+        is-release-branch: false
+        is-main-branch: true
+        pre-release-weight: 55000
+      feature:
+        mode: ManualDeployment
+        label: '{BranchName}'
+        increment: Inherit
+        prevent-increment:
+          when-current-commit-tagged: false
+        track-merge-message: true
+        regex: ^features?[\/-](?<BranchName>.+)
+        source-branches:
+        - main
+        - release
+        is-source-branch-for: []
+        is-main-branch: false
+        pre-release-weight: 30000
+      pull-request:
+        mode: ContinuousDelivery
+        label: PullRequest{Number}
+        increment: Inherit
+        prevent-increment:
+          of-merged-branch: true
+          when-current-commit-tagged: false
+        track-merge-message: true
+        regex: ^(pull-requests|pull|pr)[\/-](?<Number>\d*)
+        source-branches:
+        - main
+        - release
+        - feature
+        is-source-branch-for: []
+        pre-release-weight: 30000
+    ```
+  </Tab>
+
+  <Tab label="TrunkBased 分支">
+    **最小分支配置**：
+
+    ```yaml
+    branches:
+      main:
+        mode: ContinuousDeployment
+        label: ''
+        increment: Patch
+        prevent-increment:
+          of-merged-branch: true
+        track-merge-target: false
+        track-merge-message: true
+        regex: ^master$|^main$
+        source-branches: []
+        is-source-branch-for: []
+        tracks-release-branches: false
+        is-release-branch: false
+        is-main-branch: true
+        pre-release-weight: 55000
+      feature:
+        mode: ContinuousDelivery
+        label: '{BranchName}'
+        increment: Minor
+        prevent-increment:
+          when-current-commit-tagged: false
+        track-merge-message: true
+        regex: ^features?[\/-](?<BranchName>.+)
+        source-branches:
+        - main
+        is-source-branch-for: []
+        is-main-branch: false
+        pre-release-weight: 30000
+    ```
+  </Tab>
+</Tabs>
+
+### 高级配置
+
+#### 语义版本格式
+
+```yaml
+# 严格的语义版本控制（推荐）
+semantic-version-format: Strict
+
+# 允许附加格式的松散格式（谨慎使用）
+semantic-version-format: Loose
+```
+
+#### 提交消息递增控制
+
+```yaml
+# 通过提交消息控制版本递增
+major-version-bump-message: '\+semver:\s?(breaking|major)'
+minor-version-bump-message: '\+semver:\s?(feature|minor)'
+patch-version-bump-message: '\+semver:\s?(fix|patch)'
+no-bump-message: '\+semver:\s?(none|skip)'
+```
+
+#### 版本策略
+
+`GitVersion` 使用多种策略来确定基础版本，按优先顺序评估。理解这些策略有助于您有效配置版本控制行为。
+
+##### 策略优先级和评估
+
+**优先顺序**（从高到低）：
+
+1. **ConfiguredNextVersion 策略** - 配置中显式版本
+2. **TaggedCommit 策略** - 从 Git 标签提取版本
+3. **TrackReleaseBranches 策略** - 发布分支跟踪
+4. **VersionInBranchName 策略** - 从分支名称提取版本
+5. **MergeMessage 策略** - 从合并提交消息提取版本
+6. **Mainline 策略** - 主线分支递增
+7. **Fallback 策略** - 默认回退版本
+
+**策略详细信息和用例**
+
+**1. ConfiguredNextVersion 策略**
+
+- **目的**：在 `GitVersion.yaml` 配置中显式设置版本
+- **用法**：在配置文件中使用 `next-version: 2.0.0`
+- **最佳适用场景**：主要版本升级、版本重置
+- **优先级**：最高 - 覆盖所有其他策略
+
+**2. TaggedCommit 策略**
+
+- **目的**：从当前提交或可达提交的 Git 标签中提取版本
+- **用法**：标签如 `v1.2.3`、`1.2.3-alpha.1`
+- **最佳适用场景**：发布版本控制、稳定版本引用
+- **优先级**：非常高 - 提供具体的版本历史
+
+**3. TrackReleaseBranches 策略**
+
+- **目的**：在 `track-release-branches: true` 时跟踪发布分支的版本
+- **用法**：自动从跟踪的发布分支继承版本
+- **最佳适用场景**：需要发布分支版本上下文的功能分支
+- **优先级**：高 - 维护版本连续性
+
+**4. VersionInBranchName 策略**
+
+- **目的**：从分支名称模式提取版本
+- **用法**：分支名称如 `release/v1.2.0`、`hotfix/1.1.5`
+- **最佳适用场景**：名称中包含版本的发布和热修复分支
+- **优先级**：中高 - 对于发布工作流非常有用
+- **注意**：版本仅在分支存在时可用
+
+**5. MergeMessage 策略**
+
+- **目的**：从合并提交消息中提取版本
+- **用法**：合并消息中包含版本模式
+- **最佳适用场景**：自动合并时带有版本信息
+- **优先级**：中 - 次要版本源
+
+**6. Mainline 策略**
+
+- **目的**：在主线分支的每个提交上递增版本
+- **用法**：配置为 `is-main-branch: true`
+- **最佳适用场景**：主分支上的持续交付
+- **优先级**：中低 - 提供持续递增
+
+**7. Fallback 策略**
+
+- **目的**：当没有其他策略成功时提供默认的 `0.0.0`
+- **用法**：始终作为最后的手段处于活动状态
+- **最佳适用场景**：没有标签或配置的新仓库
+- **优先级**：最低 - 仅在所有其他策略失败时使用
+
+**策略配置示例**
+
+```yaml
+# 显式版本覆盖
+next-version: 2.0.0
+
+# 跟踪发布分支
+branches:
+  feature:
+    track-release-branches: true
+
+# 启用主线策略
+branches:
+  main:
+    is-main-branch: true
+
+# 版本提取模式
+version-in-branch-pattern: (?<version>[vV]?\d+(\.\d+)?(\.\d+)?).*
+
+# 配置策略顺序
+strategies:
+  - ConfiguredNextVersion    # 最高优先级
+  - TaggedCommit            # 标记提交
+  - TrackReleaseBranches    # 发布分支跟踪
+  - VersionInBranchName     # 从分支名称提取版本
+  - MergeMessage           # 从合并消息提取版本
+  - Fallback               # 默认回退（0.0.0）
+```
+
+### 使用示例
+
+#### 基本任务用法
+
+您可以添加 `Tekton` 任务以集成 `GitVersion`。`git-version` 任务根据 `Git` 历史自动化语义版本计算。
+
+<Tabs>
+  <Tab label="任务定义">
+    > 您可以将以下定义保存为 `git-version.yaml`。
+
+    `GitVersion` 任务提供全面的版本计算能力，具有自动浅克隆检测和配置管理：
+
+    ```yaml
+    apiVersion: tekton.dev/v1
+    kind: Task
+    metadata:
+      name: git-version
+      labels:
+        app.kubernetes.io/version: "0.2"
+      annotations:
+        tekton.dev/pipelines.minVersion: "0.53.0"
+        tekton.dev/displayName: "git version"
+        tekton.dev/categories: Git
+        tekton.dev/tags: git
+        tekton.dev/platforms: "linux/amd64,linux/arm64"
+    spec:
+      description: >-
+        此任务可用于根据 git 历史创建版本
+      params:
+        - name: gitversion-image
+          default: gittools/gitversion:6.4.0-alpine.3.21-8.0
+          description: 用于计算 git 版本的 git-version 镜像。
+          type: string
+        - name: yq-image
+          default: mikefarah/yq:4.44.6
+          description: 用于格式化 git 版本的 yq 镜像。
+          type: string
+        - name: commit
+          type: string
+          description: 可选的提交，用于重置仓库的副本并从先前的提交中重新生成版本。这不会影响当前源工作区。
+          default: ''
+        - name: config-file
+          type: string
+          description: 可选配置工作区中要用作覆盖的配置文件名。默认为 'GitVersion.yaml'
+          default: 'GitVersion.yaml'
+        - name: pre-command
+          type: string
+          default: ""
+          description: |
+            在运行 GitVersion 之前执行的命令。
+            可以在预命令中使用以下环境变量：
+            - `GITVERSION_BINARY`: GitVersion 二进制文件的路径。
+            - `CUSTOM_CONFIG`: 自定义配置文件的路径。
+            - `FINAL_GITVERSION_CONFIG`: 最终 GitVersion 配置文件的路径。
+            - `FINAL_RESULTS_PATH`: 最终结果文件的路径。
+        - name: post-command
+          type: string
+          default: ""
+          description: |
+            在运行 GitVersion 之后执行的命令。
+            可以在后命令中使用以下环境变量：
+            - `GITVERSION_BINARY`: GitVersion 二进制文件的路径。
+            - `CUSTOM_CONFIG`: 自定义配置文件的路径。
+            - `FINAL_GITVERSION_CONFIG`: 最终 GitVersion 配置文件的路径。
+            - `FINAL_RESULTS_PATH`: 最终结果文件的路径。
+      results:
+        - name: version
+          description: 您可以用于 git 标记的计算 git 版本，例如 "0.1.0-tektonize.1-188"。它使用 FullSemVer 变量值。
+
+        - name: variables
+          description: 存储从 GitVersion 生成的所有变量。有关完整参考，请参见 https://gitversion.net/docs/reference/variables
+          type: object
+          properties:
+            AssemblySemFileVer: {}
+            BranchName: {}
+            FullSemVer: {}
+            SemVer: {}
+            InformationalVersion: {}
+            PreReleaseLabel: {}
+            PreReleaseTag: {}
+            Major: {}
+            Minor: {}
+            Patch: {}
+            Sha: {}
+            ShortSha: {}
+
+      steps:
+        - image: $(params.gitversion-image)
+          name: calculate-version
+          workingDir: $(workspaces.source.path)
+          computeResources:
+            requests:
+              cpu: "250m"
+              memory: "256Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
+          # 因为我们使用的是开源镜像，默认用户是 root。暂时不启用以下配置。
+          # securityContext:
+          #   runAsNonRoot: true
+          env:
+          ### !!! 从 git clone 复制以解决基本身份验证中的 git 获取凭据
+          - name: WORKSPACE_BASIC_AUTH_DIRECTORY_BOUND
+            value: $(workspaces.basic-auth.bound)
+          - name: WORKSPACE_BASIC_AUTH_DIRECTORY_PATH
+            value: $(workspaces.basic-auth.path)
+          script: |
+            #!/usr/bin/env sh
+            set -e
+
+            # 如果用户的主目录不可写，则创建临时目录。
+            if [ ! -w "$HOME" ]; then
+              export HOME=$(mktemp -d /tmp/gitversion-home-XXXXXX)
+            fi
+
+            # 自动检测 GitVersion 二进制文件位置
+            if command -v gitversion >/dev/null 2>&1; then
+              echo "==> 使用 PATH 中的 gitversion"
+            elif [ -x "/tools/dotnet-gitversion" ]; then
+              echo "==> 使用 /tools/dotnet-gitversion 作为 GitVersion 二进制文件"
+              mkdir -p ~/.bin
+              export PATH="$HOME/.bin:/tools:$PATH"
+              ln -sf /tools/dotnet-gitversion ~/.bin/gitversion
+            else
+              echo "错误：未找到 GitVersion 二进制文件"
+              exit 1
+            fi
+
+            ### !!! 从 git clone 复制以解决基本身份验证中的 git 获取凭据
+            if [ "${WORKSPACE_BASIC_AUTH_DIRECTORY_BOUND}" = "true" ] ; then
+              if [ -f "${WORKSPACE_BASIC_AUTH_DIRECTORY_PATH}/.git-credentials" ] ; then
+                cp "${WORKSPACE_BASIC_AUTH_DIRECTORY_PATH}/.git-credentials" "${HOME}/.git-credentials"
+                chmod 400 "${HOME}/.git-credentials"
+              fi
+              if [ -f "${WORKSPACE_BASIC_AUTH_DIRECTORY_PATH}/.gitconfig" ] ; then
+                cp "${WORKSPACE_BASIC_AUTH_DIRECTORY_PATH}/.gitconfig" "${HOME}/.gitconfig"
+                chmod 400 "${HOME}/.gitconfig"
+              fi
+            fi
+
+            # 检查这是否是浅克隆
+            git config --global --add safe.directory $(workspaces.source.path)
+            if [ -f .git/shallow ]; then
+              echo "==> 检测到浅克隆，获取完整历史..."
+              git fetch --unshallow --tags --no-recurse-submodules
+            fi
+
+            export FINAL_GITVERSION_CONFIG=/shared/GitVersion.yaml
+            export FINAL_RESULTS_PATH=/shared/results.json
+
+            export GITVERSION_BINARY="gitversion"
+            # export GITVERSION=$(gitversion -config $FINAL_GITVERSION_CONFIG)
+            export CUSTOM_CONFIG=$(workspaces.config.path)/$(params.config-file)
+
+            ## 检查配置优先级：自定义配置 > 仓库配置 > 默认配置
+            if [ "$(workspaces.config.bound)" = "true" ] && [ -f "$CUSTOM_CONFIG" ]; then
+              echo "==> 在配置工作区中找到自定义配置 $(params.config-file) ..."
+              cp $CUSTOM_CONFIG $FINAL_GITVERSION_CONFIG
+            elif [ -f GitVersion.yaml ]; then
+              echo "==> 在仓库中找到 GitVersion.yaml..."
+              cp GitVersion.yaml $FINAL_GITVERSION_CONFIG
+            else
+              echo "==> 未找到 GitVersion.yaml，生成默认配置..."
+              gitversion /showconfig > $FINAL_GITVERSION_CONFIG
+            fi
+
+            if [ "$(workspaces.config.bound)" = "true" ] && [ ! -f "$CUSTOM_CONFIG" ]; then
+              echo "警告：配置工作区已绑定，但未找到 $(params.config-file) 文件...使用回退配置..."
+            fi
+
+            # 检查是否需要重置 git 提交
+            # 1. 如果提交为空，则无需重置
+            # 2. 如果当前提交是预期的，则无需重置
+            reset_git_commit=true
+            current_commit=$(git rev-parse HEAD | tr -d '\n')
+            if [ -z "$(params.commit)" ] || [ "${current_commit}" = "$(params.commit)" ]; then
+              reset_git_commit=false
+            fi
+
+            export REPO_PATH=$(workspaces.source.path)
+            if [ "${reset_git_commit}" = "true" ]; then
+              echo "==> 请求的版本来自特定提交 $(params.commit) 与当前提交 ${current_commit} 不同。将复制 .git 目录并重置到指定提交..."
+              # 创建目标目录并直接复制 .git
+              mkdir -p /shared/repo/source
+              cp -r $(workspaces.source.path)/.git /shared/repo/source/
+              export REPO_PATH=/shared/repo/source
+              echo "==> 重置到提交 $(params.commit)..."
+              git -C $REPO_PATH reset $(params.commit) --hard
+            fi
+
+            # 如果指定，执行预命令
+            $(params.pre-command)
+
+            echo "==> 计算 gitversion..."
+            if gitversion $REPO_PATH /output json /nocache /config $FINAL_GITVERSION_CONFIG > $FINAL_RESULTS_PATH; then
+              # 成功：显示结果并格式化
+              cat $FINAL_RESULTS_PATH
+              chmod a+rw $FINAL_RESULTS_PATH     # 确保结果文件可写，以便下一步使用
+              echo ""
+            else
+              # 失败：仍然显示任何输出但以错误退出
+              echo "错误：GitVersion 命令失败"
+              if [ -s $FINAL_RESULTS_PATH ]; then
+                echo "部分输出："
+                cat $FINAL_RESULTS_PATH
+              fi
+              exit 1
+            fi
+
+            # 如果指定，执行后命令
+            $(params.post-command)
+
+          volumeMounts:
+          - mountPath: /shared
+            name: shared
+        - image: $(params.yq-image)
+          name: format-content
+          securityContext:
+            runAsNonRoot: true
+          computeResources:
+            requests:
+              cpu: "50m"
+              memory: "64Mi"
+            limits:
+              cpu: "100m"
+              memory: "128Mi"
+          script: |
+            #!/bin/sh
+            set -e
+
+            yq --version
+
+            echo "==> 将所有值转换为字符串..."
+            yq e '.[] |= to_string' -o=json -I=0 --inplace /shared/results.json
+            cp /shared/results.json $(results.variables.path)
+
+            echo "==> git 版本变量："
+            yq e '.' /shared/results.json
+
+            echo "==> 保存 fullSemVer 结果..."
+            yq e '.FullSemVer' /shared/results.json > $(results.version.path)
+          volumeMounts:
+          - mountPath: /shared
+            name: shared
+
+      workspaces:
+        - name: source
+          description: 包含要为其创建版本的 git 仓库的工作区。
+        - name: config
+          description : 托管可选的 `GitVersion.yaml` 的工作区
+          optional: true
+        - name: basic-auth
+          optional: true
+          description: >
+            包含 .gitconfig 和 .git-credentials 文件的工作区。这些文件将在运行任何 git 命令之前复制到用户的主目录。此工作区中的其他文件将被忽略。
+      volumes:
+      - name: shared
+        emptyDir: {}
+    ```
+
+    **任务参数**：
+
+    - `gitversion-image`：`GitVersion` 的 `Docker` 镜像（默认：`gittools/gitversion:6.4.0-alpine.3.21-8.0`）
+    - `yq-image`：用于格式化输出的 yq 镜像（默认：`mikefarah/yq:4.44.6`）
+    - `commit`：可选的特定提交以计算版本
+    - `config-file`：自定义配置文件名（默认：`GitVersion.yaml`）
+    - `pre-command`：在 GitVersion 计算之前执行的命令
+    - `post-command`：在 GitVersion 计算之后执行的命令
+
+    **任务结果**：
+
+    - `version`：计算的 git 版本（FullSemVer 格式）
+    - `variables`：作为 `JSON` 对象的完整 `GitVersion` 变量集
+  </Tab>
+
+  <Tab label="TaskRun 示例">
+    > 此示例假设您有一个名为 `git-source-pvc` 的 `PersistentVolumeClaim`，其中包含您的 `Git` 仓库。
+
+    **基本 TaskRun**（基于仓库的配置）：
+
+    ```yaml
+    apiVersion: tekton.dev/v1
+    kind: TaskRun
+    metadata:
+      name: gitversion-basic-example
+    spec:
+      taskRef:
+        name: git-version
+      workspaces:
+        - name: source
+          persistentVolumeClaim:
+            claimName: git-source-pvc
+        - name: basic-auth
+          secret:
+            secretName: git-credentials
+      params:
+        - name: gitversion-image
+          value: "gittools/gitversion:6.4.0-alpine.3.21-8.0"
+        - name: yq-image
+          value: "mikefarah/yq:4.44.6"
+    ```
+
+    **高级 TaskRun**（命名空间级别 ConfigMap 配置 - 推荐）：
+
+    ```yaml
+    apiVersion: tekton.dev/v1
+    kind: TaskRun
+    metadata:
+      name: gitversion-namespace-config-example
+    spec:
+      taskRef:
+        name: git-version
+      workspaces:
+        - name: source
+          persistentVolumeClaim:
+            claimName: git-source-pvc
+        - name: config
+          configMap:
+            name: gitversion-namespace-config  # 引用命名空间 ConfigMap
+        - name: basic-auth
+          secret:
+            secretName: git-credentials
+      params:
+        - name: gitversion-image
+          value: "gittools/gitversion:6.4.0-alpine.3.21-8.0"
+        - name: yq-image
+          value: "mikefarah/yq:4.44.6"
+        - name: config-file
+          value: "GitVersion.yaml"
+        - name: commit
+          value: "abc123def456"  # 可选：特定提交
+        - name: pre-command
+          value: |
+            echo "==> 使用命名空间级别的 GitVersion 配置"
+            echo "==> 当前提交：$(git rev-parse HEAD)"
+            echo "==> 配置文件：$FINAL_GITVERSION_CONFIG"
+        - name: post-command
+          value: |
+            echo "==> 版本计算成功完成"
+            echo "==> 结果保存到：$FINAL_RESULTS_PATH"
+            echo "==> 生成的版本：$(cat $FINAL_RESULTS_PATH | grep -w 'FullSemVer')"
+    ```
+
+    **特定环境的 TaskRun**：
+
+    ```yaml
+    apiVersion: tekton.dev/v1
+    kind: TaskRun
+    metadata:
+      name: gitversion-prod-example
+    spec:
+      taskRef:
+        name: git-version
+      workspaces:
+        - name: source
+          persistentVolumeClaim:
+            claimName: git-source-pvc
+        - name: config
+          configMap:
+            name: gitversion-config-prod  # 生产特定配置
+        - name: basic-auth
+          secret:
+            secretName: git-credentials
+      params:
+        - name: config-file
+          value: "GitVersion.yaml"
+    ```
+  </Tab>
+
+  <Tab label="管道集成">
+    **管道**（命名空间级别 ConfigMap 方法 - 推荐）：
+
+    ```yaml
+    apiVersion: tekton.dev/v1
+    kind: Pipeline
+    metadata:
+      name: enterprise-build-with-gitversion
+    spec:
+      params:
+        - name: git-url
+          type: string
+          description: Git 仓库 URL
+        - name: git-revision
+          type: string
+          default: main
+          description: 要检出 Git 修订版
+      workspaces:
+        - name: shared-data
+          description: 在任务之间共享数据的工作区
+        - name: git-credentials
+          description: Git 凭据工作区
+          optional: true
+        - name: gitversion-config
+          description: 包含 GitVersion.yaml 配置文件的可选 configmap 或 secret
+          optional: true
+      tasks:
+        - name: git-clone
+          taskRef:
+            name: git-clone
+          workspaces:
+            - name: output
+              workspace: shared-data
+            - name: basic-auth
+              workspace: git-credentials
+          params:
+            - name: url
+              value: $(params.git-url)
+            - name: revision
+              value: $(params.git-revision)
+
+        - name: calculate-version
+          taskRef:
+            name: git-version
+            kind: Task
+          runAfter: ["git-clone"]
+          workspaces:
+            - name: source
+              workspace: shared-data
+            - name: config
+              workspace: gitversion-config
+            - name: basic-auth
+              workspace: git-credentials
+          params:
+            - name: gitversion-image
+              value: "gittools/gitversion:6.4.0-alpine.3.21-8.0"
+            - name: yq-image
+              value: "mikefarah/yq:4.44.6"
+
+        - name: create-git-tag
+          taskRef:
+            name: git-cli
+          runAfter: ["calculate-version"]
+          workspaces:
+            - name: source
+              workspace: shared-data
+            - name: basic-auth
+              workspace: git-credentials
+          params:
+            - name: GIT_USER_NAME
+              value: "GitVersion Pipeline"
+            - name: GIT_USER_EMAIL
+              value: "gitversion@company.com"
+            - name: GIT_SCRIPT
+              value: |
+                # 创建并推送语义版本标签
+                VERSION=$(tasks.calculate-version.results.variables.SemVer)
+                FULL_VERSION=$(tasks.calculate-version.results.version)
+
+                echo "创建标签：v${VERSION}"
+                git tag "v${VERSION}" -m "从 CI 发布 ${FULL_VERSION}"
+                git push origin "v${VERSION}"
+    ```
+  </Tab>
+
+  <Tab label="PipelineRun 示例">
+    ```yaml
+    apiVersion: tekton.dev/v1
+    kind: PipelineRun
+    metadata:
+      name: enterprise-build-with-gitversion
+    spec:
+      pipelineRef:
+        name: enterprise-build-with-gitversion
+      params:
+        - name: git-url
+          value: "<YOUR_GIT_REPO_URL>"
+        - name: git-revision
+          value: "<YOUR_GIT_BRANCH_OR_COMMIT>"
+      workspaces:
+        - name: shared-data
+          volumeClaimTemplate:
+            spec:
+              accessModes:
+                - ReadWriteMany
+              resources:
+                requests:
+                  storage: 1Gi
+              storageClassName: <YOUR_STORAGE_CLASS>
+        - name: git-credentials
+          secret:
+            secretName: git-credentials
+        - name: gitversion-config
+          configMap:
+            name: gitversion-namespace-config
+    ```
+  </Tab>
+
+  <Tab label="使用结果">
+    **版本信息显示任务**：
+
+    ```yaml
+    - name: display-version-info
+      runAfter: ["calculate-version"]
+      params:
+        - name: text
+          value: |
+            ========================================
+            GitVersion 结果摘要
+            ========================================
+            完整语义版本：$(tasks.calculate-version.results.version)
+            SemVer：$(tasks.calculate-version.results.variables.SemVer)
+            Major：$(tasks.calculate-version.results.variables.Major)
+            Minor：$(tasks.calculate-version.results.variables.Minor)
+            Patch：$(tasks.calculate-version.results.variables.Patch)
+            PreReleaseTag：$(tasks.calculate-version.results.variables.PreReleaseTag)
+            InformationalVersion：$(tasks.calculate-version.results.variables.InformationalVersion)
+            BranchName：$(tasks.calculate-version.results.variables.BranchName)
+            Commit SHA：$(tasks.calculate-version.results.variables.Sha)
+            Short SHA：$(tasks.calculate-version.results.variables.ShortSha)
+            AssemblySemFileVer：$(tasks.calculate-version.results.variables.AssemblySemFileVer)
+            ========================================
+      taskSpec:
+        params:
+          - name: text
+            type: string
+        steps:
+          - name: print
+            image: alpine:latest
+            script: |
+              #!/bin/sh
+              echo "$(params.text)"
+    ```
+
+    **在不同上下文中使用 GitVersion 变量**：
+
+    | 变量                                                              | 示例值               | 用例                                      |
+    | ----------------------------------------------------------------- | --------------------- | ----------------------------------------- |
+    | `$(tasks.calculate-version.results.version)`                      | `1.2.3-beta.5`        | `Docker` 镜像标签，完整版本显示         |
+    | `$(tasks.calculate-version.results.variables.SemVer)`             | `1.2.3-beta.5`        | Git 标签，包版本                          |
+    | `$(tasks.calculate-version.results.variables.Major)`              | `1`                   | 主要版本检查，重大更改                  |
+    | `$(tasks.calculate-version.results.variables.Minor)`              | `2`                   | 次要版本检查，功能添加                  |
+    | `$(tasks.calculate-version.results.variables.Patch)`              | `3`                   | 补丁版本检查，错误修复                  |
+    | `$(tasks.calculate-version.results.variables.InformationalVersion)` | `1.2.3-beta.5.g1234567` | 程序集信息，详细版本控制                |
+    | `$(tasks.calculate-version.results.variables.BranchName)`         | `main`                | 基于分支的逻辑，部署路由                |
+    | `$(tasks.calculate-version.results.variables.ShortSha)`           | `1234567`             | 提交标识，追踪性                        |
+  </Tab>
+</Tabs>
+
+## 最佳实践
+
+### 开发最佳实践
+
+#### 仓库设置
+
+- **使用语义标签初始化**：以适当的语义版本标签（例如 `v1.0.0`）开始您的仓库
+- **一致的分支策略**：选择一种工作流（`GitFlow`、`GitHubFlow` 或 `TrunkBased`），并在团队中坚持使用
+- **有意义的提交消息**：使用约定提交格式触发适当的版本递增
+
+#### 管道集成
+
+- **缓存配置**：将 `GitVersion.yaml` 存储在命名空间级别的 `ConfigMaps` 中，以确保跨项目的一致性
+- **错误处理**：在管道步骤中始终包含适当的错误处理和日志记录
+- **资源限制**：为 `GitVersion` 任务设置适当的 CPU 和内存限制
+
+#### 版本管理
+
+- **定期标记**：在部署到生产环境时标记发布分支
+- **预发布标签**：使用有意义的预发布标签（`alpha`、`beta`、`rc`）用于不同环境
+- **热修复处理**：确保热修复分支正确配置以递增补丁版本
+
+### 生产部署指南
+
+#### 部署前检查清单
+
+- ✅ **仓库标签**：验证初始语义版本标签是否存在
+- ✅ **ConfigMap 设置**：命名空间级别配置已部署并测试
+- ✅ **管道集成**：在 CI/CD 工作流中集成 GitVersion 任务
+- ✅ **分支配置**：所有团队分支模式已正确配置
+- ✅ **访问控制**：为 ConfigMap 修改设置适当的 RBAC
+
+#### 操作建议
+
+- **监控**：设置版本计算失败的警报
+- **备份**：定期备份命名空间 ConfigMaps
+- **文档**：维护团队文档以记录分支策略
+- **培训**：确保团队理解语义版本控制原则
+
+## 常见问题解答 (FAQ)
+
+### 为什么我的版本号没有递增？
+
+版本递增由提交消息（`+semver: major/minor/patch`）、分支配置和正确的 Git 标签控制。标签对版本进展至关重要。有关详细解决方案，请参见 [故障排除](#troubleshooting)。
+
+### `GitVersion` 如何处理浅克隆？
+
+GitVersion 需要完整的 Git 历史。使用 `git fetch --unshallow --tags` 处理浅克隆。git-version 任务会自动处理此问题。有关平台特定的解决方案，请参见 [故障排除](#troubleshooting)。
+
+### 为什么我的发布分支显示意外的版本号？
+
+分支名称必须使用完整的语义版本（例如 `release/v1.2.0`，而不是 `release/v1.2`）。如果需要，请使用标签指定版本。有关详细解决方案，请参见 [故障排除](#troubleshooting)。
+
+### 为什么我应该避免使用分支名称作为版本源？
+
+分支名称是不稳定的版本源，因为分支在合并后通常会被删除。使用 Git 标签作为持久版本引用。
+
+## 参考
+
+### 配置参数
+
+**核心设置**：
+
+- `mode`：`ContinuousDelivery` | `ManualDeployment`
+- `increment`：`Major` | `Minor` | `Patch` | `Inherit` | `None`
+- `semantic-version-format`：`Strict` | `Loose`
+- `next-version`：显式版本覆盖（例如 `2.0.0`）
+- `assembly-versioning-scheme`：`MajorMinorPatch` | `MajorMinor` | `Major` | `None`
+
+**分支配置**：
+
+- `regex`：用于分支名称匹配的正则表达式
+- `label`：预发布标签模式（例如 `"beta"`、`"{BranchName}"`）
+- `prevent-increment.when-current-commit-tagged`：`true` | `false`
+- `track-merge-target`：`true` | `false`
+- `is-main-branch`：`true` | `false`
+- `is-release-branch`：`true` | `false`
+
+**版本控制**：
+
+- `tag-prefix`：版本标签的模式（默认：`'[vV]?'`）
+- `major-version-bump-message`：主要版本提交的正则表达式
+- `minor-version-bump-message`：次要版本提交的正则表达式
+- `patch-version-bump-message`：补丁版本提交的正则表达式
+- `no-bump-message`：跳过版本递增的正则表达式
+
+### GitVersion 变量
+
+**主要版本变量**：
+
+- `FullSemVer`：完整语义版本（例如 `0.0.1-test-git-revision.15`）
+- `SemVer`：标准语义版本（例如 `0.0.1-test-git-revision.15`）
+- `Major`：主要版本号（例如 `0`）
+- `Minor`：次要版本号（例如 `0`）
+- `Patch`：补丁版本号（例如 `1`）
+- `MajorMinorPatch`：没有预发布的版本（例如 `0.0.1`）
+
+**预发布变量**：
+
+- `PreReleaseTag`：预发布标识符（例如 `test-git-revision.15`）
+- `PreReleaseLabel`：仅预发布标签（例如 `test-git-revision`）
+- `PreReleaseNumber`：预发布构建号（例如 `15`）
+- `PreReleaseLabelWithDash`：带有破折号前缀的预发布（例如 `-test-git-revision`）
+- `PreReleaseTagWithDash`：完整预发布带破折号（例如 `-test-git-revision.15`）
+- `WeightedPreReleaseNumber`：加权预发布号（例如 `15`）
+
+**程序集和构建变量**：
+
+- `AssemblySemVer`：程序集版本格式（例如 `0.0.1.0`）
+- `AssemblySemFileVer`：程序集文件版本格式（例如 `0.0.1.0`）
+- `InformationalVersion`：带有元数据的扩展版本（例如 `0.0.1-test-git-revision.15.gf73e634`）
+
+**源控制变量**：
+
+- `BranchName`：当前分支名称（例如 `test/git-revision`）
+- `EscapedBranchName`：URL 安全的分支名称（例如 `test-git-revision`）
+- `Sha`：完整提交 SHA（例如 `f73e634c8c8ca928aa0cb06ee8f0d8ce282f11c9`）
+- `ShortSha`：短提交 SHA（例如 `f73e634`）
+- `CommitDate`：提交日期（例如 `2025-09-08`）
+- `CommitsSinceVersionSource`：自版本源以来的提交（例如 `15`）
+- `VersionSourceSha`: 版本源提交的 SHA
+- `UncommittedChanges`: 未提交更改的数量（例如，`0`）
+
+**元数据变量**：
+
+- `BuildMetaData`: 构建元数据（如果可用）
+- `FullBuildMetaData`: 包含分支和 SHA 的完整构建元数据
+
+### 命令行选项
+
+**基本命令**：
+
+- `gitversion`: 计算当前目录的版本
+- `gitversion /showconfig`: 显示完整配置
+- `gitversion /nocache`: 不使用缓存进行计算
+- `gitversion /output json`: 以 JSON 格式输出
+- `gitversion /config <path>`: 使用自定义配置文件
+
+**任务参数**：
+
+- `gitversion-image`: GitVersion Docker 镜像版本
+- `yq-image`: 用于 JSON 处理的 yq 镜像
+- `commit`: 计算版本的特定提交
+- `config-file`: 自定义配置文件名称
+- `pre-command`/`post-command`: 用于高级处理的自定义脚本
+
+### 工作流模板
+
+**GitFlow 配置**：
+
+```yaml
+workflow: GitFlow/v1
+# 适用于：具有 develop/release 分支的传统开发
+# 主要分支：main, develop, release/*, feature/*, hotfix/*
+```
+
+**GitHubFlow 配置**：
+
+```yaml
+workflow: GitHubFlow/v1
+# 适用于：简化工作流，特性分支到 main
+# 主要分支：main, feature/*, pull-request/*
+```
+
+**TrunkBased 配置**：
+
+```yaml
+workflow: TrunkBased/preview1
+# 适用于：最小分支的持续集成
+# 主要分支：main, 短期特性分支
+```
+
+## 故障排除
+
+### 快速问题诊断
+
+使用此决策树快速识别您的问题并找到适当的解决方案：
+
+**版本未更改？**
+
+- 新仓库没有标签？ → [初始设置](#initial-setup-issues)
+- 提交未触发增量？ → [版本增量问题](#version-increment-issues)
+- 浅克隆错误？ → [仓库问题](#repository-issues)
+- 分支名称无效？ → [分支配置问题](#branch-configuration-issues)
+- 意外的版本格式？ → [配置问题](#configuration-issues)
+
+**快速诊断命令**：
+
+```bash
+# 检查当前状态
+$ gitversion                    # 当前计算的版本
+$ git tag --list --sort=-version:refname | head -5  # 最近的标签
+$ git log --oneline -5          # 最近的提交
+
+# 调试配置
+$ gitversion /showconfig        # 当前 GitVersion 配置
+$ gitversion /nocache           # 强制重新计算
+```
+
+### 初始设置问题
+
+**症状**：`0.0.1` 版本，没有版本进展，新仓库
+
+**根本原因**：缺少初始标签或不当的仓库设置
+
+**检测命令**：
+
+```bash
+# 检查是否存在标签
+$ git tag --list --sort=-version:refname
+
+# 预期：版本标签列表，如 v1.0.0, v0.1.0
+# 问题：输出为空或非语义标签
+```
+
+**解决方案**：
+
+```bash
+# 创建初始语义版本标签
+$ git tag v1.0.0
+$ git push origin v1.0.0
+
+# 验证版本计算现在是否有效
+$ gitversion  # 应显示 1.0.1 或类似增量
+```
+
+### 版本增量问题
+
+**症状**：提交后版本保持不变，`+semver:` 无效
+
+**1. 提交消息问题**
+
+```bash
+# 检查最近的提交消息
+$ git log --oneline -5
+
+# 如果提交缺少 +semver: 或常规格式
+# 解决方案：使用语义提交消息
+$ git commit -m "feat: add feature +semver: minor"
+$ git commit -m "fix: bug fix +semver: patch"
+$ git commit -m "feat!: breaking change +semver: major"
+```
+
+**2. 分支配置问题**
+
+```bash
+# 检查分支增量是否被禁用
+$ gitversion /showconfig
+
+# 查找 prevent-increment 设置
+# 解决方案：更新 GitVersion.yaml
+branches:
+  main:
+    increment: Minor
+    prevent-increment:
+      when-current-commit-tagged: false
+```
+
+**3. 使用 +semver 后缺少标签**
+
+```bash
+# 使用 +semver: minor 后，标记结果
+$ git commit -m "feat: new feature +semver: minor"
+$ gitversion  # 显示新版本，例如 1.2.0
+$ git tag v1.2.0  # 使用计算的版本标记
+$ git push origin v1.2.0
+```
+
+### 仓库问题
+
+**症状**：“浅仓库”错误，缺少 Git 历史
+
+**根本原因**：仓库未完整克隆，缺少标签
+
+**检测命令**：
+
+```bash
+# 检查仓库是否为浅克隆
+$ if [ -f .git/shallow ]; then echo "Repository is shallow"; fi
+
+# 检查可用历史
+$ git log --oneline | wc -l  # 应显示完整的提交计数
+```
+
+**平台解决方案**：
+
+**本地/手动修复**：
+
+```bash
+# 获取完整历史和标签
+$ git fetch --unshallow --tags --no-recurse-submodules
+$ gitversion /nocache  # 验证修复
+```
+
+**GitHub Actions**：
+
+```yaml
+- name: Checkout
+  uses: actions/checkout@v4
+  with:
+    fetch-depth: 0      # 完整克隆
+    fetch-tags: true    # 包括所有标签
+```
+
+```yaml
+# Tekton git-clone 完整历史
+- name: git-clone
+  taskRef:
+    name: git-clone
+  params:
+    - name: depth
+      value: "0"        # 完整克隆
+    - name: fetchTags
+      value: "true"     # 获取所有标签
+```
+
+> **注意**：git-version 任务会自动检测并修复浅克隆
+
+### 分支配置问题
+
+**问题**：创建了 `release-v0.65` 分支，但版本不是 `0.65.x`
+
+**根本原因**：`semantic-version-format: Strict` 设置要求完整的语义版本。`0.65` 不符合严格格式要求。
+
+<Tabs>
+  <Tab label="完整语义版本">
+    **最佳实践解决方案** - 在分支名称中使用完整的语义版本：
+
+    ```bash
+    # 而不是：release-v0.65
+    $ git checkout -b release-v0.65.0
+
+    # 验证版本计算
+    $ gitversion
+    # 预期输出：0.65.0-rc.1
+    ```
+
+    **为什么这样有效**：
+
+    - `0.65.0` 是有效的语义版本格式
+    - 符合 `semantic-version-format: Strict` 要求
+    - 分支正则表达式可以正确提取版本
+  </Tab>
+
+  <Tab label="使用标签代替">
+    **替代解决方案** - 使用标签进行版本指定：
+
+    ```bash
+    # 创建任何名称的发布分支
+    $ git checkout -b release-v0.65
+
+    # 添加语义版本标签以建立基础版本
+    $ git tag v0.65.0-alpha.0
+    $ git push origin v0.65.0-alpha.0
+
+    # 验证版本计算
+    $ gitversion
+    # 预期输出：0.65.0-rc.1
+    ```
+
+    **好处**：
+
+    - 标签在分支删除后仍然存在
+    - 更灵活的分支命名
+    - 清晰的版本历史
+  </Tab>
+
+  <Tab label="宽松格式（谨慎）">
+    **配置更改** - 启用宽松格式：
+
+    ```yaml
+    # GitVersion.yaml
+    semantic-version-format: Loose
+    ```
+
+    **⚠️ 极其谨慎使用**：
+
+    宽松格式可能导致意外副作用：
+
+    ```bash
+    # 示例问题场景
+    $ git checkout -b hotfix/12345
+
+    # 在严格模式下：未提取版本（正确）
+    # 在宽松模式下：提取版本 12345.0.0（不正确！）
+    ```
+
+    **问题**：
+
+    - 分支 `hotfix/12345` 匹配 `hotfix` 配置
+    - 由于 `12345` 看起来不像版本，严格模式忽略它
+    - 宽松模式错误地将 `12345` 解释为版本 `12345.0.0`
+  </Tab>
+</Tabs>
+
+### 配置问题
+
+**症状**：意外的版本号，错误的增量，策略冲突
+
+**根本原因**：分支模式、增量规则或版本策略配置错误
+
+**常见问题及解决方案**：
+
+**1. 特性分支版本问题**
+
+```bash
+# 检查分支配置
+$ gitversion /showconfig | grep -A 10 feature
+
+# 常见修复：更新分支正则表达式和增量
+branches:
+  feature:
+    regex: ^features?[/\-](?<BranchName>.+)
+    increment: Inherit        # 使用源分支增量
+    label: "{BranchName}"     # 使用分支名称作为预发布标签
+```
+
+**2. 主分支未增量**
+
+```bash
+# 验证主分支设置
+branches:
+  main:
+    increment: Minor
+    prevent-increment:
+      when-current-commit-tagged: false    # 关键设置
+    is-main-branch: true
+```
+
+**3. 版本策略冲突**
+
+```bash
+# 调试版本计算步骤
+$ gitversion /nocache /output buildserver
+
+# 检查策略优先级
+$ gitversion /showconfig | grep -A 10 strategies
+
+# 如有需要，审查并调整策略顺序
+```
+
+### 诊断工具包
+
+**基本诊断命令**（优先使用这些）：
+
+```bash
+# 1. 当前版本和基本信息
+$ gitversion                              # 当前计算的版本
+$ gitversion /showconfig                  # 当前配置
+$ gitversion /nocache                     # 强制重新计算
+
+# 2. 仓库状态分析
+$ git status                              # 工作目录状态
+$ git log --oneline -5                    # 最近的提交
+$ git tag --list --sort=-version:refname | head -5  # 最近的标签
+$ git branch -a                           # 所有分支
+
+# 3. 高级调试（如有需要）
+$ gitversion /output json | jq            # 所有版本变量
+$ gitversion /nocache /output buildserver # 详细计算步骤
+```
+
+**问题特定命令**：
+
+```bash
+# 针对浅克隆问题
+$ if [ -f .git/shallow ]; then echo "Shallow detected"; fi
+
+# 针对分支配置问题
+$ gitversion /showconfig | grep -A 10 branches
+
+# 针对策略调试
+$ gitversion /showconfig | grep -A 10 strategies
+```
+
+## 测试与验证
+
+在实施 GitVersion 后，通过以下全面测试验证您的设置：
+
+### 本地测试命令
+
+```bash
+# 检查当前 GitVersion 状态
+$ gitversion /nocache /output json
+
+# 在本地测试版本计算
+$ gitversion
+
+# 验证仓库设置
+$ git log --oneline -10
+$ git tag --list --sort=-version:refname | head -5
+
+# 测试配置
+$ gitversion /showconfig
+
+# 调试版本计算细节
+$ gitversion /nocache /output buildserver
+```
+
+### 分支特定测试
+
+```bash
+# 测试不同的分支场景
+$ git checkout -b feature/test-versioning
+$ gitversion
+
+$ git checkout main
+$ gitversion
+
+# 测试发布分支版本
+$ git checkout -b release/v1.2.0
+$ gitversion
+```
+
+### CI/CD 管道验证
+
+**Tekton 管道测试**：
+
+```bash
+# 测试 GitVersion TaskRun
+$ kubectl apply -f your-gitversion-taskrun.yaml
+
+# 监控任务执行
+$ kubectl get taskrun -w
+
+# 检查结果
+$ kubectl get taskrun test-gitversion -o jsonpath='{.status.results[?(@.name=="version")].value}'
+```
+
+**验证检查表**：
+
+- ✅ 版本信息出现在构建日志中
+- ✅ 版本号在不同分支间正确增量
+- ✅ 基于标签的版本生成按预期工作
+- ✅ 版本信息出现在构建产物中
+- ✅ 命名空间 ConfigMaps 正确加载
+- ✅ 分支正则表达式模式匹配您的命名约定
+
+### 集成测试
+
+```bash
+# 测试完整管道集成
+$ git commit -m "feat: new feature +semver: minor"
+$ git push origin feature/test-versioning
+
+# 验证版本增量行为
+$ gitversion
+# 应显示增量的次要版本
+
+# 测试生产标签
+$ git tag v1.2.0
+$ gitversion
+# 应显示稳定版本而没有预发布标签
+```
+
+## 总结
+
+### 我们解决了什么
+
+本综合指南解决了现代软件开发中的以下关键挑战：
+
+**✅ 版本管理自动化**
+
+- 消除了手动版本增量和人为错误
+- 基于 `Git` 历史和分支模式自动化语义版本控制
+- 确保在不同环境中一致的版本计算
+
+**✅ CI/CD 管道集成**
+
+- 与 `Tekton` 管道和 `Kubernetes` 环境的无缝集成
+- 团队一致性的命名空间级配置管理
+- 从版本计算到部署的完整管道示例
+
+**✅ 分支策略实施**
+
+- 支持多种分支策略（`GitFlow`、`GitHubFlow`、`TrunkBased`）
+- 针对不同开发模式的灵活分支特定配置
+- 针对所有常见分支类型的全面示例
+
+### 实施路径
+
+该解决方案遵循结构化的方法：
+
+1. **基础设置**（5分钟）
+   - 使用语义标签初始化仓库
+   - 任务安装和基本测试
+   - 快速验证版本计算
+
+2. **配置管理**
+   - 工作流选择和完整配置生成
+   - 团队标准的命名空间级 `ConfigMap` 设置
+   - 项目需求的分支特定定制
+
+3. **生产集成**
+   - 完整的管道实施示例
+   - 环境特定的配置处理
+   - 自动化标签和发布管理
+
+4. **运营卓越**
+   - 仓库和管道管理的最佳实践
+   - 常见问题的全面故障排除
+   - 复杂工作流的高级配置模式
+
+### 实现的关键好处
+
+- **零接触版本控制**：无需手动干预的自动版本计算
+- **语义合规性**：所有发布均完全遵循 `SemVer` 标准
+- **团队一致性**：所有项目和环境中的版本控制标准化
+- **管道可靠性**：强大的错误处理和诊断能力
+- **可扩展架构**：支持复杂分支策略的企业级解决方案
+
+该实施提供了一个完整的、生产就绪的语义版本控制解决方案，能够随着您的开发团队和组织需求的变化而扩展。
+
+## 参考
+
+### `GitVersion` 文档
+
+- [`GitVersion` 官方文档](https://gitversion.net/docs/) - `GitVersion` 功能和配置的完整参考
+- [`GitVersion` 配置参考](https://gitversion.net/docs/reference/configuration) - 详细的配置选项和示例
+- [`GitVersion` 变量参考](https://gitversion.net/docs/reference/variables) - 可用版本变量的完整列表
+- [`GitVersion` 分支策略](https://gitversion.net/docs/learn/branching-strategies/overview) - `GitFlow`、`GitHub Flow` 和 `trunk-based` 开发模式
+
+### 语义版本控制
+
+- [语义版本控制规范](https://semver.org/) - 官方 `SemVer` 规范和指南
+- [语义版本控制简介](https://gitversion.net/docs/learn/intro-to-semver) - `GitVersion` 的 `SemVer` 理解指南
+
+### 版本增量和标签
+
+- [版本增量](https://gitversion.net/docs/reference/version-increments) - 理解版本是如何计算和增量的
+- [提交消息约定](https://www.conventionalcommits.org/) - 用于自动版本提升的常规提交格式
+
+### `CI/CD` 集成
+
+- [`Tekton Pipelines` 文档](https://tekton.dev/docs/pipelines/) - 官方 `Tekton Pipelines` 文档
+- [`Kubernetes ConfigMap` 文档](https://kubernetes.io/docs/concepts/configuration/configmap/) - `ConfigMap` 的使用和最佳实践
+
+### `Git` 和仓库管理
+
+- [`Git` 文档](https://git-scm.com/docs) - 官方 `Git` 文档
+- [`Git` 分支策略](https://www.atlassian.com/git/tutorials/comparing-workflows) - 不同 `Git` 工作流的比较
