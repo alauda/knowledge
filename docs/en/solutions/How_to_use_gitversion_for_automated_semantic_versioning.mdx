@@ -7,6 +7,31 @@ kind:
 
 # `GitVersion` for Automated Semantic Versioning
 
+## Background
+
+### The Challenge
+
+Managing version numbers manually in modern software development presents several critical challenges:
+
+- **Inconsistent Versioning**: Different developers may use different versioning schemes, leading to confusion and integration issues
+- **Manual Errors**: Human mistakes in version incrementation can cause deployment conflicts and dependency resolution problems
+- **Branch Management Complexity**: Coordinating version numbers across multiple branches (feature, release, hotfix) becomes increasingly difficult
+- **CI/CD Integration Gaps**: Manual version management doesn't scale with automated build and deployment pipelines
+- **Semantic Versioning Compliance**: Ensuring adherence to `SemVer` standards requires constant manual oversight
+
+### The Solution
+
+This guide provides a comprehensive solution for implementing `GitVersion` in your `CI/CD` pipeline to automate semantic versioning based on `Git` history. `GitVersion` eliminates manual version management by:
+
+- **Automatic Version Calculation**: Generates version numbers based on `Git` commit history and branch patterns
+- **Semantic Versioning Compliance**: Ensures all versions follow `SemVer` standards automatically
+- **Branch-Aware Versioning**: Different branch types automatically generate appropriate version patterns
+- **CI/CD Integration**: Seamless integration with `Tekton` pipelines and `Kubernetes` environments
+
+## Environment Information
+
+Applicable Versions: 4.0.x, 4.1.x
+
 ## Quick Reference
 
 ### Key Concepts
@@ -36,27 +61,6 @@ kind:
 | `feature` | `feature/user-auth` | `3.18.0-feature-user-auth.15` | Feature development |
 | `hotfix` | `hotfix/security-fix` | `3.15.1-hotfix-security-fix.3` | Emergency fixes |
 | `pull-request` | `pr/534` | `3.18.0-pr534.22` | Code review |
-
-## Problem Statement
-
-### The Challenge
-
-Managing version numbers manually in modern software development presents several critical challenges:
-
-- **Inconsistent Versioning**: Different developers may use different versioning schemes, leading to confusion and integration issues
-- **Manual Errors**: Human mistakes in version incrementation can cause deployment conflicts and dependency resolution problems
-- **Branch Management Complexity**: Coordinating version numbers across multiple branches (feature, release, hotfix) becomes increasingly difficult
-- **CI/CD Integration Gaps**: Manual version management doesn't scale with automated build and deployment pipelines
-- **Semantic Versioning Compliance**: Ensuring adherence to `SemVer` standards requires constant manual oversight
-
-### The Solution
-
-This guide provides a comprehensive solution for implementing `GitVersion` in your `CI/CD` pipeline to automate semantic versioning based on `Git` history. `GitVersion` eliminates manual version management by:
-
-- **Automatic Version Calculation**: Generates version numbers based on `Git` commit history and branch patterns
-- **Semantic Versioning Compliance**: Ensures all versions follow `SemVer` standards automatically
-- **Branch-Aware Versioning**: Different branch types automatically generate appropriate version patterns
-- **CI/CD Integration**: Seamless integration with `Tekton` pipelines and `Kubernetes` environments
 
 ## What is `GitVersion`
 
@@ -993,6 +997,8 @@ You can add `Tekton` task for `GitVersion` integration. The `git-version` task a
 
 <Tabs>
   <Tab label="Task Definition">
+
+> You can save the following definition as `git-version.yaml`.
 
 The `GitVersion` `Task` provides comprehensive version calculation capabilities with automatic shallow clone detection and configuration management:
 
