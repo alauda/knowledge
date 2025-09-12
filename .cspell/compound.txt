@@ -1,0 +1,8 @@
+devopsv4
+tektonchains
+tektonconfigs
+tektonhubs
+tektoninstallersets
+tektonpipelines
+tektonresults
+tektontriggers
