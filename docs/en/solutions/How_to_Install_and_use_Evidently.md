@@ -216,7 +216,7 @@ Evidently UI stores data in the file system and requires persistent storage. The
 
 4. Find `3rdparty/chart-evidently-ui`, then click `Create` to create this application.
 
-5. On the `Catalog` / `Create evidently` form, fill in the `Name` (recommended to fill in as `evidently`) and `Custom` configuration in `Values`, then click the `Create` button to complete the creation. The content of `Custom` will be described below. You can also modify it after creation through the `Update` application method.
+5. On the `Catalog` / `Create evidently` form, fill in the `Name` (recommended to fill in as `evidently`) and `Custom` configuration in `Values`, then click the `Create` button to complete the creation. The content of `Custom` will be described below. The configuration can also be modified after creation through the `Update` application method.
 
 ## Configuration
 

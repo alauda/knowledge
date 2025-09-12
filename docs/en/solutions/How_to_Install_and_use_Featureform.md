@@ -228,7 +228,7 @@ violet push --platform-address=platform-access-address --platform-username=platf
 
   4. Find `3rdparty/chart-featureform`, then click `Create` to create this application.
 
-  5. On the `Catalog` / `Create featureform` form, fill in the `Name` (recommended to fill in as `featureform`) and `Custom` configuration in `Values`, then click the `Create` button to complete the creation. The content of `Custom` will be described below. You can also modify it after creation through the `Update` application method.
+  5. On the `Catalog` / `Create featureform` form, fill in the `Name` (recommended to fill in as `featureform`) and `Custom` configuration in `Values`, then click the `Create` button to complete the creation. The content of `Custom` will be described below. The configuration can also be modified after creation through the `Update` application method.
 
 ## Configuration
 
@@ -360,7 +360,7 @@ Through this demonstration, you will learn how to use Featureform to build featu
 
 ### 1. Prepare PostgreSQL and Redis
 
-  Ensure you have available PostgreSQL and Redis services. You can start them in the following ways:
+  PostgreSQL and Redis services need to be available. The following methods can be used to set them up:
 
 #### Prepare PostgreSQL
 
