@@ -267,12 +267,12 @@ label-studio:
   app:
     ingress:
       enabled: true                          # Enable Ingress functionality
-      host: localhost                        # Access domain, must be set, cannot fill IP address, only domain name
+      host: localhost                        # Access domain (must be DNS name, not IP address)
       tls:
         - secretName: certificate-secret     # Secret name storing TLS certificate
 global:
   extraEnvironmentVars:
-    LABEL_STUDIO_HOST: https://x.x.x.x       # Browser access address, used to set the base address for loading frontend resources
+    LABEL_STUDIO_HOST: https://label-studio.example.com       # Web access URL for frontend resource loading
 ```
 
 ### 4. Configure User Management
