@@ -6,7 +6,7 @@ kind:
 ProductsVersion:
   - 4.x
 id: KB1756692696-9DEE
-sourceSHA: 0d39e6b3c03dc35168ea6aeb9132ffdca2006e5563726e0f6fa10686877953a5
+sourceSHA: 3e18227164775491b35a6ecb665d625d2c9064c3ae2d93cfb97f17d5e5b0ee7c
 ---
 
 # Evidently
@@ -18,7 +18,7 @@ Evidently 是一个开源的 AI 系统评估和监控平台，旨在构建、测
 它包含两个主要组件：
 
 - **开源 Python 库**：提供 70 多种评估指标、声明式测试 API 和轻量级可视化接口
-- **本地化 UI 服务**：提供完整的本地部署监控面板，包括项目管理、数据集管理、评估结果可视化和实时监控接口
+- **本地化 UI 服务**：提供完整的本地部署监控仪表板，包括项目管理、数据集管理、评估结果可视化和实时监控接口
 
 帮助团队构建和维护可靠的高性能 AI 产品：从预测机器学习模型到复杂的 LLM 驱动系统。
 
@@ -78,7 +78,7 @@ Evidently 是一个开源的 AI 系统评估和监控平台，旨在构建、测
 - **模型性能指标**：准确率、精确率、召回率、F1 分数等
 - **漂移检测指标**：统计测试、分布比较等
 
-指标可以单独使用，也可以组合成指标容器。
+指标可以单独使用或组合成指标容器。
 
 ### 预设
 
@@ -96,7 +96,7 @@ Evidently 是一个开源的 AI 系统评估和监控平台，旨在构建、测
 
 - **数据集**是数据的基本容器，包含原始数据和元数据
 - **数据定义**描述数据集的列类型和用途
-- **描述符**对数据集进行计算，生成新的分析列
+- **描述符**在数据集上计算，生成新的分析列
 - **报告**使用指标和预设来评估数据集
 - **指标**提供特定的评估计算逻辑
 - **预设**将相关指标组合成完整的监控解决方案
@@ -121,7 +121,7 @@ Evidently 的本地 UI 服务提供完整的本地部署解决方案，支持项
 - **报告查看**：查看和下载评估报告
 - **报告元数据**：管理报告的元数据和标签信息
 
-#### 监控面板
+#### 监控仪表板
 
 - **指标可视化**：显示模型性能和数据质量指标
 - **历史趋势**：查看指标随时间变化
@@ -132,7 +132,7 @@ Evidently 的本地 UI 服务提供完整的本地部署解决方案，支持项
 - **报告显示**：查看和显示评估报告的可视化结果
 - **图表显示**：显示各种指标和统计图表
 
-## 主要功能
+## 主要特性
 
 ### 数据质量监控
 
@@ -144,7 +144,7 @@ Evidently 的本地 UI 服务提供完整的本地部署解决方案，支持项
 
 - **分类模型**：准确率、精确率、召回率、F1 分数、ROC-AUC、混淆矩阵
 - **回归模型**：MAE、MSE、RMSE、MAPE、R²、残差分析
-- **推荐系统**：NDCG、MAP、MRR、HitRate、PrecisionTopK、RecallTopK 及其他排名质量指标
+- **推荐系统**：NDCG、MAP、MRR、HitRate、PrecisionTopK、RecallTopK 和其他排名质量指标
 
 ### 数据漂移检测
 
@@ -156,7 +156,7 @@ Evidently 的本地 UI 服务提供完整的本地部署解决方案，支持项
 
 - **内容质量**：正确性、忠实性、完整性评估
 - **安全检测**：有毒性、偏见、PII 检测
-- **行为分析**：拒绝检测、消极性分析
+- **行为分析**：拒绝检测、消极分析
 - **一致性监控**：回答长度、情感基调一致性
 
 ### 支持的数据格式
@@ -171,7 +171,7 @@ Evidently 的本地 UI 服务提供完整的本地部署解决方案，支持项
 
 - **模型性能跟踪**：实时监控生产环境中的模型性能
 - **数据漂移检测**：及时检测输入数据分布的变化
-- **模型降级告警**：根据性能指标设置告警阈值
+- **模型退化告警**：根据性能指标设置告警阈值
 
 ### LLM 应用监控
 
@@ -187,12 +187,12 @@ Evidently 的本地 UI 服务提供完整的本地部署解决方案，支持项
 
 ## 文档和参考
 
-Evidently 提供全面的官方文档和 API 参考，以帮助用户深入理解和使用平台功能：
+Evidently 提供全面的官方文档和 API 参考，帮助用户深入理解和使用平台功能：
 
 ### 官方文档
 
 - **主文档**： <https://docs.evidentlyai.com/>
-  - 对 Evidently 的核心概念和工作流程的详细介绍
+  - 详细介绍 Evidently 的核心概念和工作流程
   - 包括安装指南、快速入门和最佳实践
   - 提供常见用例、示例代码、教程和 API 参考
 
@@ -202,7 +202,7 @@ Evidently 提供全面的官方文档和 API 参考，以帮助用户深入理�
 
 ## 上传
 
-下载 Evidently 安装文件：`evidently.ALL.v0.7.14-1.tgz`
+下载 Evidently 安装文件： `evidently.ALL.v0.7.14-1.tgz`
 
 使用 violet 命令发布到平台仓库：
 
@@ -214,29 +214,29 @@ violet push --platform-address=platform-access-address --platform-username=platf
 
 ### 存储准备
 
-Evidently UI 将数据存储在文件系统中，并需要持久存储。集群需要预先安装 CSI 或准备 `PersistentVolume`。
+Evidently UI 将数据存储在文件系统中，需要持久存储。集群需要预先安装 CSI 或准备好 `PersistentVolume`。
 
 ### 创建应用程序
 
 1. 转到 `Alauda Container Platform` 视图，选择将要部署 Evidently UI 的命名空间。
 
-2. 在左侧导航中选择 `Applications` / `Applications`，然后点击打开页面右侧的 `Create` 按钮。
+2. 在左侧导航中选择 `Applications` / `Applications`，然后单击打开页面右侧的 `Create` 按钮。
 
 3. 在弹出对话框中选择 `Create from Catalog`，然后页面将跳转到 `Catalog` 视图。
 
-4. 找到 `3rdparty/chart-evidently-ui`，然后点击 `Create` 创建此应用程序。
+4. 找到 `3rdparty/chart-evidently-ui`，然后单击 `Create` 创建此应用程序。
 
-5. 在 `Catalog` / `Create evidently` 表单中，填写 `Name`（建议填写为 `evidently`）和 `Custom` 配置在 `Values` 中，然后点击 `Create` 按钮完成创建。`Custom` 的内容将在下面描述。您也可以在创建后通过 `Update` 应用程序方法进行修改。
+5. 在 `Catalog` / `Create evidently` 表单中，填写 `Name`（建议填写为 `evidently`）和 `Custom` 配置在 `Values` 中，然后单击 `Create` 按钮完成创建。`Custom` 的内容将在下面描述。创建后也可以通过 `Update` 应用程序方法修改配置。
 
 ## 配置
 
-用户可以修改 `Application` 的 `Custom Values` 来调整配置。关键配置如下：
+用户可以修改 `Application` 的 `Custom Values` 以调整配置。关键配置如下：
 
 ### 1. 存储配置
 
 #### 1.1 存储类配置
 
-通过添加以下配置来指定存储类：
+通过添加以下配置指定存储类：
 
 ```yaml
 statefulset:
@@ -282,7 +282,7 @@ secret:
   # 请求头格式
   evidently-secret: your-secret-key
   ```
-- **SDK 使用**：同样的密钥需要在 SDK 中配置以正常使用
+- **SDK 使用**：在 SDK 中也需要配置相同的密钥以正常使用
 
 **注意**：
 
@@ -297,11 +297,11 @@ secret:
 
 `Service` 名称与应用程序名称相同。
 
-此 `Service` 类型为 `LoadBalancer`。如果环境中没有 `LoadBalancer` 控制器提供外部 IP，您可以通过其 `NodePort` 通过 `node IP` 访问。
+此 `Service` 类型为 `LoadBalancer`。如果环境中没有 `LoadBalancer` 控制器提供外部 IP，可以通过 `node IP` 及其 `NodePort` 进行访问。
 
 ### 2. 内部访问地址
 
-要在集群内访问 Evidently UI，您可以通过服务的 `ClusterIP`（与应用程序同名）和端口 8000 进行访问。
+要在集群内访问 Evidently UI，可以通过服务的 `ClusterIP`（与应用程序同名）及端口 8000 进行访问。
 
 # Evidently 快速入门
 
@@ -324,7 +324,7 @@ secret:
 
 ### 1. 准备 Evidently UI 服务
 
-参考 [部署文档](#evidently-ui-deployment-guide) 了解如何在 Kubernetes 环境中部署 Evidently UI。
+请参考 [部署文档](#evidently-ui-deployment-guide) 了解如何在 Kubernetes 环境中部署 Evidently UI。
 
 ### 2. 安装依赖
 
@@ -363,7 +363,7 @@ export LLM_API_URL=""
 export LLM_MODEL="deepseek-chat"
 ```
 
-**重要注意事项：**
+**重要说明：**
 
 - **EVIDENTLY_URL**：Evidently UI 服务地址，请根据您的环境进行配置
 - **EVIDENTLY_SECRET**：Evidently UI 认证的密钥
@@ -376,7 +376,7 @@ export LLM_MODEL="deepseek-chat"
 python llm_evaluation.py
 ```
 
-该脚本演示如何使用 Evidently 评估通过 LLM 的响应。让我们看看它的主要组件：
+此脚本演示如何使用 Evidently 评估通过 LLM 的响应。让我们看看它的主要组件：
 
 #### 4.1 准备测试数据
 
@@ -386,11 +386,11 @@ def prepare_data():
     data = [
         ["金的化学符号是什么？", "金的化学符号是 Au。"],
         ["日本的首都是什么？", "日本的首都东京。"],
-        ["给我讲个笑话。", "程序员为什么不喜欢大自然？太多虫子！"],
+        ["告诉我一个笑话。", "程序员为什么不喜欢大自然？太多虫子！"],
         # ... 更多测试数据
     ]
 
-    columns = ["问题", "答案"]
+    columns = ["问题", "回答"]
     eval_df = pd.DataFrame(data, columns=columns)
     return eval_df
 ```
@@ -398,7 +398,7 @@ def prepare_data():
 **数据格式描述：**
 
 - 使用 **pandas DataFrame** 作为标准数据格式
-- DataFrame 包含两列：`问题`（问题）和 `答案`（答案）
+- DataFrame 包含两列：`问题`（问题）和 `回答`（回答）
 - 这种格式便于使用 Evidently 进行数据分析和监控
 
 #### 4.2 创建 LLM 评估数据集
@@ -410,9 +410,9 @@ def create_dataset(eval_df):
         eval_df,
         data_definition=DataDefinition(),
         descriptors=[
-            Sentiment("答案", alias="情感"),
-            TextLength("答案", alias="长度"),
-            DeclineLLMEval("答案", alias="拒绝", provider=llm_provider, model=llm_model),
+            Sentiment("回答", alias="情感"),
+            TextLength("回答", alias="长度"),
+            DeclineLLMEval("回答", alias="拒绝", provider=llm_provider, model=llm_model),
         ],
         options=options
     )
@@ -423,24 +423,24 @@ def create_dataset(eval_df):
 **描述符描述：**
 
 1. **Sentiment** - 情感分析描述符
-   - 分析答案文本的情感倾向（积极、消极、中立）
-   - 帮助监控答案的情感一致性
-   - 检测答案是否过于消极或积极
+   - 分析回答文本的情感倾向（积极、消极、中立）
+   - 帮助监控回答的情感一致性
+   - 检测回答是否过于消极或积极
 
 2. **TextLength** - 文本长度描述符
-   - 计算答案文本中的字符和单词数量
-   - 监控答案长度的分布和变化
-   - 检测答案是否过短或过长
+   - 计算回答文本中的字符和单词数量
+   - 监控回答长度的分布和变化
+   - 检测回答是否过短或过长
 
 3. **DeclineLLMEval** - LLM 拒绝检测描述符
-   - **使用 LLM 判断答案是否包含拒绝语言**
-   - LLM 分析答案内容以识别其是否表达拒绝或无法回答
-   - 评估答案的拒绝率和拒绝模式，提供更智能的文本理解
+   - **使用 LLM 判断回答是否包含拒绝语言**
+   - LLM 分析回答内容，以识别其是否表达拒绝或无法回答
+   - 评估回答的拒绝率和拒绝模式，提供更智能的文本理解
 
 **更多描述符选项：**
 Evidently 提供丰富的描述符用于文本和 LLM 评估。
 
-有关详细列表，请参阅：[Evidently AI - 所有描述符](https://docs.evidentlyai.com/metrics/all_descriptors)
+有关详细列表，请参考：[Evidently AI - 所有描述符](https://docs.evidentlyai.com/metrics/all_descriptors)
 
 #### 4.3 生成评估报告
 
@@ -458,7 +458,7 @@ def generate_report(eval_dataset):
 
 - **TextEvals** 是 Evidently 的文本评估预设，专门用于文本和 LLM 评估
 - 它会自动运行所有配置的描述符并生成全面的评估报告
-- 报告包含每个描述符的详细分析结果和可视化图表
+- 报告包含详细的分析结果和每个描述符的可视化图表
 
 **更多预设选项：**
 Evidently 提供各种预设模板，包括：
@@ -469,15 +469,15 @@ Evidently 提供各种预设模板，包括：
 - **分类**：分类任务质量评估
 - **回归**：回归任务质量评估
 
-有关详细信息，请参阅：[Evidently AI - 所有预设](https://docs.evidentlyai.com/metrics/all_presets)
+有关详细信息，请参考：[Evidently AI - 所有预设](https://docs.evidentlyai.com/metrics/all_presets)
 
 #### 4.4 查看报告
 
 运行脚本后，您可以通过以下方式查看报告：
 
 1. **访问 Evidently UI**：打开浏览器并访问环境变量中配置的 `EVIDENTLY_URL` 地址
-2. **查找项目**：在 UI 中找到名为 "llm_evaluation" 的项目
-3. **查看报告**：点击项目以查看详细的评估报告和可视化图表
+2. **查找项目**：在 UI 中查找名为 "llm_evaluation" 的项目
+3. **查看报告**：单击项目以查看详细的评估报告和可视化图表
 
 ### 5. 运行数据漂移检测演示
 
@@ -485,7 +485,7 @@ Evidently 提供各种预设模板，包括：
 python data_and_ml_checks.py
 ```
 
-该脚本演示如何使用 Evidently 进行数据漂移检测。让我们看看它的主要组件：
+此脚本演示如何使用 Evidently 进行数据漂移检测。让我们看看它的主要组件：
 
 #### 5.1 数据准备
 
@@ -546,7 +546,7 @@ def generate_report(ref_dataset, prod_dataset):
 **DataDriftPreset 描述：**
 
 - **DataDriftPreset** 是 Evidently 的数据漂移检测预设，专门用于检测数据分布变化
-- 它会自动运行各种统计测试以检测数值和分类特征的漂移
+- 它会自动运行各种统计测试，以检测数值和分类特征的漂移
 - 报告包括每列的漂移检测结果、统计显著性测试和可视化图表
 
 #### 5.4 查看报告
@@ -554,8 +554,8 @@ def generate_report(ref_dataset, prod_dataset):
 运行数据漂移检测脚本后，您可以通过以下方式查看报告：
 
 1. **访问 Evidently UI**：打开浏览器并访问环境变量中配置的 `EVIDENTLY_URL` 地址
-2. **查找项目**：在 UI 中找到名为 "data_and_ml_checks" 的项目
-3. **查看报告**：点击项目以查看详细的数据漂移检测报告和可视化图表
+2. **查找项目**：在 UI 中查找名为 "data_and_ml_checks" 的项目
+3. **查看报告**：单击项目以查看详细的数据漂移检测报告和可视化图表
 
 ## 其他示例
 
@@ -565,7 +565,7 @@ def generate_report(ref_dataset, prod_dataset):
 
 - **跟踪快速入门**：用于捕获 LLM 应用程序的输入和输出并进行评估
 - 注意：跟踪功能仅适用于 Evidently Cloud，不适用于自托管环境
-- 有关详细描述，请参阅：[Evidently AI - 跟踪快速入门](https://docs.evidentlyai.com/quickstart_tracing)
+- 有关详细描述，请参考：[Evidently AI - 跟踪快速入门](https://docs.evidentlyai.com/quickstart_tracing)
 
 ### 高级 LLM 评估功能
 
@@ -573,5 +573,5 @@ def generate_report(ref_dataset, prod_dataset):
 
 - **LLM 评估**：涵盖各种 LLM 评估方法的综合教程
 - **RAG 评估**：针对增强检索生成（RAG）系统的专门评估方法
-- **LLM 作为评估者**：使用 LLM 作为评估者创建和评估 LLM 评估者
+- **LLM 作为评估者**：使用 LLM 作为评估者来创建和评估 LLM 评估者
 - **LLM 作为陪审团**：使用多个 LLM 评估相同的输出

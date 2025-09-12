@@ -5,6 +5,7 @@ kind:
    - Solution
 ProductsVersion:
    - 4.x
+id: KB1757664849-0DAB
 ---
 # Label Studio
 
