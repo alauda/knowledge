@@ -6,14 +6,14 @@ kind:
 ProductsVersion:
   - 4.x
 id: KB1756692696-9DEE
-sourceSHA: c3d1cd1e8c5104b89d7c476d381b93e0ebee74bf02704bcc11575f884272fe46
+sourceSHA: 47e68b499e2cffab9ec97585a423e25a887f43e4e3a17ae399a24c83d444f768
 ---
 
 # Featureform
 
 ## 概述
 
-Featureform 是一个开源的机器学习特征平台，旨在构建、管理和部署机器学习特征。
+Featureform 是一个开源机器学习特征平台，旨在构建、管理和部署机器学习特征。
 
 它简化了特征工程工作流程，使数据科学家和机器学习工程师能够专注于模型开发，而不是处理特征基础设施的复杂性。
 
@@ -21,13 +21,13 @@ Featureform 是一个开源的机器学习特征平台，旨在构建、管理�
 
 ### 特征
 
-特征是机器学习模型用于做出预测的输入数据。在 Featureform 中，特征包含以下核心组件：
+特征是机器学习模型用于进行预测的输入数据。在 Featureform 中，特征包含以下核心组件：
 
 - **实体列**：作为主键或索引，标识特征所属的对象
 - **值列**：特征的具体数值或类别值
 - **时间戳列**：可选的时间信息，用于跟踪特征随时间的变化
 
-特征是机器学习模型训练和推理的核心输入，与实体关联，以提供预测所需的信息。
+特征是机器学习模型训练和推理的核心输入，与实体相关联，以提供进行预测所需的信息。
 
 特征不是原始数据，而是数据源处理和转换的结果。
 
@@ -35,7 +35,7 @@ Featureform 是一个开源的机器学习特征平台，旨在构建、管理�
 
 例如：
 
-- 在欺诈检测中，原始数据包括用户交易记录，如交易金额、客户出生日期、客户位置等，但用于训练的特征是客户的平均交易金额。
+- 在欺诈检测中，原始数据由用户交易记录组成，包括交易金额、客户出生日期、客户位置等，但用于训练的特征是客户的平均交易金额。
 
 ### 标签
 
@@ -67,7 +67,7 @@ Featureform 是一个开源的机器学习特征平台，旨在构建、管理�
 ## 核心概念关系
 
 - **实体**是数据的主体，定义了我们想要分析的对象
-- **特征**与实体相关联，提供预测所需的属性信息
+- **特征**与实体相关联，提供进行预测所需的属性信息
 - **标签**是我们想要预测的目标
 - **训练集**将特征、标签和实体组织在一起，形成完整的训练数据
 
@@ -83,14 +83,14 @@ Featureform 是一个开源的机器学习特征平台，旨在构建、管理�
 
 ## 不可变 API 设计
 
-Featureform 采用不可变 API 设计，这是其与其他特征平台的一个关键区别。在 Featureform 中，所有特征、标签和训练集在创建后都是不可变的，这意味着：
+Featureform 采用不可变 API 设计，这是其与其他特征平台的关键区别。在 Featureform 中，所有特征、标签和训练集在创建后都是不可变的，这意味着：
 
-- **资源不能被修改**：一旦特征、标签或训练集被创建和应用，其定义和逻辑不能更改
+- **资源无法修改**：一旦创建并应用特征、标签或训练集，其定义和逻辑无法更改
 - **版本管理**：如果需要修改，必须创建新变体，而不是覆盖现有资源
-- **协作安全**：团队成员可以安全地使用其他人创建的资源，而无需担心上游逻辑的变化
-- **实验管理**：支持为实验创建多个变体，每个变体都有独立的生命周期
+- **协作安全**：团队成员可以安全地使用他人创建的资源，而无需担心上游逻辑的变化
+- **实验管理**：支持为实验创建多个变体，每个变体具有独立的生命周期
 
-这种设计确保了机器学习资源的一致性和可靠性，避免了由于资源修改导致的训练失败或推理错误。通过变体系统，数据科学家可以管理资源的不同版本，同时保持生产环境的稳定性。
+这种设计确保了机器学习资源的一致性和可靠性，避免了由于资源修改导致的训练失败或推理错误。通过变体系统，数据科学家可以管理不同版本的资源，同时保持生产环境的稳定性。
 
 ## 变体
 
@@ -101,7 +101,7 @@ Featureform 采用不可变 API 设计，这是其与其他特征平台的一个
 - **版本管理**：为同一资源创建不同版本，支持 A/B 测试和实验
 - **实验支持**：允许数据科学家尝试不同的特征工程方法，而不影响生产环境
 - **协作开发**：团队成员可以并行开发不同的变体，而不会相互干扰
-- **回滚支持**：当新版本出现问题时，可以快速回滚到先前的稳定版本
+- **回滚支持**：当新版本出现问题时，快速回滚到先前的稳定版本
 
 ## 文档和参考
 
@@ -109,17 +109,17 @@ Featureform 提供全面的官方文档和 SDK 参考，帮助用户有效理解
 
 ### 官方文档
 
-- **主文档**： <https://docs.featureform.com/>
-  - Comprehensive introduction to Featureform's core concepts and workflows
+- **主文档**：<https://docs.featureform.com/>
+  - 对 Featureform 核心概念和工作流程的全面介绍
   - 包括架构设计、部署指南和最佳实践
   - 提供常见用例和示例代码
 
 ### SDK 参考
 
-- **Python SDK**： <https://sdk.featureform.com/>
+- **Python SDK**：<https://sdk.featureform.com/>
   - 完整的 Python API 参考文档
   - 支持本地模式和托管实例
-  - 包括所有操作的详细描述，如注册、应用和服务
+  - 包含所有操作的详细描述，如注册、应用和服务
 
 ## 系统架构
 
@@ -129,8 +129,8 @@ Featureform 采用微服务架构，具有以下核心组件：
 
 1. **API 服务器**
    - 提供 gRPC API 接口
-   - 作为 gRPC 网关，将请求转发到元数据服务和特征服务器
-   - 提供统一的资源管理和特征服务接口
+   - 充当 gRPC 网关，将请求转发到元数据服务和特征服务器
+   - 向外提供统一的资源管理和特征服务接口
 
 2. **协调器**
    - 监控 etcd 中的任务变化
@@ -156,7 +156,7 @@ Featureform 采用微服务架构，具有以下核心组件：
 2. **Meilisearch**
    - 提供特征和元数据的搜索功能
    - 支持全文搜索和模糊匹配
-   - 数据源：当资源更改时，元数据服务自动写入，元数据仪表板在标签更新时写入
+   - 数据源：元数据服务在资源更改时自动写入，元数据仪表板在标签更新时写入
 
 ### 监控和可观察性
 
@@ -203,7 +203,7 @@ Featureform 采用微服务架构，具有以下核心组件：
 
 ## 发布
 
-下载 Featureform 安装文件： `featureform.amd64.v0.12.1-2.tgz`
+下载 Featureform 安装文件：`featureform.amd64.v0.12.1-2.tgz`
 
 使用 violet 命令发布到平台仓库：
 
@@ -223,8 +223,8 @@ violet push --platform-address=platform-access-address --platform-username=platf
 
 ### 存储准备
 
-Featureform 数据存储在 etcd 中，这需要持久存储以确保数据持久性。
-集群需要预先安装 CSI 或准备好 `PersistentVolume`。
+Featureform 数据存储在 etcd 中，需要持久存储以确保数据持久性。
+集群需要预先安装 CSI 或预先准备 `PersistentVolume`。
 
 ### 创建应用
 
@@ -236,11 +236,11 @@ Featureform 数据存储在 etcd 中，这需要持久存储以确保数据持�
 
 4. 找到 `3rdparty/chart-featureform`，然后点击 `Create` 创建此应用。
 
-5. 在 `Catalog` / `Create featureform` 表单中，填写 `Name`（建议填写为 `featureform`）和 `Values` 中的 `Custom` 配置，然后点击 `Create` 按钮完成创建。`Custom` 的内容将在下面描述。您也可以通过 `Update` 应用方法在创建后进行修改。
+5. 在 `Catalog` / `Create featureform` 表单中，填写 `Name`（建议填写为 `featureform`）和 `Values` 中的 `Custom` 配置，然后点击 `Create` 按钮完成创建。`Custom` 的内容将在下面描述。创建后也可以通过 `Update` 应用方法修改配置。
 
 ## 配置
 
-用户可以修改 `Application` 的 `Custom Values` 以调整配置。关键配置如下：
+用户可以修改 `Application` 的 `Custom Values` 来调整配置。关键配置如下：
 
 ### 1. 配置镜像仓库
 
@@ -267,9 +267,9 @@ ingress-nginx:
 
 如何获取 `镜像仓库地址`：
 
-- 在 `Administrator` 视图中，检查相应集群详细信息页面的 `Overview` 标签页下的 `镜像仓库地址` 字段。
+- 在 `Administrator` 视图中，检查相应集群详情页面的 `Overview` 标签页下的 `镜像仓库地址` 字段。
 
-#### 1.2 配置镜像仓库拉取凭证
+#### 1.2 配置镜像仓库拉取凭据
 
 如果从镜像仓库拉取镜像时需要身份验证，请添加以下配置：
 
@@ -293,7 +293,7 @@ meilisearch:
 
 #### 2.1 配置反亲和性
 
-当在本地节点磁盘上使用存储时（例如，topolvm），为了确保高可用性，etcd pod 需要在不同节点上运行。添加以下配置以实现此目的：
+当在本地节点磁盘上使用存储（例如，topolvm）时，为确保高可用性，etcd pod 需要在不同节点上运行。添加以下配置以实现此目的：
 
 ```yaml
 etcd:
@@ -329,19 +329,19 @@ ingress:
 
 `Featureform` 通过 `nginx-ingress-controller` 提供外部访问。检查其 `Service` 以获取访问地址。
 
-`Service` 名称为： `application-name-ingress-nginx-controller`。
+`Service` 名称为：`application-name-ingress-nginx-controller`。
 
-此 `Service` 类型为 `LoadBalancer`。如果环境中没有提供外部 IP 的 `LoadBalancer` 控制器，您可以通过 `node IP` 加上其 `NodePort` 进行访问。
+此 `Service` 类型为 `LoadBalancer`。如果环境中没有 `LoadBalancer` 控制器提供外部 IP，可以通过 `节点 IP` 加上其 `NodePort` 进行访问。
 
 ### 2. API 访问地址
 
 `Featureform` SDK 需要访问 API 服务 `featureform-api-server`。
 
-要在集群内访问 API，您可以通过 `featureform-api-server` 的 `ClusterIP` 加上端口 7878 进行访问。
+要在集群内访问 API，可以通过 `featureform-api-server` 的 `ClusterIP` 加上端口 7878 进行访问。
 
 **注意：**
 
-尽管 ingress 配置包含 API 访问地址，但由于 ingress 启用了客户端证书验证机制，而 Featureform SDK 当前不支持配置客户端证书，因此无法通过 ingress 路径访问 API 服务。
+尽管 ingress 配置包含 API 访问地址，但由于 ingress 启用了客户端证书验证机制，而 Featureform SDK 目前不支持配置客户端证书，因此无法通过 ingress 路径访问 API 服务。
 
 # Featureform 快速入门
 
@@ -359,7 +359,7 @@ ingress:
 
 ## 文件描述
 
-- [setup-env.sh](/featureform/quickstart/setup-env.sh) - 设置演示中使用的环境变量
+- [setup-env.sh](/featureform/quickstart/setup-env.sh) - 设置演示使用的环境变量
 - [load-data.py](/featureform/quickstart/load-data.py) - 数据库准备脚本，用于连接 PostgreSQL 并执行 data.sql
 - [data.sql](/featureform/quickstart/data.sql) - 包含演示数据的 PostgreSQL 数据库转储文件
 - [definitions.py](/featureform/quickstart/definitions.py) - Featureform 资源定义文件
@@ -371,13 +371,13 @@ ingress:
 
 ### 1. 准备 PostgreSQL 和 Redis
 
-确保您有可用的 PostgreSQL 和 Redis 服务。您可以通过以下方式启动它们：
+需要确保 PostgreSQL 和 Redis 服务可用。可以使用以下方法进行设置：
 
 #### 准备 PostgreSQL
 
 使用 `Data Services` 提供的 `PostgreSQL operator` 创建一个 `PostgreSQL 集群`。
 
-在 `Data Services` 的 `PostgreSQL` 实例详细信息中检查访问地址和访问密码。
+在 `Data Services` 的 `PostgreSQL` 实例详情中检查访问地址和访问密码。
 
 #### 准备 Redis
 
@@ -439,11 +439,11 @@ export REDIS_PASSWORD=""
 
 **重要说明：**
 
-- **FF_GET_EQUIVALENT_VARIANTS**：必须设置为 `false` 以避免获取错误的变体版本
+- **FF_GET_EQUIVALENT_VARIANTS**：必须设置为 `false`，以避免获取错误的变体版本
 
 - **FEATUREFORM_HOST**：`Featureform` API 地址，请根据您的环境进行配置
 
-- **FEATUREFORM_VARIANT**：由于 Featureform 采用不可变 API，未提供删除和更新接口，因此要重新执行，请将此值修改为新的值，然后重新执行 `source setup-env.sh`，否则可能会出现错误
+- **FEATUREFORM_VARIANT**：由于 Featureform 采用不可变 API，不提供删除和更新接口，因此要重新执行，请将此值修改为新的值，然后重新执行 `source setup-env.sh`，否则可能会出现错误
 
 - **POSTGRES_xx**：请根据您的环境进行配置
 
@@ -484,7 +484,7 @@ python load-data.py
 python definitions.py
 ```
 
-此脚本是 Featureform 演示的核心，将注册和定义所有必要的资源。主要组件包括：
+此脚本是 Featureform 演示的核心，将注册和定义所有必要的资源。主要组件如下：
 
 #### 5.1 注册用户和提供者
 
@@ -576,7 +576,7 @@ client = ff.Client(host=os.getenv("FEATUREFORM_HOST", "localhost:7878"), insecur
 client.apply()
 ```
 
-`client.apply()` 默认是同步的，这将等待 Featureform 开始处理训练集并等待处理完成。这意味着脚本将阻塞，直到所有资源（包括训练集）被处理。
+`client.apply()` 默认是同步的，这将等待 Featureform 开始处理训练集并等待处理完成。这意味着脚本将在所有资源（包括训练集）处理完成之前阻塞。
 
 成功执行将输出如下结果：
 
@@ -622,7 +622,7 @@ COMPLETED
 python training.py
 ```
 
-此脚本演示了如何使用 Featureform 获取训练数据。让我们看看它的主要组件：
+此脚本演示了如何使用 Featureform 获取训练数据。让我们看看其主要组件：
 
 #### 6.1 获取训练集
 
@@ -671,7 +671,7 @@ Features: [array([566.])] , Label: [False]
 python serving.py
 ```
 
-此脚本演示了如何使用 Featureform 进行特征查询和推理。让我们看看它的主要组件：
+此脚本演示了如何使用 Featureform 进行特征查询和推理。让我们看看其主要组件：
 
 #### 7.1 特征查询
 
@@ -703,7 +703,7 @@ print(customer_feat)
 **实际应用场景：**
 
 - 当新客户进行交易时，实时查询客户的平均交易金额特征
-- 与其他特征结合，用于欺诈检测的实时推理
+- 结合其他特征，用于欺诈检测的实时推理
 - 支持批量查询多个客户的特征
 
 # 常见问题解答
@@ -717,7 +717,7 @@ print(customer_feat)
 ```
 
 - **原因**：Featureform SDK 版本与服务器版本不匹配
-- **解决方案**：更新 Featureform SDK 版本至 1.21.1
+- **解决方案**：将 Featureform SDK 版本更新至 1.21.1
 
 ### 2. 执行 apply 时出错：
 
@@ -784,5 +784,5 @@ Featureform cannot connect to the provider during health check: (POSTGRES_OFFLIN
 
 ### 9. apply 完成后，`Status` 卡在 `PENDING`，`coordinator` 容器重启
 
-- **原因**：etcd 监视接口无法处理令牌自动轮换，令牌过期后程序退出并出现错误
+- **原因**：etcd 观察接口无法处理令牌自动轮换，令牌过期后程序退出并出现错误
 - **解决方案**：更新变体并重新执行 apply
