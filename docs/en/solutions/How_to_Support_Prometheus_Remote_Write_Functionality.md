@@ -3,6 +3,7 @@ products:
   - Alauda Container Platform
 kind:
   - Solution
+id: KB250900006
 ---
 
 # How to Support Prometheus Remote Write Functionality
