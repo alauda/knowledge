@@ -3,6 +3,7 @@ products:
   - Alauda Container Platform
 kind:
   - Solution
+id: KB250900009
 ---
 
 # How to expose VerticalPodAutoscaler metrics
