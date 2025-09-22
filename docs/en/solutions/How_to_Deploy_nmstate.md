@@ -71,14 +71,33 @@ sudo semodule -i nmstate-networkmanager-dbus.pp
 
 ### Installation Steps
 
-#### Install Using Offline Installation Script
+#### Install Using Offline Installation Method
 
-**Prerequisites:** Ensure the installation script is available in the attachments directory.
+**Prerequisites:** Access to Alauda Container Platform with marketplace functionality.
 
-**Run Installation Script**
-```bash
-attachments/nmstate/install.sh
-```
+**Installation Steps:**
+
+1. **Download from AC Marketplace:**
+   - Navigate to **Administrator** → **Marketplace** → **Applications**
+   - Search for "Alauda Build of Kubernetes NMState Operator"
+   - Download the installation package
+
+2. **Deploy to Target Environment:**
+   - Use violet push to deploy the downloaded package to the target environment
+   
+   **violet push Command Example:**
+   ```bash
+   violet push kubernetes-nmstate-operator.alpha.amd64.v4.1.4.tgz \
+     --platform-address "$PLATFORM_URL" \
+     --platform-username "$USERNAME" \
+     --platform-password "$PASSWORD" \
+     --clusters $CLUSTER_NAME
+   ```
+
+3. **Install via OperatorHub:**
+   - Navigate to **Administrator** → **Marketplace** → **OperatorHub**
+   - Search for "kubernetes Nmstate" component
+   - Click **Install** to deploy the operator
 
 #### Install Using Open Source Method (Alternative)
 
@@ -242,12 +261,32 @@ Configure deploy on the underlay subnet. If it starts successfully, it means the
 
 ### Uninstall Commands
 
-#### Using Offline Uninstallation Script
+#### Using Offline Uninstallation Method
 
-**Run Uninstallation Script**
-```bash
-attachments/nmstate/uninstall.sh
-```
+**Uninstallation Steps:**
+
+1. **Remove via OperatorHub:**
+   - Navigate to **Administrator** → **Marketplace** → **OperatorHub**
+   - Find the installed "kubernetes Nmstate" component
+   - Click **Uninstall** to remove the operator
+
+2. **Clean up via AC Marketplace:**
+   - Navigate to **Administrator** → **Marketplace** → **Applications**
+   - Remove the "Alauda Build of Kubernetes NMState Operator" if needed
+
+3. **Manual Cleanup:**
+   - Delete the nmstate instance:
+     ```bash
+     kubectl delete nmstates.nmstate.io nmstate
+     ```
+   
+   - Manually clean up CRDs:
+     ```bash
+     kubectl delete crd nmstates.nmstate.io
+     kubectl delete crd nodenetworkconfigurationenactments.nmstate.io
+     kubectl delete crd nodenetworkconfigurationpolicies.nmstate.io
+     kubectl delete crd nodenetworkstates.nmstate.io
+     ```
 
 #### Using Open Source Method (Alternative)
 
