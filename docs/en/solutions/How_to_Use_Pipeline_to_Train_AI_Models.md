@@ -246,18 +246,18 @@ spec:
       name: MEMORY_LIMIT
       type: string
       default: "20Gi"
-    - description: nvidia gpu alloc
+    - default: "1"
+      description: nvidia gpu alloc
       name: NVIDIA_GPUALLOC
       type: string
-      default: "1"
-    - description: nvidia gpu cores
+    - default: "50"
+      description: nvidia gpu cores
       name: NVIDIA_GPUCORES
       type: string
-      default: "50"
-    - description: nvidia gpu memory
+    - default: "4096"
+      description: nvidia gpu memory
       name: NVIDIA_GPUMEM
       type: string
-      default: "8192"
     - description: train arg image size
       name: TRAIN_ARG_IMAGE_SIZE
       type: string
@@ -368,8 +368,10 @@ spec:
               echo "Storage size is empty, using default storage size: $STORAGE_SIZE"
             fi
 
+            storage_class="storageClassName: \"${STORAGE_CLASS}\""
             if [ -z "$STORAGE_CLASS" ]; then
               echo "Storage class is empty, using default storage class, recommend setting storage class name!"
+              storage_class=""
             fi
 
             if [ -z "$SHARE_MEMORY_LIMIT_SIZE" ]; then
@@ -379,7 +381,7 @@ spec:
 
             cpu_limit="cpu: ${CPU_LIMIT}"
             cpu_request="cpu: ${CPU_REQUEST}"
-            if [ -z "$ " ]; then
+            if [ -z "${CPU_LIMIT}" ]; then
               echo "CPU limit is empty, not configuring CPU limit!"
               cpu_limit=""
             fi
@@ -507,7 +509,7 @@ spec:
             OUTPUT_MODEL_NAME=$(basename ${OUTPUT_MODEL_REPO_URL})
 
             COMMAND="
-                        set -ex
+                        set -euo pipefail
                         function url_encode() {
                           local input=\"\$1\"
                           printf '%s' \"\$input\" | sed 's/%/%25/g; s/:/%3A/g; s/@/%40/g; s/ /%20/g'
@@ -545,9 +547,13 @@ spec:
                             echo \"Cloning repository to current directory\"
                             if [ -n \"\$branch\" ]; then
                               echo \"Cloning branch: \$branch\"
+                              set +x
                               GIT_LFS_SKIP_SMUDGE=1 git -c http.sslVerify=false -c lfs.activitytimeout=36000 clone -b \$branch \"\$clone_url\" .
+                              set -x
                             else
+                              set +x
                               GIT_LFS_SKIP_SMUDGE=1 git -c http.sslVerify=false -c lfs.activitytimeout=36000 clone \"\$clone_url\" .
+                              set -x
                             fi
                             if [ -d .git ]; then
                               echo \"Git repository confirmed, executing lfs pull\"
@@ -597,7 +603,9 @@ spec:
 
                           # Push to remote repository
                           local push_url=\$(build_git_url \"\$url\")
+                          set +x
                           git -c http.sslVerify=false -c lfs.activitytimeout=36000 push -u \"\$push_url\" \"\$branch_name\"
+                          set -x
 
                           echo \"Successfully pushed to \$url on branch \$branch_name\"
                         }
@@ -608,9 +616,9 @@ spec:
                           if [ ${REPLICAS} -gt 1 ]; then
                             MASTER_ADDR=\$(cat /mnt/workspace/.inited)
                             torchrun --nproc_per_node=1 --nnodes=${REPLICAS} --node_rank=\${TASK_INDEX} --master_addr=\${MASTER_ADDR} --master_port=12355 \
-                                     train.py --img ${TRAIN_ARG_IMAGE_SIZE} --batch ${TRAIN_ARG_BATCH_SIZE} --epochs ${TRAIN_ARG_EPOCHS} --data ${TRAIN_ARG_DATA} --weights ${TRAIN_ARG_WEIGHTS} --worker ${TRAIN_ARG_WORKER} --device ${TRAIN_ARG_DEVICE}
+                                     train.py --name exp --exist-ok --img ${TRAIN_ARG_IMAGE_SIZE} --batch ${TRAIN_ARG_BATCH_SIZE} --epochs ${TRAIN_ARG_EPOCHS} --data ${TRAIN_ARG_DATA} --weights ${TRAIN_ARG_WEIGHTS} --workers ${TRAIN_ARG_WORKER} --device ${TRAIN_ARG_DEVICE}
                           else
-                            python train.py --img ${TRAIN_ARG_IMAGE_SIZE} --batch ${TRAIN_ARG_BATCH_SIZE} --epochs ${TRAIN_ARG_EPOCHS} --data ${TRAIN_ARG_DATA} --weights ${TRAIN_ARG_WEIGHTS} --worker ${TRAIN_ARG_WORKER} --device ${TRAIN_ARG_DEVICE}
+                            python train.py --name exp --exist-ok --img ${TRAIN_ARG_IMAGE_SIZE} --batch ${TRAIN_ARG_BATCH_SIZE} --epochs ${TRAIN_ARG_EPOCHS} --data ${TRAIN_ARG_DATA} --weights ${TRAIN_ARG_WEIGHTS} --workers ${TRAIN_ARG_WORKER} --device ${TRAIN_ARG_DEVICE}
                           fi
                         }
 
@@ -654,7 +662,7 @@ spec:
                         EOL
                         }
 
-                        if [ \"\$REPLICAS\" -le 1 ] || [ \"\${TASK_INDEX}\" -eq 0 ]; then
+                        if [ \"$REPLICAS\" -le 1 ] || [ \"\${TASK_INDEX}\" -eq 0 ]; then
                           mkdir -p /mnt/workspace/model
                           cd /mnt/workspace/model
                           git_clone \"${MODEL_REPO_URL}\" \"${MODEL_REPO_BRANCH}\"
@@ -662,6 +670,8 @@ spec:
                           mkdir -p ${DATASET_DIR}
                           cd ${DATASET_DIR}
                           git_clone \"${DATASET_REPO_URL}\" \"${DATASET_REPO_BRANCH}\"
+
+                          rm -rf funs/train/exp*
 
                           echo \"Listing model files...\"
                           ls /mnt/workspace/model
@@ -676,7 +686,7 @@ spec:
 
                         train
 
-                        if [ \"\$REPLICAS\" -le 1 ] || [ \"\${TASK_INDEX}\" -eq 0 ]; then
+                        if [ \"$REPLICAS\" -le 1 ] || [ \"\${TASK_INDEX}\" -eq 0 ]; then
                           mkdir -p /mnt/workspace/model/modeldir
                           export_model
 
@@ -708,7 +718,7 @@ spec:
               - mountPath: "/mnt/workspace"
                 volumeClaim:
                   accessModes: [ "ReadWriteOnce" ]
-                  storageClassName: "${STORAGE_CLASS}"
+                  ${storage_class}
                   resources:
                     requests:
                       storage: "${STORAGE_SIZE}"
@@ -897,13 +907,13 @@ The pipeline includes the following key parameters that need to be configured:
 - `STORAGE_SIZE`: Storage size (default: "5Gi")
 - `STORAGE_CLASS`: Storage class name
 - `REPLICAS`: Number of replicas (default: "1", distributed training will be enabled if greater than 1)
-- `CPU_REQUEST`: Request CPU (default: "1")
-- `MEMORY_REQUEST`: Request memory (default: "8Gi")
-- `CPU_LIMIT`: Limit CPU (default: "8")
-- `MEMORY_LIMIT`: Limit memory (default: "20Gi")
-- `NVIDIA_GPUALLOC`: NVIDIA GPU allocation (default: "1")
-- `NVIDIA_GPUCORES`: NVIDIA GPU cores (default: "50")
-- `NVIDIA_GPUMEM`: NVIDIA GPU memory (default: "8192")
+- `CPU_REQUEST`: Request CPU (default: "1", leave empty to not request CPU)
+- `MEMORY_REQUEST`: Request memory (default: "8Gi", leave empty to not request memory)
+- `CPU_LIMIT`: Limit CPU (default: "8", leave empty to not limit CPU)
+- `MEMORY_LIMIT`: Limit memory (default: "20Gi", leave empty to not limit memory)
+- `NVIDIA_GPUALLOC`: NVIDIA GPU allocation - number of GPU cards (default: "1", leave empty to not allocate GPU)
+- `NVIDIA_GPUCORES`: NVIDIA GPU cores - percentage of compute power per card, range 1-100 (default: "50", leave empty to not configure GPU cores)
+- `NVIDIA_GPUMEM`: NVIDIA GPU memory - memory usage per card in MiB (default: "4096", leave empty to not configure GPU memory)
 
 
 ### Trigger Pipeline
@@ -929,6 +939,9 @@ Follow these steps to trigger the pipeline:
 
 
 For event-driven pipeline execution, refer to the `Trigger` section in the [Pipelines documentation](https://docs.alauda.io/alauda-devops-pipelines/).
+
+**Note**: When the pipeline runs, it creates a `VolcanoJob` that is associated with the `PipelineRun` through `OwnerReference`. When the `PipelineRun` is deleted, the associated `VolcanoJob` and its related resources (such as `PodGroup` and `Pods`) will be cascadingly deleted.
+
 
 ### Read Logs
 
