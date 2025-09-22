@@ -10,14 +10,14 @@ ProductsVersion:
 
 ## Overview
 
-This document demonstrates how to train AI models using DevOps Pipeline. The YOLOv5 model is used as an example to illustrate the training workflow. The overall framework presented here can be adapted for training other models as well, requiring only adjustments to input parameters and execution scripts.
+This document demonstrates how to train AI models using DevOps Pipeline. The YOLOv5 model is used as an example to illustrate the training workflow. The overall framework presented here can be adapted for training other models as well, requiring only adjustments to input parameters, execution scripts, and training code.
 
 
 ## Prerequisites
 
 Before proceeding with the AI model training pipeline, ensure the following prerequisites are met:
 
-1. **Alauda DevOps**: Install `Alauda DevOps next-gen` following the [devops documents](https://docs.alauda.io/devops). `Alauda DevOps Pipelines` and `Alauda DevOps Connectors` must be installed.
+1. **Alauda DevOps**: Install `Alauda DevOps next-gen` following the [Alauda DevOps documention](https://docs.alauda.io/devops). `Alauda DevOps Pipelines` and `Alauda DevOps Connectors` must be installed.
 
 2. **Volcano**: Install the `Volcano` cluster plugin to enable GPU scheduling and resource management for AI workloads.
 
@@ -26,6 +26,10 @@ Before proceeding with the AI model training pipeline, ensure the following prer
 4. **Required Repositories**: Prepare:
    - A Git repository for storing models and datasets.
    - A container image registry for storing the trainer image.
+
+5. **Alauda AI**: It is recommended to deploy Alauda AI for better management of models, training, and inference services. Refer to the [Alauda AI documention](https://docs.alauda.io/ai/) for installation and configuration details.
+
+6. **GPU Device Plugins**: It is recommended to deploy GPU device plugins such as `Hami` or `NVIDIA GPU Device Plugin` to utilize GPU resources for AI training. Refer to the `Device Management` section in the [Alauda AI documention](https://docs.alauda.io/ai/) for deployment instructions.
 
 
 ### Prepare Model Repository
@@ -247,17 +251,20 @@ spec:
       type: string
       default: "20Gi"
     - default: "1"
-      description: nvidia gpu alloc
+      description:  Hami NVIDIA GPU allocation - number of GPU cards, leave empty to not allocate GPU
       name: NVIDIA_GPUALLOC
       type: string
     - default: "50"
-      description: nvidia gpu cores
+      description: Hami NVIDIA GPU cores - percentage of compute power per card, range 1-100, leave empty to not configure GPU cores)
       name: NVIDIA_GPUCORES
       type: string
     - default: "4096"
-      description: nvidia gpu memory
+      description: Hami NVIDIA GPU memory - memory usage per card in MiB, leave empty to not configure GPU memory)
       name: NVIDIA_GPUMEM
       type: string
+    - default: ""
+      description: NVIDIA GPU count - number of GPU cards allocated when using NVIDIA GPU plugin, cannot be used together with Hami parameters, leave empty to not set
+      name: NVIDIA_GPU
     - description: train arg image size
       name: TRAIN_ARG_IMAGE_SIZE
       type: string
@@ -316,6 +323,7 @@ spec:
             - NVIDIA_GPUALLOC=$(params.NVIDIA_GPUALLOC)
             - NVIDIA_GPUCORES=$(params.NVIDIA_GPUCORES)
             - NVIDIA_GPUMEM=$(params.NVIDIA_GPUMEM)
+            - NVIDIA_GPU=$(params.NVIDIA_GPU)
             - TRAIN_ARG_IMAGE_SIZE=$(params.TRAIN_ARG_IMAGE_SIZE)
             - TRAIN_ARG_BATCH_SIZE=$(params.TRAIN_ARG_BATCH_SIZE)
             - TRAIN_ARG_EPOCHS=$(params.TRAIN_ARG_EPOCHS)
@@ -422,6 +430,18 @@ spec:
               nvidia_gpu_mem_resource=""
             fi
 
+            nvidia_gpu="nvidia.com/gpu: ${NVIDIA_GPU}"
+            if [ -z "$NVIDIA_GPU" ]; then
+              echo "NVIDIA_GPU is empty, not configuring nvidia.com/gpu resource!"
+              nvidia_gpu=""
+            fi
+
+            if [ -n "$NVIDIA_GPU" ] && ([ -n "$NVIDIA_GPUALLOC" ] || [ -n "$NVIDIA_GPUCORES" ] || [ -n "$NVIDIA_GPUMEM" ]); then
+                echo "Cannot use NVIDIA_GPU with Hami resources:"
+                echo "NVIDIA_GPU=${NVIDIA_GPU}, NVIDIA_GPUALLOC=${NVIDIA_GPUALLOC}, NVIDIA_GPUCORES=${NVIDIA_GPUCORES}, NVIDIA_GPUMEM=${NVIDIA_GPUMEM}"
+                exit 1
+            fi
+
             if [ -z "$OUTPUT_MODEL_REPO_BRANCH" ]; then
               OUTPUT_MODEL_REPO_BRANCH="sft-$(date +'%Y%m%d-%H%M%S')"
               echo "Output model repository branch is empty, using generated branch: $OUTPUT_MODEL_REPO_BRANCH"
@@ -484,6 +504,7 @@ spec:
             echo "NVIDIA GPU allocation: $NVIDIA_GPUALLOC"
             echo "NVIDIA GPU cores: $NVIDIA_GPUCORES"
             echo "NVIDIA GPU memory: $NVIDIA_GPUMEM"
+            echo "NVIDIA GPU: $NVIDIA_GPU"
             echo "Training argument image size: $TRAIN_ARG_IMAGE_SIZE"
             echo "Training argument batch size: $TRAIN_ARG_BATCH_SIZE"
             echo "Training argument epochs: $TRAIN_ARG_EPOCHS"
@@ -778,6 +799,7 @@ spec:
                           ${nvidia_gpu_alloc_resource}
                           ${nvidia_gpu_cores_resource}
                           ${nvidia_gpu_mem_resource}
+                          ${nvidia_gpu}
                       volumeMounts:
                       - name: shm
                         mountPath: /dev/shm
@@ -914,6 +936,7 @@ The pipeline includes the following key parameters that need to be configured:
 - `NVIDIA_GPUALLOC`: NVIDIA GPU allocation - number of GPU cards (default: "1", leave empty to not allocate GPU)
 - `NVIDIA_GPUCORES`: NVIDIA GPU cores - percentage of compute power per card, range 1-100 (default: "50", leave empty to not configure GPU cores)
 - `NVIDIA_GPUMEM`: NVIDIA GPU memory - memory usage per card in MiB (default: "4096", leave empty to not configure GPU memory)
+- `NVIDIA_GPU`: NVIDIA GPU count - number of GPU cards allocated when using NVIDIA GPU plugin, cannot be used together with Hami parameters (default: "", leave empty to not set)
 
 
 ### Trigger Pipeline
@@ -940,10 +963,10 @@ Follow these steps to trigger the pipeline:
 
 For event-driven pipeline execution, refer to the `Trigger` section in the [Pipelines documentation](https://docs.alauda.io/alauda-devops-pipelines/).
 
-**Note**: When the pipeline runs, it creates a `VolcanoJob` that is associated with the `PipelineRun` through `OwnerReference`. When the `PipelineRun` is deleted, the associated `VolcanoJob` and its related resources (such as `PodGroup` and `Pods`) will be cascadingly deleted.
+**Note**: When the pipeline runs, it creates a `VolcanoJob` that is associated with the `PipelineRun` through `OwnerReference`. When the `PipelineRun` is deleted, the associated `VolcanoJob` and its related resources (such as `PodGroup` and `Pods`) will be cascadingly deleted. For more information about `VolcanoJob`, refer to the [VolcanoJob documentation](https://volcano.sh/en/docs/vcjob/).
 
 
-### Read Logs
+### Checkout PipelineRun status and logs
 
 1. For pipelines with `REPLICAS` set to 1, the execution status and training logs can be viewed in the corresponding execution record in `PipelineRuns`.
 
