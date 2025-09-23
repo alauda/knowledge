@@ -95,7 +95,7 @@ Configure RBAC for the namespace where the `Pipeline` will run. Since `Pipeline 
 
 NS=$1
 SA=${SA:-"default"}
-NAME=yolov5-training
+NAME="yolov5-training"
 
 if [ -z "$(kubectl get serviceaccount ${SA} -n ${NS} --ignore-not-found)" ]; then
     kubectl create serviceaccount ${SA} -n ${NS}
