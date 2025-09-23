@@ -267,6 +267,7 @@ spec:
     - default: ""
       description: NVIDIA GPU count - number of GPU cards allocated when using NVIDIA GPU plugin, cannot be used together with Hami parameters, leave empty to not set
       name: NVIDIA_GPU
+      type: string
     - description: train arg image size
       name: TRAIN_ARG_IMAGE_SIZE
       type: string
