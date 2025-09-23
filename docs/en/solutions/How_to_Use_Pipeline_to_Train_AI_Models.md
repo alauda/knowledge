@@ -77,8 +77,8 @@ RUN curl -o /tmp/requirements.txt https://raw.githubusercontent.com/ultralytics/
 RUN pip install --no-cache-dir "Pillow==9.5.0" "numpy<2.0.0" "opencv-python<4.12.0"
 
 RUN mkdir -p /root/.config/Ultralytics && \
-    wget -q -O /root/.config/Ultralytics/Arial.ttf https://ultralytics.com/assets/Arial.ttf && \
-    wget -q -O /root/.config/Ultralytics/Arial.Unicode.ttf https://ultralytics.com/assets/Arial.Unicode.ttf
+    curl -fsSL https://ultralytics.com/assets/Arial.ttf -o /root/.config/Ultralytics/Arial.ttf && \
+    curl -fsSL https://ultralytics.com/assets/Arial.Unicode.ttf -o /root/.config/Ultralytics/Arial.Unicode.ttf
 
 ```
 
@@ -692,7 +692,7 @@ spec:
                           cd ${DATASET_DIR}
                           git_clone \"${DATASET_REPO_URL}\" \"${DATASET_REPO_BRANCH}\"
 
-                          rm -rf funs/train/exp*
+                          rm -rf runs/train/exp*
 
                           echo \"Listing model files...\"
                           ls /mnt/workspace/model
