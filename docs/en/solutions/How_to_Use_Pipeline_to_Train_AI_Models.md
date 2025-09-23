@@ -21,15 +21,13 @@ Before proceeding with the AI model training pipeline, ensure the following prer
 
 2. **Volcano**: Install the `Volcano` cluster plugin to enable GPU scheduling and resource management for AI workloads.
 
-3. **Storage**: Prepare CSI (Container Storage Interface) storage. A temporary storage space is required during training to store models, datasets, and training data.
-
-4. **Required Repositories**: Prepare:
+3. **Required Repositories**: Prepare:
    - A Git repository for storing models and datasets.
    - A container image registry for storing the trainer image.
 
-5. **Alauda AI**: It is recommended to deploy Alauda AI for better management of models, training, and inference services. Refer to the [Alauda AI documention](https://docs.alauda.io/ai/) for installation and configuration details.
+4. **Alauda AI**: It is recommended to deploy Alauda AI for better management of models, training, and inference services. Refer to the [Alauda AI documention](https://docs.alauda.io/ai/) for installation and configuration details.
 
-6. **GPU Device Plugins**: It is recommended to deploy GPU device plugins such as `Hami` or `NVIDIA GPU Device Plugin` to utilize GPU resources for AI training. Refer to the `Device Management` section in the [Alauda AI documention](https://docs.alauda.io/ai/) for deployment instructions.
+5. **GPU Device Plugins**: It is recommended to deploy GPU device plugins such as `Hami` or `NVIDIA GPU Device Plugin` to utilize GPU resources for AI training. Refer to the `Device Management` section in the [Alauda AI documention](https://docs.alauda.io/ai/) for deployment instructions.
 
 
 ### Prepare Model Repository
@@ -120,6 +118,13 @@ rules:
   - get
   - list
   - watch
+- apiGroups:
+  - ""
+  resources:
+  - services
+  verbs:
+  - get
+  - create
 - apiGroups:
   - batch.volcano.sh
   resources:
@@ -220,12 +225,9 @@ spec:
       name: TRAINING_IMAGE
       type: string
     - description: storage size
-      name: STORAGE_SIZE
+      name: TEMPORARY_STORAGE_SIZE
       type: string
       default: "5Gi"
-    - description: storage class
-      name: STORAGE_CLASS
-      type: string
     - description: number of replicas
       name: REPLICAS
       type: string
@@ -312,8 +314,7 @@ spec:
             - OUTPUT_MODEL_REPO_BRANCH=$(params.OUTPUT_MODEL_REPO_BRANCH)
             - GIT_CREDENTIAL_SECRET_NAME=$(params.GIT_CREDENTIAL_SECRET_NAME)
             - TRAINING_IMAGE=$(params.TRAINING_IMAGE)
-            - STORAGE_SIZE=$(params.STORAGE_SIZE)
-            - STORAGE_CLASS=$(params.STORAGE_CLASS)
+            - TEMPORARY_STORAGE_SIZE=$(params.TEMPORARY_STORAGE_SIZE)
             - REPLICAS=$(params.REPLICAS)
             - SHARE_MEMORY_LIMIT_SIZE=$(params.SHARE_MEMORY_LIMIT_SIZE)
             - CPU_REQUEST=$(params.CPU_REQUEST)
@@ -371,15 +372,9 @@ spec:
               echo "Replicas is empty, using default replicas: $REPLICAS"
             fi
 
-            if [ -z "$STORAGE_SIZE" ]; then
-              STORAGE_SIZE="5Gi"
-              echo "Storage size is empty, using default storage size: $STORAGE_SIZE"
-            fi
-
-            storage_class="storageClassName: \"${STORAGE_CLASS}\""
-            if [ -z "$STORAGE_CLASS" ]; then
-              echo "Storage class is empty, using default storage class, recommend setting storage class name!"
-              storage_class=""
+            if [ -z "$TEMPORARY_STORAGE_SIZE" ]; then
+              TEMPORARY_STORAGE_SIZE="5Gi"
+              echo "Temporary storage size is empty, using default storage size: $TEMPORARY_STORAGE_SIZE"
             fi
 
             if [ -z "$SHARE_MEMORY_LIMIT_SIZE" ]; then
@@ -494,8 +489,7 @@ spec:
             echo "Output model repository URL: $OUTPUT_MODEL_REPO_URL ${OUTPUT_MODEL_REPO_BRANCH}"
             echo "Training image: $TRAINING_IMAGE"
             echo "Replicas: $REPLICAS"
-            echo "Storage size: $STORAGE_SIZE"
-            echo "Storage class: $STORAGE_CLASS"
+            echo "Temporary Storage size: $TEMPORARY_STORAGE_SIZE"
             echo "Shared memory limit size: $SHARE_MEMORY_LIMIT_SIZE"
             echo "CPU request: $CPU_REQUEST"
             echo "Memory request: $MEMORY_REQUEST"
@@ -525,6 +519,7 @@ spec:
             EOF
 
             name=$(context.pipelineRun.name)
+            master_port="12345"
             echo "Volcano Job Name: $name"
 
             OUTPUT_MODEL_NAME=$(basename ${OUTPUT_MODEL_REPO_URL})
@@ -587,15 +582,6 @@ spec:
                           fi
                         }
 
-                        function wait_init() {
-                          echo \"Waiting for init task to complete...\"
-                          while [ ! -f /mnt/workspace/.inited ]; do
-                            echo \"Init task not completed yet, waiting...\"
-                            sleep 10
-                          done
-                          echo \"Init task completed\"
-                        }
-
                         function git_push() {
                           local url=\$1
                           local name=\$(basename \$url)
@@ -635,8 +621,7 @@ spec:
                           cd /mnt/workspace/model
                           config_safe_directory \"\$(pwd)\"
                           if [ ${REPLICAS} -gt 1 ]; then
-                            MASTER_ADDR=\$(cat /mnt/workspace/.inited)
-                            torchrun --nproc_per_node=1 --nnodes=${REPLICAS} --node_rank=\${TASK_INDEX} --master_addr=\${MASTER_ADDR} --master_port=12355 \
+                            torchrun --nproc_per_node=1 --nnodes=${REPLICAS} --node_rank=\${TASK_INDEX} --master_addr=\${MASTER_ADDR} --master_port=${master_port} \
                                      train.py --name exp --exist-ok --img ${TRAIN_ARG_IMAGE_SIZE} --batch ${TRAIN_ARG_BATCH_SIZE} --epochs ${TRAIN_ARG_EPOCHS} --data ${TRAIN_ARG_DATA} --weights ${TRAIN_ARG_WEIGHTS} --workers ${TRAIN_ARG_WORKERS} --device ${TRAIN_ARG_DEVICE}
                           else
                             python train.py --name exp --exist-ok --img ${TRAIN_ARG_IMAGE_SIZE} --batch ${TRAIN_ARG_BATCH_SIZE} --epochs ${TRAIN_ARG_EPOCHS} --data ${TRAIN_ARG_DATA} --weights ${TRAIN_ARG_WEIGHTS} --workers ${TRAIN_ARG_WORKERS} --device ${TRAIN_ARG_DEVICE}
@@ -683,27 +668,22 @@ spec:
                         EOL
                         }
 
-                        if [ \"$REPLICAS\" -le 1 ] || [ \"\${TASK_INDEX}\" -eq 0 ]; then
-                          mkdir -p /mnt/workspace/model
-                          cd /mnt/workspace/model
-                          git_clone \"${MODEL_REPO_URL}\" \"${MODEL_REPO_BRANCH}\"
+                        mkdir -p /mnt/workspace/model
+                        cd /mnt/workspace/model
+                        git_clone \"${MODEL_REPO_URL}\" \"${MODEL_REPO_BRANCH}\"
 
-                          mkdir -p ${DATASET_DIR}
-                          cd ${DATASET_DIR}
-                          git_clone \"${DATASET_REPO_URL}\" \"${DATASET_REPO_BRANCH}\"
+                        mkdir -p ${DATASET_DIR}
+                        cd ${DATASET_DIR}
+                        git_clone \"${DATASET_REPO_URL}\" \"${DATASET_REPO_BRANCH}\"
 
-                          rm -rf runs/train/exp*
+                        rm -rf runs/train/exp*
 
-                          echo \"Listing model files...\"
-                          ls /mnt/workspace/model
-                          echo \"Listing dataset files...\"
-                          ls ${DATASET_DIR}
+                        echo \"Listing model files...\"
+                        ls /mnt/workspace/model
+                        echo \"Listing dataset files...\"
+                        ls ${DATASET_DIR}
 
-                          echo \${IP_ADDRESS} > /mnt/workspace/.inited
-                          echo \"Init task completed successfully\"
-                        else
-                          wait_init
-                        fi
+                        echo \"Init task completed successfully\"
 
                         train
 
@@ -717,6 +697,37 @@ spec:
                           echo \"skip export model and push\"
                         fi
             "
+            if [ "$REPLICAS" -gt 1 ];  then
+              cat <<EOF > /tmp/svc.yaml
+            ---
+            apiVersion: v1
+            kind: Service
+            metadata:
+              name: "${name}"
+              ownerReferences:
+              - apiVersion: tekton.dev/v1
+                kind: PipelineRun
+                name: "${name}"
+                uid: $(context.pipelineRun.uid)
+                controller: true
+                blockOwnerDeletion: true
+            spec:
+              ports:
+              - port: ${master_port}
+                protocol: TCP
+                targetPort: ${master_port}
+              selector:
+                volcano.sh/job-name: ${name}
+                volcano.sh/task-index: "0"
+            EOF
+              echo "Service YAML: "
+              cat /tmp/svc.yaml
+              echo "create Serviceb"
+
+              kubectl create -f /tmp/svc.yaml
+              kubectl get -f /tmp/svc.yaml
+            fi
+
             cat <<EOF > /tmp/job.yaml
             ---
             apiVersion: batch.volcano.sh/v1alpha1
@@ -735,14 +746,6 @@ spec:
               schedulerName: volcano
               maxRetry: 1
               queue: default
-              volumes:
-              - mountPath: "/mnt/workspace"
-                volumeClaim:
-                  accessModes: [ "ReadWriteOnce" ]
-                  ${storage_class}
-                  resources:
-                    requests:
-                      storage: "${STORAGE_SIZE}"
               tasks:
               - name: "train"
                 replicas: ${REPLICAS}
@@ -757,6 +760,9 @@ spec:
                         medium: Memory
                         sizeLimit: "${SHARE_MEMORY_LIMIT_SIZE}"
                       name: shm
+                    - emptyDir:
+                        sizeLimit: ${TEMPORARY_STORAGE_SIZE}
+                      name: workspace
                     containers:
                     - image: "${TRAINING_IMAGE}"
                       imagePullPolicy: IfNotPresent
@@ -780,10 +786,8 @@ spec:
                         valueFrom:
                           fieldRef:
                             fieldPath: metadata.annotations['volcano.sh/task-index']
-                      - name: IP_ADDRESS
-                        valueFrom:
-                          fieldRef:
-                            fieldPath: status.podIP
+                      - name: MASTER_ADDR
+                        value: ${name}.$(context.pipelineRun.namespace).svc
                       command:
                       - bash
                       - -c
@@ -803,12 +807,14 @@ spec:
                       volumeMounts:
                       - name: shm
                         mountPath: /dev/shm
+                      - name: workspace
+                        mountPath: /mnt/workspace
             EOF
             echo "Volcano Job YAML: "
             cat /tmp/job.yaml
             echo "create Volcano Job"
-            kubectl create -f /tmp/job.yaml
 
+            kubectl create -f /tmp/job.yaml
             kubectl get -f /tmp/job.yaml
 
             function wait_job() {
@@ -929,8 +935,7 @@ For more information about YOLOv5 training parameter configuration, refer to the
 
 
 **Resource Parameters:**
-- `STORAGE_SIZE`: Storage size (default: "5Gi")
-- `STORAGE_CLASS`: Storage class name
+- `TEMPORARY_STORAGE_SIZE`: Temporary storage size (default: "5Gi")
 - `REPLICAS`: Number of replicas (default: "1", distributed training will be enabled if greater than 1)
 - `CPU_REQUEST`: Request CPU (default: "1", leave empty to not request CPU)
 - `MEMORY_REQUEST`: Request memory (default: "8Gi", leave empty to not request memory)
@@ -971,8 +976,4 @@ For event-driven pipeline execution, refer to the `Trigger` section in the [Pipe
 
 ### Checkout PipelineRun status and logs
 
-1. For pipelines with `REPLICAS` set to 1, the execution status and training logs can be viewed in the corresponding execution record in `PipelineRuns`.
-
-2. For pipelines with `REPLICAS` > 1, the pipeline executes parallel `Tasks`, but the `Pipeline Web UI` currently only supports displaying the status and execution logs of the first `Task` in parallel Tasks. For other Tasks, users can navigate to `TaskRuns` to find the status and execution logs of all Tasks for that pipeline.
-
-
+The execution status and training logs can be viewed in the corresponding execution record in `PipelineRuns`.
