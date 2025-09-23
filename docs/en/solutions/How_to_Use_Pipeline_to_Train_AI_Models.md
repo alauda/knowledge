@@ -17,7 +17,7 @@ This document demonstrates how to train AI models using DevOps Pipeline. The YOL
 
 Before proceeding with the AI model training pipeline, ensure the following prerequisites are met:
 
-1. **Alauda DevOps**: Install `Alauda DevOps next-gen` following the [Alauda DevOps documention](https://docs.alauda.io/devops). `Alauda DevOps Pipelines` and `Alauda DevOps Connectors` must be installed.
+1. **Alauda DevOps**: Install `Alauda DevOps next-gen` following the [Alauda DevOps documentation](https://docs.alauda.io/devops). `Alauda DevOps Pipelines` and `Alauda DevOps Connectors` must be installed.
 
 2. **Volcano**: Install the `Volcano` cluster plugin to enable GPU scheduling and resource management for AI workloads.
 
@@ -25,9 +25,9 @@ Before proceeding with the AI model training pipeline, ensure the following prer
    - A Git repository for storing models and datasets.
    - A container image registry for storing the trainer image.
 
-4. **Alauda AI**: It is recommended to deploy Alauda AI for better management of models, training, and inference services. Refer to the [Alauda AI documention](https://docs.alauda.io/ai/) for installation and configuration details.
+4. **Alauda AI**: It is recommended to deploy Alauda AI for better management of models, training, and inference services. Refer to the [Alauda AI documentation](https://docs.alauda.io/ai/) for installation and configuration details.
 
-5. **GPU Device Plugins**: It is recommended to deploy GPU device plugins such as `Hami` or `NVIDIA GPU Device Plugin` to utilize GPU resources for AI training. Refer to the `Device Management` section in the [Alauda AI documention](https://docs.alauda.io/ai/) for deployment instructions.
+5. **GPU Device Plugins**: It is recommended to deploy GPU device plugins such as `Hami` or `NVIDIA GPU Device Plugin` to utilize GPU resources for AI training. Refer to the `Device Management` section in the [Alauda AI documentation](https://docs.alauda.io/ai/) for deployment instructions.
 
 
 ### Prepare Model Repository
@@ -160,12 +160,12 @@ bash prepare_rbac.sh <namespace-name>
 
 To use a dedicated `ServiceAccount`, run:
 ```bash
-SA=<service-account-namet> bash prepare_rbac.sh <namespace-name>
+SA=<service-account-name> bash prepare_rbac.sh <namespace-name>
 ```
 
 Note:
 
-1. When using a `ServiceAccount` other than `default`, the `ServiceAccount` name must be specified when runing pipeline. Refer to the following sections for details.
+1. When using a `ServiceAccount` other than `default`, the `ServiceAccount` name must be specified when running pipeline. Refer to the following sections for details.
 
 2. If permission issues are encountered during execution, contact the platform administrator to execute the script for you.
 
@@ -184,7 +184,7 @@ Follow these steps to create the Pipeline in `Alauda Container Platform`:
 5. Click the `Create` button in the lower right corner to create the `yolov5-training` pipeline.
 
 <details>
-<summary>Pipeline: yolov5-traning</summary>
+<summary>Pipeline: yolov5-training</summary>
 
 ```yaml
 apiVersion: tekton.dev/v1
@@ -722,7 +722,7 @@ spec:
             EOF
               echo "Service YAML: "
               cat /tmp/svc.yaml
-              echo "create Serviceb"
+              echo "create Service"
 
               kubectl create -f /tmp/svc.yaml
               kubectl get -f /tmp/svc.yaml
