@@ -286,7 +286,7 @@ spec:
       type: string
       default: "models/yolov5n.pt"
     - description: train arg worker
-      name: TRAIN_ARG_WORKER
+      name: TRAIN_ARG_WORKERS
       type: string
       default: "0"
     - description: train arg device, multiple devices split by comma, such as "0,1,2,3", set "cpu" to use cpu
@@ -329,7 +329,7 @@ spec:
             - TRAIN_ARG_EPOCHS=$(params.TRAIN_ARG_EPOCHS)
             - TRAIN_ARG_DATA=$(params.TRAIN_ARG_DATA)
             - TRAIN_ARG_WEIGHTS=$(params.TRAIN_ARG_WEIGHTS)
-            - TRAIN_ARG_WORKER=$(params.TRAIN_ARG_WORKER)
+            - TRAIN_ARG_WORKERS=$(params.TRAIN_ARG_WORKERS)
             - TRAIN_ARG_DEVICE=$(params.TRAIN_ARG_DEVICE)
         - name: script
           value: |-
@@ -473,9 +473,9 @@ spec:
               echo "Training argument weights is empty, using default value: $TRAIN_ARG_WEIGHTS"
             fi
 
-            if [ -z "$TRAIN_ARG_WORKER" ]; then
-              TRAIN_ARG_WORKER="0"
-              echo "Training argument worker is empty, using default value: $TRAIN_ARG_WORKER"
+            if [ -z "$TRAIN_ARG_WORKERS" ]; then
+              TRAIN_ARG_WORKERS="0"
+              echo "Training argument worker is empty, using default value: $TRAIN_ARG_WORKERS"
             fi
 
             if [ -z "$TRAIN_ARG_DEVICE" ]; then
@@ -510,7 +510,7 @@ spec:
             echo "Training argument epochs: $TRAIN_ARG_EPOCHS"
             echo "Training argument data: $TRAIN_ARG_DATA"
             echo "Training argument weights: $TRAIN_ARG_WEIGHTS"
-            echo "Training argument worker: $TRAIN_ARG_WORKER"
+            echo "Training argument worker: $TRAIN_ARG_WORKERS"
             echo "Training argument device: $TRAIN_ARG_DEVICE"
 
             cat <<EOF > $(results.object-result.path)
@@ -637,9 +637,9 @@ spec:
                           if [ ${REPLICAS} -gt 1 ]; then
                             MASTER_ADDR=\$(cat /mnt/workspace/.inited)
                             torchrun --nproc_per_node=1 --nnodes=${REPLICAS} --node_rank=\${TASK_INDEX} --master_addr=\${MASTER_ADDR} --master_port=12355 \
-                                     train.py --name exp --exist-ok --img ${TRAIN_ARG_IMAGE_SIZE} --batch ${TRAIN_ARG_BATCH_SIZE} --epochs ${TRAIN_ARG_EPOCHS} --data ${TRAIN_ARG_DATA} --weights ${TRAIN_ARG_WEIGHTS} --workers ${TRAIN_ARG_WORKER} --device ${TRAIN_ARG_DEVICE}
+                                     train.py --name exp --exist-ok --img ${TRAIN_ARG_IMAGE_SIZE} --batch ${TRAIN_ARG_BATCH_SIZE} --epochs ${TRAIN_ARG_EPOCHS} --data ${TRAIN_ARG_DATA} --weights ${TRAIN_ARG_WEIGHTS} --workers ${TRAIN_ARG_WORKERS} --device ${TRAIN_ARG_DEVICE}
                           else
-                            python train.py --name exp --exist-ok --img ${TRAIN_ARG_IMAGE_SIZE} --batch ${TRAIN_ARG_BATCH_SIZE} --epochs ${TRAIN_ARG_EPOCHS} --data ${TRAIN_ARG_DATA} --weights ${TRAIN_ARG_WEIGHTS} --workers ${TRAIN_ARG_WORKER} --device ${TRAIN_ARG_DEVICE}
+                            python train.py --name exp --exist-ok --img ${TRAIN_ARG_IMAGE_SIZE} --batch ${TRAIN_ARG_BATCH_SIZE} --epochs ${TRAIN_ARG_EPOCHS} --data ${TRAIN_ARG_DATA} --weights ${TRAIN_ARG_WEIGHTS} --workers ${TRAIN_ARG_WORKERS} --device ${TRAIN_ARG_DEVICE}
                           fi
                         }
 
@@ -922,7 +922,7 @@ The pipeline includes the following key parameters that need to be configured:
 - `TRAIN_ARG_EPOCHS`: Training argument epochs (default: "3")
 - `TRAIN_ARG_DATA`: Training argument data file (default: "coco128.yaml")
 - `TRAIN_ARG_WEIGHTS`: Training argument weights (default: "models/yolov5n.pt")
-- `TRAIN_ARG_WORKER`: Training argument worker (default: "0")
+- `TRAIN_ARG_WORKERS`: Training argument worker (default: "0")
 - `TRAIN_ARG_DEVICE`: Training device, multiple devices separated by comma (default: "0")
 
 For more information about YOLOv5 training parameter configuration, refer to the [YOLOv5 training settings documentation](https://docs.ultralytics.com/yolov5/tutorials/tips_for_best_training_results/#training-settings).
