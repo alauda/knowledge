@@ -925,6 +925,9 @@ The pipeline includes the following key parameters that need to be configured:
 - `TRAIN_ARG_WORKER`: Training argument worker (default: "0")
 - `TRAIN_ARG_DEVICE`: Training device, multiple devices separated by comma (default: "0")
 
+For more information about YOLOv5 training parameter configuration, refer to the [YOLOv5 training settings documentation](https://docs.ultralytics.com/yolov5/tutorials/tips_for_best_training_results/#training-settings).
+
+
 **Resource Parameters:**
 - `STORAGE_SIZE`: Storage size (default: "5Gi")
 - `STORAGE_CLASS`: Storage class name
