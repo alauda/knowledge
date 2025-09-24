@@ -119,6 +119,12 @@ rules:
   - list
   - watch
 - apiGroups:
+  - tekton.dev
+  resources:
+  - taskruns
+  verbs:
+  - get
+- apiGroups:
   - ""
   resources:
   - services
@@ -335,7 +341,7 @@ spec:
             - TRAIN_ARG_DEVICE=$(params.TRAIN_ARG_DEVICE)
         - name: script
           value: |-
-            set -e
+            set -exuo pipefail
             export "$@"
 
             if [ -z "$MODEL_REPO_URL" ]; then
@@ -526,7 +532,7 @@ spec:
             OUTPUT_MODEL_NAME=$(basename ${OUTPUT_MODEL_REPO_URL})
 
             COMMAND="
-                        set -euo pipefail
+                        set -exuo pipefail
                         function url_encode() {
                           local input=\"\$1\"
                           printf '%s' \"\$input\" | sed 's/%/%25/g; s/:/%3A/g; s/@/%40/g; s/ /%20/g'
@@ -698,6 +704,16 @@ spec:
                           echo \"skip export model and push\"
                         fi
             "
+
+            function get_image() {
+              local taskrun_name="$(context.pipelineRun.name)-create-job"
+              local namespace="$(context.pipelineRun.namespace)"
+              local image=$(kubectl get taskruns.tekton.dev -n ${namespace} ${taskrun_name} -o jsonpath='{.status.taskSpec.steps[0].image}')
+              echo -n "${image}" > $(results.string-result.path)
+            }
+
+            get_image
+
             if [ "$REPLICAS" -gt 1 ];  then
               cat <<EOF > /tmp/svc.yaml
             ---
@@ -832,13 +848,6 @@ spec:
               done
             }
             wait_job
-            function get_pod_image() {
-              local pod_name="$(context.pipelineRun.name)-create-job-pod"
-              local namespace="$(context.pipelineRun.namespace)"
-              local pod_image=$(kubectl get pod -n ${namespace} ${pod_name} -o jsonpath='{.spec.containers[0].image}')
-              echo -n "${pod_image}" > $(results.string-result.path)
-            }
-            get_pod_image
       taskRef:
         params:
           - name: kind
