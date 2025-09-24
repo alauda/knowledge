@@ -259,7 +259,7 @@ spec:
       type: string
       default: "20Gi"
     - default: "1"
-      description:  Hami NVIDIA GPU allocation - number of GPU cards, leave empty to not allocate GPU
+      description: Hami NVIDIA GPU allocation - number of GPU cards, leave empty to not allocate GPU
       name: NVIDIA_GPUALLOC
       type: string
     - default: "50"
