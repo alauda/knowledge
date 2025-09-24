@@ -661,14 +661,14 @@ spec:
                         input [
                         {
                         name: \"images\"
-                        data_type: \"TYPE_FP32\"
+                        data_type: TYPE_FP32
                         dims: [3,${TRAIN_ARG_IMAGE_SIZE},${TRAIN_ARG_IMAGE_SIZE}]
                         }
                         ]
                         output [
                         {
                         name: \"output0\"
-                        data_type: \"TYPE_FP32\"
+                        data_type: TYPE_FP32
                         dims: [-1,-1,-1]
                         }
                         ]
