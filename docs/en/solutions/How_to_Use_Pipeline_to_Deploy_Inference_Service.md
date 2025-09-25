@@ -465,7 +465,7 @@ spec:
             }
 
             function get_gitlab_tag() {
-              local ref_name=$"{MODEL_REPO_TAG}" commit_id encoded_ref_name
+              local ref_name="${MODEL_REPO_TAG}" commit_id encoded_ref_name
               local tag=/tmp/tag.json
 
               encoded_ref_name="$(printf '%s' "${ref_name}" | jq -sRr @uri)"
@@ -493,12 +493,11 @@ spec:
               cat $readme
 
               PIPELINE_TAG=$(grep '^pipeline_tag:' ${readme} | head -n 1 | sed 's/pipeline_tag:[[:space:]]*//')
-              if [ -z ${PIPELINE_TAG} ]; then
+              if [ -z "${PIPELINE_TAG}" ]; then
                 echo "ERROR: cannot find pipeline_tag in README.md"
               fi
-
               LIBRARY_NAME=$(grep '^library_name:' ${readme} | head -n 1 | sed 's/library_name:[[:space:]]*//')
-              if [ -z ${LIBRARY_NAME} ]; then
+              if [ -z "${LIBRARY_NAME}" ]; then
                 echo "ERROR: cannot find library_name in README.md"
               fi
             }
