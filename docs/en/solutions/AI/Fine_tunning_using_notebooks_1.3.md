@@ -51,7 +51,7 @@ Create an empty model in the model repository to store the output model. When co
 
 ### Preparing the Dataset
 
-Push the sample identity dataset: [identity-alauda-main.zip](../../assets/identity-alauda-main.zip) to the dataset repository. This dataset is used to fine-tune the LLM to answer user questions such as "Who are you?"
+Download and push the sample identity dataset ( file under `docs/en/assets/identity-alauda-main.zip`) to the dataset repository. This dataset is used to fine-tune the LLM to answer user questions such as "Who are you?"
 
 1. First, create an empty dataset repository under "Datasets" - "Dataset Repository".
 2. Upload the zip file to the notebook, unzip it, then navigate to the dataset directory. Use git lfs to push the dataset to the dataset repository's Git URL. The steps are similar to uploading the model. For details, refer to the Alauda AI online documentation.

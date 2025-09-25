@@ -114,7 +114,11 @@ Download the following plugin artifacts and push these plugins to ACP platform.
 
 ```bash
 # Note: replace yout platform addr, username, password and clsuter name.
-violet push --platform-address="https://192.168.171.123" --platform-username="admin@cpaas.io" '--platform-password=07Apples@' --clusters=g1-c1-gpu http://prod-minio.alauda.cn/aml/aml-packages/v0.0.0-beta.2.g00624748/kubeflow-v0.0.0-beta.2.g00624748.all-in-one.tgz 
+violet push --platform-address="https://192.168.171.123" \
+  --platform-username="admin@cpaas.io" \
+  --platform-password="<platform_password>" \
+  --clusters=g1-c1-gpu \
+  <your downloaded plugin package file>
 ```
 
 Go to "Administrator - Marketplace - Upload Packages", then switch to tab "Cluster Plugins", find the plugins uploaded, and verify that versions of those plugins are correctly synced.
@@ -249,7 +253,7 @@ spec:
         database: aml # db name
         host: 10.4.158.198 # dataset host
         passwordSecretRef:
-          name: aml-mysql-root-token  # kubectl create secret generic aml-mysql-root-token --from-literal="password=07Apples@" -n cpaas-system
+          name: aml-mysql-root-token  # kubectl create secret generic aml-mysql-root-token --from-literal="password=<mysql_root_password>" -n cpaas-system
           namespace: cpaas-system
         port: 3306 # db port
         user: root # db user
