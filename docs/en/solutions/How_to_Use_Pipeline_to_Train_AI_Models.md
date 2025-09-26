@@ -541,9 +541,11 @@ spec:
                         function build_git_url() {
                           local url=\"\$1\"
                           local encoded_user=\$(url_encode \"\$GIT_USER\")
+                          set +x
                           local encoded_token=\$(url_encode \"\$GIT_TOKEN\")
                           local url_no_https=\"\${url#https://}\"
                           echo \"https://\${encoded_user}:\${encoded_token}@\$url_no_https\"
+                          set -x
                         }
 
                         function config_safe_directory() {
@@ -555,7 +557,12 @@ spec:
                           local url=\$1
                           local branch=\$2
                           local name=\$(basename \$url)
+
+                          set +x
                           local clone_url=\$(build_git_url \"\$url\")
+                          set -x
+
+                          branch=\${branch#refs/heads/}
 
                           if [ -d .git ]; then
                             echo \"Current directory is already a git repository, pulling latest changes\"
@@ -592,10 +599,12 @@ spec:
                         function git_push() {
                           local url=\$1
                           local name=\$(basename \$url)
-                          local branch_name=\"${OUTPUT_MODEL_REPO_BRANCH}\"
+                          local branch=\"${OUTPUT_MODEL_REPO_BRANCH}\"
+
+                          branch=\${branch#refs/heads/}
 
                           echo \"Pushing to repository: \$url\"
-                          echo \"Branch: \$branch_name\"
+                          echo \"Branch: \$branch\"
 
                           # Initialize git repository
                           git init
@@ -603,12 +612,12 @@ spec:
                           config_safe_directory \"\$(pwd)\"
 
                           # Check if branch already exists
-                          if git show-ref --verify --quiet refs/heads/\$branch_name; then
-                            echo \"Branch \$branch_name already exists, switching to it\"
-                            git checkout \$branch_name
+                          if git show-ref --verify --quiet refs/heads/\$branch; then
+                            echo \"Branch \$branch already exists, switching to it\"
+                            git checkout \$branch
                           else
-                            echo \"Creating new branch \$branch_name\"
-                            git checkout -b \$branch_name
+                            echo \"Creating new branch \$branch\"
+                            git checkout -b \$branch
                           fi
 
                           git lfs track *.pt
@@ -616,12 +625,12 @@ spec:
                           git -c user.name='AMLSystemUser' -c user.email='aml_admin@cpaas.io' commit -am \"fine tune push auto commit\"
 
                           # Push to remote repository
-                          local push_url=\$(build_git_url \"\$url\")
                           set +x
-                          git -c http.sslVerify=false -c lfs.activitytimeout=36000 push -u \"\$push_url\" \"\$branch_name\"
+                          local push_url=\$(build_git_url \"\$url\")
+                          git -c http.sslVerify=false -c lfs.activitytimeout=36000 push -u \"\$push_url\" \"\$branch\"
                           set -x
 
-                          echo \"Successfully pushed to \$url on branch \$branch_name\"
+                          echo \"Successfully pushed to \$url on branch \$branch\"
                         }
 
                         function train() {
