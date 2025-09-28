@@ -620,7 +620,7 @@ spec:
                             git checkout -b \$branch
                           fi
 
-                          git lfs track *.pt
+                          git lfs track *.torchscript
                           git add .
                           git -c user.name='AMLSystemUser' -c user.email='aml_admin@cpaas.io' commit -am \"fine tune push auto commit\"
 
@@ -650,12 +650,13 @@ spec:
                             # will output runs/train/exp/best.torchscript
                             python export.py --weights /mnt/workspace/model/runs/train/exp/weights/best.pt --include torchscript
                           else
-                            echo \"output model /mnt/workspace/model/runs/train/exp/weights/best.pt not found\"
+                            echo \"Error: output model /mnt/workspace/model/runs/train/exp/weights/best.pt not found\"
+                            exit 1
                           fi
 
                           cd /mnt/workspace/model/modeldir
                           mkdir 1
-                          cp ../runs/train/exp/weights/best.torchscript ./1/model.pt
+                          cp ../runs/train/exp/weights/best.torchscript ./1/model.torchscript
                           touch README.md
                           cp ../runs/train/exp/hyp.yaml .
                           cp ../runs/train/exp/opt.yaml .
@@ -666,6 +667,7 @@ spec:
                         name: \"${OUTPUT_MODEL_NAME}\"
                         platform: \"pytorch_libtorch\"
                         max_batch_size: 8
+                        default_model_filename: \"model.torchscript\"
 
                         input [
                         {
