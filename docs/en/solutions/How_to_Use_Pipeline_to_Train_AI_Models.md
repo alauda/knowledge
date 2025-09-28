@@ -851,7 +851,8 @@ spec:
                 local job_status=$(kubectl get jobs.batch.volcano.sh ${name} -o jsonpath='{.status.state.phase}')
                 if [ "$job_status" = "Pending" ]; then
                   echo "Waiting for Volcano Job ${name} to start..."
-                  sleep 1
+                  sleep 5
+                  continue
                 fi
                 echo "Volcano Job ${name} status: $job_status"
                 printf '"%s",' $(seq 0 $((REPLICAS-1))) | sed 's/,$//' | sed 's/^/[/' | sed 's/$/]/' > $(results.array-result.path)
@@ -907,13 +908,13 @@ spec:
                 fi
                 if [ "$pod_status" = "Pending" ]; then
                   echo "Pod ${pod_name} is pending, waiting..."
-                  sleep 1
+                  sleep 5
                   continue
                 fi
                 if [ "$pod_status" != "Running" ]; then
                   break
                 fi
-                sleep 1
+                sleep 5
               done
 
               echo ""
