@@ -152,65 +152,62 @@ spec:
   params:
     - name: INFERENCE_SERVICE_NAME
       type: string
-      description: the name of the inference service
+      description: The name of the InferenceService to be deployed
     - name: INFERENCE_SERVICE_DESCRIPTION
       type: string
-      description: the description of the inference service
+      description: The description of the InferenceService
       default: ""
     - name: UPDATE_IF_EXISTS
       type: string
-      description: whether to update the   if it already exists
+      description: Whether to update the InferenceService if it already exists
       default: "true"
-    - description: name of the model repository
+    - description: The name of the model repository containing the model
       name: MODEL_REPO
       type: string
     - default: ""
-      description: branch of the model repository
+      description: The branch of the model repository to use
       name: MODEL_REPO_BRANCH
       type: string
     - default: ""
-      description: tag of the model repository
+      description: The tag of the model repository to use
       name: MODEL_REPO_TAG
       type: string
-    - description: serving runtime name, if empty, will use the first runtime with the same class as RUNTIME_CLASS
+    - description: The name of the serving runtime to use, if empty, will use the first runtime with the same class as RUNTIME_CLASS
       name: RUNTIME_NAME
       type: string
       default: ""
-    - description: serving runtime class
+    - description: The class of the serving runtime
       name: RUNTIME_CLASS
       type: string
-    - description: use ephemeral storage for the InferenceService
+    - description: The size of ephemeral storage for the InferenceService
       name: EPHIMERAL_STORAGE_SIZE
       type: string
       default: "10Gi"
     - default: ""
-      description: use existing pvc for the InferenceService
+      description: The name of an existing PVC to use for the InferenceService
       name: PVC_NAME
       type: string
-    - description: the minimum number of replicas
+    - description: The minimum number of replicas for the InferenceService, should be >= 0
       name: MIN_REPLICAS
       type: string
       default: "1"
-    - description: the maximum number of replicas
+    - description: The maximum number of replicas for the InferenceService, should be >= MIN_REPLICAS
       name: MAX_REPLICAS
       type: string
       default: "1"
-    - name: ENABLE_SERVERLESS
-      type: string
-      default: "false"
-    - description: request cpu
+    - description: The CPU request for the InferenceService
       name: CPU_REQUEST
       type: string
       default: "1"
-    - description: request memory
+    - description: The memory request for the InferenceService
       name: MEMORY_REQUEST
       type: string
       default: "4Gi"
-    - description: limit cpu
+    - description: The CPU limit for the InferenceService
       name: CPU_LIMIT
       type: string
       default: "4"
-    - description: limit memory
+    - description: The memory limit for the InferenceService
       name: MEMORY_LIMIT
       type: string
       default: "16Gi"
@@ -219,11 +216,11 @@ spec:
       name: NVIDIA_GPUALLOC
       type: string
     - default: "50"
-      description: Hami NVIDIA GPU cores - percentage of compute power per card, range 1-100, leave empty to not configure GPU cores)
+      description: Hami NVIDIA GPU cores - percentage of compute power per card, range 1-100, leave empty to not configure GPU cores
       name: NVIDIA_GPUCORES
       type: string
     - default: "4096"
-      description: Hami NVIDIA GPU memory - memory usage per card in MiB, leave empty to not configure GPU memory)
+      description: Hami NVIDIA GPU memory - memory usage per card in MiB, leave empty to not configure GPU memory
       name: NVIDIA_GPUMEM
       type: string
     - default: ""
@@ -252,7 +249,6 @@ spec:
             - PVC_NAME=$(params.PVC_NAME)
             - MIN_REPLICAS=$(params.MIN_REPLICAS)
             - MAX_REPLICAS=$(params.MAX_REPLICAS)
-            - ENABLE_SERVERLESS=$(params.ENABLE_SERVERLESS)
             - CPU_REQUEST=$(params.CPU_REQUEST)
             - MEMORY_REQUEST=$(params.MEMORY_REQUEST)
             - CPU_LIMIT=$(params.CPU_LIMIT)
@@ -264,7 +260,7 @@ spec:
             - NAMESPACE=$(context.pipelineRun.namespace)
         - name: script
           value: |-
-            set -exuo pipefail
+            set -euo pipefail
             export "$@"
 
             echo "INFERENCE_SERVICE_NAME: ${INFERENCE_SERVICE_NAME}"
@@ -279,7 +275,6 @@ spec:
             echo "PVC_NAME: ${PVC_NAME}"
             echo "MIN_REPLICAS: ${MIN_REPLICAS}"
             echo "MAX_REPLICAS: ${MAX_REPLICAS}"
-            echo "ENABLE_SERVERLESS: ${ENABLE_SERVERLESS}"
             echo "CPU_REQUEST: ${CPU_REQUEST}"
             echo "MEMORY_REQUEST: ${MEMORY_REQUEST}"
             echo "CPU_LIMIT: ${CPU_LIMIT}"
@@ -354,14 +349,24 @@ spec:
             fi
 
             if [ -n "$NVIDIA_GPU" ] && ([ -n "$NVIDIA_GPUALLOC" ] || [ -n "$NVIDIA_GPUCORES" ] || [ -n "$NVIDIA_GPUMEM" ]); then
-                echo "Cannot use NVIDIA_GPU with Hami resources:"
-                echo "NVIDIA_GPU=${NVIDIA_GPU}, NVIDIA_GPUALLOC=${NVIDIA_GPUALLOC}, NVIDIA_GPUCORES=${NVIDIA_GPUCORES}, NVIDIA_GPUMEM=${NVIDIA_GPUMEM}"
-                exit 1
+              echo "ERROR: Cannot use NVIDIA_GPU with Hami resources"
+              echo "NVIDIA_GPU=${NVIDIA_GPU}, NVIDIA_GPUALLOC=${NVIDIA_GPUALLOC}, NVIDIA_GPUCORES=${NVIDIA_GPUCORES}, NVIDIA_GPUMEM=${NVIDIA_GPUMEM}"
+              exit 1
             fi
 
-            deploy_model="RawDeployment"
-            if [ "${ENABLE_SERVERLESS}" = "true" ]; then
-              deploy_model="Serverless"
+            if [ "$MIN_REPLICAS" -lt "0" ]; then
+              echo "ERROR: MIN_REPLICAS($MIN_REPLICAS) should not be less than 0"
+              exit 1
+            fi
+
+            if [ "$MAX_REPLICAS" -lt "$MIN_REPLICAS" ]; then
+              echo "ERROR: MAX_REPLICAS($MAX_REPLICAS) should not be less than MIN_REPLICAS($MIN_REPLICAS)"
+              exit 1
+            fi
+
+            deploy_model="Serverless"
+            if [ "$MIN_REPLICAS" -eq "$MAX_REPLICAS" ]; then
+              deploy_model="RawDeployment"
             fi
 
             if [ -z "$PVC_NAME" ] && [ -z "${EPHIMERAL_STORAGE_SIZE}" ]; then
@@ -409,35 +414,27 @@ spec:
               fi
               GITLAB_BASE_URL="${scheme}://${base_url}"
 
-              set +x
               token="$(kubectl get secrets -n ${NAMESPACE} aml-image-builder-secret -o jsonpath='{.data.MODEL_REPO_GIT_TOKEN}' | base64 -d)"
               if [ -z "${token}" ]; then
                 echo "GITLAB_TOKEN is not set"
                 exit 1
               fi
               GITLAB_TOKEN="${token}"
-              set -x
             }
 
             function get_gitlab_project() {
               local project_id namespace_full_path tag
               local project=/tmp/project.json
 
-              set +x
               curl -k -H "PRIVATE-TOKEN: ${GITLAB_TOKEN}" "${GITLAB_BASE_URL}/api/v4/projects?search_namespaces=true&search=amlmodels" > ${project}
-              set -x
-
-              project_id="$(jq -r --arg name "${MODEL_REPO}" '.[] | select(.name == $name) | .id' ${project})"
+              project_id="$(jq -r --arg name "${MODEL_REPO}" '.[] | select(.name == $name) | .id' ${project} 2>/dev/null || echo "")"
               if [ -z "${project_id}" ]; then
                 echo "can not find project id for repo: ${MODEL_REPO}"
                 exit 1
               fi
               GITLAB_PROJECT_ID="${project_id}"
 
-              set +x
               curl -k -H "PRIVATE-TOKEN: ${GITLAB_TOKEN}" "${GITLAB_BASE_URL}/api/v4/projects/${GITLAB_PROJECT_ID}" > ${project}
-              set -x
-
               namespace_full_path="$(jq -r '.namespace.full_path' ${project})"
               GITLAB_GROUP="$(echo "${namespace_full_path}" | awk -F '/' '{print $1}')"
               GITLAB_SUBGROUP="$(echo "${namespace_full_path}" | awk -F '/' '{for(i=2;i<=NF;i++) printf "%s%s", $i, (i<NF?"/":"")}')"
@@ -450,10 +447,7 @@ spec:
               local branch=/tmp/branch.json
 
               encoded_ref_name="$(printf '%s' "${ref_name}" | jq -sRr @uri)"
-
-              set +x
               curl -k -H "PRIVATE-TOKEN: ${GITLAB_TOKEN}" "${GITLAB_BASE_URL}/api/v4/projects/${GITLAB_PROJECT_ID}/repository/branches/${encoded_ref_name}" > ${branch}
-              set -x
 
               commit_id="$(jq -r '.commit.id' ${branch})"
               if [ -z "${commit_id}" ] || [ "${commit_id}" = "null" ]; then
@@ -469,10 +463,7 @@ spec:
               local tag=/tmp/tag.json
 
               encoded_ref_name="$(printf '%s' "${ref_name}" | jq -sRr @uri)"
-
-              set +x
               curl -k -H "PRIVATE-TOKEN: ${GITLAB_TOKEN}" "${GITLAB_BASE_URL}/api/v4/projects/${GITLAB_PROJECT_ID}/repository/tags/${encoded_ref_name}" > ${tag}
-              set -x
 
               commit_id="$(jq -r '.commit.id' ${tag})"
               if [ -z "${commit_id}" ] || [ "${commit_id}" = "null" ]; then
@@ -485,20 +476,23 @@ spec:
             function fetch_readme() {
               local readme=/tmp/readme.md
 
-              set +x
               curl -k -H "PRIVATE-TOKEN: ${GITLAB_TOKEN}" "${GITLAB_BASE_URL}/api/v4/projects/${GITLAB_PROJECT_ID}/repository/files/README.md?ref=${GITLAB_COMMIT_ID}" | jq -r '.content' | base64 -d > ${readme}
-              set -x
-
               echo "README.md"
               cat $readme
+              if [ ! -s "$readme" ]; then
+                echo "ERROR: README.md is empty"
+                exit 1
+              fi
 
-              PIPELINE_TAG=$(grep '^pipeline_tag:' ${readme} | head -n 1 | sed 's/pipeline_tag:[[:space:]]*//')
+              PIPELINE_TAG=$(grep '^pipeline_tag:' ${readme} 2>/dev/null | head -n 1 | sed 's/pipeline_tag:[[:space:]]*//' || echo "")
               if [ -z "${PIPELINE_TAG}" ]; then
                 echo "ERROR: cannot find pipeline_tag in README.md"
+                exit 1
               fi
-              LIBRARY_NAME=$(grep '^library_name:' ${readme} | head -n 1 | sed 's/library_name:[[:space:]]*//')
+              LIBRARY_NAME=$(grep '^library_name:' ${readme} 2>/dev/null | head -n 1 | sed 's/library_name:[[:space:]]*//' || echo "")
               if [ -z "${LIBRARY_NAME}" ]; then
                 echo "ERROR: cannot find library_name in README.md"
+                exit 1
               fi
             }
 
@@ -533,15 +527,15 @@ spec:
                 echo "use runtime: ${RUNTIME_NAME}"
               fi
 
-              is_supported=$(jq -r --arg framework "${LIBRARY_NAME}" '.spec.supportedModelFormats[] | select(.name == $framework) | .name' ${runtime})
+              is_supported=$(jq -r --arg framework "${LIBRARY_NAME}" '.spec.supportedModelFormats[] | select(.name == $framework) | .name' ${runtime} 2>/dev/null || echo "")
               if [ -z "${is_supported}" ]; then
                 echo "LIBRARY_NAME ${LIBRARY_NAME} is not supported by runtime ${RUNTIME_NAME}"
                 exit 1
               fi
 
-              args=$(jq -r '.spec.containers[0].args[]? | "      - |-\n        " + .' ${runtime})
-              cmds=$(jq -r '.spec.containers[0].command[]? | "      - |-\n        " + .' ${runtime})
-              envs=$(jq -r '.spec.containers[0].env[]? | "      - name: " + .name + "\n        value: |-\n          " + (.value // "")' ${runtime})
+              args=$(jq -r '.spec.containers[0].args[]? | "      - |-\n        " + .' ${runtime} 2>/dev/null || echo "")
+              cmds=$(jq -r '.spec.containers[0].command[]? | "      - |-\n        " + .' ${runtime} 2>/dev/null || echo "")
+              envs=$(jq -r '.spec.containers[0].env[]? | "      - name: " + .name + "\n        value: |-\n          " + (.value // "")' ${runtime} 2>/dev/null || echo "")
               if [ -n "${args}" ]; then
                 RUNTIME_ARGS="
                   args:
@@ -572,7 +566,7 @@ spec:
               "OUT_CLUSTER_ENDPOINT": "${out_cluster_endpoint}"
             }
             EOF
-                status=$(jq -r '.status.conditions[] | select(.type == "Ready") | .status' ${inference_service})
+                status=$(jq -r '.status.conditions[] | select(.type == "Ready") | .status' ${inference_service} 2>/dev/null || echo "")
                 if [ "${status}" = "True" ]; then
                   echo "InferenceService ${INFERENCE_SERVICE_NAME} is ready"
                   echo "Wait for deployments to be ready"
@@ -708,22 +702,25 @@ The pipeline includes the following key parameters that need to be configured:
 - `UPDATE_IF_EXISTS`: Whether to update the InferenceService if it already exists (default: "true")
 
 **Repository Parameters:**
-- `MODEL_REPO`: The name of the model repository containing the model
-- `MODEL_REPO_BRANCH`: The branch of the model repository to use (default: "")
-- `MODEL_REPO_TAG`: The tag of the model repository to use (default: "")
+- `MODEL_REPO`: The name of the model repository containing the model (required)
+- `MODEL_REPO_BRANCH`: The branch of the model repository to use (default: "", cannot be set together with MODEL_REPO_TAG)
+- `MODEL_REPO_TAG`: The tag of the model repository to use (default: "", cannot be set together with MODEL_REPO_BRANCH)
 
 **Runtime Parameters:**
 - `RUNTIME_NAME`: The name of the serving runtime to use, if empty, will use the first runtime with the same class as RUNTIME_CLASS (default: "")
-- `RUNTIME_CLASS`: The class of the serving runtime
+- `RUNTIME_CLASS`: The class of the serving runtime (required if RUNTIME_NAME is empty)
 
 **Storage Parameters:**
 - `EPHIMERAL_STORAGE_SIZE`: The size of ephemeral storage for the InferenceService (default: "10Gi", will use default value if both PVC_NAME and EPHIMERAL_STORAGE_SIZE are empty)
 - `PVC_NAME`: The name of an existing PVC to use for the InferenceService (default: "", if specified, EPHIMERAL_STORAGE_SIZE will be ignored)
 
 **Replica Parameters:**
-- `MIN_REPLICAS`: The minimum number of replicas for the InferenceService (default: "1")
-- `MAX_REPLICAS`: The maximum number of replicas for the InferenceService (default: "1")
-- `ENABLE_SERVERLESS`: Whether to enable serverless mode for the InferenceService (default: "false")
+- `MIN_REPLICAS`: The minimum number of replicas for the InferenceService (default: "1", must be >= 0)
+- `MAX_REPLICAS`: The maximum number of replicas for the InferenceService (default: "1", must be >= MIN_REPLICAS)
+
+**Note**: The deployment mode is automatically determined based on replica configuration:
+- If `MIN_REPLICAS` equals `MAX_REPLICAS`, the service will use `RawDeployment` mode
+- If `MIN_REPLICAS` differs from `MAX_REPLICAS`, the service will use `Serverless` mode
 
 **Resource Parameters:**
 - `CPU_REQUEST`: Request CPU (default: "1", leave empty to not request CPU)
@@ -733,7 +730,7 @@ The pipeline includes the following key parameters that need to be configured:
 - `NVIDIA_GPUALLOC`: NVIDIA GPU allocation - number of GPU cards (default: "1", leave empty to not allocate GPU)
 - `NVIDIA_GPUCORES`: NVIDIA GPU cores - percentage of compute power per card, range 1-100 (default: "50", leave empty to not configure GPU cores)
 - `NVIDIA_GPUMEM`: NVIDIA GPU memory - memory usage per card in MiB (default: "4096", leave empty to not configure GPU memory)
-- `NVIDIA_GPU`: NVIDIA GPU count - number of GPU cards allocated when using NVIDIA GPU plugin, cannot be used together with Hami parameters (default: "", leave empty to not set)
+- `NVIDIA_GPU`: NVIDIA GPU count - number of GPU cards allocated when using NVIDIA GPU plugin, cannot be used together with Hami parameters (NVIDIA_GPUALLOC, NVIDIA_GPUCORES, NVIDIA_GPUMEM) (default: "", leave empty to not set)
 
 ### Prepare Model Repository
 
