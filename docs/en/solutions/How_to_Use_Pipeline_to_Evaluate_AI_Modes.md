@@ -39,7 +39,7 @@ Clone the code from the [yolov5 v7.0](https://github.com/ultralytics/yolov5) of 
 
 ### Prepare the Model to be Evaluated
 
-The model to be evaluated comes from the output of the `yolov5-training` pipeline. Refer to the [How to Use Pipeline to Train AI Models](How_to_Use_Pipeline_to_Train_AI_Models.md) for details on how to train models and obtain the trained model files.
+The model to be evaluated comes from the output of the `yolov5-training` pipeline. Refer to the **How to Use Pipeline to Train AI Models** for details on how to train models and obtain the trained model files.
 
 ### Prepare Validation Dataset
 
