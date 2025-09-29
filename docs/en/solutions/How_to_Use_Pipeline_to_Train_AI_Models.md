@@ -341,7 +341,7 @@ spec:
             - TRAIN_ARG_DEVICE=$(params.TRAIN_ARG_DEVICE)
         - name: script
           value: |-
-            set -exuo pipefail
+            set -euo pipefail
             export "$@"
 
             if [ -z "$MODEL_REPO_URL" ]; then
@@ -532,7 +532,7 @@ spec:
             OUTPUT_MODEL_NAME=$(basename ${OUTPUT_MODEL_REPO_URL})
 
             COMMAND="
-                        set -exuo pipefail
+                        set -euo pipefail
                         function url_encode() {
                           local input=\"\$1\"
                           printf '%s' \"\$input\" | sed 's/%/%25/g; s/:/%3A/g; s/@/%40/g; s/ /%20/g'
@@ -541,11 +541,9 @@ spec:
                         function build_git_url() {
                           local url=\"\$1\"
                           local encoded_user=\$(url_encode \"\$GIT_USER\")
-                          set +x
                           local encoded_token=\$(url_encode \"\$GIT_TOKEN\")
                           local url_no_https=\"\${url#https://}\"
                           echo \"https://\${encoded_user}:\${encoded_token}@\$url_no_https\"
-                          set -x
                         }
 
                         function config_safe_directory() {
@@ -557,10 +555,7 @@ spec:
                           local url=\$1
                           local branch=\$2
                           local name=\$(basename \$url)
-
-                          set +x
                           local clone_url=\$(build_git_url \"\$url\")
-                          set -x
 
                           branch=\${branch#refs/heads/}
 
@@ -577,13 +572,9 @@ spec:
                             echo \"Cloning repository to current directory\"
                             if [ -n \"\$branch\" ]; then
                               echo \"Cloning branch: \$branch\"
-                              set +x
                               GIT_LFS_SKIP_SMUDGE=1 git -c http.sslVerify=false -c lfs.activitytimeout=36000 clone -b \$branch \"\$clone_url\" .
-                              set -x
                             else
-                              set +x
                               GIT_LFS_SKIP_SMUDGE=1 git -c http.sslVerify=false -c lfs.activitytimeout=36000 clone \"\$clone_url\" .
-                              set -x
                             fi
                             if [ -d .git ]; then
                               echo \"Git repository confirmed, executing lfs pull\"
@@ -625,11 +616,8 @@ spec:
                           git -c user.name='AMLSystemUser' -c user.email='aml_admin@cpaas.io' commit -am \"fine tune push auto commit\"
 
                           # Push to remote repository
-                          set +x
                           local push_url=\$(build_git_url \"\$url\")
                           git -c http.sslVerify=false -c lfs.activitytimeout=36000 push -u \"\$push_url\" \"\$branch\"
-                          set -x
-
                           echo \"Successfully pushed to \$url on branch \$branch\"
                         }
 
