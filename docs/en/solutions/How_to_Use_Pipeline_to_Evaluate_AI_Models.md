@@ -521,7 +521,7 @@ spec:
             echo "Evaluation argument device: $EVALUATE_ARG_DEVICE"
             echo "Evidently endpoint: $EVIDENTLY_ENDPOINT"
             echo "Evidently project name: $EVIDENTLY_PROJECT_NAME"
-            echo "Evidently api key: $EVIDENTLY_API_KEY"
+            echo "Evidently api key: [REDACTED]"
 
             EVIDENTLY_PROJECT_ID=""
 
@@ -974,7 +974,7 @@ spec:
               report_url=$(grep -E '^Report URL:' /tmp/report.log | awk '{print $3}')
               mAP_0_5_0_95=$(grep -E '^mAP_0_5_0_95:' /tmp/report.log | awk '{print $2}')
               mAP_0_5=$(grep -E '^mAP_0_5:' /tmp/report.log | awk '{print $2}')
-              mAP_0_75=$(grep -E '^mAP_0_75:' /tmp/report.log | awk '{print $3}')
+              mAP_0_75=$(grep -E '^mAP_0_75:' /tmp/report.log | awk '{print $2}')
               mAP_small=$(grep -E '^mAP_small:' /tmp/report.log | awk '{print $2}')
               mAP_medium=$(grep -E '^mAP_medium:' /tmp/report.log | awk '{print $2}')
               mAP_large=$(grep -E '^mAP_large:' /tmp/report.log | awk '{print $2}')
@@ -990,12 +990,12 @@ spec:
                 "Results": [
                   {
                     "metric": "mAP_0_5_0_95",
-                    "description": "Average Precision, IoU=0.50:0.95 area=all maxDets=100)",
+                    "description": "Average Precision, IoU=0.50:0.95 area=all maxDets=100",
                     "value": ${mAP_0_5_0_95}
                   },
                   {
                     "metric": "mAP_0_5",
-                    "description": "Average Precision, IoU=0.50 area=all maxDets=100)",
+                    "description": "Average Precision, IoU=0.50 area=all maxDets=100",
                     "value": ${mAP_0_5}
                   },
                   {
