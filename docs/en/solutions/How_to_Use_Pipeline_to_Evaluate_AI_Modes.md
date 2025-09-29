@@ -47,9 +47,9 @@ Download the validation images from [val2017.zip](http://images.cocodataset.org/
 
 The directory structure should be:
 
-```
+```text
 images/
-   val2017/          # val2017.zip extracted content
+  val2017/           # val2017.zip extracted content
 annotations/         # annotations_trainval2017.zip extracted content
 val2017.txt          # File referenced by coco.yaml, generated with the following command:
                      # for i in $(ls images/val2017); do echo "../datasets/coco/images/val2017/$i"; done > val2017.txt
