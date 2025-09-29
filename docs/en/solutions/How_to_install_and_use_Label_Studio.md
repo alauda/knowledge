@@ -315,4 +315,102 @@ Label Studio has no default username and password. Users can complete new user r
 
 # Label Studio Quickstart
 
-For Label Studio quickstart guide, please refer to the official documentation: [Getting Started With Label Studio: A Step-By-Step Guide](https://labelstud.io/learn/getting-started-with-label-studio/)
+## S3 Integration
+
+Label Studio supports integration with S3-compatible storage for importing data and exporting annotations. This includes Amazon S3, MinIO, and other S3-compatible storage services.
+
+### Prerequisites
+
+- S3-compatible storage bucket with appropriate permissions
+- Access credentials (Access Key ID and Secret Access Key)
+
+#### Using ACP MinIO as S3 Storage
+
+You can use the built-in MinIO from ACP as S3 storage:
+
+1. **Object Storage**: In Administrator view, go to `Storage` / `Object Storage` to check if MinIO is already created. If not, click **Configure Now** to start the setup process.
+
+2. **Deploy MinIO Operator**: The `Create Object Storage` process has two steps. First, click **Deploy Operator** to deploy the MinIO Operator following the page guidance.
+
+3. **Create MinIO Cluster**: After the MinIO Operator is deployed, proceed to the second step `Create Cluster`. Fill in the required information:
+   - **Name**: Cluster name
+   - **Access Key** and **Secret Key**: Administrator credentials
+   - **Resource Configuration**: Resource allocation settings
+   - **Storage Pool Configuration**: Storage pool settings
+   - **Access Configuration**: Access method settings
+
+   Click **Create Cluster** to create the MinIO Cluster.
+
+4. **Get Access Information**: The MinIO Cluster access address can be found in the **Access Method** tab.
+
+5. **Manage Buckets and Credentials**: Use `mc` client to access the MinIO Cluster, create buckets, and generate low-privilege Access Keys/Secret Keys. See [MinIO Client Documentation](https://docs.min.io/community/minio-object-store/reference/minio-mc.html) for usage details.
+
+### Using S3 with Label Studio
+
+1. **Access Storage Settings**
+   - Open Label Studio project
+   - Go to **Settings** > **Cloud Storage**
+
+2. **Add Source Storage**
+   - Click **Add Source Storage**
+   - Select **AWS S3** as storage type
+   - Fill in the required information:
+     - **Storage Title**: Name for the storage connection
+     - **Bucket Name**: S3 bucket name
+     - **Region Name**: Storage region (e.g., us-east-1 for AWS S3, can be empty for MinIO)
+     - **S3 Endpoint**: Optional custom S3 endpoint (leave empty for AWS S3, required for MinIO)
+     - **Access Key ID**: Access key
+     - **Secret Access Key**: Secret key
+     - **Session Token**: Optional session token for temporary credentials
+     - **Bucket Prefix**: Optional path prefix in the bucket (e.g., `data/`, `input/`)
+     - **File Filter Regex**: Optional regex to filter files (e.g., `.*csv` or `.*(jpe?g|png|tiff)`)
+   - Configure optional settings:
+     - **Treat every bucket object as a source file**: Check for media files, uncheck for JSON task files
+     - **Recursive scan**: Enable to scan subdirectories recursively
+     - **Use pre-signed URLs**: Enable for direct browser access to S3 (recommended)
+     - **Expiration minutes**: URL expiration time (default: 15 minutes) when **Use pre-signed URLs** enabled
+   - Click **Check Connection** to test connectivity
+   - Click **Add Storage** to create the storage connection
+
+3. **Add Target Storage** (Optional)
+   - Click **Add Target Storage** to export annotations to S3
+   - Fill in similar S3 parameters like Source Storage
+   - Additional Target Storage parameters:
+     - **SSE KMS Key ID**: Optional KMS key for server-side encryption
+   - Configure optional settings:
+     - **Can delete objects from storage**: Enable to allow deletion of annotations from storage
+   - Click **Check Connection** to test connectivity
+   - Click **Add Storage** to create the storage connection
+
+4. **Upload Data to S3**
+   - Upload data files to the configured S3 bucket and prefix path
+   - Ensure data files are accessible with the configured access credentials
+   - Use `mc` client or AWS CLI for bulk uploads
+
+5. **Import Data**
+   - Click **Sync Storage** under `Source Cloud Storage` to import data from S3
+   - Use sync whenever new data is added to the S3 bucket
+
+6. **Perform Annotations**
+   - Access the imported data in Label Studio interface
+   - Complete annotations using the configured labeling interface
+
+7. **Export Annotations**
+   - Click **Export** button to download annotation results in various formats (JSON, CSV, etc.)
+   - Or click **Sync Storage** for `Target Cloud Storage` to push annotations to S3
+   - **Note**: Target Storage exports annotations in JSON format only. Use Label Studio SDK to convert JSON annotations to other formats (CSV, COCO, Pascal VOC, YOLO, etc.). See [SDK converter](https://github.com/HumanSignal/label-studio-sdk/tree/master/src/label_studio_sdk/converter) for details.
+
+8. **Apply Data and Annotations to Model Training/Validation**
+   - Download training data and annotations from S3 using `mc` client or AWS Python SDK (boto3). See [S3 examples](https://boto3.amazonaws.com/v1/documentation/api/latest/guide/s3-examples.html) for implementation details.
+   - Convert annotation format using Label Studio SDK if needed.
+   - Integrate data into machine learning pipelines.
+   - Use annotations for model training or validation.
+
+### Storage Structure Suggestions
+
+- Use different buckets or different path prefixes for different projects to avoid data conflicts.
+- Target and Source can use the same S3 bucket with different path prefixes (e.g., `input/` for source, `output/` for target), or use different buckets for better data isolation and access control.
+
+## Additional Resources
+
+For more Label Studio tutorials and guides, see [Getting Started With Label Studio](https://labelstud.io/learn/getting-started-with-label-studio/)
