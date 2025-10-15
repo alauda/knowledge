@@ -129,7 +129,7 @@ kubectl -n $NAMESPACE get postgresql $PRIMARY_CLUSTER -ojsonpath='{.status.Postg
 kind: Secret
 apiVersion: v1
 metadata:
-  name: bootstrap-standby
+  name: standby-bootstrap-secret
   namespace: standby-namespace  # Replace with your standby cluster namespace
 type: kubernetes.io/basic-auth
 data:
@@ -275,7 +275,7 @@ kubectl -n $NAMESPACE exec $STANDBY_CLUSTER-0 -- patronictl list
 Check replication status on primary cluster:
 
 ```bash
-kubectl exec $(kubectl get pod -l spilo-role=master,cluster-name=$PRIMARY_CLUSTER | tail -n+2 | awk '{print $1}') -- curl -s localhost:8008 | jq
+kubectl exec $(kubectl -n $NAMESPACE get pod -l spilo-role=master,cluster-name=$PRIMARY_CLUSTER | tail -n+2 | awk '{print $1}') -- curl -s localhost:8008 | jq
 ```
 
 ## Disaster Recovery
