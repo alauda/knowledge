@@ -132,9 +132,9 @@ metadata:
   name: standby-bootstrap-secret
   namespace: standby-namespace  # Replace with your standby cluster namespace
 type: kubernetes.io/basic-auth
-data:
-  username: cG9zdGdyZXM=  # base64 encoded "postgres"
-  password: cG9zdGdyZXMtcGFzc3dvcmQ=  # base64 encoded "postgres-password"
+stringData:
+  username: postgres
+  password: "<YOUR-PRIMARY-ADMIN-PASSWORD>"
 ```
 
 **Important Notes:**
@@ -307,14 +307,13 @@ Standby cluster failures don't affect primary operations. Recovery is automatic:
 - "Exception when changing replication slots" errors in standby node logs
 - Specific error traceback showing TypeError with '>' not supported between 'int' and 'NoneType'
 - Example error log:
-```
-2025-10-10 09:06:19,452 ERROR:Exception when changing replication slots
-Traceback(most recent call last):
-  File "/usr/local/lib/pvthon3,10/dist-packages/patroni/postaresal/slots,py", line 523, in svnc replication slots
-    self,ensure physical slots(slots)
-  File "/usr/local/lib/python3.10/dist-packages/patroni/postgresql/slots.py", line 383,in _ensure_physical_slots
-    if lsn and lsn > value['restart lsn']: # The slot has feedback in Dcs and needs to be advanced
-TypeError:'>'not supported between instances of 'int' and 'NoneType'
+```text
+2025-10-10T09:06:19.452Z ERROR: Exception when changing replication slots
+Traceback (most recent call last):
+  ...
+  File "/usr/local/lib/python3.10/dist-packages/patroni/postgresql/slots.py", line 383, in _ensure_physical_slots
+    if lsn and lsn > value['restart_lsn']:  # The slot has feedback in DCS and needs to be advanced
+TypeError: '>' not supported between instances of 'int' and 'NoneType'
 ```
 - Cluster operations and replication may continue to function normally despite these errors
 
