@@ -26,7 +26,7 @@ This guide provides comprehensive instructions for setting up PostgreSQL hot sta
 
 ## Environment Information
 
-Applicable Versions: ACP 4.1.0+, PostgreSQL Operator 4.1.7+
+Applicable Versions: >=ACP 4.1.0, PostgreSQL Operator: >=4.1.7
 
 ## Quick Reference
 
@@ -50,7 +50,7 @@ Applicable Versions: ACP 4.1.0+, PostgreSQL Operator 4.1.7+
 
 Before implementing PostgreSQL hot standby, ensure you have:
 
-- ACP v4.1.0 or later with PostgreSQL Operator v4.1.7+
+- ACP v4.1.0 or later with PostgreSQL Operator v4.1.7 or later
 - PostgreSQL plugin deployed following the [installation guide](https://docs.alauda.io/postgresql/4.1/installation.html)
 - Basic understanding of PostgreSQL operations and Kubernetes concepts
 - Sufficient storage and network resources for replication
