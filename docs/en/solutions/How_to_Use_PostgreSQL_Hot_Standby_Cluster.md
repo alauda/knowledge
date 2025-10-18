@@ -53,7 +53,18 @@ Before implementing PostgreSQL hot standby, ensure you have:
 - ACP v4.1.0 or later with PostgreSQL Operator v4.1.7 or later
 - PostgreSQL plugin deployed following the [installation guide](https://docs.alauda.io/postgresql/4.1/installation.html)
 - Basic understanding of PostgreSQL operations and Kubernetes concepts
-- Sufficient storage and network resources for replication
+- Read the [PostgreSQL Operator Basic Operations Guide](https://docs.alauda.io/postgresql/4.1/functions/index.html) to understand basic operations such as creating instances, backups, and monitoring
+- **Storage Resources**:
+  - Primary cluster: Storage capacity should accommodate database size plus Write-Ahead Log (WAL) files (typically 10-20% additional space)
+  - Standby cluster: Same storage capacity as primary cluster to ensure complete data replication
+  - Consider future growth and set appropriate `max_slot_wal_keep_size` (minimum 10GB recommended)
+- **Network Resources**:
+  - Intra-cluster: Standard Kubernetes network performance
+  - Cross-cluster: Low-latency connection (<20ms) with sufficient bandwidth (at least 1 Gbps for production workloads)
+  - Stable network connectivity to prevent replication interruptions
+- **Compute Resources**:
+  - Primary cluster: Adequate CPU and memory for both database operations and replication processes
+  - Standby cluster: Similar CPU and memory allocation as primary to handle read operations and potential promotion
 
 ### Important Limitations
 
@@ -70,9 +81,10 @@ Before implementing PostgreSQL hot standby, ensure you have:
 
 **Using Web Console:**
 
-1. Navigate to Applications → Create Instance
-2. Complete basic PostgreSQL configuration
-3. Switch to YAML view and enable cluster replication:
+Refer to the [Create Instance documentation](https://docs.alauda.io/postgresql/4.1/functions/01_create_instance.html) for detailed instructions on creating a PostgreSQL instance. Then, to enable primary cluster configuration for hot standby:
+
+1. Complete basic PostgreSQL configuration
+2. Switch to YAML view and enable cluster replication:
 
 ```yaml
 spec:
@@ -86,6 +98,8 @@ spec:
 4. Complete instance creation and wait for Running status
 
 **Using Command Line:**
+
+Use the following command to create a primary cluster with replication enabled:
 
 ```bash
 PRIMARY_CLUSTER="acid-primary"
@@ -114,9 +128,11 @@ spec:
 EOF
 ```
 
-Verify cluster status:
+Verify cluster status (expected output: "Running"):
+
 ```bash
-kubectl -n $NAMESPACE get postgresql $PRIMARY_CLUSTER -ojsonpath='{.status.PostgresClusterStatus}{"\n"}'
+$ kubectl -n $NAMESPACE get postgresql $PRIMARY_CLUSTER -ojsonpath='{.status.PostgresClusterStatus}{"\n"}'
+Running
 ```
 
 #### Standby Cluster Configuration
@@ -204,7 +220,12 @@ EOF
 
 Verify standby status:
 ```bash
-kubectl -n $NAMESPACE exec $STANDBY_CLUSTER-0 -- patronictl list
+$ kubectl -n $NAMESPACE exec $STANDBY_CLUSTER-0 -- patronictl list
++ Cluster: acid-standby (7562204126329651274) -------+-----------+----+-----------+
+| Member         | Host             | Role           | State     | TL | Lag in MB |
++----------------+------------------+----------------+-----------+----+-----------+
+| acid-standby-0 | fd00:10:16::29b8 | Standby Leader | streaming |  1 |           |
++----------------+------------------+----------------+-----------+----+-----------+
 ```
 
 ### Cross-cluster Setup
@@ -256,7 +277,12 @@ kubectl -n $NAMESPACE patch pg $PRIMARY_CLUSTER --type=merge -p '{"spec":{"clust
 
 Verify demotion:
 ```bash
-kubectl -n $NAMESPACE exec $PRIMARY_CLUSTER-0 -- patronictl list
+$ kubectl -n $NAMESPACE exec $PRIMARY_CLUSTER-0 -- patronictl list
++ Cluster: acid-primray (7562204126329651274) -------+---------+----+-----------+
+| Member         | Host             | Role           | State   | TL | Lag in MB |
++----------------+------------------+----------------+---------+----+-----------+
+| acid-primray-0 | fd00:10:16::29b3 | Standby Leader | running |  1 |           |
++----------------+------------------+----------------+---------+----+-----------+
 ```
 
 #### Phase 2: Promote Standby to Primary
@@ -267,7 +293,13 @@ kubectl -n $NAMESPACE patch pg $STANDBY_CLUSTER --type=merge -p '{"spec":{"clust
 
 Verify promotion:
 ```bash
-kubectl -n $NAMESPACE exec $STANDBY_CLUSTER-0 -- patronictl list
+$ kubectl -n $NAMESPACE exec $STANDBY_CLUSTER-0 -- patronictl list
++ Cluster: acid-standby (7562204126329651274) -----+-----------+----+-----------+
+| Member         | Host             | Role         | State     | TL | Lag in MB |
++----------------+------------------+--------------+-----------+----+-----------+
+| acid-standby-0 | fd00:10:16::29b8 | Leader       | running   |  2 |           |
+| acid-standby-1 | fd00:10:16::2a2e | Sync Standby | streaming |  2 |         0 |
++----------------+------------------+--------------+-----------+----+-----------+
 ```
 
 ### Monitoring Replication Status
@@ -275,7 +307,65 @@ kubectl -n $NAMESPACE exec $STANDBY_CLUSTER-0 -- patronictl list
 Check replication status on primary cluster:
 
 ```bash
-kubectl exec $(kubectl -n $NAMESPACE get pod -l spilo-role=master,cluster-name=$PRIMARY_CLUSTER | tail -n+2 | awk '{print $1}') -- curl -s localhost:8008 | jq
+$ kubectl exec $(kubectl -n $NAMESPACE get pod -l spilo-role=master,cluster-name=$PRIMARY_CLUSTER | tail -n+2 | awk '{print $1}') -- curl -s localhost:8008 | jq
+{
+  "state": "running",
+  "postmaster_start_time": "2025-10-18 02:52:03.144373+00:00",
+  "role": "standby_leader",
+  "server_version": 160010,
+  "xlog": {
+    "received_location": 503637736,
+    "replayed_location": 503637736,
+    "replayed_timestamp": "2025-10-18 02:55:37.197686+00:00",
+    "paused": false
+  },
+  "timeline": 2,
+  "replication_state": "streaming",
+  "dcs_last_seen": 1760756364,
+  "database_system_identifier": "7562204126329651274",
+  "patroni": {
+    "version": "3.2.2",
+    "scope": "acid-primary",
+    "name": "acid-primary-0"
+  }
+}
+
+$ kubectl exec $(kubectl -n $NAMESPACE get pod -l spilo-role=master,cluster-name=$STANDBY_CLUSTER | tail -n+2 | awk '{print $1}') -- curl -s localhost:8008 | jq
+{
+  "state": "running",
+  "postmaster_start_time": "2025-10-17 14:57:25.629615+00:00",
+  "role": "master",
+  "server_version": 160010,
+  "xlog": {
+    "location": 503640096
+  },
+  "timeline": 2,
+  "replication": [
+    {
+      "usename": "standby",
+      "application_name": "acid-primary-0",
+      "client_addr": "fd00:10:16::29b3",
+      "state": "streaming",
+      "sync_state": "async",
+      "sync_priority": 0
+    },
+    {
+      "usename": "standby",
+      "application_name": "acid-standby-1",
+      "client_addr": "fd00:10:16::2a2e",
+      "state": "streaming",
+      "sync_state": "sync",
+      "sync_priority": 1
+    }
+  ],
+  "dcs_last_seen": 1760756544,
+  "database_system_identifier": "7562204126329651274",
+  "patroni": {
+    "version": "3.2.2",
+    "scope": "acid-standby",
+    "name": "acid-standby-0"
+  }
+}
 ```
 
 ## Disaster Recovery
