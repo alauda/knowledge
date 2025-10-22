@@ -1,10 +1,11 @@
 ---
+kind:
+   - Solution
 products: 
   - Alauda Application Services
-kind:
-  - Solution
 ProductsVersion:
-   - 4.1.0,4.2.x
+   - 3.x,4.x
+id: KB251000009
 ---
 
 # PostgreSQL Hot Standby Cluster Configuration Guide
