@@ -6,7 +6,7 @@ products:
 ProductsVersion:
   - '4.1.0,4.2.x'
 id: KB250900006
-sourceSHA: 726221b05dc613a365febeded86555f7b539b28e28b312c4b62a48b140d8fa5c
+sourceSHA: 624e664936baac664db395b551e49ca9271ca7ad288752f87f155608559e3ce6
 ---
 
 # 如何部署 nmstate
@@ -47,7 +47,7 @@ systemctl status NetworkManager
 
 #### SELinux 配置
 
-如果环境中存在 SELinux，则需要配置额外的宽松策略。如果未被允许，在部署期间，NetworkManager 到 nm_handler 的 dbus 消息将被拒绝，导致 nm_handler 保持在 0/1 状态。此问题仅在 MicroOS 中遇到，而在 Red Hat 中未遇到。
+如果环境中存在 SELinux，则需要配置额外的宽松策略。如果未被允许，在部署期间，来自 NetworkManager 到 nm_handler 的 dbus 消息将被拒绝，导致 nm_handler 保持在 0/1 状态。此问题仅在 MicroOS 中遇到，而在 Red Hat 中未遇到。
 
 **创建 SELinux 策略文件**
 
@@ -76,15 +76,35 @@ sudo semodule -i nmstate-networkmanager-dbus.pp
 
 ### 安装步骤
 
-#### 使用离线安装脚本安装
+#### 使用离线安装方法安装
 
-**先决条件：** 确保安装脚本在附件目录中可用。
+**先决条件：** 访问具有市场功能的 Alauda 容器平台。
 
-**运行安装脚本**
+**安装步骤：**
 
-```bash
-attachments/nmstate/install.sh
-```
+1. **从 AC 市场下载：**
+   - 导航到 **管理员** → **市场** → **应用程序**
+   - 搜索 "Alauda Build of Kubernetes NMState Operator"
+   - 下载安装包
+
+2. **部署到目标环境：**
+
+   - 使用 violet push 将下载的包部署到目标环境
+
+   **violet push 命令示例：**
+
+   ```bash
+   violet push kubernetes-nmstate-operator.alpha.amd64.v4.1.4.tgz \
+     --platform-address "$PLATFORM_URL" \
+     --platform-username "$USERNAME" \
+     --platform-password "$PASSWORD" \
+     --clusters $CLUSTER_NAME
+   ```
+
+3. **通过 OperatorHub 安装：**
+   - 导航到 **管理员** → **市场** → **OperatorHub**
+   - 搜索 "kubernetes Nmstate" 组件
+   - 点击 **安装** 部署操作员
 
 #### 使用开源方法安装（替代）
 
@@ -143,11 +163,11 @@ nmstate-webhook-54d8bd69b7-4lml4       1/1     Running   0          2d19h
 **显示网络信息**
 
 ```bash
-# 执行 nmstatectl show 以查看此节点的所有网络信息，包括路由、网络卡、策略路由等。
+# 执行 nmstatectl show 查看此节点的所有网络信息，包括路由、网络卡、策略路由等。
 nmstatectl show
 ```
 
-在主节点上，您还可以查看 NodeNetworkState 以查看相同的网络卡、路由和其他信息：
+在主节点上，您还可以查看 NodeNetworkState，以查看相同的网络卡、路由和其他信息：
 
 **检查节点网络状态**
 
@@ -246,7 +266,7 @@ Wired connection 3  xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx  ethernet  eth3
    - 配置：名称（例如，`provider`），默认网络卡选择 `bond0`
 
 2. **配置 VLAN**：
-   - 导航路径：**平台管理** → **网络** → **VLAN** → **创建 VLAN**
+   - 导航路径：**平台管理** → **网络** → **VLANs** → **创建 VLAN**
    - 配置：名称（例如，`vlan341`），VLAN ID（例如，`341`），与上一步的桥接网络关联
 
 3. **配置子网**：
@@ -259,13 +279,32 @@ Wired connection 3  xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx  ethernet  eth3
 
 ### 卸载命令
 
-#### 使用离线卸载脚本
+#### 使用离线卸载方法
 
-**运行卸载脚本**
+**卸载步骤：**
 
-```bash
-attachments/nmstate/uninstall.sh
-```
+1. **通过 OperatorHub 移除：**
+   - 导航到 **管理员** → **市场** → **OperatorHub**
+   - 找到已安装的 "kubernetes Nmstate" 组件
+   - 点击 **卸载** 移除操作员
+
+2. **通过 AC 市场清理：**
+   - 导航到 **管理员** → **市场** → **应用程序**
+   - 如有需要，移除 "Alauda Build of Kubernetes NMState Operator"
+
+3. **手动清理：**
+   - 删除 nmstate 实例：
+     ```bash
+     kubectl delete nmstates.nmstate.io nmstate
+     ```
+
+   - 手动清理 CRD：
+     ```bash
+     kubectl delete crd nmstates.nmstate.io
+     kubectl delete crd nodenetworkconfigurationenactments.nmstate.io
+     kubectl delete crd nodenetworkconfigurationpolicies.nmstate.io
+     kubectl delete crd nodenetworkstates.nmstate.io
+     ```
 
 #### 使用开源方法卸载（替代）
 
