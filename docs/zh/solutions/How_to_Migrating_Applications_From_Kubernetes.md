@@ -4,77 +4,61 @@ kind:
 products:
   - Alauda Container Platform
 ProductsVersion:
-  - 3.x,4.x
+  - '3.x,4.x'
 ID: KB250900014
 id: KB1761295416-3095
+sourceSHA: 1e9c3269b4d67e5fdf2bf2b8c10849c9f04b47084fd22e1092ccce3605264a5a
 ---
 
-# Migrating Applications from Kubernetes to ACP
+# 从 Kubernetes 迁移应用到 ACP
 
-## Overview
+## 概述
 
-This guide describes how to migrate applications from a standard
-Kubernetes cluster to Alauda Container Platform (ACP) while reusing
-existing Kubernetes manifests (YAML files).
+本指南描述了如何将应用从标准 Kubernetes 集群迁移到 Alauda Container Platform (ACP)，同时重用现有的 Kubernetes 清单（YAML 文件）。
 
-## Environment Information
+## 环境信息
 
-ACP is highly compatible with standard Kubernetes APIs. Most common
-workloads (Deployments, Services, ConfigMaps, Secrets, StatefulSets,
-DaemonSets) can be deployed directly to ACP with little or no
-modification.
+ACP 与标准 Kubernetes API 高度兼容。大多数常见工作负载（Deployments、Services、ConfigMaps、Secrets、StatefulSets、DaemonSets）可以直接部署到 ACP，几乎无需修改。
 
-## Prerequisites
+## 先决条件
 
-- **Alauda Container Platform environment**: You already have an
-  account (such as LDAP) and can log in to ACP.
-- **Projects and namespaces**: Target projects and namespaces have
-  been created in ACP and permissions assigned.
-- **Ingress Nginx**: The ingress-nginx controller is already deployed
-  in ACP.
-- **Istio and Gateway**: Istio has been deployed on ACP and a Gateway
-  for the application created.
-- **Required tools**:
+- **Alauda Container Platform 环境**：您已经拥有一个账户（如 LDAP），并可以登录到 ACP。
+- **项目和命名空间**：目标项目和命名空间已在 ACP 中创建并分配了权限。
+- **Ingress Nginx**：ingress-nginx 控制器已在 ACP 中部署。
+- **Istio 和 Gateway**：Istio 已在 ACP 上部署，并为应用创建了 Gateway。
+- **所需工具**：
   - [kubectl
     CLI](https://kubectl.docs.kubernetes.io/installation/kubectl/)
-    (configured to connect to the ACP cluster).
-- **Container registry access**: Confirm that application images have
-  been pushed to the ACP image repository and that users have
-  permission to pull them.
+    （已配置为连接到 ACP 集群）。
+- **容器注册表访问**：确认应用镜像已推送到 ACP 镜像库，并且用户有权限拉取它们。
 
-## Migration Process
+## 迁移过程
 
-ACP supports directly applying existing Kubernetes YAML manifests
-without conversion, simplifying migration.
+ACP 支持直接应用现有的 Kubernetes YAML 清单，无需转换，从而简化迁移。
 
-### 1. Obtaining your application manifests
+### 1. 获取您的应用清单
 
-Prepare the Kubernetes YAML files defining your application's components
-(Deployments, Services, Ingress, etc.).\
-On the master node of the original Kubernetes cluster, run the following command to export YAMLs with kubectl:
+准备定义您应用组件的 Kubernetes YAML 文件（Deployments、Services、Ingress 等）。\
+在原 Kubernetes 集群的主节点上，运行以下命令以使用 kubectl 导出 YAML：
 
 ```bash
-# Export Deployment from the source cluster
+# 从源集群导出 Deployment
 kubectl get deployment <your-app-deployment> -n <source-namespace> -o yaml > yaml-path/deployment.yaml
 
-# Export Service
+# 导出 Service
 kubectl get svc <your-app-service> -n <source-namespace> -o yaml > yaml-path/service.yaml
 
-# Similarly export ConfigMap, Secret, StatefulSet, etc.
+# 同样导出 ConfigMap、Secret、StatefulSet 等
 kubectl get configmap <your-app-configmap> -n <source-namespace> -o yaml > yaml-path/configmap.yaml
 ```
 
-### 2. Reviewing dependencies
+### 2. 审查依赖关系
 
-If your application depends on Custom Resource Definitions (CRDs) or
-Operators (databases, message queues, etc.), ensure those CRDs/Operators
-are installed in the ACP cluster. Also verify that the target namespace
-exists.
+如果您的应用依赖于自定义资源定义（CRDs）或操作器（数据库、消息队列等），请确保这些 CRDs/操作器已在 ACP 集群中安装。同时验证目标命名空间是否存在。
 
-### 3. Change image registry address
+### 3. 更改镜像注册表地址
 
-In the YAML files update `spec.containers[*].image` to point to your ACP
-registry:
+在 YAML 文件中更新 `spec.containers[*].image` 指向您的 ACP 注册表：
 
 ```yaml
 containers:
@@ -82,30 +66,29 @@ containers:
     image: <registry.company.com/project/my-app:1.0.0>
 ```
 
-### 4. Deploying the resources on ACP
+### 4. 在 ACP 上部署资源
 
-On the master node of the ACP cluster and apply Kubernetes resources (skip
-Ingress/VirtualService at this stage):
+在 ACP 集群的主节点上应用 Kubernetes 资源（此阶段跳过 Ingress/VirtualService）：
 
 ```bash
 kubectl apply -f yaml-path/deployment.yaml -n <target-namespace>
 kubectl apply -f yaml-path/service.yaml -n <target-namespace>
-# Other resources similarly
+# 其他资源同样
 ```
 
-You can also apply a whole directory:
+您也可以应用整个目录：
 
 ```bash
 kubectl apply -f yaml-path/ -n <target-namespace>
 ```
 
-### 5. Expose your services
+### 5. 暴露您的服务
 
-After migration expose services using an Istio Gateway or Ingress Nginx.
+迁移后，使用 Istio Gateway 或 Ingress Nginx 暴露服务。
 
-#### 1. Use Istio Gateway
+#### 1. 使用 Istio Gateway
 
-VirtualService defines how traffic is routed to services:
+VirtualService 定义了流量如何路由到服务：
 
 ```yaml
 # virtualservice.yaml
@@ -121,7 +104,7 @@ spec:
   gateways:
     - <istio-gateway-namespace>/<istio-gateway-name>
   hosts:
-    - "<your-app-domain>" # Must match the Gateway hosts
+    - "<your-app-domain>" # 必须与 Gateway 主机匹配
   tls:
     - match:
         - port: 443
@@ -146,15 +129,15 @@ spec:
       simple: RANDOM
 ```
 
-Apply configuration:
+应用配置：
 
 ```bash
 kubectl apply -f virtualservice.yaml -n <your-app-namespace>
 ```
 
-#### 2. Use Ingress Nginx
+#### 2. 使用 Ingress Nginx
 
-Ingress defines how requests are routed to services:
+Ingress 定义了请求如何路由到服务：
 
 ```yaml
 apiVersion: networking.k8s.io/v1
@@ -184,48 +167,46 @@ spec:
         - <your-app-domain>
 ```
 
-Apply configuration:
+应用配置：
 
 ```bash
 kubectl apply -f ingress.yaml -n <your-app-namespace>
 ```
 
-### 6. Verifying the resources
+### 6. 验证资源
 
-Check that your application's Pods, Services and VirtualService are
-running correctly:
+检查您的应用的 Pods、Services 和 VirtualService 是否正常运行：
 
 ```bash
-# Check Deployments
+# 检查 Deployments
 kubectl get deployments -n <your-namespace>
-# Example output:
+# 示例输出：
 # NAME         READY   UP-TO-DATE   AVAILABLE   AGE
 # my-app       3/3     3            3           5m
 
-# Check Pods
+# 检查 Pods
 kubectl get pods -n <your-namespace>
-# Example output:
+# 示例输出：
 # NAME                          READY   STATUS    RESTARTS   AGE
 # my-app-5f9d7b6b9f-abc12       1/1     Running   0          5m
 # my-app-5f9d7b6b9f-def34       1/1     Running   0          5m
 # my-app-5f9d7b6b9f-ghi56       1/1     Running   0          5m
 
-# Check Services
+# 检查 Services
 kubectl get svc -n <your-namespace>
-# Example output:
+# 示例输出：
 # NAME        TYPE        CLUSTER-IP     EXTERNAL-IP   PORT(S)    AGE
 # my-app      ClusterIP   1.1.1.1       <none>        8443/TCP   5m
 
-# Check VirtualService (if using Istio)
+# 检查 VirtualService（如果使用 Istio）
 kubectl get virtualservice -n <your-namespace>
-# Example output:
+# 示例输出：
 # NAME       GATEWAYS                          HOSTS                   AGE
 # my-app     ["ns/gateway-name"]               ["myapp.example.com"]   2m
 ```
 
-Ensure all Pods have READY=1/1 and STATUS=Running, Services have correct
-ports, and VirtualService or Ingress shows as created.
+确保所有 Pods 的 READY=1/1 和 STATUS=Running，Services 具有正确的端口，VirtualService 或 Ingress 显示为已创建。
 
-## [Related Information]
+## \[相关信息]
 
-- [How_to_Migrating_Applications_From_OCP](https://cloud.alauda.io/knowledges#solutions/How_to_Migrating_Applications_From_OCP.html)
+- [如何迁移应用程序从 OCP](https://cloud.alauda.io/knowledges#solutions/How_to_Migrating_Applications_From_OCP.html)
