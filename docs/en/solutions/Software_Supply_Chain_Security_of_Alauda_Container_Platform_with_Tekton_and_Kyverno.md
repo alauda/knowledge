@@ -1,10 +1,11 @@
 ---
 id: KB250600001
-products: 
+products:
    - Alauda Container Platform
 kind:
    - Solution
 ---
+
 # Software Supply Chain Security of Alauda Container Platform with Tekton and Kyverno
 
 ## Overview
@@ -308,7 +309,7 @@ This method uses transparency logs to enhance security by eliminating the need f
 
 You can use [cosign](https://github.com/sigstore/cosign) tool to generate signing key.
 
-```sh
+```shell
 $ COSIGN_PASSWORD={password} cosign generate-key-pair k8s://tekton-pipelines/signing-secrets
 ```
 
@@ -321,7 +322,7 @@ $ COSIGN_PASSWORD={password} cosign generate-key-pair k8s://tekton-pipelines/sig
 
 After the execution, you can view the corresponding Secret resource.
 
-```sh
+```shell
 $ kubectl get secret signing-secrets -n tekton-pipelines -o yaml
 
 apiVersion: v1
@@ -341,27 +342,27 @@ type: Opaque
 
 > If you don't have permission, you can ask the administrator to get the public key.
 
-```sh
+```shell
 $ export NAMESPACE=<tekton-pipelines>
 $ kubectl get secret -n $NAMESPACE signing-secrets -o jsonpath='{.data.cosign\.pub}' | base64 -d > cosign.pub
 ```
 
 ##### Get the signing secret
 
-```sh
+```shell
 $ export NAMESPACE=<tekton-pipelines>
 $ kubectl get secret -n $NAMESPACE signing-secrets -o yaml > signing-secrets.yaml
 ```
 
 ##### Restart Tekton Chains component to make the signing key take effect
 
-```sh
+```shell
 $ kubectl delete pods -n tekton-pipelines -l app=tekton-chains-controller
 ```
 
 Wait for the component to start.
 
-```sh
+```shell
 $ kubectl get pods -n tekton-pipelines -l app=tekton-chains-controller -w
 
 NAME                                        READY   STATUS    RESTARTS   AGE
@@ -507,13 +508,13 @@ There are several ways to specify input and output artifacts:
 - Special type hints for Git repository information
 - Used to track source code repository details
 - Helps in provenance generation for source code
-```yaml
-results:
-  - name: CHAINS-GIT_URL
-    type: string
-  - name: CHAINS-GIT_COMMIT
-    type: string
-```
+  ```yaml
+  results:
+    - name: CHAINS-GIT_URL
+      type: string
+    - name: CHAINS-GIT_COMMIT
+      type: string
+  ```
 
 ##### **\*ARTIFACT_INPUTS**
 
@@ -522,14 +523,14 @@ results:
 
 - Used to specify input artifacts that influenced the build process
 - Helps track dependencies and source materials
-```yaml
-results:
-  - name: first-ARTIFACT_INPUTS
-    type: object
-    properties:
-      uri: {}
-      digest: {}
-```
+  ```yaml
+  results:
+    - name: first-ARTIFACT_INPUTS
+      type: object
+      properties:
+        uri: {}
+        digest: {}
+  ```
 
 ##### **\*IMAGE_URL and \*IMAGE_DIGEST combination**
 ```yaml
@@ -543,34 +544,34 @@ results:
 ##### **IMAGES**
 - Can specify multiple images, separated by commas or newlines
 - Each image must include the complete digest
-```yaml
-results:
-  - name: IMAGES
-    type: string
-```
+  ```yaml
+  results:
+    - name: IMAGES
+      type: string
+  ```
 
 ##### **\*ARTIFACT_URI / \*ARTIFACT_DIGEST combination**
 - Similar to IMAGE_URL/IMAGE_DIGEST but with different naming convention
 - Used for specifying artifact location and its digest
-```yaml
-results:
-  - name: first-ARTIFACT_URI
-    type: string
-  - name: first-ARTIFACT_DIGEST
-    type: string
-```
+  ```yaml
+  results:
+    - name: first-ARTIFACT_URI
+      type: string
+    - name: first-ARTIFACT_DIGEST
+      type: string
+  ```
 
 ##### **\*ARTIFACT_OUTPUTS**
 - Uses object type results
 - Must include uri and digest fields
-```yaml
-results:
-  - name: first-ARTIFACT_OUTPUTS
-    type: object
-    properties:
-      uri: {}
-      digest: {}
-```
+  ```yaml
+  results:
+    - name: first-ARTIFACT_OUTPUTS
+      type: object
+      properties:
+        uri: {}
+        digest: {}
+  ```
 
 ## Chapter 1. Enforcing Image Signature: Automated Signing and Deployment Control
 
@@ -941,15 +942,9 @@ spec:
   - `attestors`: The attestors to be used for the image verification.
     - `count`: The count of the attestors need to be matched.
     - `entries`: The entries of the attestors.
-      - `keys`: The keys of the attestors.
-        - `publicKeys`: The public keys of the attestors.
-          - This public key is the same as the public key `cosign.pub` in the `signing-secrets` secret.
-        - `ctlog`: The ctlog of the attestors.
-          - `ignoreSCT`: Whether to ignore the SCT.
-            - In isolated network environments, ignore the SCT first.
-        - `rekor`: The rekor of the attestors.
-          - `ignoreTlog`: Whether to ignore the Tlog.
-            - In isolated network environments, ignore the Tlog first.
+      - `keys.publicKeys`: The public keys of the attestors. This public key is the same as the public key `cosign.pub` in the `signing-secrets` secret.
+      - `keys.ctlog.ignoreSCT`: Whether to ignore the SCT. In isolated network environments, ignore the SCT first.
+      - `keys.rekor.ignoreTlog`: Whether to ignore the Tlog. In isolated network environments, ignore the Tlog first.
 
 **Need to adjust the configuration**
 
@@ -1093,7 +1088,7 @@ Cosign provides two ways to [validate the attestation](https://docs.sigstore.dev
 
 The following will show the verification methods of these two ways.
 
-##### Way 1: Use [CUE](https://cuelang.org/) to verify
+#### Way 1: Use [CUE](https://cuelang.org/) to verify
 
 Generate the CUE file to verify the builder info.
 
@@ -1152,11 +1147,11 @@ Error: 2 validation errors occurred
 error during command execution: 2 validation errors occurred
 ```
 
-##### Way 2: Use [Rego](https://www.openpolicyagent.org/docs/latest/policy-language/) to verify
+#### Way 2: Use [Rego](https://www.openpolicyagent.org/docs/latest/policy-language/) to verify
 
 Generate the Rego file to verify the builder info.
 
-```
+```text
 package signature
 
 default allow = false
@@ -2384,21 +2379,17 @@ The output will be similar to the following, which contains the vulnerability sc
   - `result`: The result of the vulnerability scan.
     - `CreatedAt`: The time when the vulnerability scan finished.
     - `Metadata`:
-      - `OS`:
-        - `Family`: The family of the OS.
-        - `Name`: The name of the OS.
+      - `OS.Family`: The family of the OS.
+      - `OS.Name`: The name of the OS.
     - `Results`: The results of the vulnerability scan.
-      - `Class`:
-        - `os-pkgs`: The OS packages.
-        - `lang-pkgs`: The language packages.
+      - `Class.os-pkgs`: The OS packages.
+      - `Class.lang-pkgs`: The language packages.
       - `Packages`: The packages of the image.
-      - `Vulnerabilities`: The vulnerabilities of the image.
-        - `Severity`: The severity of the vulnerability.
-        - `PkgID`: The package id of the vulnerability.
-        - `PkgName`: The package name of the vulnerability.
-        - `CVSS`: The CVSS of the vulnerability.
-          - `nvd`: The NVD of the vulnerability.
-          - `redhat`: The Red Hat of the vulnerability.
+      - `Vulnerabilities.Severity`: The severity of the vulnerability.
+      - `Vulnerabilities.PkgID`: The package id of the vulnerability.
+      - `Vulnerabilities.PkgName`: The package name of the vulnerability.
+      - `Vulnerabilities.CVSS.nvd`: The NVD CVSS score of the vulnerability.
+      - `Vulnerabilities.CVSS.redhat`: The Red Hat CVSS score of the vulnerability.
 
 ### Step 6: Verify the vulnerability scan results with Kyverno
 
@@ -2782,6 +2773,9 @@ spec:
     - name: dockerconfig
       secret:
         secretName: <registry-credentials>
+    - name: signkey
+      secret:
+        secretName: <signing-secrets>
     - name: source
       volumeClaimTemplate:
         spec:
@@ -2889,20 +2883,18 @@ The output will be similar to the following, which contains the components infor
   - `components`: The components of the image.
     - `bom-ref`: The BOM reference of the component.
     - `licenses`: The licenses of the component.
-      - `license`: The license of the component.
-        - `name`: The name of the license.
-        - `id`: The id of the license.
+      - `license.name`: The name of the license.
+      - `license.id`: The id of the license.
     - `name`: The name of the component.
     - `type`: The type of the component.
     - `version`: The version of the component.
   - `metadata`: The metadata of the image.
     - `timestamp`: The timestamp of the image.
-    - `tools`:
-      - `components`: The components of the tool.
-        - `author`: The author of the tool.
-        - `name`: The name of the tool.
-        - `type`: The type of the tool.
-        - `version`: The version of the tool.
+    - `tools.components`: The components of the tool.
+      - `author`: The author of the tool.
+      - `name`: The name of the tool.
+      - `type`: The type of the tool.
+      - `version`: The version of the tool.
 
 ### Step 6: Verify the base image information
 
@@ -3329,19 +3321,19 @@ $ export NAMESPACE=<pipeline-namespace>
 $ export PIPELINERUN_NAME=<pipelinerun-name>
 $ kubectl get pipelinerun -n $NAMESPACE $PIPELINERUN_NAME -o jsonpath='{.metadata.annotations.chains\.tekton\.dev/transparency}'
 
-https://rekor.sigstore.dev/api/v1/log/entries?logIndex=232330257
+https://rekor.sigstore.dev/api/v1/log/entries?logIndex=<232330257>
 ```
 
 ### Step 5: Get the rekor signature by curl
 
 ```shell
-$ curl -s "https://rekor.sigstore.dev/api/v1/log/entries?logIndex=232330257" | jq
+$ curl -s "https://rekor.sigstore.dev/api/v1/log/entries?logIndex=<232330257>" | jq
 ```
 
 If you need to view the content of the rekor signature, you can execute the following command:
 
 ```shell
-$ curl -s "https://rekor.sigstore.dev/api/v1/log/entries?logIndex=232330257" | jq -r '.[keys[0]].attestation.data | @base64d' | jq .
+$ curl -s "https://rekor.sigstore.dev/api/v1/log/entries?logIndex=<232330257>" | jq -r '.[keys[0]].attestation.data | @base64d' | jq .
 
 {
   "_type": "https://in-toto.io/Statement/v0.1",
@@ -3377,7 +3369,7 @@ Get signature by log index
 
 ```shell
 # the log index is same as the one in the annotations of the PipelineRun
-$ rekor-cli get --log-index 232330257 --format json | jq -r .Attestation | jq .
+$ rekor-cli get --log-index <232330257> --format json | jq -r .Attestation | jq .
 ```
 
 Get signature by image digest
@@ -3433,10 +3425,9 @@ spec:
   - `ignoreTlog`: Whether to ignore the transparency log.
     - If `false`, the rekor server will be verified.
   - `url`: The URL of the rekor server.
-    - If not set, the default rekor server `https://rekor.sigstore.dev` will be used.
+    - The public rekor server is `https://rekor.sigstore.dev`.
   - `pubkey`: The public key of the signer.
-    - If not set, the public key will be fetched from the rekor server.
-    - If the rekor server is private, you need to get the public key from the rekor server.
+    - You can get the public key from the rekor server.
       - `curl <https://rekor.sigstore.dev>/api/v1/log/publicKey`
 
 If your image not signed, the Pod will be blocked.
@@ -3447,11 +3438,9 @@ Error from server: admission webhook "mutate.kyverno.svc-fail" denied the reques
 resource Pod/policy/sign was blocked due to the following policies
 
 only-cosign-image-deploy:
-  check-image: 'failed to verify image <registry>/test/chains/demo-1:latest:
-    .attestors[0].entries[0].keys: no matching signatures: searching log query: Post
-    "http:///api/v1/log/entries/retrieve": POST http:///api/v1/log/entries/retrieve
-    giving up after 4 attempt(s): Post "http:///api/v1/log/entries/retrieve": http:
-    no Host in request URL'
+  check-image: 'failed to verify image <registry>/test/chains/demo-1@sha256:e02263e9f7c215cd5f029cf235d625861afa1d0bccdaba141c5f41f19d482ff2>:
+    .attestors[0].entries[0].keys: no matching signatures: signature not found in
+    transparency log
 ```
 
 ## Conclusion
