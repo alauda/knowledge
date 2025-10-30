@@ -20,7 +20,7 @@ Before proceeding with the inference service deployment pipeline, ensure the fol
 
 2. **Alauda AI**: It is recommended to deploy Alauda AI for better management of models, training, and inference services. Refer to the [Alauda AI documentation](https://docs.alauda.io/ai/) for installation and configuration details.
 
-3. **GPU Device Plugins**: It is recommended to deploy GPU device plugins such as `Hami` or `NVIDIA GPU Device Plugin` to utilize GPU resources for inference services. Refer to the `Device Management` section in the [Alauda AI documentation](https://docs.alauda.io/ai/) for deployment instructions.
+3. **GPU Device Plugins**: It is recommended to deploy GPU device plugins such as `HAMi` or `NVIDIA GPU Device Plugin` to utilize GPU resources for inference services. Refer to the `Device Management` section in the [Alauda AI documentation](https://docs.alauda.io/ai/) for deployment instructions.
 
 
 ### Configure RBAC
@@ -212,19 +212,19 @@ spec:
       type: string
       default: "16Gi"
     - default: "1"
-      description: Hami NVIDIA GPU allocation - number of GPU cards, leave empty to not allocate GPU
+      description: HAMi NVIDIA GPU allocation - number of GPU cards, leave empty to not allocate GPU
       name: NVIDIA_GPUALLOC
       type: string
     - default: "50"
-      description: Hami NVIDIA GPU cores - percentage of compute power per card, range 1-100, leave empty to not configure GPU cores
+      description: HAMi NVIDIA GPU cores - percentage of compute power per card, range 1-100, leave empty to not configure GPU cores
       name: NVIDIA_GPUCORES
       type: string
     - default: "4096"
-      description: Hami NVIDIA GPU memory - memory usage per card in MiB, leave empty to not configure GPU memory
+      description: HAMi NVIDIA GPU memory - memory usage per card in MiB, leave empty to not configure GPU memory
       name: NVIDIA_GPUMEM
       type: string
     - default: ""
-      description: NVIDIA GPU count - number of GPU cards allocated when using NVIDIA GPU plugin, cannot be used together with Hami parameters, leave empty to not set
+      description: NVIDIA GPU count - number of GPU cards allocated when using NVIDIA GPU plugin, cannot be used together with HAMi parameters, leave empty to not set
       name: NVIDIA_GPU
       type: string
   results:
@@ -349,7 +349,7 @@ spec:
             fi
 
             if [ -n "$NVIDIA_GPU" ] && ([ -n "$NVIDIA_GPUALLOC" ] || [ -n "$NVIDIA_GPUCORES" ] || [ -n "$NVIDIA_GPUMEM" ]); then
-              echo "ERROR: Cannot use NVIDIA_GPU with Hami resources"
+              echo "ERROR: Cannot use NVIDIA_GPU with HAMi resources"
               echo "NVIDIA_GPU=${NVIDIA_GPU}, NVIDIA_GPUALLOC=${NVIDIA_GPUALLOC}, NVIDIA_GPUCORES=${NVIDIA_GPUCORES}, NVIDIA_GPUMEM=${NVIDIA_GPUMEM}"
               exit 1
             fi
@@ -730,7 +730,7 @@ The pipeline includes the following key parameters that need to be configured:
 - `NVIDIA_GPUALLOC`: NVIDIA GPU allocation - number of GPU cards (default: "1", leave empty to not allocate GPU)
 - `NVIDIA_GPUCORES`: NVIDIA GPU cores - percentage of compute power per card, range 1-100 (default: "50", leave empty to not configure GPU cores)
 - `NVIDIA_GPUMEM`: NVIDIA GPU memory - memory usage per card in MiB (default: "4096", leave empty to not configure GPU memory)
-- `NVIDIA_GPU`: NVIDIA GPU count - number of GPU cards allocated when using NVIDIA GPU plugin, cannot be used together with Hami parameters (NVIDIA_GPUALLOC, NVIDIA_GPUCORES, NVIDIA_GPUMEM) (default: "", leave empty to not set)
+- `NVIDIA_GPU`: NVIDIA GPU count - number of GPU cards allocated when using NVIDIA GPU plugin, cannot be used together with HAMi parameters (NVIDIA_GPUALLOC, NVIDIA_GPUCORES, NVIDIA_GPUMEM) (default: "", leave empty to not set)
 
 ### Prepare Model Repository
 
