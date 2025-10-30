@@ -239,7 +239,7 @@ build-harbor.alauda.cn/mlops/buildkit:v0.15.2-aml
 
 ## Turn on experimental features on AML UI
 
-Goto "Administrator - Clusters - Resources", select the **CURRENT** cluster, then update `AmlCluster` resource: `default`, add the following fields:
+Goto  "MarketPlace - OperatorHub - Alauda AI", enter "All Instances" tab, and find the line: "Resource Type: AmlCluster, Name default", click the "..." button on the right and choose Update, then switch to "YAML" mode on the top right and edit the YAML file to include below settings.
 
 ```yaml
 spec:
@@ -259,7 +259,7 @@ spec:
         user: root # db user
 ```
 
-Goto "Administrator - Clusters - Resources", select the **CURRENT** cluster, then update `Aml` resource `default-aml` add the following fields. Set to actual values that the current cluster supports.
+Goto  "MarketPlace - OperatorHub - Alauda AI", enter "All Instances" tab, and find the line: "Resource Type: Aml, Name default-aml", click the "..." button on the right and choose Update, then switch to "YAML" mode on the top right and edit the YAML file to include below settings.
 
 ```yaml
 spec:
@@ -304,7 +304,7 @@ type: Opaque
 
 ### Turn off experimental features and uninstall plugins
 
-1. To turn off experimental featurs, just Goto "Administrator - Clusters - Resources", select the **CURRENT** cluster, then update `AmlCluster` resource: `default`, delete following lines that added before:
+1. To turn off experimental featurs, Goto  "MarketPlace - OperatorHub - Alauda AI", enter "All Instances" tab, and find the line: "Resource Type: AmlCluster, Name default-aml", click the "..." button on the right and choose Update, then switch to "YAML" mode on the top right and delete following lines that added before:
 
 ```yaml
 spec:
