@@ -326,6 +326,8 @@ Label Studio supports integration with S3-compatible storage for importing data 
 
 #### Using ACP MinIO as S3 Storage
 
+> Note: ACP MinIO is only one optional choice. You may use any S3-compatible storage (e.g., Amazon S3, Ceph RGW, etc.).
+
 You can use the built-in MinIO from ACP as S3 storage:
 
 1. **Object Storage**: In Administrator view, go to `Storage` / `Object Storage` to check if MinIO is already created. If not, click **Configure Now** to start the setup process.
