@@ -1,3 +1,12 @@
+---
+products:
+  - Alauda AI
+  - Alauda DevOps Pipelines
+kind:
+  - Solution
+ProductsVersion:
+  - 4.x
+---
 # Best Practices for Using Pipelines in AI Scenarios
 
 This document introduces advanced usage and best practices for using pipelines in AI scenarios. This assumes users have deployed `Alauda DevOps Pipelines`.
