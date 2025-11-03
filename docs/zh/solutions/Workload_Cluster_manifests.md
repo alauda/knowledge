@@ -1,43 +1,44 @@
 ---
-products: 
+products:
   - Alauda Container Platform
 kind:
   - Solution
 id: KB1762167636-4744
+sourceSHA: 633b11a806da9ed70477cd366f62e1d2b77fdc85ad74709623bd8a09f72aa2fb
 ---
 
-# Workload Cluster Manifests
+# 业务集群清单
 
 :::info
-This document provides example YAML manifests for provisioning a highly available workload cluster. Apply these manifests to declaratively create the cluster.
+本文档提供了用于配置高可用性业务集群的示例 YAML 清单。应用这些清单以声明性方式创建集群。
 
-To ease maintenance, package following manifests as a Helm chart or manage them with Kustomize.
+为了简化维护，将以下清单打包为 Helm Chart 或使用 Kustomize 管理。
 
-Example cluster configuration:
+示例集群配置：
 
-- Kube-OVN overlay network
+- Kube-OVN 覆盖网络
 - IPv4
-- keepalived VIP for HA
-- identical SSH key for node access
-:::
+- keepalived VIP 用于高可用性
+- 相同的 SSH 密钥用于节点访问
+  :::
 
 :::warning
-Clusters created by manually applying the following manifests do not support upgrades.
+通过手动应用以下清单创建的集群不支持升级。
 :::
 
-## Modify and create cluster YAML in the global cluster
+## 在 global 集群中修改和创建集群 YAML
 
 ```yaml
 apiVersion: v1
 data:
-  registryPassword: "{{ registry.password }}"   # base64 encoded
-  registryUsername: "{{ registry.user_name }}"  # base64 encoded
+  registryPassword: "{{ registry.password }}"   # base64 编码
+  registryUsername: "{{ registry.user_name }}"  # base64 编码
 kind: Secret
 metadata:
   labels:
     cluster.x-k8s.io/cluster-name: "{{ name }}"
     cpaas.io/cluster-credential: ""
-  name: {{ name }}-credential  # {{ name }} is cluster name
+  name: {{ name }}-credential  # {{ name }} 是集群名称
 type: Opaque
 ---
 apiVersion: cluster.x-k8s.io/v1beta1
@@ -122,8 +123,8 @@ spec:
 apiVersion: v1
 data:
   password: ""
-  privateKey: {{ ssh_key }}  # base64 encoded
-  username: {{ ssh_user }}   # base64 encoded
+  privateKey: {{ ssh_key }}  # base64 编码
+  username: {{ ssh_user }}   # base64 编码
 kind: Secret
 metadata:
   name: {{ name }}-credential-node
@@ -159,8 +160,8 @@ spec:
       vport: 6443
       vrid: 137
     type: internal
-  # true: use hostname as node name
-  # false: use node ip as node name
+  # true: 使用主机名作为节点名称
+  # false: 使用节点 IP 作为节点名称
   hostnameAsNodeName: {{ true or false }}  
   kubeProxy:
     ipvs: true
@@ -174,9 +175,9 @@ spec:
   version: {{ k8s_version }}
 ```
 
-## Add a worker node
+## 添加工作节点
 
-To add a worker node, modify the `UserProvisionedMachinePool` resource named `{{ name }}-pool-worker`. ( `{{ name }}` is cluster name)
+要添加工作节点，请修改名为 `{{ name }}-pool-worker` 的 `UserProvisionedMachinePool` 资源。(`{{ name }}` 是集群名称)
 
 ```yaml
 apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
@@ -205,10 +206,10 @@ spec:
   version: 1.32.7
 ```
 
-## Cluster plugins
+## 集群插件
 
-To install a cluster plugin, create or update the plugin manifest in the workload cluster.
-For example, to install the MetalLB plugin:
+要安装集群插件，请在业务集群中创建或更新插件清单。
+例如，要安装 MetalLB 插件：
 
 ```yaml
 apiVersion: cluster.alauda.io/v1alpha1
@@ -226,7 +227,7 @@ spec:
   pluginName: metallb
 ```
 
-To install the VictoriaMetrics plugin:
+要安装 VictoriaMetrics 插件：
 
 ```yaml
 apiVersion: cluster.alauda.io/v1alpha1
@@ -255,9 +256,9 @@ spec:
   pluginName: victoriametrics
 ```
 
-## Operators
+## Operator
 
-To deploy an operator using the Operator Lifecycle Manager (OLM), create a `Subscription` resource in the workload cluster. Example:
+要使用 Operator 生命周期管理器 (OLM) 部署 operator，请在业务集群中创建 `Subscription` 资源。示例：
 
 ```yaml
 apiVersion: operators.coreos.com/v1alpha1
