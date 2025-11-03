@@ -3,6 +3,7 @@ kind:
    - Solution
 products: 
   - Alauda Application Services
+id: KB1762160546-3B05
 ---
 
 # How to Use Node.js on ACP Platform
