@@ -19,145 +19,16 @@ It contains the following main components:
 
 ## Core Concepts
 
-### Flow
+Langflow is built around several core concepts: **Flows** (visual workflows organizing AI logic), **Components** (reusable functional units), **Agents** (intelligent agents with tool calling and reasoning capabilities), and **API/MCP** integration (REST API and Model Context Protocol support).
 
-Flows are the basic organizational unit for AI logic in Langflow, including:
+Langflow provides a drag-and-drop visual interface for building AI applications with real-time testing capabilities and an extensive template library. It supports multiple LLM providers, embedding models, and vector databases, enabling flexible multi-model configurations. The platform offers both IDE mode for development and runtime mode for production deployment, making it suitable for both experimentation and enterprise use.
 
-- **Component Nodes**: Functional modules such as LLMs, vector databases, tools, etc.
-- **Connections**: Data flow and dependencies between components
-- **Configuration Parameters**: Settings and options for each component
-- **Test Interface**: Real-time interactive testing environment
-
-Each flow is independent and reusable AI application logic.
-
-### Component
-
-Components are the building blocks of flows, representing specific functional units:
-
-- **Input/Output Ports**: Interfaces for data transfer between components
-- **Configuration Options**: Component parameters and settings
-- **Type System**: Ports support different data types
-- **Custom Components**: Developers can write custom Python components
-
-### Agent
-
-Agents extend LLM capabilities with tools, reasoning, and context management:
-
-- **Tool Calling**: Integrate external tools and APIs
-- **Reasoning Engine**: Intelligent decision-making
-- **Context Management**: Conversation history and context memory
-- **Multi-agent Flows**: Use one agent as a tool for another
-
-### API Endpoints and MCP Support
-
-Langflow supports multiple integration methods:
-
-- **REST API**: Standard HTTP interface for calling flows
-- **MCP Server**: Expose flows as tools for MCP clients
-- **MCP Client**: Connect to other MCP servers to extend functionality
-- **Webhook Component**: Receive external events
-- **Embedded Chat Component**: Embed into HTML/React/Angular apps
-
-### Component Types
-
-- **Core Components**: Built-in core features not tied to specific providers
-- **Bundle Components**: Third-party integrations packaged as bundles
-- **Input/Output Components**: Chat and text I/O for conversational and string flows
-- **Custom Components**: User-defined Python components
-
-## Core Concept Relationships
-
-- **Flows** organize AI logic and connect components to form pipelines
-- **Components** provide functional units and connect via ports
-- **Agents** coordinate tools and reasoning within flows
-- **APIs/MCP** expose flows to external systems
-
-## Core Features
-
-### Visual Flow Building
-
-- **Drag-and-Drop Interface**: Intuitive visual editor to build complex flows without coding
-- **Real-time Testing**: Built-in Playground provides instant feedback
-- **Template Library**: Extensive pre-built flow templates for quick project starts
-- **Code Access**: View and customize Python code for all components
-
-### Multi-model and Provider Support
-
-- **LLM Support**: Supports multiple large language model providers (check Langflow's component menu for specific providers)
-- **Embedding Models**: Supports multiple embedding model providers
-- **Vector Databases**: Supports multiple vector databases
-- **Tool Integration**: Rich third-party tools and API integrations
-- **Custom Components**: Python code to implement any functionality
-- **Bundle Ecosystem**: Growing third-party component library, developers can check Langflow's component menu for the latest list
-
-### Development and Production Environments
-
-- **IDE Mode**: Full development and testing environment (frontend + backend)
-- **Runtime Mode**: API service for production (backend only)
-- **Headless Deployment**: Supports backend-only deployment without UI
-- **Containerization**: Docker and Kubernetes support
-
-### Enterprise Features
-
-- **User Authentication**: Built-in user management system supporting username/password and token authentication
-- **Access Control**: Fine-grained access control with superuser and regular user support
-- **Database**: Supports PostgreSQL high availability configuration, recommended for production
-- **Monitoring and Logging**: Integrates LangSmith and LangFuse for complete observability
-- **Security Configuration**: Enterprise security best practices
-- **Environment Variable Management**: API key and authentication configuration
-- **Global Variables**: Cross-flow variable management
-
-### Advanced Features
-
-- **Component Freeze**: Freeze components to save output state and improve performance
-- **Component Inspection**: View output and logs for individual components
-- **Tweaks**: Temporarily override flow settings at runtime
-- **Tool Mode**: Combine components as tools with agents
-- **Memory Management**: Supports conversation history and context memory
-- **Session ID**: Manages multi-session and multi-user interactions
-
-### Integration and Deployment
-
-- **REST API**: Standardized API interface, auto-generating Python, JavaScript, and curl code snippets
-- **MCP Protocol**: Seamless integration with MCP clients, supports both MCP server and client roles
-- **Export Functionality**: Export flows as JSON and Python code
-- **Embedded Components**: Can be embedded in HTML, React, or Angular applications
-- **Cloud-native**: Supports Kubernetes, Docker Compose, Docker, local installation, and other deployment methods
-- **Environment Variables**: Flexible configuration and environment management
-
-### Project Management
-
-- **Project Organization**: Supports multiple projects and flow management, projects organize related flows like folders
-- **File Management**: Upload, store, and manage files, files are organized by user and can be used by multiple flows
-- **Flow Export and Import**: Export flows as JSON files, transferable between different instances
-- **Flow Duplication**: Copy existing flows to create new versions
-- **Shareable Playground**: Share test interface with other users for interactive testing
-
-### Application Scenarios
-
-Langflow can help develop various AI applications:
-
-- **Chatbots**: Conversational AI applications
-- **Document Analysis Systems**: Intelligent document processing and Q&A
-- **Content Generators**: Automated content creation
-- **Intelligent Agent Applications**: Autonomous AI agents performing tasks
-- **Knowledge Base Q&A**: Document-based intelligent Q&A
-- **Data Analysis**: AI-driven data analysis tools
+For detailed information about core concepts, features, and usage, please refer to the [official documentation](https://docs.langflow.org/).
 
 ## Documentation and References
 
-Langflow provides complete official documentation and API references to help users deeply understand and use platform features:
-
-### Official Documentation
-- **Main Documentation**: [https://docs.langflow.org/](https://docs.langflow.org/)
-  - Detailed introduction to Langflow's core concepts and usage workflows
-  - Includes installation guides, quick start, and best practices
-  - Provides common use cases, example code, tutorials, and API references
-
-### Community Support
+- **Official Documentation**: [https://docs.langflow.org/](https://docs.langflow.org/)
 - **GitHub Repository**: [https://github.com/langflow-ai/langflow](https://github.com/langflow-ai/langflow)
-- **Discord Community**: Join Discord server for help and discussions
-- **Contribution Guide**: Welcome contributions for new features, fixes, and documentation improvements
 
 # Langflow Deployment Guide
 
