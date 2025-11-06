@@ -4,13 +4,13 @@ products:
 kind:
   - Solution
 id: KB1762167636-4744
-sourceSHA: 633b11a806da9ed70477cd366f62e1d2b77fdc85ad74709623bd8a09f72aa2fb
+sourceSHA: 879ea27bf4e7e9fc00e49cb71251ca2f84305986bf39b7343821ae81e25e9252
 ---
 
 # 业务集群清单
 
 :::info
-本文档提供了用于配置高可用性业务集群的示例 YAML 清单。应用这些清单以声明性方式创建集群。
+本文档提供了用于配置高可用业务集群的示例 YAML 清单。应用这些清单以声明性地创建集群。
 
 为了简化维护，将以下清单打包为 Helm Chart 或使用 Kustomize 管理。
 
@@ -39,6 +39,7 @@ metadata:
     cluster.x-k8s.io/cluster-name: "{{ name }}"
     cpaas.io/cluster-credential: ""
   name: {{ name }}-credential  # {{ name }} 是集群名称
+  namespace: cpaas-system
 type: Opaque
 ---
 apiVersion: cluster.x-k8s.io/v1beta1
@@ -53,6 +54,7 @@ metadata:
   labels:
     capi.cpaas.io/alauda-cluster: baremetal
   name: "{{ name }}"
+  namespace: cpaas-system
 spec:
   controlPlaneRef:
     apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
@@ -71,6 +73,7 @@ metadata:
   labels:
     cluster.x-k8s.io/cluster-name: "{{ name }}"
   name: {{ name }}-pool-master
+  namespace: cpaas-system
 spec:
   clusterName: "{{ name }}"
   cri:
@@ -107,6 +110,7 @@ metadata:
   labels:
     cluster.x-k8s.io/cluster-name: "{{ name }}"
   name: {{ name }}-pool-worker
+  namespace: cpaas-system
 spec:
   clusterName: "{{ name }}"
   cri:
@@ -128,6 +132,7 @@ data:
 kind: Secret
 metadata:
   name: {{ name }}-credential-node
+  namespace: cpaas-system
 type: Opaque
 ---
 apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
@@ -141,10 +146,10 @@ metadata:
   namespace: cpaas-system
 spec:
   clusterCIDR:
-    cidrBlocks: 
+    cidrBlocks:
     - {{ podCIDR }}
   serviceCIDR:
-    cidrBlocks: 
+    cidrBlocks:
     - {{ serviceCIDR }}
   controlPlaneEndpoint:
     host: {{ load_balancer.domain }}
@@ -172,7 +177,7 @@ spec:
     device: "{{ default_network_device }}"
     stack: Ipv4
   networkType: kube-ovn
-  version: {{ k8s_version }}
+  version: {{ k8s_version }}  # 例如: 1.32.7，与 global kubernetes 版本相同
 ```
 
 ## 添加工作节点
@@ -256,9 +261,9 @@ spec:
   pluginName: victoriametrics
 ```
 
-## Operator
+## Operators
 
-要使用 Operator 生命周期管理器 (OLM) 部署 operator，请在业务集群中创建 `Subscription` 资源。示例：
+要使用 Operator Lifecycle Manager (OLM) 部署 operator，请在业务集群中创建 `Subscription` 资源。示例：
 
 ```yaml
 apiVersion: operators.coreos.com/v1alpha1
