@@ -38,6 +38,7 @@ metadata:
     cluster.x-k8s.io/cluster-name: "{{ name }}"
     cpaas.io/cluster-credential: ""
   name: {{ name }}-credential  # {{ name }} is cluster name
+  namespace: cpaas-system
 type: Opaque
 ---
 apiVersion: cluster.x-k8s.io/v1beta1
@@ -52,6 +53,7 @@ metadata:
   labels:
     capi.cpaas.io/alauda-cluster: baremetal
   name: "{{ name }}"
+  namespace: cpaas-system
 spec:
   controlPlaneRef:
     apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
@@ -70,6 +72,7 @@ metadata:
   labels:
     cluster.x-k8s.io/cluster-name: "{{ name }}"
   name: {{ name }}-pool-master
+  namespace: cpaas-system
 spec:
   clusterName: "{{ name }}"
   cri:
@@ -106,6 +109,7 @@ metadata:
   labels:
     cluster.x-k8s.io/cluster-name: "{{ name }}"
   name: {{ name }}-pool-worker
+  namespace: cpaas-system
 spec:
   clusterName: "{{ name }}"
   cri:
@@ -127,6 +131,7 @@ data:
 kind: Secret
 metadata:
   name: {{ name }}-credential-node
+  namespace: cpaas-system
 type: Opaque
 ---
 apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
@@ -140,10 +145,10 @@ metadata:
   namespace: cpaas-system
 spec:
   clusterCIDR:
-    cidrBlocks: 
+    cidrBlocks:
     - {{ podCIDR }}
   serviceCIDR:
-    cidrBlocks: 
+    cidrBlocks:
     - {{ serviceCIDR }}
   controlPlaneEndpoint:
     host: {{ load_balancer.domain }}
@@ -171,7 +176,7 @@ spec:
     device: "{{ default_network_device }}"
     stack: Ipv4
   networkType: kube-ovn
-  version: {{ k8s_version }}
+  version: {{ k8s_version }}  # e.g: 1.32.7, same as global kubernetes version
 ```
 
 ## Add a worker node
