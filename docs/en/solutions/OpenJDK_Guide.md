@@ -1,7 +1,7 @@
 ---
 kind:
-   - Solution
-products: 
+  - Solution
+products:
   - Alauda Application Services
 ---
 
@@ -9,9 +9,11 @@ products:
 # How to Use OpenJDK on ACP Platform
 
 ## Overview
-**OpenJDK (Open Java Development Kit)** is the official open-source implementation of the Java Platform, Standard Edition (Java SE). It is jointly maintained by multiple vendors including Oracle, Red Hat, IBM, and Microsoft.  
-It includes the full **Java compiler, runtime environment (JRE), virtual machine (JVM), and core libraries**, and is the de facto standard for Java development and runtime.
 
+**OpenJDK (Open Java Development Kit)** is the official open-source implementation of the Java Platform, Standard Edition (Java SE), maintained by multiple vendors including Oracle, Red Hat, IBM, and Microsoft.  
+It includes the full **Java compiler (javac)**, **runtime environment (JRE)**, **virtual machine (JVM)**, and **core libraries**, and serves as the de facto standard for Java application development and runtime.
+
+### Red Hat Build of OpenJDK
 Red Hat is one of the main maintainers of the long-term support (LTS) releases of OpenJDK. It provides an enterprise-grade build called **Red Hat Build of OpenJDK**, featuring:
 
 - Synchronization with the OpenJDK community mainline;
@@ -21,70 +23,28 @@ Red Hat is one of the main maintainers of the long-term support (LTS) releases o
 
 Alauda has verified compatibility and certified enterprise-grade container images based on the Red Hat Build of OpenJDK to ensure secure and stable operation within **Kubernetes** and **Alauda ACP** platforms.
 
----
-
-## Version Maintenance
-
-### Community Downloads and Image Sources
-
-Alauda-certified OpenJDK versions are based on Red Hat’s official distribution channels. Below are the main download and mirror sources:
-
-| Version | Image Repository | Description |
-|----------|------------------|--------------|
-| OpenJDK 8  | `registry.access.redhat.com/ubi8/openjdk-8`  | Stable long-term support version |
-| OpenJDK 17 | `registry.access.redhat.com/ubi9/openjdk-17` | Recommended enterprise default version |
-| OpenJDK 21 | `registry.access.redhat.com/ubi9/openjdk-21` | Latest LTS version, recommended for new projects |
-
-All images are built on **Red Hat UBI (Universal Base Image)** and can be used directly in Kubernetes or containerd environments.
 
 ---
 
-### Verified Versions
+## Support Policy
 
-| Version | Base Image | Certification Status | Architecture Support |
-|----------|-------------|----------------------|----------------------|
-| 8  | RHEL 8 Base Image  | ✅ Certified | x86_64, aarch64 |
-| 17 | RHEL 8/9 Base Image | ✅ Certified | x86_64, aarch64 |
-| 21 | RHEL 8/9 Base Image | ✅ Certified | x86_64, aarch64 |
+Alauda supports **all community-released OpenJDK versions** by default, with representative versions validated for ACP platform compatibility and runtime performance.  
+The support period follows the **Red Hat / OpenJDK community lifecycle**.  
+Users can directly pull official Red Hat OpenJDK images from the community registry and deploy them on ACP without modification.
 
-Alauda’s verification scope includes:
-- Startup compatibility
-- Container performance
-- Memory reclamation stability
-- Security scanning
+### Validated Version List
 
----
-
-## Technical Support
-
-Alauda provides OpenJDK technical services aligned with Red Hat’s official support policy:
-
-| Service Type | Description |
-|---------------|-------------|
-| Image Compatibility | Container image compatibility and upgrade validation |
-| Security Advisory | Evaluation and remediation of community CVE announcements |
-| Lifecycle Planning | EOL version replacement recommendations |
-| JVM Optimization | GC tuning and startup parameter optimization |
-
----
-
-## Version Lifecycle
-
-Alauda-certified OpenJDK lifecycle fully aligns with Red Hat Build of OpenJDK:
-
-| Version | Release Year | End of Maintenance | Status |
-|----------|---------------|-------------------|---------|
-| OpenJDK 8  | 2015 | 2026 | Active |
-| OpenJDK 17 | 2021 | 2027 | Active |
-| OpenJDK 21 | 2023 | 2029 | Active |
-
-👉 Reference: [RedHat OpenJDK Life Cycle and Support Policy](https://access.redhat.com/articles/1299013)
+| Version | Base Image | Image Repository | Supported ACP Versions | Certification | Architecture | Maintenance Until |
+|----------|-------------|------------------|------------------------|---------------|---------------|-------------------|
+| OpenJDK 8  | RHEL 8 UBI | `registry.access.redhat.com/ubi8/openjdk-8` | All                    | ✅ Certified   | x86_64, aarch64 | 2026 |
+| OpenJDK 17 | RHEL 9 UBI | `registry.access.redhat.com/ubi9/openjdk-17` | All                    | ✅ Certified   | x86_64, aarch64 | 2027 |
+| OpenJDK 21 | RHEL 9 UBI | `registry.access.redhat.com/ubi9/openjdk-21` | All                    | ✅ Certified   | x86_64, aarch64 | 2029 |
 
 ---
 
 ## Quick Start
 
-This section demonstrates how to quickly build and run a Java application using Alauda-certified OpenJDK base images.
+This section demonstrates how to build and deploy a Java application using Alauda-verified OpenJDK base images.
 
 ### 1. Create a `Dockerfile`
 
@@ -162,36 +122,17 @@ spec:
       targetPort: 8080
 ```
 
----
-
-## Security Patch Policy
-
-Alauda follows the Red Hat OpenJDK official security release cycle, which provides four updates per year (approximately every three months).  
-All security updates are synchronized with Red Hat’s official advisories.
+Then access your application at:
+```
+http://<NodeIP>:30080
+```
 
 ---
 
-## Architecture and Platform Support
+## Best Practices
 
-Aligned with Red Hat’s official support scope:
-
-| Architecture | Support Level | Description |
-|---------------|---------------|--------------|
-| x86_64 | ✅ Fully Supported | Mainstream enterprise environments |
-| aarch64 | ✅ Fully Supported | ARM64 platform adaptation |
-
-**Base Image Environment:**
-
-- Red Hat UBI 8 / 9
-- Compatible with Kubernetes and Alauda ACP
-
----
-
-## Compliance and Licensing
-
-Alauda-certified OpenJDK versions comply with Red Hat and OpenJDK official licensing terms:
-
-| Component | License | Commercial Use |
-|------------|----------|----------------|
-| OpenJDK Runtime | GPLv2 with Classpath Exception | Free for commercial use, modification, and redistribution |
-| Red Hat Build of OpenJDK | GPLv2 with Classpath Exception | Same as the community license |
+- **Use LTS versions** (OpenJDK 17 or 21) for enterprise deployments.
+- **Rely on community-maintained Red Hat OpenJDK images** to ensure timely CVE patches.
+- **Adjust JVM parameters** such as `-Xms512m -Xmx1024m` based on workload size.
+- **Leverage multi-stage Docker builds** to reduce image size when building custom JARs.
+- **Monitor memory usage** using ACP metrics for container-level optimization.  
