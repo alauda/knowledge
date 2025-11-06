@@ -6,7 +6,7 @@ products:
 ---
 
 # How to Use Tomcat on ACP Platform
-##  Overview
+## Overview
 
 **Apache Tomcat** is an open-source Java web container maintained by the **Apache Software Foundation (ASF)**.
 It is widely used to run Jakarta EE applications based on Servlet, JSP, and WebSocket.
@@ -40,7 +40,7 @@ This guide demonstrates how to build and deploy a simple Java web application us
 
 Assume you have a built WAR file, such as:
 
-```
+```text
 target/myapp.war
 ```
 

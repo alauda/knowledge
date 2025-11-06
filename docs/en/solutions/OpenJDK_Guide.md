@@ -123,7 +123,7 @@ spec:
 ```
 
 Then access your application at:
-```
+```bash
 http://<NodeIP>:30080
 ```
 
