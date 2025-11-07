@@ -1,10 +1,11 @@
 ---
+kind:
+   - Solution
 products: 
   - Alauda DevOps
-kind:
-  - Solution
 ProductsVersion:
-   - 4.1.0
+   - 4.x
+id: KB251000012
 ---
 
 # How to Perform Disaster Recovery for Harbor
