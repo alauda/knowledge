@@ -16,7 +16,7 @@ ProductsVersion:
 ## Prerequisites
 
 * ACP and AML are already installed.
-* Deploy ASM if ASM is not installed in above step.
+* Deploy Istio (version >= 1.22, Non CNI mode). You may also leverage ASM to deploy Istio.
 * Prepare a running MySQL service. Note that the "Kubeflow Pipeline" plugin only supports MySQL version == 5.7, so you can choose from the following deployment methods:
   - **Option 1:** Use ACP Data Service to deploy  a MySQL MGR instance (MySQL version>=8.0), and use this service in the "AmlCluster" configuration below. The "Kubeflow Pipeline" can choose to use the builtin MySQL service( Kubeflow pipeline does NOT supports MySQL version >= 8.0) 
   - **Option 2:** Use ACP Data Service to deploy a MySQL PXC instance (MySQL version == 5.7), and use this service both in "AmlCluster" config and "Kubeflow Pipeline"
@@ -96,20 +96,14 @@ overlays:
 
 ## Deploy plugins
 
-Download the following plugin artifacts and push these plugins to ACP platform.
+Download the following plugin artifacts from https://cloud.alauda.cn or https://cloud.alauda.io and push these plugins to ACP platform.
 
 * Workspace: Backend controller of AML workspace.
-  * NOTE: package will be uploaded later.
 * KubeflowBase: Base components of Kubeflow. After installing this plugin, a "Kubeflow" menu entry should appear in AML nav bar.
-  * [http://package-minio.alauda.cn:9199/packages/kfbase/v1.10/kfbase.amd64.v1.10.5.tgz](http://package-minio.alauda.cn:9199/packages/kfbase/v1.10/kfbase.amd64.v1.10.5.tgz)
-* Kubeflow Pipeline: Supports developing, running, monitoring kubeflow pipelines. ( Default using argo as kubeflow pipeline backend)
-  * [http://package-minio.alauda.cn:9199/packages/kfp/v1.10/kfp.amd64.v1.10.5.tgz](http://package-minio.alauda.cn:9199/packages/kfp/v1.10/kfp.amd64.v1.10.5.tgz)
-* Kubeflow Training Operator: Manager training jobs of various deep learning frameworks like PytorchJob, TensorflowJob, MPIJob
-  * [http://package-minio.alauda.cn:9199/packages/kftraining/v1.10/kftraining.amd64.v1.10.5.tgz](http://package-minio.alauda.cn:9199/packages/kftraining/v1.10/kftraining.amd64.v1.10.5.tgz)
-* MLFlow: MLFlow tracking server to track training experiments. After installing this plugin, a "MLFlow" menu entry should appear in AML nav bar.  
-  * [http://package-minio.alauda.cn:9199/packages/mlflow/v3.1/mlflow.amd64.v3.1.3.tgz](http://package-minio.alauda.cn:9199/packages/mlflow/v3.1/mlflow.amd64.v3.1.3.tgz)
+* Kubeflow Pipeline: Supports developing, running, monitoring kubeflow pipelines. ( Default using argo as kubeflow pipeline backend).
+* Kubeflow Training Operator: Manager training jobs of various deep learning frameworks like PytorchJob, TensorflowJob, MPIJob.
+* MLFlow: MLFlow tracking server to track training experiments. After installing this plugin, a "MLFlow" menu entry should appear in AML nav bar.
 * Volcano: Schedule training jobs using various scheduler plugins including Gang-Scheduling, Binpack etc.
-  * [http://package-minio.alauda.cn:9199/packages/volcano/v1.12/volcano.amd64.v1.12.1.tgz](http://package-minio.alauda.cn:9199/packages/volcano/v1.12/volcano.amd64.v1.12.1.tgz)
 
 
 ```bash
@@ -117,7 +111,6 @@ Download the following plugin artifacts and push these plugins to ACP platform.
 violet push --platform-address="https://192.168.171.123" \
   --platform-username="admin@cpaas.io" \
   --platform-password="<platform_password>" \
-  --clusters=g1-c1-gpu \
   <your downloaded plugin package file>
 ```
 
