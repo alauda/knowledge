@@ -27,7 +27,7 @@ This guide provides comprehensive instructions for setting up PostgreSQL hot sta
 
 ## Environment Information
 
-Applicable Versions: >=ACP 4.1.0, PostgreSQL Operator: >=4.1.7
+Applicable Versions: >=ACP 4.1.0, PostgreSQL Operator: >=4.1.8
 
 ## Quick Reference
 
