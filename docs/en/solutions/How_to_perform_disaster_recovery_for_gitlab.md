@@ -337,7 +337,7 @@ OBJECT_STORAGE_SECRET=$(kubectl -n "$GITLAB_NAMESPACE" get gitlabofficial "$GITL
 [[ -n "$OBJECT_STORAGE_SECRET" ]] && kubectl -n "$GITLAB_NAMESPACE" get secret "$OBJECT_STORAGE_SECRET" -o yaml > object-storage-secret.yaml
 
 # Root Password Secret
-ROOT_USER_SECRET=$(kubectl -n "$GITLAB_NAMESPACE" get gitglabofficial "$GITLAB_NAME" -o jsonpath='{.spec.helmValues.global.initialRootPassword.secret}')
+ROOT_USER_SECRET=$(kubectl -n "$GITLAB_NAMESPACE" get gitlabofficial "$GITLAB_NAME" -o jsonpath='{.spec.helmValues.global.initialRootPassword.secret}')
 [[ -n "$ROOT_USER_SECRET" ]] && kubectl -n "$GITLAB_NAMESPACE" get secret "$ROOT_USER_SECRET" -o yaml > root-user-secret.yaml
 ```
 

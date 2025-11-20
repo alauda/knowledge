@@ -337,7 +337,7 @@ OBJECT_STORAGE_SECRET=$(kubectl -n "$GITLAB_NAMESPACE" get gitlabofficial "$GITL
 [[ -n "$OBJECT_STORAGE_SECRET" ]] && kubectl -n "$GITLAB_NAMESPACE" get secret "$OBJECT_STORAGE_SECRET" -o yaml > object-storage-secret.yaml
 
 # Root Password Secret
-ROOT_USER_SECRET=$(kubectl -n "$GITLAB_NAMESPACE" get gitglabofficial "$GITLAB_NAME" -o jsonpath='{.spec.helmValues.global.initialRootPassword.secret}')
+ROOT_USER_SECRET=$(kubectl -n "$GITLAB_NAMESPACE" get gitlabofficial "$GITLAB_NAME" -o jsonpath='{.spec.helmValues.global.initialRootPassword.secret}')
 [[ -n "$ROOT_USER_SECRET" ]] && kubectl -n "$GITLAB_NAMESPACE" get secret "$ROOT_USER_SECRET" -o yaml > root-user-secret.yaml
 ```
 
@@ -409,7 +409,7 @@ kubectl -n "$GITLAB_NAMESPACE" get gitlabofficial "$GITLAB_NAME" -oyaml > gitlab
 :::
 
 :::warning
-如需进行容灾演练，可以按照 [灾难场景中的主备切换程序](#灾难场景中的主备切换程序) 中的步骤进行演练。演练完毕后需要在容灾环境完成以下清理操作：
+如需进行容灾演练，可以按照 [灾难切换](#灾难切换) 中的步骤进行演练。演练完毕后需要在容灾环境完成以下清理操作：
 
 - 将容灾环境中的 `GitlabOfficial` 实例删除
 - 将创建的 PVC 和 PV 删除
