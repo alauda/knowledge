@@ -157,7 +157,6 @@ stringData:
 **Important Notes:**
 - Replace the namespace with your standby cluster's namespace
 - The username and password must match the primary cluster's admin credentials
-- Use base64 encoding for the credentials (e.g., `echo -n "postgres" | base64`)
 - The secret name should be referenced in the standby cluster configuration as `bootstrapSecret`
 
 3. Execute checkpoint on primary cluster to ensure WAL consistency:
