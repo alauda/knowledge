@@ -3,6 +3,10 @@ kind:
   - Solution
 products:
   - Alauda Application Services
+ProductsVersion:
+  - 4.x
+id: KB251100006
+
 ---
 
 # How to Use Tomcat on ACP Platform
