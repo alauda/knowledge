@@ -1,53 +1,51 @@
 ---
 products:
-   - Alauda AI
+  - Alauda AI
 kind:
-   - Solution
+  - Solution
 ProductsVersion:
-   - 4.x
+  - 4.x
 id: KB1763720171-F5B4
+sourceSHA: 6dd518f7f02a37452521ded1ba655889f2c6707843f5ec0a2a8925bc795bbd86
 ---
-# How to Use Pipeline to Train AI Models
 
-## Overview
+# 如何使用管道训练 AI 模型
 
-This document demonstrates how to train AI models using DevOps Pipeline. The YOLOv5 model is used as an example to illustrate the training workflow. The overall framework presented here can be adapted for training other models as well, requiring only adjustments to input parameters, execution scripts, and training code.
+## 概述
 
+本文档演示了如何使用 DevOps 管道训练 AI 模型。以 YOLOv5 模型为例，说明训练工作流。这里呈现的整体框架可以适用于训练其他模型，只需调整输入参数、执行脚本和训练代码。
 
-## Prerequisites
+## 先决条件
 
-Before proceeding with the AI model training pipeline, ensure the following prerequisites are met:
+在继续进行 AI 模型训练管道之前，请确保满足以下先决条件：
 
-1. **Alauda DevOps**: Install `Alauda DevOps next-gen` following the [Alauda DevOps documentation](https://docs.alauda.io/devops). `Alauda DevOps Pipelines` and `Alauda DevOps Connectors` must be installed.
+1. **Alauda DevOps**：按照 [Alauda DevOps 文档](https://docs.alauda.io/devops) 安装 `Alauda DevOps next-gen`。必须安装 `Alauda DevOps Pipelines` 和 `Alauda DevOps Connectors`。
 
-2. **Volcano**: Install the `Volcano` cluster plugin to enable GPU scheduling and resource management for AI workloads.
+2. **Volcano**：安装 `Volcano` 集群插件，以启用 AI 工作负载的 GPU 调度和资源管理。
 
-3. **Required Repositories**: Prepare:
-   - A Git repository for storing models and datasets.
-   - A container image registry for storing the trainer image.
+3. **所需的代码库**：准备：
+   - 一个用于存储模型和数据集的 Git 代码库。
+   - 一个用于存储训练器镜像的容器镜像注册表。
 
-4. **Alauda AI**: It is recommended to deploy Alauda AI for better management of models, training, and inference services. Refer to the [Alauda AI documentation](https://docs.alauda.io/ai/) for installation and configuration details.
+4. **Alauda AI**：建议部署 Alauda AI，以更好地管理模型、训练和推理服务。有关安装和配置的详细信息，请参阅 [Alauda AI 文档](https://docs.alauda.io/ai/)。
 
-5. **GPU Device Plugins**: It is recommended to deploy GPU device plugins such as `HAMi` or `NVIDIA GPU Device Plugin` to utilize GPU resources for AI training. Refer to the `Device Management` section in the [Alauda AI documentation](https://docs.alauda.io/ai/) for deployment instructions.
+5. **GPU 设备插件**：建议部署 GPU 设备插件，如 `HAMi` 或 `NVIDIA GPU Device Plugin`，以利用 GPU 资源进行 AI 训练。有关部署说明，请参阅 [Alauda AI 文档](https://docs.alauda.io/ai/) 中的 `设备管理` 部分。
 
+### 准备模型代码库
 
-### Prepare Model Repository
+从 YOLOv5 代码库的 [yolov5 v7.0](https://github.com/ultralytics/yolov5) 克隆代码。由于下面的示例使用 YOLOv5n 预训练模型，请从 [yolov5n.pt](https://github.com/ultralytics/yolov5/releases/download/v7.0/yolov5n.pt) 下载模型，并将其放置在代码库的 `models/` 目录中。
 
-Clone the code from the [yolov5 v7.0](https://github.com/ultralytics/yolov5) of the YOLOv5 repository. Since the example below uses the YOLOv5n pretrained model, download the model from [yolov5n.pt](https://github.com/ultralytics/yolov5/releases/download/v7.0/yolov5n.pt) and place it in the `models/` directory of the repository.
+用户可以根据需要使用其他模型，并相应地调整管道中的 `TRAIN_ARG_WEIGHTS` 参数。
 
-Users can use other models as needed and adjust the `TRAIN_ARG_WEIGHTS` parameter in the pipeline accordingly.
+注意：由于 `*.pt` 文件是大型二进制文件，请考虑使用 `git lfs track models/yolov5n.pt` 通过 Git LFS 管理它们。
 
-Note: Since `*.pt` files are large binary files, consider using `git lfs track models/yolov5n.pt` to manage them with Git LFS.
+### 准备数据集代码库
 
+用户可以从 [coco128.zip](https://github.com/ultralytics/assets/releases/download/v0.0.0/coco128.zip) 下载数据集，并将其提交到 Git 代码库。同样，对于数据集中的图像文件，请考虑使用 Git LFS 进行管理，例如：`git lfs track images/train2017/*.jpg`
 
-### Prepare Dataset Repository
+### 准备训练器镜像
 
-Users can download the dataset from [coco128.zip](https://github.com/ultralytics/assets/releases/download/v0.0.0/coco128.zip) and commit it to the Git repository. Similarly, for image files in the dataset, consider using Git LFS to manage them, for example: `git lfs track images/train2017/*.jpg`
-
-
-### Prepare Trainer Image
-
-The following Dockerfile can be used to build the training image. Users can compile their own training image using this Dockerfile:
+以下 Dockerfile 可用于构建训练镜像。用户可以使用此 Dockerfile 编译自己的训练镜像：
 
 <details>
 
@@ -83,9 +81,9 @@ RUN mkdir -p /root/.config/Ultralytics && \
 
 </details>
 
-### Configure RBAC
+### 配置 RBAC
 
-Configure RBAC for the namespace where the `Pipeline` will run. Since `Pipeline Tasks` use the `default` `ServiceAccount` by default, the following script configures permissions for the `ServiceAccount`:
+为将要运行 `Pipeline` 的命名空间配置 RBAC。由于 `Pipeline Tasks` 默认使用 `default` `ServiceAccount`，以下脚本配置 `ServiceAccount` 的权限：
 
 <details>
 
@@ -158,40 +156,43 @@ roleRef:
 EOF
 
 ```
+
 </details>
 
-Run the script to configure RBAC for the `default` `ServiceAccount`:
+运行脚本以为 `default` `ServiceAccount` 配置 RBAC：
+
 ```bash
 bash prepare_rbac.sh <namespace-name>
 ```
 
-To use a dedicated `ServiceAccount`, run:
+要使用专用的 `ServiceAccount`，请运行：
+
 ```bash
 SA=<service-account-name> bash prepare_rbac.sh <namespace-name>
 ```
 
-Note:
+注意：
 
-1. When using a `ServiceAccount` other than `default`, the `ServiceAccount` name must be specified when running pipeline. Refer to the following sections for details.
+1. 当使用 `ServiceAccount` 时，必须在运行管道时指定 `ServiceAccount` 名称。有关详细信息，请参阅以下部分。
 
-2. If permission issues are encountered during execution, contact the platform administrator to execute the script for you.
+2. 如果在执行过程中遇到权限问题，请联系平台管理员为您执行脚本。
 
-### Create Pipeline
+### 创建管道
 
-Follow these steps to create the Pipeline in `Alauda Container Platform`:
+按照以下步骤在 `Alauda Container Platform` 中创建管道：
 
-1. Navigate to the namespace where the pipeline will run in the `Alauda Container Platform` view.
+1. 在 `Alauda Container Platform` 视图中导航到将要运行管道的命名空间。
 
-2. In the left navigation, select `Pipelines` / `Pipelines`, and click the `Create` button on the right side of the opened page.
+2. 在左侧导航中选择 `Pipelines` / `Pipelines`，然后单击打开页面右侧的 `Create` 按钮。
 
-3. In the Create Pipeline dialog, enter name `yolov5-training`, then click the `Confirm` button to enter the pipeline orchestration page.
+3. 在创建管道对话框中，输入名称 `yolov5-training`，然后单击 `Confirm` 按钮进入管道编排页面。
 
-4. On the pipeline orchestration page, click the `YAML` button in the upper right corner to switch to YAML editing mode, and paste the following pipeline YAML content into the editor.
+4. 在管道编排页面，单击右上角的 `YAML` 按钮切换到 YAML 编辑模式，并将以下管道 YAML 内容粘贴到编辑器中。
 
-5. Click the `Create` button in the lower right corner to create the `yolov5-training` pipeline.
+5. 单击右下角的 `Create` 按钮以创建 `yolov5-training` 管道。
 
 <details>
-<summary>Pipeline: yolov5-training</summary>
+<summary>管道：yolov5-training</summary>
 
 ```yaml
 apiVersion: tekton.dev/v1
@@ -919,72 +920,71 @@ spec:
 
 </details>
 
-### Pipeline Parameters
+### 管道参数
 
-The pipeline includes the following key parameters that need to be configured:
+管道包括以下需要配置的关键参数：
 
-**Repository Parameters:**
-- `MODEL_REPO_URL`: Git URL of the model repository
-- `MODEL_REPO_BRANCH`: Branch of the model repository (optional)
-- `DATASET_REPO_URL`: Git URL of the dataset repository
-- `DATASET_REPO_BRANCH`: Branch of the dataset repository (optional)
-- `OUTPUT_MODEL_REPO_URL`: Git URL of the output model repository
-- `OUTPUT_MODEL_REPO_BRANCH`: Branch of the output model repository (optional, auto-generated if not specified)
-- `GIT_CREDENTIAL_SECRET_NAME`: Secret name of the git credential secret (requires `GIT_USER` and `GIT_TOKEN` keys, where `GIT_USER` stores the git username and `GIT_TOKEN` stores the git password or access token)
+**代码库参数：**
 
-**Training Parameters:**
-- `TRAINING_IMAGE`: Container image for the training job
-- `TRAIN_ARG_IMAGE_SIZE`: Training argument image size (default: "640")
-- `TRAIN_ARG_BATCH_SIZE`: Training argument batch size (default: "16")
-- `TRAIN_ARG_EPOCHS`: Training argument epochs (default: "3")
-- `TRAIN_ARG_DATA`: Training argument data file (default: "coco128.yaml")
-- `TRAIN_ARG_WEIGHTS`: Training argument weights (default: "models/yolov5n.pt")
-- `TRAIN_ARG_WORKERS`: Training argument worker (default: "0")
-- `TRAIN_ARG_DEVICE`: Training device, multiple devices separated by comma (default: "0")
+- `MODEL_REPO_URL`：模型代码库的 Git URL
+- `MODEL_REPO_BRANCH`：模型代码库的分支（可选）
+- `DATASET_REPO_URL`：数据集代码库的 Git URL
+- `DATASET_REPO_BRANCH`：数据集代码库的分支（可选）
+- `OUTPUT_MODEL_REPO_URL`：输出模型代码库的 Git URL
+- `OUTPUT_MODEL_REPO_BRANCH`：输出模型代码库的分支（可选，如果未指定则自动生成）
+- `GIT_CREDENTIAL_SECRET_NAME`：Git 凭证秘密的名称（需要 `GIT_USER` 和 `GIT_TOKEN` 键，其中 `GIT_USER` 存储 Git 用户名，`GIT_TOKEN` 存储 Git 密码或访问令牌）
 
-For more information about YOLOv5 training parameter configuration, refer to the [YOLOv5 training settings documentation](https://docs.ultralytics.com/yolov5/tutorials/tips_for_best_training_results/#training-settings).
+**训练参数：**
 
+- `TRAINING_IMAGE`：训练作业的容器镜像
+- `TRAIN_ARG_IMAGE_SIZE`：训练参数图像大小（默认："640"）
+- `TRAIN_ARG_BATCH_SIZE`：训练参数批量大小（默认："16"）
+- `TRAIN_ARG_EPOCHS`：训练参数轮数（默认："3"）
+- `TRAIN_ARG_DATA`：训练参数数据文件（默认："coco128.yaml"）
+- `TRAIN_ARG_WEIGHTS`：训练参数权重（默认："models/yolov5n.pt"）
+- `TRAIN_ARG_WORKERS`：训练参数工作线程（默认："0"）
+- `TRAIN_ARG_DEVICE`：训练设备，多个设备用逗号分隔（默认："0"）
 
-**Resource Parameters:**
-- `TEMPORARY_STORAGE_SIZE`: Temporary storage size (default: "5Gi")
-- `REPLICAS`: Number of replicas (default: "1", distributed training will be enabled if greater than 1)
-- `CPU_REQUEST`: Request CPU (default: "1", leave empty to not request CPU)
-- `MEMORY_REQUEST`: Request memory (default: "8Gi", leave empty to not request memory)
-- `CPU_LIMIT`: Limit CPU (default: "8", leave empty to not limit CPU)
-- `MEMORY_LIMIT`: Limit memory (default: "20Gi", leave empty to not limit memory)
-- `NVIDIA_GPUALLOC`: NVIDIA GPU allocation - number of GPU cards (default: "1", leave empty to not allocate GPU)
-- `NVIDIA_GPUCORES`: NVIDIA GPU cores - percentage of compute power per card, range 1-100 (default: "50", leave empty to not configure GPU cores)
-- `NVIDIA_GPUMEM`: NVIDIA GPU memory - memory usage per card in MiB (default: "4096", leave empty to not configure GPU memory)
-- `NVIDIA_GPU`: NVIDIA GPU count - number of GPU cards allocated when using NVIDIA GPU plugin, cannot be used together with HAMi parameters (default: "", leave empty to not set)
+有关 YOLOv5 训练参数配置的更多信息，请参阅 [YOLOv5 训练设置文档](https://docs.ultralytics.com/yolov5/tutorials/tips_for_best_training_results/#training-settings)。
 
+**资源参数：**
 
-### Trigger Pipeline
+- `TEMPORARY_STORAGE_SIZE`：临时存储大小（默认："5Gi"）
+- `REPLICAS`：副本数量（默认："1"，如果大于 1，则启用分布式训练）
+- `CPU_REQUEST`：请求 CPU（默认："1"，留空则不请求 CPU）
+- `MEMORY_REQUEST`：请求内存（默认："8Gi"，留空则不请求内存）
+- `CPU_LIMIT`：限制 CPU（默认："8"，留空则不限制 CPU）
+- `MEMORY_LIMIT`：限制内存（默认："20Gi"，留空则不限制内存）
+- `NVIDIA_GPUALLOC`：NVIDIA GPU 分配 - GPU 卡数量（默认："1"，留空则不分配 GPU）
+- `NVIDIA_GPUCORES`：NVIDIA GPU 核心 - 每张卡的计算能力百分比，范围 1-100（默认："50"，留空则不配置 GPU 核心）
+- `NVIDIA_GPUMEM`：NVIDIA GPU 内存 - 每张卡的内存使用量（以 MiB 为单位，默认："4096"，留空则不配置 GPU 内存）
+- `NVIDIA_GPU`：NVIDIA GPU 数量 - 使用 NVIDIA GPU 插件时分配的 GPU 卡数量，不能与 HAMi 参数一起使用（默认："", 留空则不设置）
 
-Follow these steps to trigger the pipeline:
+### 触发管道
 
-1. Select the `yolov5-training` pipeline and click the `Run` button to open the `Run Pipeline` dialog.
+按照以下步骤触发管道：
 
-2. In the `Run Pipeline` dialog, enter the pipeline parameters. For parameters with default values, use `Add Execution Parameter` to expose them before setting values.
+1. 选择 `yolov5-training` 管道并单击 `Run` 按钮以打开 `Run Pipeline` 对话框。
 
-3. (Optional) After setting the parameters, click `Save as Trigger Template` to save the current parameters as a `Trigger Template`. For subsequent pipeline runs, click on the template listed under `Trigger Templates` in the `Run Pipeline` dialog to automatically set all parameters.
+2. 在 `Run Pipeline` 对话框中，输入管道参数。对于具有默认值的参数，使用 `Add Execution Parameter` 先暴露它们，然后再设置值。
 
-4. If the ServiceAccount for running the pipeline is not `default`, click the `YAML` button in the upper right corner to switch to YAML editing mode, then add `taskRunTemplate.serviceAccountName` to `spec`:
+3. （可选）设置参数后，单击 `Save as Trigger Template` 将当前参数保存为 `Trigger Template`。在后续的管道运行中，单击 `Run Pipeline` 对话框中列出的模板，以自动设置所有参数。
+
+4. 如果运行管道的 ServiceAccount 不是 `default`，请单击右上角的 `YAML` 按钮切换到 YAML 编辑模式，然后将 `taskRunTemplate.serviceAccountName` 添加到 `spec` 中：
    ```yaml
    spec:
-     .... # other content
+     .... # 其他内容
      taskRunTemplate:
        serviceAccountName: <service-account-name>
    ```
-   This configuration can also be saved to the `Trigger Template` for convenient reuse in subsequent runs.
+   此配置也可以保存到 `Trigger Template` 中，以便在后续运行中方便重用。
 
-5. After setting the parameters, click the `Run` button to execute the pipeline.
+5. 设置参数后，单击 `Run` 按钮以执行管道。
 
+有关事件驱动管道执行的信息，请参阅 [Pipelines 文档](https://docs.alauda.io/alauda-devops-pipelines/) 中的 `Trigger` 部分。
 
-For event-driven pipeline execution, refer to the `Trigger` section in the [Pipelines documentation](https://docs.alauda.io/alauda-devops-pipelines/).
+**注意**：当管道运行时，它会创建一个与 `PipelineRun` 通过 `OwnerReference` 关联的 `VolcanoJob`。当 `PipelineRun` 被删除时，相关的 `VolcanoJob` 及其相关资源（如 `PodGroup` 和 `Pods`）将被级联删除。有关 `VolcanoJob` 的更多信息，请参阅 [VolcanoJob 文档](https://volcano.sh/en/docs/vcjob/)。
 
-**Note**: When the pipeline runs, it creates a `VolcanoJob` that is associated with the `PipelineRun` through `OwnerReference`. When the `PipelineRun` is deleted, the associated `VolcanoJob` and its related resources (such as `PodGroup` and `Pods`) will be cascadingly deleted. For more information about `VolcanoJob`, refer to the [VolcanoJob documentation](https://volcano.sh/en/docs/vcjob/).
+### 检查 PipelineRun 状态和日志
 
-
-### Checkout PipelineRun status and logs
-
-The execution status and training logs can be viewed in the corresponding execution record in `PipelineRuns`.
+可以在 `PipelineRuns` 的相应执行记录中查看执行状态和训练日志。
