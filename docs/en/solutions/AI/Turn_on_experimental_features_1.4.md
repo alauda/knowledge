@@ -5,6 +5,7 @@ kind:
    - Solution
 ProductsVersion:
    - 1.4
+id: KB1763720171-AC5D
 ---
 
 # Turn on experimental features in Alauda AI 1.4

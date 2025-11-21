@@ -1,32 +1,33 @@
 ---
 products:
-   - Alauda AI
+  - Alauda AI
 kind:
-   - Solution
+  - Solution
 ProductsVersion:
-   - 4.x
+  - 4.x
 id: KB1763720171-5D07
+sourceSHA: fe05d046abde3e98c3e8d98f293a0d5a606c9d355312d3d451b4fc91f521a1a9
 ---
-# How to Use Pipeline to Deploy Inference Service
 
-## Overview
+# 如何使用管道部署推理服务
 
-This document demonstrates how to deploy inference services using DevOps Pipeline.
+## 概述
 
-## Prerequisites
+本文档演示了如何使用 DevOps 管道部署推理服务。
 
-Before proceeding with the inference service deployment pipeline, ensure the following prerequisites are met:
+## 前提条件
 
-1. **Alauda DevOps**: Install `Alauda DevOps next-gen` following the [Alauda DevOps documentation](https://docs.alauda.io/devops). `Alauda DevOps Pipelines` and `Alauda DevOps Connectors` must be installed.
+在继续进行推理服务部署管道之前，请确保满足以下前提条件：
 
-2. **Alauda AI**: It is recommended to deploy Alauda AI for better management of models, training, and inference services. Refer to the [Alauda AI documentation](https://docs.alauda.io/ai/) for installation and configuration details.
+1. **Alauda DevOps**：按照 [Alauda DevOps 文档](https://docs.alauda.io/devops) 安装 `Alauda DevOps next-gen`。必须安装 `Alauda DevOps Pipelines` 和 `Alauda DevOps Connectors`。
 
-3. **GPU Device Plugins**: It is recommended to deploy GPU device plugins such as `HAMi` or `NVIDIA GPU Device Plugin` to utilize GPU resources for inference services. Refer to the `Device Management` section in the [Alauda AI documentation](https://docs.alauda.io/ai/) for deployment instructions.
+2. **Alauda AI**：建议部署 Alauda AI 以更好地管理模型、训练和推理服务。有关安装和配置的详细信息，请参阅 [Alauda AI 文档](https://docs.alauda.io/ai/)。
 
+3. **GPU 设备插件**：建议部署 GPU 设备插件，如 `HAMi` 或 `NVIDIA GPU Device Plugin`，以利用 GPU 资源进行推理服务。有关部署说明，请参阅 [Alauda AI 文档](https://docs.alauda.io/ai/) 中的 `设备管理` 部分。
 
-### Configure RBAC
+### 配置 RBAC
 
-Configure RBAC for the namespace where the `Pipeline` will run. Since `Pipeline Tasks` use the `default` `ServiceAccount` by default, the following script configures permissions for the `ServiceAccount`:
+为将要运行 `Pipeline` 的命名空间配置 RBAC。由于 `Pipeline Tasks` 默认使用 `default` `ServiceAccount`，以下脚本配置 `ServiceAccount` 的权限：
 
 <details>
 
@@ -109,40 +110,43 @@ roleRef:
 EOF
 
 ```
+
 </details>
 
-Run the script to configure RBAC for the `default` `ServiceAccount`:
+运行脚本以配置 `default` `ServiceAccount` 的 RBAC：
+
 ```bash
 bash prepare_rbac.sh <namespace-name>
 ```
 
-To use a dedicated `ServiceAccount`, run:
+要使用专用的 `ServiceAccount`，请运行：
+
 ```bash
 SA=<service-account-name> bash prepare_rbac.sh <namespace-name>
 ```
 
-Note:
+注意：
 
-1. When using a `ServiceAccount` other than `default`, the `ServiceAccount` name must be specified when running pipeline. Refer to the following sections for details.
+1. 使用 `default` 以外的 `ServiceAccount` 时，必须在运行管道时指定 `ServiceAccount` 名称。有关详细信息，请参阅以下部分。
 
-2. This script requires cluster administrator privileges to create `ClusterRoleBinding` resources.
+2. 此脚本需要集群管理员权限以创建 `ClusterRoleBinding` 资源。
 
-### Create Pipeline
+### 创建管道
 
-Follow these steps to create the Pipeline in `Alauda Container Platform`:
+按照以下步骤在 `Alauda Container Platform` 中创建管道：
 
-1. Navigate to the namespace where the pipeline will run in the `Alauda Container Platform` view.
+1. 在 `Alauda Container Platform` 视图中导航到将要运行管道的命名空间。
 
-2. In the left navigation, select `Pipelines` / `Pipelines`, and click the `Create` button on the right side of the opened page.
+2. 在左侧导航中选择 `Pipelines` / `Pipelines`，然后单击打开页面右侧的 `Create` 按钮。
 
-3. In the Create Pipeline dialog, enter name `deploy-inference-service`, then click the `Confirm` button to enter the pipeline orchestration page.
+3. 在创建管道对话框中，输入名称 `deploy-inference-service`，然后单击 `Confirm` 按钮进入管道编排页面。
 
-4. On the pipeline orchestration page, click the `YAML` button in the upper right corner to switch to YAML editing mode, and paste the following pipeline YAML content into the editor.
+4. 在管道编排页面，单击右上角的 `YAML` 按钮切换到 YAML 编辑模式，并将以下管道 YAML 内容粘贴到编辑器中。
 
-5. Click the `Create` button in the lower right corner to create the `deploy-inference-service` pipeline.
+5. 单击右下角的 `Create` 按钮以创建 `deploy-inference-service` 管道。
 
 <details>
-<summary>Pipeline: deploy-inference-service</summary>
+<summary>管道：deploy-inference-service</summary>
 
 ```yaml
 apiVersion: tekton.dev/v1
@@ -153,79 +157,79 @@ spec:
   params:
     - name: INFERENCE_SERVICE_NAME
       type: string
-      description: The name of the InferenceService to be deployed
+      description: 要部署的 InferenceService 的名称
     - name: INFERENCE_SERVICE_DESCRIPTION
       type: string
-      description: The description of the InferenceService
+      description: InferenceService 的描述
       default: ""
     - name: UPDATE_IF_EXISTS
       type: string
-      description: Whether to update the InferenceService if it already exists
+      description: 如果 InferenceService 已存在，是否更新
       default: "true"
-    - description: The name of the model repository containing the model
+    - description: 包含模型的模型仓库的名称
       name: MODEL_REPO
       type: string
     - default: ""
-      description: The branch of the model repository to use
+      description: 要使用的模型仓库的分支
       name: MODEL_REPO_BRANCH
       type: string
     - default: ""
-      description: The tag of the model repository to use
+      description: 要使用的模型仓库的标签
       name: MODEL_REPO_TAG
       type: string
-    - description: The name of the serving runtime to use, if empty, will use the first runtime with the same class as RUNTIME_CLASS
+    - description: 要使用的服务运行时的名称，如果为空，将使用与 RUNTIME_CLASS 相同类的第一个运行时
       name: RUNTIME_NAME
       type: string
       default: ""
-    - description: The class of the serving runtime
+    - description: 服务运行时的类
       name: RUNTIME_CLASS
       type: string
-    - description: The size of ephemeral storage for the InferenceService
+    - description: InferenceService 的临时存储大小
       name: EPHIMERAL_STORAGE_SIZE
       type: string
       default: "10Gi"
     - default: ""
-      description: The name of an existing PVC to use for the InferenceService
+      description: 要用于 InferenceService 的现有 PVC 的名称
       name: PVC_NAME
       type: string
-    - description: The minimum number of replicas for the InferenceService, should be >= 0
+    - description: InferenceService 的最小副本数，应 >= 0
       name: MIN_REPLICAS
       type: string
       default: "1"
-    - description: The maximum number of replicas for the InferenceService, should be >= MIN_REPLICAS
+    - description: InferenceService 的最大副本数，应 >= MIN_REPLICAS
       name: MAX_REPLICAS
       type: string
       default: "1"
-    - description: The CPU request for the InferenceService
+    - description: InferenceService 的 CPU 请求
       name: CPU_REQUEST
       type: string
       default: "1"
-    - description: The memory request for the InferenceService
+    - description: InferenceService 的内存请求
       name: MEMORY_REQUEST
       type: string
       default: "4Gi"
-    - description: The CPU limit for the InferenceService
+    - description: InferenceService 的 CPU 限制
       name: CPU_LIMIT
       type: string
       default: "4"
-    - description: The memory limit for the InferenceService
+    - description: InferenceService 的内存限制
       name: MEMORY_LIMIT
       type: string
       default: "16Gi"
     - default: "1"
-      description: HAMi NVIDIA GPU allocation - number of GPU cards, leave empty to not allocate GPU
+      description: HAMi NVIDIA GPU 分配 - GPU 卡数量，留空则不分配 GPU
       name: NVIDIA_GPUALLOC
       type: string
     - default: "50"
-      description: HAMi NVIDIA GPU cores - percentage of compute power per card, range 1-100, leave empty to not configure GPU cores
+      description: HAMi NVIDIA GPU 核心 - 每张卡的计算能力百分比，范围 1-100，留空则不配置 GPU 核心
       name: NVIDIA_GPUCORES
       type: string
     - default: "4096"
-      description: HAMi NVIDIA GPU memory - memory usage per card in MiB, leave empty to not configure GPU memory
+      description: HAMi NVIDIA GPU 内存 - 每张卡的内存使用量（MiB），留空则不配置 GPU 内存
       name: NVIDIA_GPUMEM
       type: string
     - default: ""
-      description: NVIDIA GPU count - number of GPU cards allocated when using NVIDIA GPU plugin, cannot be used together with HAMi parameters, leave empty to not set
+      description: NVIDIA GPU 数量 - 使用 NVIDIA GPU 插件时分配的 GPU 卡数量，不能与 HAMi 参数一起使用，留空则不设置
       name: NVIDIA_GPU
       type: string
   results:
@@ -286,41 +290,41 @@ spec:
             echo "NVIDIA_GPU: ${NVIDIA_GPU}"
 
             if [ -z "${RUNTIME_NAME}" ] && [ -z "${RUNTIME_CLASS}" ]; then
-              echo "ERROR: Either RUNTIME_NAME or RUNTIME_CLASS must be specified"
+              echo "错误：必须指定 RUNTIME_NAME 或 RUNTIME_CLASS"
               exit 1
             fi
 
             if [ -z "${MODEL_REPO}" ]; then
-              echo "ERROR: MODEL_REPO cannot be empty"
+              echo "错误：MODEL_REPO 不能为空"
               exit 1
             fi
 
             if [ -n "${MODEL_REPO_TAG}" ] && [ -n "${MODEL_REPO_BRANCH}" ]; then
-              echo "ERROR: MODEL_REPO_TAG and MODEL_REPO_BRANCH cannot be set at the same time"
+              echo "错误：MODEL_REPO_TAG 和 MODEL_REPO_BRANCH 不能同时设置"
               exit 1
             fi
 
             cpu_limit="cpu: ${CPU_LIMIT}"
             cpu_request="cpu: ${CPU_REQUEST}"
             if [ -z "${CPU_LIMIT}" ]; then
-              echo "CPU limit is empty, not configuring CPU limit!"
+              echo "CPU 限制为空，不配置 CPU 限制！"
               cpu_limit=""
             fi
 
             if [ -z "$CPU_REQUEST" ]; then
-              echo "CPU request is empty, not configuring CPU request!"
+              echo "CPU 请求为空，不配置 CPU 请求！"
               cpu_request=""
             fi
 
             memory_limit="memory: ${MEMORY_LIMIT}"
             memory_request="memory: ${MEMORY_REQUEST}"
             if [ -z "$MEMORY_LIMIT" ]; then
-              echo "Memory limit is empty, not configuring memory limit!"
+              echo "内存限制为空，不配置内存限制！"
               memory_limit=""
             fi
 
             if [ -z "$MEMORY_REQUEST" ]; then
-              echo "Memory request is empty, not configuring memory request!"
+              echo "内存请求为空，不配置内存请求！"
               memory_request=""
             fi
 
@@ -329,39 +333,39 @@ spec:
             nvidia_gpu_mem_resource="nvidia.com/gpumem: ${NVIDIA_GPUMEM}"
 
             if [ -z "$NVIDIA_GPUALLOC" ]; then
-              echo "NVIDIA_GPUALLOC is empty, not configuring nvidia.com/gpualloc resource!"
+              echo "NVIDIA_GPUALLOC 为空，不配置 nvidia.com/gpualloc 资源！"
               nvidia_gpu_alloc_resource=""
             fi
 
             if [ -z "$NVIDIA_GPUCORES" ]; then
-              echo "NVIDIA_GPUCORES is empty, not configuring nvidia.com/gpucores resource!"
+              echo "NVIDIA_GPUCORES 为空，不配置 nvidia.com/gpucores 资源！"
               nvidia_gpu_cores_resource=""
             fi
 
             if [ -z "$NVIDIA_GPUMEM" ]; then
-              echo "NVIDIA_GPUMEM is empty, not configuring nvidia.com/gpumem resource!"
+              echo "NVIDIA_GPUMEM 为空，不配置 nvidia.com/gpumem 资源！"
               nvidia_gpu_mem_resource=""
             fi
 
             nvidia_gpu="nvidia.com/gpu: ${NVIDIA_GPU}"
             if [ -z "$NVIDIA_GPU" ]; then
-              echo "NVIDIA_GPU is empty, not configuring nvidia.com/gpu resource!"
+              echo "NVIDIA_GPU 为空，不配置 nvidia.com/gpu 资源！"
               nvidia_gpu=""
             fi
 
             if [ -n "$NVIDIA_GPU" ] && ([ -n "$NVIDIA_GPUALLOC" ] || [ -n "$NVIDIA_GPUCORES" ] || [ -n "$NVIDIA_GPUMEM" ]); then
-              echo "ERROR: Cannot use NVIDIA_GPU with HAMi resources"
+              echo "错误：不能将 NVIDIA_GPU 与 HAMi 资源一起使用"
               echo "NVIDIA_GPU=${NVIDIA_GPU}, NVIDIA_GPUALLOC=${NVIDIA_GPUALLOC}, NVIDIA_GPUCORES=${NVIDIA_GPUCORES}, NVIDIA_GPUMEM=${NVIDIA_GPUMEM}"
               exit 1
             fi
 
             if [ "$MIN_REPLICAS" -lt "0" ]; then
-              echo "ERROR: MIN_REPLICAS($MIN_REPLICAS) should not be less than 0"
+              echo "错误：MIN_REPLICAS($MIN_REPLICAS) 不应小于 0"
               exit 1
             fi
 
             if [ "$MAX_REPLICAS" -lt "$MIN_REPLICAS" ]; then
-              echo "ERROR: MAX_REPLICAS($MAX_REPLICAS) should not be less than MIN_REPLICAS($MIN_REPLICAS)"
+              echo "错误：MAX_REPLICAS($MAX_REPLICAS) 不应小于 MIN_REPLICAS($MIN_REPLICAS)"
               exit 1
             fi
 
@@ -372,7 +376,7 @@ spec:
 
             if [ -z "$PVC_NAME" ] && [ -z "${EPHIMERAL_STORAGE_SIZE}" ]; then
               EPHIMERAL_STORAGE_SIZE="10Gi"
-              echo "Both PVC_NAME and EPHIMERAL_STORAGE_SIZE are empty, EPHIMERAL_STORAGE_SIZE using default value: ${EPHIMERAL_STORAGE_SIZE}"
+              echo "PVC_NAME 和 EPHIMERAL_STORAGE_SIZE 都为空，EPHIMERAL_STORAGE_SIZE 使用默认值：${EPHIMERAL_STORAGE_SIZE}"
             fi
 
             ephemeral_storage="ephemeral-storage: ${EPHIMERAL_STORAGE_SIZE}"
@@ -405,7 +409,7 @@ spec:
 
               base_url="$(jq -r '.data.MODEL_REPO_GIT_BASE' ${config})"
               if [ -z "${base_url}" ]; then
-                echo "GITLAB_BASE_URL is not set"
+                echo "GITLAB_BASE_URL 未设置"
                 exit 1
               fi
 
@@ -417,7 +421,7 @@ spec:
 
               token="$(kubectl get secrets -n ${NAMESPACE} aml-image-builder-secret -o jsonpath='{.data.MODEL_REPO_GIT_TOKEN}' | base64 -d)"
               if [ -z "${token}" ]; then
-                echo "GITLAB_TOKEN is not set"
+                echo "GITLAB_TOKEN 未设置"
                 exit 1
               fi
               GITLAB_TOKEN="${token}"
@@ -430,7 +434,7 @@ spec:
               curl -k -H "PRIVATE-TOKEN: ${GITLAB_TOKEN}" "${GITLAB_BASE_URL}/api/v4/projects?search_namespaces=true&search=amlmodels" > ${project}
               project_id="$(jq -r --arg name "${MODEL_REPO}" '.[] | select(.name == $name) | .id' ${project} 2>/dev/null || echo "")"
               if [ -z "${project_id}" ]; then
-                echo "can not find project id for repo: ${MODEL_REPO}"
+                echo "无法找到仓库: ${MODEL_REPO} 的项目 ID"
                 exit 1
               fi
               GITLAB_PROJECT_ID="${project_id}"
@@ -452,7 +456,7 @@ spec:
 
               commit_id="$(jq -r '.commit.id' ${branch})"
               if [ -z "${commit_id}" ] || [ "${commit_id}" = "null" ]; then
-                echo "can not find commit id for branch: ${ref_name}"
+                echo "无法找到分支: ${ref_name} 的提交 ID"
                 cat ${branch}
                 exit 1
               fi
@@ -468,7 +472,7 @@ spec:
 
               commit_id="$(jq -r '.commit.id' ${tag})"
               if [ -z "${commit_id}" ] || [ "${commit_id}" = "null" ]; then
-                echo "can not find tag: ${ref_name}"
+                echo "无法找到标签: ${ref_name}"
                 exit 1
               fi
               GITLAB_COMMIT_ID="${commit_id}"
@@ -481,18 +485,18 @@ spec:
               echo "README.md"
               cat $readme
               if [ ! -s "$readme" ]; then
-                echo "ERROR: README.md is empty"
+                echo "错误：README.md 为空"
                 exit 1
               fi
 
               PIPELINE_TAG=$(grep '^pipeline_tag:' ${readme} 2>/dev/null | head -n 1 | sed 's/pipeline_tag:[[:space:]]*//' || echo "")
               if [ -z "${PIPELINE_TAG}" ]; then
-                echo "ERROR: cannot find pipeline_tag in README.md"
+                echo "错误：无法在 README.md 中找到 pipeline_tag"
                 exit 1
               fi
               LIBRARY_NAME=$(grep '^library_name:' ${readme} 2>/dev/null | head -n 1 | sed 's/library_name:[[:space:]]*//' || echo "")
               if [ -z "${LIBRARY_NAME}" ]; then
-                echo "ERROR: cannot find library_name in README.md"
+                echo "错误：无法在 README.md 中找到 library_name"
                 exit 1
               fi
             }
@@ -505,7 +509,7 @@ spec:
               if [ -n "${RUNTIME_NAME}" ]; then
                 kubectl get clusterservingruntimes.serving.kserve.io ${RUNTIME_NAME} -o json --ignore-not-found > ${runtime}
                 if [ ! -s "${runtime}" ]; then
-                  echo "runtime ${RUNTIME_NAME} not found"
+                  echo "运行时 ${RUNTIME_NAME} 未找到"
                   exit 1
                 fi
                 runtime_class=$(jq -r '.metadata.labels["cpaas.io/runtime-class"]' ${runtime})
@@ -513,24 +517,24 @@ spec:
                   RUNTIME_CLASS="${runtime_class}"
                 else
                   if [ "${RUNTIME_CLASS}" != "${runtime_class}" ]; then
-                    echo "runtime ${RUNTIME_NAME} has runtime class ${runtime_class}, but ${RUNTIME_CLASS} is specified"
+                    echo "运行时 ${RUNTIME_NAME} 的运行时类为 ${runtime_class}，但指定的是 ${RUNTIME_CLASS}"
                     exit 1
                   fi
                 fi
               else
                 kubectl get clusterservingruntimes.serving.kserve.io -o json -l cpaas.io/runtime-class=${RUNTIME_CLASS} > ${runtime}
                 if [ $(jq -r '.items | length' ${runtime}) -eq 0 ]; then
-                  echo "runtime with class ${RUNTIME_CLASS} not found"
+                  echo "未找到类为 ${RUNTIME_CLASS} 的运行时"
                   exit 1
                 fi
                 jq -r '.items[0]' ${runtime} > ${runtime}.tmp && mv ${runtime}.tmp ${runtime}
                 RUNTIME_NAME=$(jq -r '.metadata.name' ${runtime})
-                echo "use runtime: ${RUNTIME_NAME}"
+                echo "使用运行时: ${RUNTIME_NAME}"
               fi
 
               is_supported=$(jq -r --arg framework "${LIBRARY_NAME}" '.spec.supportedModelFormats[] | select(.name == $framework) | .name' ${runtime} 2>/dev/null || echo "")
               if [ -z "${is_supported}" ]; then
-                echo "LIBRARY_NAME ${LIBRARY_NAME} is not supported by runtime ${RUNTIME_NAME}"
+                echo "LIBRARY_NAME ${LIBRARY_NAME} 不被运行时 ${RUNTIME_NAME} 支持"
                 exit 1
               fi
 
@@ -569,8 +573,8 @@ spec:
             EOF
                 status=$(jq -r '.status.conditions[] | select(.type == "Ready") | .status' ${inference_service} 2>/dev/null || echo "")
                 if [ "${status}" = "True" ]; then
-                  echo "InferenceService ${INFERENCE_SERVICE_NAME} is ready"
-                  echo "Wait for deployments to be ready"
+                  echo "InferenceService ${INFERENCE_SERVICE_NAME} 已就绪"
+                  echo "等待部署就绪"
                   kubectl rollout status deployments.apps -n ${NAMESPACE} -l serving.kserve.io/inferenceservice=${INFERENCE_SERVICE_NAME}
                   break
                 fi
@@ -583,7 +587,7 @@ spec:
               kubectl get inferenceservices.serving.kserve.io ${INFERENCE_SERVICE_NAME} -n ${NAMESPACE} -o json --ignore-not-found > ${inference_service}
               if [ "${UPDATE_IF_EXISTS}" != "true" ]; then
                 if [ -s "${inference_service}" ]; then
-                  echo "InferenceService ${INFERENCE_SERVICE_NAME} already exists, please set UPDATE_IF_EXISTS to true to update it"
+                  echo "InferenceService ${INFERENCE_SERVICE_NAME} 已存在，请将 UPDATE_IF_EXISTS 设置为 true 以更新它"
                   exit 1
                 fi
               else
@@ -671,7 +675,7 @@ spec:
                   runtime: ${RUNTIME_NAME}
                   name: kserve-container
             EOF
-            echo "InferenceService YAML: "
+            echo "推理服务 YAML: "
             cat /tmp/inference-service.yaml
 
             kubectl apply -f /tmp/inference-service.yaml
@@ -691,105 +695,112 @@ spec:
       timeout: 30m0s
   finally: []
 ```
+
 </details>
 
-### Pipeline Parameters
+### 管道参数
 
-The pipeline includes the following key parameters that need to be configured:
+管道包括以下需要配置的关键参数：
 
-**Service Parameters:**
-- `INFERENCE_SERVICE_NAME`: The name of the InferenceService to be deployed
-- `INFERENCE_SERVICE_DESCRIPTION`: The description of the InferenceService (default: "")
-- `UPDATE_IF_EXISTS`: Whether to update the InferenceService if it already exists (default: "true")
+**服务参数：**
 
-**Repository Parameters:**
-- `MODEL_REPO`: The name of the model repository containing the model (required)
-- `MODEL_REPO_BRANCH`: The branch of the model repository to use (default: "", cannot be set together with MODEL_REPO_TAG)
-- `MODEL_REPO_TAG`: The tag of the model repository to use (default: "", cannot be set together with MODEL_REPO_BRANCH)
+- `INFERENCE_SERVICE_NAME`：要部署的 InferenceService 的名称
+- `INFERENCE_SERVICE_DESCRIPTION`：InferenceService 的描述（默认值：""）
+- `UPDATE_IF_EXISTS`：如果 InferenceService 已存在，是否更新（默认值："true"）
 
-**Runtime Parameters:**
-- `RUNTIME_NAME`: The name of the serving runtime to use, if empty, will use the first runtime with the same class as RUNTIME_CLASS (default: "")
-- `RUNTIME_CLASS`: The class of the serving runtime (required if RUNTIME_NAME is empty)
+**仓库参数：**
 
-**Storage Parameters:**
-- `EPHIMERAL_STORAGE_SIZE`: The size of ephemeral storage for the InferenceService (default: "10Gi", will use default value if both PVC_NAME and EPHIMERAL_STORAGE_SIZE are empty)
-- `PVC_NAME`: The name of an existing PVC to use for the InferenceService (default: "", if specified, EPHIMERAL_STORAGE_SIZE will be ignored)
+- `MODEL_REPO`：包含模型的模型仓库的名称（必需）
+- `MODEL_REPO_BRANCH`：要使用的模型仓库的分支（默认值：""，不能与 MODEL_REPO_TAG 同时设置）
+- `MODEL_REPO_TAG`：要使用的模型仓库的标签（默认值：""，不能与 MODEL_REPO_BRANCH 同时设置）
 
-**Replica Parameters:**
-- `MIN_REPLICAS`: The minimum number of replicas for the InferenceService (default: "1", must be >= 0)
-- `MAX_REPLICAS`: The maximum number of replicas for the InferenceService (default: "1", must be >= MIN_REPLICAS)
+**运行时参数：**
 
-**Note**: The deployment mode is automatically determined based on replica configuration:
-- If `MIN_REPLICAS` equals `MAX_REPLICAS`, the service will use `RawDeployment` mode
-- If `MIN_REPLICAS` differs from `MAX_REPLICAS`, the service will use `Serverless` mode
+- `RUNTIME_NAME`：要使用的服务运行时的名称，如果为空，将使用与 RUNTIME_CLASS 相同类的第一个运行时（默认值：""）
+- `RUNTIME_CLASS`：服务运行时的类（如果 RUNTIME_NAME 为空，则必需）
 
-**Resource Parameters:**
-- `CPU_REQUEST`: Request CPU (default: "1", leave empty to not request CPU)
-- `MEMORY_REQUEST`: Request memory (default: "4Gi", leave empty to not request memory)
-- `CPU_LIMIT`: Limit CPU (default: "4", leave empty to not limit CPU)
-- `MEMORY_LIMIT`: Limit memory (default: "16Gi", leave empty to not limit memory)
-- `NVIDIA_GPUALLOC`: NVIDIA GPU allocation - number of GPU cards (default: "1", leave empty to not allocate GPU)
-- `NVIDIA_GPUCORES`: NVIDIA GPU cores - percentage of compute power per card, range 1-100 (default: "50", leave empty to not configure GPU cores)
-- `NVIDIA_GPUMEM`: NVIDIA GPU memory - memory usage per card in MiB (default: "4096", leave empty to not configure GPU memory)
-- `NVIDIA_GPU`: NVIDIA GPU count - number of GPU cards allocated when using NVIDIA GPU plugin, cannot be used together with HAMi parameters (NVIDIA_GPUALLOC, NVIDIA_GPUCORES, NVIDIA_GPUMEM) (default: "", leave empty to not set)
+**存储参数：**
 
-### Prepare Model Repository
+- `EPHIMERAL_STORAGE_SIZE`：推理服务的临时存储大小（默认值："10Gi"，如果 PVC_NAME 和 EPHIMERAL_STORAGE_SIZE 都为空，将使用默认值）
+- `PVC_NAME`：要用于推理服务的现有 PVC 的名称（默认值：""，如果指定，将忽略 EPHIMERAL_STORAGE_SIZE）
 
-Before deploying the InferenceService, ensure that the model repository is properly prepared:
+**副本参数：**
 
-1. **Create Model Repository**: In the `Alauda AI` view, switch to the namespace where the pipeline will run. Under `Business view`, navigate to the left sidebar and select `Model Repository`. On the right side of the page, click the `Create Model Repository` button to create a new model repository.
+- `MIN_REPLICAS`：推理服务的最小副本数（默认值："1"，必须 >= 0）
+- `MAX_REPLICAS`：推理服务的最大副本数（默认值："1"，必须 >= MIN_REPLICAS）
 
-2. **Model Repository Structure**: The repository must include a `README.md` file with at least the following metadata:
-     - `pipeline_tag`: Specifies the pipeline tag for the model
-     - `library_name`: Specifies the library/framework name for the model
+**注意**：部署模式根据副本配置自动确定：
 
-   The `README.md` file can be edited using the `Edit Metadata` feature under the `File Management` tab in the `Model Repository`.
+- 如果 `MIN_REPLICAS` 等于 `MAX_REPLICAS`，服务将使用 `RawDeployment` 模式
+- 如果 `MIN_REPLICAS` 与 `MAX_REPLICAS` 不同，服务将使用 `Serverless` 模式
 
-### Trigger Pipeline
+**资源参数：**
 
-Follow these steps to trigger the pipeline:
+- `CPU_REQUEST`：请求 CPU（默认值："1"，留空则不请求 CPU）
+- `MEMORY_REQUEST`：请求内存（默认值："4Gi"，留空则不请求内存）
+- `CPU_LIMIT`：限制 CPU（默认值："4"，留空则不限制 CPU）
+- `MEMORY_LIMIT`：限制内存（默认值："16Gi"，留空则不限制内存）
+- `NVIDIA_GPUALLOC`：NVIDIA GPU 分配 - GPU 卡数量（默认值："1"，留空则不分配 GPU）
+- `NVIDIA_GPUCORES`：NVIDIA GPU 核心 - 每张卡的计算能力百分比，范围 1-100（默认值："50"，留空则不配置 GPU 核心）
+- `NVIDIA_GPUMEM`：NVIDIA GPU 内存 - 每张卡的内存使用量（MiB）（默认值："4096"，留空则不配置 GPU 内存）
+- `NVIDIA_GPU`：NVIDIA GPU 数量 - 使用 NVIDIA GPU 插件时分配的 GPU 卡数量，不能与 HAMi 参数（NVIDIA_GPUALLOC、NVIDIA_GPUCORES、NVIDIA_GPUMEM）一起使用（默认值：""，留空则不设置）
 
-1. Select the `deploy-inference-service` pipeline and click the `Run` button to open the `Run Pipeline` dialog.
+### 准备模型仓库
 
-2. In the `Run Pipeline` dialog, enter the pipeline parameters. For parameters with default values, use `Add Execution Parameter` to expose them before setting values.
+在部署推理服务之前，请确保模型仓库已正确准备：
 
-3. (Optional) After setting the parameters, click `Save as Trigger Template` to save the current parameters as a `Trigger Template`. For subsequent pipeline runs, click on the template listed under `Trigger Templates` in the `Run Pipeline` dialog to automatically set all parameters.
+1. **创建模型仓库**：在 `Alauda AI` 视图中，切换到将要运行管道的命名空间。在 `业务视图` 下，导航到左侧边栏并选择 `模型仓库`。在页面右侧，单击 `创建模型仓库` 按钮以创建新的模型仓库。
 
-4. If the ServiceAccount for running the pipeline is not `default`, click the `YAML` button in the upper right corner to switch to YAML editing mode, then add `taskRunTemplate.serviceAccountName` to `spec`:
+2. **模型仓库结构**：仓库必须包含一个 `README.md` 文件，至少包含以下元数据：
+
+   - `pipeline_tag`：指定模型的管道标签
+   - `library_name`：指定模型的库/框架名称
+
+   可以使用 `模型仓库` 中的 `编辑元数据` 功能编辑 `README.md` 文件。
+
+### 触发管道
+
+按照以下步骤触发管道：
+
+1. 选择 `deploy-inference-service` 管道并单击 `Run` 按钮以打开 `Run Pipeline` 对话框。
+
+2. 在 `Run Pipeline` 对话框中，输入管道参数。对于具有默认值的参数，请使用 `Add Execution Parameter` 先暴露它们，然后再设置值。
+
+3. （可选）设置参数后，单击 `Save as Trigger Template` 将当前参数保存为 `Trigger Template`。对于后续的管道运行，请单击 `Run Pipeline` 对话框中列出的模板，以自动设置所有参数。
+
+4. 如果运行管道的 ServiceAccount 不是 `default`，请单击右上角的 `YAML` 按钮切换到 YAML 编辑模式，然后将 `taskRunTemplate.serviceAccountName` 添加到 `spec`：
    ```yaml
    spec:
-     .... # other content
+     .... # 其他内容
      taskRunTemplate:
        serviceAccountName: <service-account-name>
    ```
-   This configuration can also be saved to the `Trigger Template` for convenient reuse in subsequent runs.
+   此配置也可以保存到 `Trigger Template` 中，以便在后续运行中方便重用。
 
-5. After setting the parameters, click the `Run` button to execute the pipeline.
+5. 设置参数后，单击 `Run` 按钮以执行管道。
 
+有关事件驱动管道执行的更多信息，请参阅 [Pipelines 文档](https://docs.alauda.io/alauda-devops-pipelines/) 中的 `Trigger` 部分。
 
-For event-driven pipeline execution, refer to the `Trigger` section in the [Pipelines documentation](https://docs.alauda.io/alauda-devops-pipelines/).
+### 检查 PipelineRun 状态和日志
 
+可以在 `PipelineRuns` 中查看相应执行记录的执行状态和部署日志。管道将在 `InferenceService` 准备就绪后，等待相关部署准备就绪，然后完成。
 
-### Checkout PipelineRun status and logs
+### 常见问题解答
 
-The execution status and deployment logs can be viewed in the corresponding execution record in `PipelineRuns`. The pipeline will wait for the `InferenceService` to be ready and then wait for the associated deployments to be ready before completing.
+#### 1. Pod 创建因 PSA（Pod Security Admission）限制而失败
 
-### FAQ
+由于推理服务启用了 `hostIPC`，可能会因 PSA 违规而无法创建 Pods。要解决此问题，需要将命名空间上的 PSA 设置调整为特权模式。
 
-#### 1. Pod creation fails due to PSA (Pod Security Admission) restrictions
-
-Since the inference service enables `hostIPC`, it may fail to create Pods due to PSA violations. To resolve this issue, the PSA settings on the Namespace need to be adjusted to privileged mode.
-
-The namespace can be configured with privileged PSA mode by adding the following label:
+可以通过添加以下标签将命名空间配置为特权 PSA 模式：
 
 ```bash
 kubectl label namespace <namespace-name> pod-security.kubernetes.io/enforce=privileged --overwrite
 ```
 
-Alternatively, the PSA settings can be modified through the Web UI:
+或者，可以通过 Web UI 修改 PSA 设置：
 
-1. In the `Alauda AI` view, switch to the namespace where the pipeline will run
-2. Under `Business view`, select `Namespace` from the left navigation and find the namespace that needs to be modified
-3. In the `Action` dropdown menu, find and click the `Update Pod Security Admission` button
-4. Under `Security Mode`, set the value of `Enforce` to `Privileged`
-5. Click the `Update` button to apply the changes
+1. 在 `Alauda AI` 视图中，切换到将要运行管道的命名空间
+2. 在 `业务视图` 下，从左侧导航中选择 `Namespace`，找到需要修改的命名空间
+3. 在 `Action` 下拉菜单中，找到并单击 `Update Pod Security Admission` 按钮
+4. 在 `Security Mode` 下，将 `Enforce` 的值设置为 `Privileged`
+5. 单击 `Update` 按钮以应用更改

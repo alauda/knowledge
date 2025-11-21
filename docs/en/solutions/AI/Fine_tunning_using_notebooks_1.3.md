@@ -1,3 +1,6 @@
+---
+id: KB1763720171-E802
+---
 # Alauda AI 1.3 (AML 1.3) Notebook Model Fine-tuning and Training General Solution
 
 ## Background
