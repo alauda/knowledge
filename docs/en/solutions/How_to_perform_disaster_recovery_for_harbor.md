@@ -405,9 +405,7 @@ flowchart TD
 
 2. Create the corresponding script files:
 
-    - **condition_check.sh**: Please customize this script according to your actual failover decision process. The script should output `start` if the cluster node should be activated, and output `stop` if it should be deactivated. If the script execution fails, no scripts will be called.
-
-    Below is an example for reference—a simple DNS IP check (not recommended for production use):
+    - **condition_check.sh**: Please customize this script according to your actual failover decision process. The script should output `start` if the cluster node should be activated, and output `stop` if it should be deactivated. If the script execution fails, no scripts will be called. Below is an example for reference—a simple DNS IP check (not recommended for production use):
 
       ```bash
       set -euo pipefail
@@ -467,7 +465,7 @@ flowchart TD
         # Harbor is healthy: HTTP 200 and sufficient pods running
         echo "started"
       elif ([ -z "$HTTP_CODE" ] || [ "$HTTP_CODE" = "000" ] || [ "$HTTP_CODE" = "" ]) && \
-           ([ -z "$RUNNING_PODS" ] || [ "$RUNNING_PODS" -eq 0 ]) then
+           ([ -z "$RUNNING_PODS" ] || [ "$RUNNING_PODS" -eq 0 ]); then
         echo "stopped"
       else
         # Other network errors, unexpected HTTP codes, or inconsistent states
@@ -531,50 +529,81 @@ flowchart TD
 3. Deploy the control program as a Deployment in the Harbor namespace:
 
 ```yaml
+---
+apiVersion: v1
+automountServiceAccountToken: true
+kind: ServiceAccount
+metadata:
+  name: disaster-recovery
+  namespace: system # replace with your own namespace
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: disaster-recovery-clusterrole
+rules: []  # Add necessary permissions
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: disaster-recovery-clusterrolebinding
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: disaster-recovery-clusterrole
+subjects:
+- kind: ServiceAccount
+  name: disaster-recovery
+  namespace: system # replace with your own namespace
+---
+apiVersion: v1
+data:
+  check.sh: |
+    # replace with your own script
+  config.yaml: |
+    condition_check_script: /scripts/check.sh
+    start_script: /scripts/start.sh
+    stop_script: /scripts/stop.sh
+    status_script: /scripts/status.sh
+    check_interval: 10s
+    failure_threshold: 3
+    script_timeout: 120s
+  start.sh: |
+    # replace with your own script
+  status.sh: |
+    # replace with your own script
+  stop.sh: |
+    # replace with your own script
+kind: ConfigMap
+metadata:
+  name: disaster-recovery-config
+  namespace: system # replace with your own namespace
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: harbor-disaster-recovery-controller
-  namespace: harbor-ns  # Use the same namespace where Harbor is deployed
+  labels:
+    app: disaster-recovery
+  name: disaster-recovery
+  namespace: system # replace with your own namespace
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: harbor-disaster-recovery-controller
+      app: disaster-recovery
   template:
     metadata:
       labels:
-        app: harbor-disaster-recovery-controller
+        app: disaster-recovery
     spec:
-      serviceAccountName: disaster-recovery
-      initContainers:
-      - name: copy-binary
-        image: build-harbor.alauda.cn/devops/harbor-disaster-recovery:v2.13.0-g7e73d65
-        imagePullPolicy: Always
-        command:
-        - sh
-        - -c
-        - |
-          cp /disaster-recovery /opt/bin/disaster-recovery && chmod +x /opt/bin/disaster-recovery
-        volumeMounts:
-        - name: bin
-          mountPath: /opt/bin/
       containers:
-      - name: controller
-        image: xxx  # Replace with the correct tool image that contains the tools required by the script.
-        command: 
+      - command:
         - sh
         - -c
         - |
           exec /opt/bin/disaster-recovery -config /opt/config/config.yaml
-        volumeMounts:
-        - name: bin
-          mountPath: /opt/bin/
-          readOnly: true
-        - name: scripts
-          mountPath: /opt/script/
-        - name: config
-          mountPath: /opt/config/
+        image: build-harbor.alauda.cn/test/harbor-disaster-recovery:2.12.4-dev-7b8c78a-kychen
+        name: controller
         resources:
           limits:
             cpu: 500m
@@ -582,17 +611,41 @@ spec:
           requests:
             cpu: 100m
             memory: 128Mi
+        volumeMounts:
+        - mountPath: /opt/bin/
+          name: bin
+          readOnly: true
+        - mountPath: /opt/config
+          name: config
+          readOnly: true
+        - mountPath: /opt/script
+          name: scripts
+          readOnly: true
+      initContainers:
+      - command:
+        - sh
+        - -c
+        - |
+          cp /disaster-recovery /opt/bin/disaster-recovery && chmod +x /opt/bin/disaster-recovery
+        image: build-harbor.alauda.cn/test/harbor-disaster-recovery:2.12.4-dev-7b8c78a-kychen
+        imagePullPolicy: Always
+        name: copy-binary
+        volumeMounts:
+        - mountPath: /opt/bin/
+          name: bin
+      serviceAccountName: disaster-recovery
       volumes:
-      - name: bin
-        emptyDir: {}
-      - name: scripts
-        configMap:
-          name: <script-configmap-name>  # Replace with your ConfigMap name for scripts
-      - name: config
-        configMap:
-          name: <config-configmap-name>  # Replace with your ConfigMap name for config
+      - emptyDir: {}
+        name: bin
+      - configMap:
+          name: disaster-recovery-config
+        name: scripts
+      - configMap:
           items:
           - key: config.yaml
+            path: config.yaml
+          name: disaster-recovery-config
+        name: config
             path: config.yaml
 ```
 
@@ -629,12 +682,6 @@ spec:
     verbs:
     - create
   ```
-
-Apply the Deployment:
-
-```bash
-kubectl apply -f harbor-disaster-recovery-controller.yaml
-```
 
 ### `Alauda support for PostgreSQL` Start/Stop Script Examples
 
