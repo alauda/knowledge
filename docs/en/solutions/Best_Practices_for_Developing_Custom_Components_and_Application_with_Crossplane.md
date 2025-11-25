@@ -2,10 +2,10 @@
 products:
    - Alauda Container Platform
 kind:
-   - Solution
+   - Best Practices
 ProductsVersion:
    - 4.x
-id: 虚位以待
+id: KB251100007
 ---
 
 # Best Practices for Developing Custom Components and Application with Crossplane

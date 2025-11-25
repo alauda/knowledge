@@ -2,10 +2,10 @@
 products:
    - Alauda Container Platform
 kind:
-   - Solution
+   - How To
 ProductsVersion:
    - 4.x
-id: 虚位以待
+id: KB251100008
 ---
 
 # How to Install Crossplane
