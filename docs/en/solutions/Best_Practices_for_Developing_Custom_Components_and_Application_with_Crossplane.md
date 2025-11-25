@@ -1,8 +1,8 @@
 ---
-products:
-   - Alauda Container Platform
 kind:
    - Best Practices
+products:
+  - Alauda Container Platform
 ProductsVersion:
    - 4.x
 id: KB251100007
