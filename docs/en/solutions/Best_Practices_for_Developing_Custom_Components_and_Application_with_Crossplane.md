@@ -22,25 +22,38 @@ To allow developers to focus more on application logic, this document will expla
 ## Guide
 This guide shows how to create a new kind of custom resource named App. When a user calls the custom resource API to create an App, Crossplane creates a Deployment and a Service.
 
-Crossplane calls this composition. The App is composed of the Deployment and the Service.
-> Tip: The guide shows how to configure composition using YAML, templated YAML, Python, and KCL. You can pick your preferred language.
+Crossplane calls this Composition. The App is composed of the Deployment and the Service.
+> Tip: The guide shows how to configure Composition using YAML, templated YAML, Python, and KCL. You can pick your preferred language.
 
 Crossplane builds on Kubernetes, so users can use kubectl or any other tool from the Kubernetes ecosystem to work with apps.
 > Tip: Kubernetes custom resources are just JSON REST APIs, so users can use any tool that supports REST APIs to work with apps.
 
+### Crossplane Core Components Relationship
+
+#### Concise Description:
+- **Composite Resource Definition (XRD)** defines the schema and API for a custom infrastructure type.
+- **Composite Resource (XR)** is an instance created from XRD, representing user's infrastructure request.
+- **Composition** defines the implementation blueprint - how to transform XR into actual resources.
+- **Function** executes the transformation logic within Composition's pipeline.
+
+#### Component Relationship Diagram
+![crossplane-core-components-relationship-diagram](../assets/crossplane-core-components-relationship-diagram.png)
+
+> Flow: XRD defines what can be requested → Users create XR instances → Composition uses Functions to transform XR into real infrastructure.
+
 ### Create the custom resource 
 
 #### Define the schema
-Crossplane calls a custom resource that’s powered by composition a composite resource, or XR.
+Crossplane calls a custom resource that’s powered by Composition a Composite Resource (XR).
 > Note:
 >
 > Kubernetes calls user-defined API resources custom resources.
 >
-> Crossplane calls user-defined API resources that use composition composite resources.
+> Crossplane calls user-defined API resources that use Composition Composite Resources (XRs).
 >
-> A composite resource is a kind of custom resource.
+> A Composite Resource (XR) is a kind of custom resource.
 
-Create this composite resource definition (XRD) to define the schema of the new App composite resource (XR).
+Create this Composite Resource Definition (XRD) to define the schema of the new App Composite Resource (XR).
 ```yaml
 apiVersion: apiextensions.crossplane.io/v2
 kind: CompositeResourceDefinition
@@ -91,14 +104,14 @@ apps.example.crossplane.io   True                    21s
 Now that Crossplane has established the XRD, Kubernetes is serving API requests for the new App XR.
 Crossplane now knows it’s responsible for the new App XR, but it doesn’t know what to do when you create or update one.
 
-#### Install the function 
-You can use different composition functions to configure what Crossplane does when someone creates or updates a composite resource (XR). Composition functions are like configuration language plugins.
+#### Install the Function
+You can use different Composition functions to configure what Crossplane does when someone creates or updates a Composite Resource (XR). Composition functions are like configuration language plugins.
 
 Pick what language to use to configure how Crossplane turns an App XR into a Deployment and a Service.
 
 YAML is a good choice for small, static compositions. It doesn’t support loops or conditionals.
 
-Create this composition function to install YAML support:
+Create this Composition Function to install YAML support:
 ```yaml
 apiVersion: pkg.crossplane.io/v1
 kind: Function
@@ -107,23 +120,23 @@ metadata:
 spec:
   package: xpkg.crossplane.io/crossplane-contrib/function-patch-and-transform:v0.8.2
 ```
-Save the function as fn.yaml and apply it:
+Save the Function as fn.yaml and apply it:
 ```bash
 $ kubectl apply -f fn.yaml
 ```
-Check that Crossplane installed the function:
+Check that Crossplane installed the Function:
 ```bash
 $ kubectl get -f fn.yaml
 NAME                                              INSTALLED   HEALTHY   PACKAGE                                                                     AGE
 crossplane-contrib-function-patch-and-transform   True        True      xpkg.crossplane.io/crossplane-contrib/function-patch-and-transform:v0.8.2   10s
 ```
 
-#### Configure the composition 
-A composition tells Crossplane what functions to call when you create or update a composite resource (XR).
+#### Configure the Composition
+A composition tells Crossplane what functions to call when you create or update a Composite Resource (XR).
 
-Create a composition to tell Crossplane what to do when you create or update an App XR.
+Create a Composition to tell Crossplane what to do when you create or update an App XR.
 
-Create this composition to use YAML to configure Crossplane:
+Create this Composition to use YAML to configure Crossplane:
 ```yaml
 apiVersion: apiextensions.crossplane.io/v1
 kind: Composition
@@ -202,7 +215,7 @@ spec:
         - type: NonEmpty
           fieldPath: spec.clusterIP
 ```
-Save the composition as composition.yaml and apply it:
+Save the Composition as composition.yaml and apply it:
 ```bash
 $ kubectl apply -f composition.yaml
 ```
@@ -212,9 +225,9 @@ $ kubectl apply -f composition.yaml
 >
 > Functions can change the results of earlier functions in the pipeline. Crossplane uses the result returned by the last function.
 
-> Tip: If you edit this composition to include a different kind of resource you might need to grant Crossplane access to compose it. Read more about [How to grant Crossplane access](https://docs.crossplane.io/latest/composition/compositions/#grant-access-to-composed-resources)
+> Tip: If you edit this Composition to include a different kind of resource you might need to grant Crossplane access to compose it. Read more about [How to grant Crossplane access](https://docs.crossplane.io/latest/composition/compositions/#grant-access-to-composed-resources)
 
-#### Use the custom resource 
+#### Use the custom resource
 Crossplane now understands App custom resources.
 
 Create an App:
@@ -242,7 +255,7 @@ my-app   True     True    app-yaml      56s
 
 > Note:
 
-> The COMPOSITION column shows what composition the App is using.
+> The COMPOSITION column shows what Composition the App is using.
 
 > You can create multiple compositions for each kind of XR. Read the [XR page](https://docs.crossplane.io/latest/composition/composite-resources/) to learn how to select which composition Crossplane uses.
 

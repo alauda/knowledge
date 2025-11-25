@@ -48,7 +48,7 @@ After the `violet` command execution is complete, navigate to the details page o
 - Navigate to [Projects] -> [Namespace] page, click `Create Namespace` button.
 - Provide the following information:
   - Cluster: Select the cluster where Crossplane will be installed.
-  - Namespace: crossplane-`system`
+  - Namespace: `crossplane-system`
 - Click `Create` button to create the namespace.
 
 ### Install Crossplane
@@ -58,7 +58,7 @@ To install Crossplane, follow the steps below:
 - Provide the following information:
    - Name: `crossplane`
    - Project: `crossplane`
-   - Namespace: `system`
+   - Namespace: `crossplane-system`
    - Chart Version: `2.x.x`
    - Custom Values:
     ```yaml
