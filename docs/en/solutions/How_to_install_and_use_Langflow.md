@@ -253,7 +253,7 @@ langflow:
       value: "/app/flows"
   volumes:
     - name: flows                              # Load Flows content through volume
-      persistentVolumeClaim:
+      persistentVolumeClaim:                   # From PVC or other volumes
         claimName: langflow-flows-pvc
   volumeMounts:                                # Mount volume to specified path
     - name: flows
@@ -312,11 +312,11 @@ In Langflow configuration, mount the ConfigMap to a specified directory in the c
 ```yaml
 langflow:
   volumes:
-    - name: projects
+    - name: flows
       configMap:
         name: langflow-flows                   # ConfigMap name
   volumeMounts:
-    - name: projects
+    - name: flows
       mountPath: /app/flows                    # Mount path
   env:
     - name: LANGFLOW_LOAD_FLOWS_PATH           # Set the path to load Flow files
@@ -483,11 +483,11 @@ langflow:
 2. In the **Langflow API Keys** section, add API keys
 3. When making API requests, add the `x-api-key: <API Key>` header; otherwise, a 401 error (unauthorized request) will be returned
 
-### 5.6 Configure Headless Mode
+### 5.6 Disable UI
 
-Headless mode allows Langflow to run without a browser interface, suitable for API service scenarios in production environments.
+Runtime mode allows Langflow to run without a browser interface, suitable for API service scenarios in production environments.
 
 ```yaml
 langflow:
-  backendOnly: true                            # Enable headless mode
+  backendOnly: true                            # Enable backend-only mode
 ```
