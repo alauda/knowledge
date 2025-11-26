@@ -139,7 +139,7 @@ langflow:
 
 ### 3. Configure Access Method
 
-By default, `LoadBalancer` is used to provide access address
+By default, `LoadBalancer` is used to provide access address.
 
 #### 3.1 Modify Service Type
 
@@ -208,12 +208,12 @@ oauth2_proxy:
   oidcClientSecret: "your-client-secret"       # OIDC client secret (recommended to use Secret)
 ```
 
-If you want to configure `Alauda Container Platform` as OIDC Provider, configure as follows:
+To configure `Alauda Container Platform` as OIDC Provider, configure as follows:
 - `oauth2_proxy.oidcIssuer` is the platform access address plus `/dex`
 - `oauth2_proxy.oidcClientID` is fixed as `langflow`
 - `oauth2_proxy.oidcClientSecret` is fixed as `ZXhhbXBsZS1hcHAtc2VjcmV0`
 
-You also need to create an OAuth2Client resource in the global cluster to configure Langflow's client information:
+Also create an OAuth2Client resource in the global cluster to configure Langflow's client information:
 
 ```yaml
 apiVersion: dex.coreos.com/v1
@@ -221,19 +221,19 @@ kind: OAuth2Client
 metadata:
   name: nrqw4z3gnrxxps7sttsiiirdeu
   namespace: cpaas-system
-id: langflow                                    # Consistent with oauth2_proxy.oidcClientID in values
+id: langflow                                   # Consistent with oauth2_proxy.oidcClientID in values
 name: Langflow
-secret: ZXhhbXBsZS1hcHAtc2VjcmV0                # Consistent with oauth2_proxy.oidcClientSecret in values
+secret: ZXhhbXBsZS1hcHAtc2VjcmV0               # Consistent with oauth2_proxy.oidcClientSecret in values
 redirectURIs:
-- http://xxx.xxx.xxxx.xxx:xxxxx/*               # OAuth2-Proxy access address, acquisition method described below
-                                                # If multiple Langflow instances are deployed, add multiple access addresses here
+- http://xxx.xxx.xxxx.xxx:xxxxx/*              # OAuth2-Proxy access address, acquisition method described below
+                                               # If multiple Langflow instances are deployed, add multiple access addresses here
 ```
 
 **Note**: OAuth2 Proxy access address can be obtained from the `<Application Name>-oauth2-proxy` Service, use the appropriate access method based on Service type.
 
 After enabling OAuth2 Proxy, it is recommended to:
-- Set `langflow.service.type` to `ClusterIP`, allowing access only within the cluster, users need to access Langflow through OAuth2 Proxy address.
-- Set `langflow.auth.enabled` to `false`, use OAuth2 Proxy to handle login authentication.
+- Set `langflow.service.type` to `ClusterIP`, allowing access only within the cluster. Users need to access Langflow through OAuth2 Proxy address.
+- Set `langflow.auth.enabled` to `false`. Use OAuth2 Proxy to handle login authentication.
 
 Users can log out by accessing `/oauth2/sign_out`.
 
@@ -247,15 +247,15 @@ Runtime mode (backend-only) can be enabled by setting the following fields:
 
 ```yaml
 langflow:
-  backendOnly: true                              # Enable backend-only mode
+  backendOnly: true                            # Enable backend-only mode
   env:
-    - name: LANGFLOW_LOAD_FLOWS_PATH             # Set the path to load Flows
+    - name: LANGFLOW_LOAD_FLOWS_PATH           # Set the path to load Flows
       value: "/app/flows"
   volumes:
-    - name: flows                                # Load Flows content through volume
+    - name: flows                              # Load Flows content through volume
       persistentVolumeClaim:
         claimName: langflow-flows-pvc
-  volumeMounts:                                  # Mount volume to specified path
+  volumeMounts:                                # Mount volume to specified path
     - name: flows
       mountPath: /app/flows
 ```
@@ -281,3 +281,213 @@ If Ingress is enabled, please access through the configured domain name.
 # Langflow Quickstart
 
 For a quickstart guide, please refer to the official documentation: [https://docs.langflow.org/get-started-quickstart](https://docs.langflow.org/get-started-quickstart)
+
+# Production Environment Recommendations
+
+This section provides practical recommendations and optimization configurations for using Langflow in production environments.
+
+## 1. Import Existing Flows via ConfigMap
+
+In production environments, existing Flow files can be imported into Langflow through Kubernetes ConfigMap.
+
+### 1.1 Create ConfigMap with Flow JSON
+
+First, create a ConfigMap containing Flow JSON files:
+
+```yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: langflow-flows
+  namespace: <Langflow namespace>
+data:
+  project1.json: |
+    <JSON content>
+```
+
+### 1.2 Mount ConfigMap to Container
+
+In Langflow configuration, mount the ConfigMap to a specified directory in the container:
+
+```yaml
+langflow:
+  volumes:
+    - name: projects
+      configMap:
+        name: langflow-flows                   # ConfigMap name
+  volumeMounts:
+    - name: projects
+      mountPath: /app/flows                    # Mount path
+  env:
+    - name: LANGFLOW_LOAD_FLOWS_PATH           # Set the path to load Flow files
+      value: /app/flows
+```
+
+### 1.3 Auto Import
+
+After configuration, Langflow will automatically scan and import JSON files in the `LANGFLOW_LOAD_FLOWS_PATH` directory on startup.
+
+## 2. Load Local Models
+
+In production environments, locally deployed models may be needed (e.g., loading local embedding models). This can be configured as follows:
+
+### 2.1 Mount Model Files via Volume
+
+Store model files in persistent volumes and provide them to the Langflow container through Volume mounts:
+
+```yaml
+langflow:
+  volumes:
+    - name: models                             # Model storage volume
+      persistentVolumeClaim:
+        claimName: langflow-models-pvc
+  volumeMounts:                                # Mount model volume to specified path
+    - name: models
+      mountPath: /opt/models
+```
+
+### 2.2 Upload Models
+
+Users can use the `kubectl cp` command to upload models to the Langflow container, as shown in the following example:
+
+```bash
+kubectl cp <local model path> -n <Langflow namespace> <Langflow Pod name>:/opt/models
+```
+
+### 2.3 Configure Local Models in Components
+
+In Langflow's flow editor, when using corresponding model components, the local model access path can be configured as `/opt/models`.
+
+## 3. Add Additional Python Dependencies
+
+In production environments, when using custom components, additional Python packages may need to be installed. This can be done as follows:
+
+### 3.1 Mount Dependencies via PVC
+
+Mount a directory using PVC to store additional Python packages.
+
+```yaml
+langflow:
+  volumes:
+    - name: python-packages
+      persistentVolumeClaim:
+        claimName: langflow-packages-pvc       # PVC name for storing additional Python packages
+  volumeMounts:
+    - name: python-packages
+      mountPath: /opt/python-packages          # Mount path
+  env:
+    - name: PYTHONPATH                         # Set Python module search path
+      value: "/opt/python-packages"
+```
+
+### 3.2 Install Dependencies
+
+When installing dependency packages, use the `pip --target` parameter to install packages to the PVC-mounted directory:
+
+```bash
+# Execute in container, install package to PVC-mounted directory
+pip install --target /opt/python-packages package-name
+
+# Or install from requirements.txt
+pip install --target /opt/python-packages -r requirements.txt
+```
+
+## 4. Pass Global Variables via Environment Variables
+
+Flow component configurations often need different values in different environments. Langflow's global variables feature allows separating these environment-specific values from Flow definitions. The values of Global Variables can be loaded from environment variables.
+
+### 4.1 Configure Environment Variables
+
+Add environment variables in `Custom Values` as shown in the following example:
+
+```yaml
+langflow:
+  env:
+    - name: LANGFLOW_VARIABLES_TO_GET_FROM_ENVIRONMENT
+      value: VAR1,VAR2,VAR3                    # List environment variable names that Langflow can automatically load, separated by commas
+    - name: VAR1                               # Set environment variable value, environment variable name matches Langflow global variable name
+      value: xxx
+    - name: VAR2                               # Can also load value from ConfigMap
+      valueFrom:
+        configMapKeyRef:
+          name: langflow-configs
+          key: var2
+    - name: VAR3                               # Sensitive information should be stored using Secret
+      valueFrom:
+        secretKeyRef:
+          name: langflow-secrets
+          key: var3
+```
+
+### 4.2 Use Global Variables in Flows
+
+In Langflow's flow editor:
+
+1. Go to the **Settings** page
+2. In the **Global Variables** section, add global variables and set their values
+3. Reference these global variables in component configurations
+4. When exporting Flows, **must** select "Save with my API keys", otherwise Global Variables configuration may not be included in the exported JSON file
+
+## 5. Optimization Recommendations
+
+To improve performance, security, and stability in production environments, the following optimization configurations are recommended:
+
+### 5.1 Disable Usage Tracking
+
+Langflow collects usage data by default. In production environments, this feature can be disabled to protect privacy and reduce network requests:
+
+```yaml
+langflow:
+  env:
+    - name: DO_NOT_TRACK                       # Disable usage tracking
+      value: "true"
+```
+
+### 5.2 Disable Transaction Logs
+
+During each request processing, Langflow records the input, output, and execution logs of each component to the database, which is the information shown in the Langflow IDE's Logs panel.
+In production environments, this logging can be disabled to improve performance and reduce database pressure.
+
+```yaml
+langflow:
+  env:
+    - name: LANGFLOW_TRANSACTIONS_STORAGE_ENABLED
+      value: "false"                           # Disable transaction logs
+```
+
+### 5.3 Set Worker Process Count
+
+```yaml
+langflow:
+  numWorkers: 1                                # Set number of worker processes
+```
+
+### 5.4 Configure Resource Limits
+
+It is recommended to configure appropriate resource limits for the Langflow container. The following YAML is only an example; adjust the values according to actual requirements:
+
+```yaml
+langflow:
+  resources:
+    requests:
+      cpu: "2"
+      memory: "4Gi"
+    limits:
+      cpu: "4"
+      memory: "8Gi"
+```
+
+### 5.5 Set API Keys
+
+1. Go to the **Settings** page
+2. In the **Langflow API Keys** section, add API keys
+3. When making API requests, add the `x-api-key: <API Key>` header; otherwise, a 401 error (unauthorized request) will be returned
+
+### 5.6 Configure Headless Mode
+
+Headless mode allows Langflow to run without a browser interface, suitable for API service scenarios in production environments.
+
+```yaml
+langflow:
+  backendOnly: true                            # Enable headless mode
+```
