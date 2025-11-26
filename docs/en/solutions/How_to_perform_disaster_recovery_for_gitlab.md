@@ -117,7 +117,7 @@ To simplify the configuration process and reduce configuration difficulty, it is
 4. Complete the deployment of `Alauda Build of Rook-Ceph` block storage disaster recovery configuration.
 
 :::warning
-For `Alauda Build of Rook-Ceph` block storage disaster recovery configuration, you need to set a reasonable [synchronization interval](https://docs.alauda.io/container_platform/4.1/storage/storagesystem_ceph/how_to/disaster_recovery/dr_block.html#%E5%88%9B%E5%BB%BA-volumereplicationclass), which directly affects the RPO metric of disaster recovery.
+For `Alauda Build of Rook-Ceph` block storage disaster recovery configuration, you need to set a reasonable [synchronization interval](https://docs.alauda.io/container_platform/4.1/storage/storagesystem_ceph/how_to/disaster_recovery/dr_block.html#create-volumereplicationclass), which directly affects the RPO metric of disaster recovery.
 :::
 
 ### Building PostgreSQL Disaster Recovery Cluster with `Alauda support for PostgreSQL`

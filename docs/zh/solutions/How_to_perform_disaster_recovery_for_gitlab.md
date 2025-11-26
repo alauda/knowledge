@@ -117,7 +117,7 @@ GitLab 灾难恢复解决方案为 GitLab 服务实现了**热数据、冷计算
 4. 完成 `Alauda Build of Rook-Ceph` 块存储的灾难恢复配置的部署。
 
 :::warning
-`Alauda Build of Rook-Ceph` 块存储的灾难恢复配置，需要设置合理的[同步间隔时间](https://docs.alauda.io/container_platform/4.1/storage/storagesystem_ceph/how_to/disaster_recovery/dr_block.html#%E5%88%9B%E5%BB%BA-volumereplicationclass)，这会直接影响容灾的 RPO 指标。
+`Alauda Build of Rook-Ceph` 块存储的灾难恢复配置，需要设置合理的[同步间隔时间](https://docs.alauda.io/container_platform/4.1/storage/storagesystem_ceph/how_to/disaster_recovery/dr_block.html#create-volumereplicationclass)，这会直接影响容灾的 RPO 指标。
 :::
 
 ### 使用 `Alauda support for PostgreSQL` 构建 PostgreSQL 灾难恢复集群
