@@ -602,7 +602,7 @@ spec:
         - -c
         - |
           exec /opt/bin/disaster-recovery -config /opt/config/config.yaml
-        image: build-harbor.alauda.cn/test/harbor-disaster-recovery:2.12.4-dev-7b8c78a-kychen
+        image: build-harbor.alauda.cn/devops/harbor-disaster-recovery:v2.13.0-ga4650ef
         name: controller
         resources:
           limits:
@@ -627,7 +627,7 @@ spec:
         - -c
         - |
           cp /disaster-recovery /opt/bin/disaster-recovery && chmod +x /opt/bin/disaster-recovery
-        image: build-harbor.alauda.cn/test/harbor-disaster-recovery:2.12.4-dev-7b8c78a-kychen
+        image: build-harbor.alauda.cn/devops/harbor-disaster-recovery:v2.13.0-ga4650ef # replace you image.
         imagePullPolicy: Always
         name: copy-binary
         volumeMounts:
@@ -646,7 +646,6 @@ spec:
             path: config.yaml
           name: disaster-recovery-config
         name: config
-            path: config.yaml
 ```
 
 > **Note**: Ensure that the ServiceAccount used by the Deployment has the necessary RBAC permissions to operate on Harbor resources and any other resources controlled by your custom scripts (such as database resources, object storage configurations, etc.) in the target namespace. The control program needs permissions to modify Harbor CRD resources to start and stop Harbor components, as well as permissions for any resources managed by the custom start/stop scripts. The following are the permissions required for Harbor operations:
@@ -816,7 +815,7 @@ rules:
 - **Start Script Example**: For more details, refer to [Object Storage Disaster Recovery](https://docs.alauda.io/container_platform/4.1/storage/storagesystem_ceph/how_to/disaster_recovery/dr_object.html)
 
   ```bash
-  REALM_NAME="${REALM_NAME:-real}"
+  REALM_NAME="${REALM_NAME:-realm}"
   ZONE_GROUP_NAME="${ZONE_GROUP_NAME:-group}"
   ZONE_NAME="${ZONE_NAME:-zone}"
 
