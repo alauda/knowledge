@@ -327,11 +327,28 @@ langflow:
 
 After configuration, Langflow will automatically scan and import JSON files in the `LANGFLOW_LOAD_FLOWS_PATH` directory on startup.
 
-## 2. Load Local Models
+## 2. Using Models
 
-In production environments, locally deployed models may be needed (e.g., loading local embedding models). This can be configured as follows:
+In production environments, models can be loaded and used in two ways: calling remote models via API or loading local models via volume mount. Choose the appropriate approach based on your specific requirements.
 
-### 2.1 Mount Model Files via Volume
+### 2.1 Calling Remote Models
+
+This approach is suitable for scenarios where:
+- Models have significant resource requirements
+- Models need to be shared across multiple services
+- Independent scaling and resource management are required
+- Model version management and updates need to be handled separately
+
+Remote models can be either self-deployed model services or third-party model services provided by vendors. To use remote models in Langflow, in the flow editor, use API-based model components (e.g., OpenAI, Custom API, etc.) to connect to the model service endpoint by configuring the API base URL and authentication credentials.
+
+### 2.2 Loading Local Models
+
+This approach is suitable for scenarios where:
+- Models have low resource overhead (e.g., embedding models)
+- Model size and resource consumption are manageable within the Langflow container
+- Direct file access to models is required
+
+#### 2.2.1 Mount Model Files via Volume
 
 Store model files in persistent volumes and provide them to the Langflow container through Volume mounts:
 
@@ -346,7 +363,7 @@ langflow:
       mountPath: /opt/models
 ```
 
-### 2.2 Upload Models
+#### 2.2.2 Upload Models
 
 Users can use the `kubectl cp` command to upload models to the Langflow container, as shown in the following example:
 
@@ -354,7 +371,7 @@ Users can use the `kubectl cp` command to upload models to the Langflow containe
 kubectl cp <local model path> -n <Langflow namespace> <Langflow Pod name>:/opt/models
 ```
 
-### 2.3 Configure Local Models in Components
+#### 2.2.3 Configure Local Models in Components
 
 In Langflow's flow editor, when using corresponding model components, the local model access path can be configured as `/opt/models`.
 
@@ -491,3 +508,10 @@ Runtime mode allows Langflow to run without a browser interface, suitable for AP
 langflow:
   backendOnly: true                            # Enable backend-only mode
 ```
+
+### 5.7 Reference Official Documentation
+
+For more detailed information about publishing flows and production best practices, please refer to the official Langflow documentation:
+
+- **Publishing Concepts**: [https://docs.langflow.org/concepts-publish](https://docs.langflow.org/concepts-publish)
+- **Production Best Practices**: [https://docs.langflow.org/deployment-prod-best-practices](https://docs.langflow.org/deployment-prod-best-practices)
