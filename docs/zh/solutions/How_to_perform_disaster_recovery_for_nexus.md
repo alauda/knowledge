@@ -5,7 +5,7 @@ products:
   - Alauda DevOps
 ProductsVersion:
    - 4.x
-id: KB251000014
+id: TODO
 ---
 
 # 如何为 Nexus 执行灾难恢复
@@ -80,12 +80,12 @@ Nexus 灾难恢复解决方案为 Nexus 服务实现了**热数据、冷计算�
 2. 完成 `Alauda Build of Rook-Ceph` 块存储的灾难恢复配置的部署。
 
 :::warning
-`Alauda Build of Rook-Ceph` 块存储的灾难恢复配置，需要设置合理的[同步间隔时间](https://docs.alauda.io/container_platform/4.1/storage/storagesystem_ceph/how_to/disaster_recovery/dr_block.html#create-volumereplicationclass)，这会直接影响容灾的 RPO 指标。
+`Alauda Build of Rook-Ceph` 块存储的灾难恢复配置，需要设置合理的[同步间隔时间](https://docs.alauda.cn/container_platform/4.1/storage/storagesystem_ceph/how_to/disaster_recovery/dr_block.html#create-volumereplicationclass)，这会直接影响容灾的 RPO 指标。
 :::
 
 ### 使用 `Alauda Build of Rook-Ceph` 构建块存储灾难恢复集群
 
-使用 `Alauda Build of Rook-Ceph` 构建块存储灾难恢复集群。参考 [块存储灾难恢复](https://docs.alauda.io/container_platform/4.1/storage/storagesystem_ceph/how_to/disaster_recovery/dr_block.html) 文档构建灾难恢复集群。
+使用 `Alauda Build of Rook-Ceph` 构建块存储灾难恢复集群。参考 [块存储灾难恢复](https://docs.alauda.cn/container_platform/4.1/storage/storagesystem_ceph/how_to/disaster_recovery/dr_block.html) 文档构建灾难恢复集群。
 
 ### 设置主 Nexus
 
@@ -110,7 +110,7 @@ spec:
       name: ceph-rdb # 设置已经配置了存储类名称
 ```
 
-部署主 Nexus 后，需要为 Nexus 组件使用的 PVC 配置 RBD Mirror，配置后才会将 PVC 数据定时同步到备 Ceph 集群。具体参数配置参考 [Ceph RBD Mirror](https://docs.alauda.io/container_platform/4.1/storage/storagesystem_ceph/how_to/disaster_recovery/dr_block.html#enable-mirror-for-pvc)。
+部署主 Nexus 后，需要为 Nexus 组件使用的 PVC 配置 RBD Mirror，配置后才会将 PVC 数据定时同步到备 Ceph 集群。具体参数配置参考 [Ceph RBD Mirror](https://docs.alauda.cn/container_platform/4.1/storage/storagesystem_ceph/how_to/disaster_recovery/dr_block.html#enable-mirror-for-pvc)。
 
 ```bash
 export NEXUS_NAMESPACE=<ns-of-nexus-instance>
@@ -264,7 +264,7 @@ kubectl -n "$NEXUS_NAMESPACE" get nexus "$NEXUS_NAME" -oyaml > nexus.yaml
 
 RPO 表示在灾难恢复场景中最大可接受的数据丢失。在此 Nexus 灾难恢复解决方案中：
 
-- **存储层**：由于 Nexus 数据的 Ceph RBD 块存储复制，通过快照定时同步，数据丢失情况取决于同步间隔，间隔时间可以[配置](https://docs.alauda.io/container_platform/4.1/storage/storagesystem_ceph/how_to/disaster_recovery/dr_block.html#create-volumereplicationclass)
+- **存储层**：由于 Nexus 数据的 Ceph RBD 块存储复制，通过快照定时同步，数据丢失情况取决于同步间隔，间隔时间可以[配置](https://docs.alauda.cn/container_platform/4.1/storage/storagesystem_ceph/how_to/disaster_recovery/dr_block.html#create-volumereplicationclass)
 - **总体 RPO**：总体 RPO 取决于 Ceph RBD 块存储复制的同步间隔时间。
 
 #### 恢复时间目标 (RTO)
@@ -284,7 +284,7 @@ RTO 表示在灾难恢复期间最大可接受的停机时间。此解决方案�
 
 1. **确认主 Nexus 故障**：确认所有主 Nexus 组件都处于非工作状态，否则先停止所有主 Nexus 组件。
 
-2. **提升备用 Ceph RBD**：将备用 Ceph RBD 提升为主 Ceph RBD。参考 [Alauda Build of Rook-Ceph 故障转移](https://docs.alauda.io/container_platform/4.1/storage/storagesystem_ceph/how_to/disaster_recovery/dr_block.html#procedures-1) 的切换程序。
+2. **提升备用 Ceph RBD**：将备用 Ceph RBD 提升为主 Ceph RBD。参考 [Alauda Build of Rook-Ceph 故障转移](https://docs.alauda.cn/container_platform/4.1/storage/storagesystem_ceph/how_to/disaster_recovery/dr_block.html#procedures-1) 的切换程序。
 
 3. **恢复 PVC 和 PV 资源**：恢复备份的 PVC 和 PV 资源到容灾环境同名命名空间中，并检查备集群 PVC 状态是否为 `Bound` 状态：
 

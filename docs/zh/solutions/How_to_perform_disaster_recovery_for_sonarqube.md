@@ -5,7 +5,7 @@ products:
   - Alauda DevOps
 ProductsVersion:
    - 4.x
-id: KB251000013
+id: TODO
 ---
 
 # 如何为 SonarQube 执行灾难恢复

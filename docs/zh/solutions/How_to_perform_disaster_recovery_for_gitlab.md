@@ -5,7 +5,7 @@ products:
   - Alauda DevOps
 ProductsVersion:
    - 4.x
-id: KB251000013
+id: TODO
 ---
 
 # 如何为 GitLab 执行灾难恢复
@@ -117,7 +117,7 @@ GitLab 灾难恢复解决方案为 GitLab 服务实现了**热数据、冷计算
 4. 完成 `Alauda Build of Rook-Ceph` 块存储的灾难恢复配置的部署。
 
 :::warning
-`Alauda Build of Rook-Ceph` 块存储的灾难恢复配置，需要设置合理的[同步间隔时间](https://docs.alauda.io/container_platform/4.1/storage/storagesystem_ceph/how_to/disaster_recovery/dr_block.html#create-volumereplicationclass)，这会直接影响容灾的 RPO 指标。
+`Alauda Build of Rook-Ceph` 块存储的灾难恢复配置，需要设置合理的[同步间隔时间](https://docs.alauda.cn/container_platform/4.1/storage/storagesystem_ceph/how_to/disaster_recovery/dr_block.html#create-volumereplicationclass)，这会直接影响容灾的 RPO 指标。
 :::
 
 ### 使用 `Alauda support for PostgreSQL` 构建 PostgreSQL 灾难恢复集群
@@ -136,21 +136,21 @@ GitLab 灾难恢复解决方案为 GitLab 服务实现了**热数据、冷计算
 
 ### 使用 `Alauda Build of Rook-Ceph` 构建块存储灾难恢复集群
 
-使用 `Alauda Build of Rook-Ceph` 构建块存储灾难恢复集群。参考 [块存储灾难恢复](https://docs.alauda.io/container_platform/4.1/storage/storagesystem_ceph/how_to/disaster_recovery/dr_block.html) 文档构建灾难恢复集群。
+使用 `Alauda Build of Rook-Ceph` 构建块存储灾难恢复集群。参考 [块存储灾难恢复](https://docs.alauda.cn/container_platform/4.1/storage/storagesystem_ceph/how_to/disaster_recovery/dr_block.html) 文档构建灾难恢复集群。
 
 ### 使用 `Alauda Build of Rook-Ceph` 构建对象存储灾难恢复集群
 
-使用 `Alauda Build of Rook-Ceph` 构建对象存储灾难恢复集群。参考 [对象存储灾难恢复](https://docs.alauda.io/container_platform/4.1/storage/storagesystem_ceph/how_to/disaster_recovery/dr_object.html) 文档构建对象存储灾难恢复集群。
+使用 `Alauda Build of Rook-Ceph` 构建对象存储灾难恢复集群。参考 [对象存储灾难恢复](https://docs.alauda.cn/container_platform/4.1/storage/storagesystem_ceph/how_to/disaster_recovery/dr_object.html) 文档构建对象存储灾难恢复集群。
 
 您需要提前创建一个 CephObjectStoreUser 以获取对象存储的访问凭据，并在主对象存储上准备一个 GitLab 对象存储桶：
 
-1. 在主对象存储上创建一个 CephObjectStoreUser 以获取访问凭据：[创建 CephObjectStoreUser](https://docs.alauda.io/container_platform/4.1/storage/storagesystem_ceph/how_to/create_object_user.html)。
+1. 在主对象存储上创建一个 CephObjectStoreUser 以获取访问凭据：[创建 CephObjectStoreUser](https://docs.alauda.cn/container_platform/4.1/storage/storagesystem_ceph/how_to/create_object_user.html)。
 
    :::info
    您只需要在主对象存储上创建 CephObjectStoreUser。用户信息将通过灾难恢复复制机制自动同步到备用对象存储。
    :::
 
-2. 获取对象存储的访问地址 `PRIMARY_OBJECT_STORAGE_ADDRESS`，您可以从 `对象存储灾难恢复` 的步骤 [为主区域配置外部访问](https://docs.alauda.io/container_platform/4.1/storage/storagesystem_ceph/how_to/disaster_recovery/dr_object.html#configure-external-access-for-primary-zone) 中获取。
+2. 获取对象存储的访问地址 `PRIMARY_OBJECT_STORAGE_ADDRESS`，您可以从 `对象存储灾难恢复` 的步骤 [为主区域配置外部访问](https://docs.alauda.cn/container_platform/4.1/storage/storagesystem_ceph/how_to/disaster_recovery/dr_object.html#configure-external-access-for-primary-zone) 中获取。
 
     ```bash
     $ mc alias set primary-s3 <PRIMARY_OBJECT_STORAGE_ADDRESS> <PRIMARY_OBJECT_STORAGE_ACCESS_KEY> <PRIMARY_OBJECT_STORAGE_SECRET_KEY>
@@ -183,7 +183,7 @@ GitLab 灾难恢复解决方案为 GitLab 服务实现了**热数据、冷计算
 
 ### 设置主 GitLab
 
-按照 [GitLab 实例部署](https://docs.alauda.io/alauda-build-of-gitlab/17.11/en/install/03_gitlab_deploy.html#deploying-from-the-gitlab-high-availability-template) 指南部署主 GitLab 实例。在高可用模式下配置它，配置域名访问，连接到主 PostgreSQL 数据库（GitLab 应用程序数据库和 Praefect 数据库），使用主对象存储存储附件，并配置 Gitaly 使用主块存储。
+按照 [GitLab 实例部署](https://docs.alauda.cn/alauda-build-of-gitlab/17.11/en/install/03_gitlab_deploy.html#deploying-from-the-gitlab-high-availability-template) 指南部署主 GitLab 实例。在高可用模式下配置它，配置域名访问，连接到主 PostgreSQL 数据库（GitLab 应用程序数据库和 Praefect 数据库），使用主对象存储存储附件，并配置 Gitaly 使用主块存储。
 
 配置示例（仅包含了容灾关注的配置项，完整配置项见产品文档）：
 
@@ -237,7 +237,7 @@ spec:
         username: postgres
 ```
 
-部署主 GitLab 后，需要为 Gitaly 组件使用的 PVC 配置 RBD Mirror，配置后才会将 PVC 数据定时同步到备 Ceph 集群。具体参数配置参考 [Ceph RBD Mirror](https://docs.alauda.io/container_platform/4.1/storage/storagesystem_ceph/how_to/disaster_recovery/dr_block.html#enable-mirror-for-pvc)。
+部署主 GitLab 后，需要为 Gitaly 组件使用的 PVC 配置 RBD Mirror，配置后才会将 PVC 数据定时同步到备 Ceph 集群。具体参数配置参考 [Ceph RBD Mirror](https://docs.alauda.cn/container_platform/4.1/storage/storagesystem_ceph/how_to/disaster_recovery/dr_block.html#enable-mirror-for-pvc)。
 
 ```bash
 cat << EOF | kubectl apply -f -
@@ -431,7 +431,7 @@ RPO 表示在灾难恢复场景中最大可接受的数据丢失。在此 GitLab
 
 - **数据库层**：由于 PostgreSQL 热备用流式复制（适用于 GitLab 应用程序数据库和 Praefect 元数据数据库），数据丢失接近零
 - **附件存储层**：由于 GitLab 附件存储使用的对象存储流式复制，数据丢失接近零
-- **Gitaly 存储层**：由于 Git 仓库数据的 Ceph RBD 块存储复制，通过快照定时同步，数据丢失情况取决于同步间隔，间隔时间可以[配置](https://docs.alauda.io/container_platform/4.1/storage/storagesystem_ceph/how_to/disaster_recovery/dr_block.html#create-volumereplicationclass)
+- **Gitaly 存储层**：由于 Git 仓库数据的 Ceph RBD 块存储复制，通过快照定时同步，数据丢失情况取决于同步间隔，间隔时间可以[配置](https://docs.alauda.cn/container_platform/4.1/storage/storagesystem_ceph/how_to/disaster_recovery/dr_block.html#create-volumereplicationclass)
 - **总体 RPO**：总体 RPO 取决 Ceph RBD 块存储复制的同步间隔时间。
 
 #### 恢复时间目标 (RTO)
@@ -455,9 +455,9 @@ RTO 表示在灾难恢复期间最大可接受的停机时间。此解决方案�
 
 2. **提升备用 PostgreSQL**：将备用 PostgreSQL 提升为主 PostgreSQL。参考 `PostgreSQL 热备用集群配置指南` 的切换程序。
 
-3. **提升备用对象存储**：将备用对象存储提升为主对象存储。参考 [Alauda Build of Rook-Ceph 故障转移](https://docs.alauda.io/container_platform/4.1/storage/storagesystem_ceph/how_to/disaster_recovery/dr_object.html#procedures-1) 的切换程序。
+3. **提升备用对象存储**：将备用对象存储提升为主对象存储。参考 [Alauda Build of Rook-Ceph 故障转移](https://docs.alauda.cn/container_platform/4.1/storage/storagesystem_ceph/how_to/disaster_recovery/dr_object.html#procedures-1) 的切换程序。
 
-4. **提升备用 Ceph RBD**：将备用 Ceph RBD 提升为主 Ceph RBD。参考 [Alauda Build of Rook-Ceph 故障转移](https://docs.alauda.io/container_platform/4.1/storage/storagesystem_ceph/how_to/disaster_recovery/dr_block.html#procedures-1) 的切换程序。
+4. **提升备用 Ceph RBD**：将备用 Ceph RBD 提升为主 Ceph RBD。参考 [Alauda Build of Rook-Ceph 故障转移](https://docs.alauda.cn/container_platform/4.1/storage/storagesystem_ceph/how_to/disaster_recovery/dr_block.html#procedures-1) 的切换程序。
 
 5. **恢复 PVC 和 PV 资源**：恢复备份的 PVC 和 PV 资源到容灾环境同名命名空间中，并检查备集群 PVC 状态是否为 `Bound` 状态：
 
