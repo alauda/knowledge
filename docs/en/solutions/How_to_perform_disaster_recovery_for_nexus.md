@@ -36,13 +36,6 @@ Nexus Operator: >=v3.81.1
 
 The Nexus disaster recovery solution implements a **hot data, cold compute architecture** for Nexus services. This architecture provides disaster recovery capabilities through near-real-time data synchronization and manual Nexus service failover procedures. The architecture consists of two Nexus instances deployed across different clusters or regions, with the secondary Nexus instance not deployed in advance until activated during disaster scenarios, while the storage layer maintains continuous synchronization.
 
-### Core Components
-
-- **Primary Nexus**: Active instance serving normal business operations and user requests, with all components running
-- **Secondary Nexus**: Standby instance with zero replicas for all components, ready for failover scenarios
-- **Primary Block Storage**: Block storage on the primary cluster for Nexus data
-- **Secondary Block Storage**: Block storage synchronized through Ceph disaster recovery mechanisms
-
 ### Data Synchronization Strategy
 
 The solution ensures Nexus data synchronization to the secondary cluster through Ceph RBD Mirror block storage replication. All Nexus data is stored in PVCs, which are periodically synchronized to the secondary cluster through the Ceph RBD Mirror mechanism.

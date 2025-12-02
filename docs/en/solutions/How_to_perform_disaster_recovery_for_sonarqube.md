@@ -36,13 +36,6 @@ SonarQube Operator: >=v2025.1.0
 
 The SonarQube disaster recovery solution implements a **hot data, cold compute architecture** for SonarQube services. This architecture provides disaster recovery capabilities through near-real-time data synchronization and manual SonarQube service failover procedures. The architecture consists of two SonarQube instances deployed across different clusters or regions, with the secondary SonarQube instance not deployed in advance until activated during disaster scenarios, while the database layer maintains continuous synchronization.
 
-### Core Components
-
-- **Primary SonarQube**: Active instance serving normal business operations and user requests, with all components running
-- **Secondary SonarQube**: Standby instance with zero replicas for all components, ready for failover scenarios
-- **Primary PostgreSQL**: Active database handling all data transactions, including SonarQube application data
-- **Secondary PostgreSQL**: Hot standby database with real-time data replication from the primary database
-
 ### Data Synchronization Strategy
 
 The solution ensures real-time transaction log synchronization between primary and secondary databases through PostgreSQL streaming replication, including all SonarQube application data

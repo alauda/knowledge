@@ -42,17 +42,6 @@ GitLab CE Operator: >=v17.11.1
 
 The GitLab disaster recovery solution implements a **hot data, cold compute architecture** for GitLab services. This architecture provides disaster recovery capabilities through near-real-time data synchronization and manual GitLab service failover procedures. The architecture consists of two GitLab instances deployed across different clusters or regions, with the secondary GitLab instance not deployed in advance until activated during disaster scenarios, while the database and storage layers maintain continuous synchronization.
 
-### Core Components
-
-- **Primary GitLab**: Active instance serving normal business operations and user requests, with all components running (webservice, sidekiq, gitlab-shell, gitaly)
-- **Secondary GitLab**: Standby instance with zero replicas for all components, ready for failover scenarios
-- **Primary PostgreSQL**: Active database handling all data transactions, including GitLab application data and Praefect metadata
-- **Secondary PostgreSQL**: Hot standby database with real-time data replication from the primary database
-- **Primary Object Storage**: Active S3-compatible storage for GitLab attachments and uploads
-- **Secondary Object Storage**: Synchronized backup storage with data replication from the primary storage
-- **Primary Gitaly Storage**: Block storage on the primary cluster for Git repository data
-- **Secondary Gitaly Storage**: Block storage synchronized through Ceph disaster recovery mechanisms
-
 ### Data Synchronization Strategy
 
 The solution leverages three independent data synchronization mechanisms:
