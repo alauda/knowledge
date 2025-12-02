@@ -376,18 +376,24 @@ Ensure that the Object Storage and PostgreSQL solutions support disaster recover
 
 ## Automatic Start/Stop of Disaster Recovery Instance
 
+Deploy a control program in both the primary and secondary clusters, along with a set of scripts, to automatically control the start and stop of Harbor instances.
+
 This mechanism enables automatic activation of the Secondary Harbor instance when a disaster occurs. It supports custom check mechanisms through user-defined scripts and provides control over Harbor dependency configurations.
 
 ```mermaid
 flowchart TD
-  Start[Monitoring Program] --> ConditionCheckScript[Check if Instance Should Start]
-  ConditionCheckScript -->|"Yes (Script return start)"| StatusBeforeStart[Execute StatusScript]
-  StatusBeforeStart -->|"Status != started"| StartScript[Execute StartScript]
+  Start[Monitoring Program] --> condition_check_script[Execute condition_check_script]
+  condition_check_script -->|"Yes (Script return start)"| StatusBeforeStart[Before Start Execute status_script]
+  StatusBeforeStart -->|"Status != started"| start_script[Execute start_script]
   StatusBeforeStart -->|"Status == started"| End1[Skip Start]
-  ConditionCheckScript -->|"No (Script return stop)"| StatusBeforeStop[Execute StatusScript]
-  StatusBeforeStop -->|"Status != stopped"| StopScript[Execute StopScript]
+  condition_check_script -->|"No (Script return stop)"| StatusBeforeStop[Before Stop Execute status_script]
+  StatusBeforeStop -->|"Status != stopped"| stop_script[Execute stop_script]
   StatusBeforeStop -->|"Status == stopped"| End[Skip Stop]
 ```
+
+### Prerequisites
+
+- Complete the setup of primary and secondary clusters for the Harbor disaster recovery solution.
 
 ### How to Configure and Run the Auto Start/Stop Program
 
@@ -450,8 +456,7 @@ flowchart TD
       RUNNING_PODS=$(kubectl -n "$HARBOR_NAMESPACE" \
         get pods -l release="$HARBOR_NAME" \
         --field-selector=status.phase=Running \
-        --no-headers \
-        --request-timeout=5s 2>/dev/null | wc -l | tr -d ' ')
+        --no-headers 2>/dev/null | wc -l | tr -d ' ')
       
       # Validate pod count is numeric
       if [[ ! "$RUNNING_PODS" =~ ^[0-9]+$ ]]; then
@@ -526,7 +531,7 @@ flowchart TD
       #####################################
       ```
 
-3. Deploy the control program as a Deployment in the Harbor namespace:
+3. Deploy the control program as a Deployment in the Harbor namespace. Note: This must be deployed on both the primary and standby clusters, with parameters adjusted according to the target cluster:
 
 ```yaml
 ---
@@ -558,22 +563,22 @@ subjects:
 ---
 apiVersion: v1
 data:
-  check.sh: |
-    # replace with your own script
   config.yaml: |
-    condition_check_script: /scripts/check.sh
-    start_script: /scripts/start.sh
-    stop_script: /scripts/stop.sh
-    status_script: /scripts/status.sh
+    condition_check_script: /opt/scripts/check.sh
+    start_script: /opt/scripts/start.sh
+    stop_script: /opt/scripts/stop.sh
+    status_script: /opt/scripts/status.sh
     check_interval: 10s
     failure_threshold: 3
     script_timeout: 120s
+  check.sh: |
+    # replace with your own script, refer to the previous section for script requirements
   start.sh: |
-    # replace with your own script
+    # replace with your own script, refer to the previous section for script requirements
   status.sh: |
-    # replace with your own script
+    # replace with your own script, refer to the previous section for script requirements
   stop.sh: |
-    # replace with your own script
+    # replace with your own script, refer to the previous section for script requirements
 kind: ConfigMap
 metadata:
   name: disaster-recovery-config
@@ -602,7 +607,7 @@ spec:
         - -c
         - |
           exec /opt/bin/disaster-recovery -config /opt/config/config.yaml
-        image: build-harbor.alauda.cn/devops/harbor-disaster-recovery:v2.13.0-ga4650ef
+        image: build-harbor.alauda.cn/devops/harbor-disaster-recovery:v2.13.0-g590be78
         name: controller
         resources:
           limits:
@@ -618,7 +623,7 @@ spec:
         - mountPath: /opt/config
           name: config
           readOnly: true
-        - mountPath: /opt/script
+        - mountPath: /opt/scripts
           name: scripts
           readOnly: true
       initContainers:
@@ -627,7 +632,7 @@ spec:
         - -c
         - |
           cp /disaster-recovery /opt/bin/disaster-recovery && chmod +x /opt/bin/disaster-recovery
-        image: build-harbor.alauda.cn/devops/harbor-disaster-recovery:v2.13.0-ga4650ef # replace you image.
+        image: build-harbor.alauda.cn/devops/harbor-disaster-recovery:v2.13.0-g590be78 # replace you image.
         imagePullPolicy: Always
         name: copy-binary
         volumeMounts:
@@ -821,7 +826,7 @@ rules:
 
   ACCESS_KEY=$(kubectl -n rook-ceph get secrets "${REALM_NAME}-keys" -o jsonpath='{.data.access-key}' 2>/dev/null | base64 -d)
   SECRET_KEY=$(kubectl -n rook-ceph get secrets "${REALM_NAME}-keys" -o jsonpath='{.data.secret-key}' 2>/dev/null | base64 -d)
-  ENDPOINT=$(kubectl -n rook-ceph get cephobjectzone realm-zone -o jsonpath='{.spec.customEndpoints[0]}')
+  ENDPOINT=$(kubectl -n rook-ceph get cephobjectzone ${ZONE_NAME} -o jsonpath='{.spec.customEndpoints[0]}')
   TOOLS_POD=$(kubectl -n rook-ceph get po -l app=rook-ceph-tools -o jsonpath='{.items[0].metadata.name}' 2>/dev/null)
 
   kubectl -n rook-ceph exec "$TOOLS_POD" -- radosgw-admin realm pull --url="$ENDPOINT" --access-key="$ACCESS_KEY" --secret="$SECRET_KEY";
