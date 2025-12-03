@@ -65,7 +65,7 @@ Examples (choose a method that fits your environment and security policies):
    * Use `ss` or `netstat` to confirm that nothing is listening on `:9091`:
 
      ```bash
-     ss -lntp | grep 9091 || echo "port 9091 is not listening"
+     ss -lntp | grep ':9091[[:space:]]\+' || echo "port 9091 is not listening"
      ```
 
 2. **From within the cluster**
@@ -105,7 +105,7 @@ If the value is `true` or the variable is not explicitly set (and metrics are kn
 On a node that runs `calico-node`, check for a listener on port `9091`:
 
 ```bash
-ss -lntp | grep 9091
+ss -lntp | grep ':9091[[:space:]]\+'
 ```
 
 If a process associated with `calico-node` or Felix is listening on `:9091`, the metrics endpoint is active.
