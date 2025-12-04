@@ -4,11 +4,8 @@ kind:
 products:
   - Alauda Container Platform
 ProductsVersion:
-   - 4.2
-   - 4.1
-   - 4.0
-   - 3.18
-   - 3.16
+   - 3.16,3.18,4.0,4.1,4.2
+id: KB251200002
 ---
 
 # Disable Calico Node Metrics Port
