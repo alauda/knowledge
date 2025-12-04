@@ -1,18 +1,19 @@
 ---
 kind:
-   - Solution
+  - Solution
 products:
   - Alauda DevOps
 ProductsVersion:
-   - 4.x
+  - 4.x
 id: KB251200005
+sourceSHA: dd594960618f0858d798834f4fe932e4ef0a986adfcec105580d156b974c8d1d
 ---
 
 # 如何为 SonarQube 执行灾难恢复
 
 ## 问题
 
-本解决方案描述了如何基于 PostgreSQL 的灾难恢复能力构建 SonarQube 灾难恢复解决方案。该解决方案实现了**热数据、冷计算**架构，其中数据通过 PostgreSQL 灾难恢复机制持续同步到备用集群，当主集群发生故障时部署备用 SonarQube 实例，备用 SonarQube 会使用容灾数据快速启动并提供服务。该解决方案主要关注数据灾难恢复处理，用户需要自行实现 SonarQube 访问地址切换机制。
+本解决方案描述了如何基于 PostgreSQL 的灾难恢复能力构建 SonarQube 的灾难恢复解决方案。该解决方案实现了 **热数据，冷计算** 架构，其中数据通过 PostgreSQL 灾难恢复机制持续同步到备用集群。当主集群发生故障时，部署备用 SonarQube 实例，备用 SonarQube 将快速开始使用灾难恢复数据并提供服务。该解决方案主要关注数据灾难恢复处理，用户需要实现自己的 SonarQube 访问地址切换机制。
 
 ## 环境
 
@@ -20,45 +21,45 @@ SonarQube Operator: >=v2025.1.0
 
 ## 术语
 
-| 术语                    | 描述                                                                 |
-|-------------------------|-----------------------------------------------------------------------------|
-| **主 SonarQube**      | 处理正常业务操作和用户请求的活跃 SonarQube 实例。该实例完全运行，所有组件都在运行。 |
-| **备用 SonarQube**    | 计划部署在不同集群/区域的备用 SonarQube 实例，在灾难恢复场景激活之前保持休眠状态。 |
-| **主 PostgreSQL**  | 处理所有数据事务的活跃 PostgreSQL 数据库集群，作为数据复制到备用数据库的源。 |
-| **备用 PostgreSQL**| 从主数据库接收实时数据复制的热备用 PostgreSQL 数据库。它可以在故障转移期间提升为主角色。 |
-| **恢复点目标 (RPO)** | 以时间衡量的最大可接受数据丢失量（例如，5 分钟，1 小时）。它定义了在灾难发生前可以丢失多少数据才变得不可接受。 |
-| **恢复时间目标 (RTO)** | 以时间衡量的最大可接受停机时间（例如，15 分钟，2 小时）。它定义了系统在灾难后必须恢复的速度。 |
-| **故障转移**            | 当主系统变得不可用或失败时，从主系统切换到备用系统的过程。 |
-| **数据同步**| 从主系统到备用系统持续复制数据以保持一致性并启用灾难恢复的过程。 |
-| **热数据，冷计算**| 一种架构模式，其中数据持续同步（热），而计算资源保持非活动状态（冷），直到故障转移。 |
+| 术语                               | 描述                                                                                                                                                                   |
+| ---------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **主 SonarQube**                   | 处理正常业务操作和用户请求的活动 SonarQube 实例。该实例完全可操作，所有组件均在运行。                                                                                     |
+| **备用 SonarQube**                 | 计划在不同集群/地域中部署的备用 SonarQube 实例，保持待命状态，直到在灾难恢复场景中被激活。                                                                                  |
+| **主 PostgreSQL**                  | 处理所有数据事务的活动 PostgreSQL 数据库集群，并作为数据复制到备用数据库的源。                                                                                          |
+| **备用 PostgreSQL**                | 接收来自主数据库的实时数据复制的热备用 PostgreSQL 数据库。在故障转移期间可以提升为主角色。                                                                                  |
+| **恢复点目标 (RPO)**               | 可接受的最大数据丢失量，以时间衡量（例如，5 分钟，1 小时）。它定义了在灾难发生时可以丢失多少数据，直到变得不可接受。                                                        |
+| **恢复时间目标 (RTO)**             | 可接受的最大停机时间，以时间衡量（例如，15 分钟，2 小时）。它定义了在灾难发生后系统必须多快恢复。                                                                          |
+| **故障转移**                       | 当主系统不可用或故障时，从主系统切换到备用系统的过程。                                                                                                                |
+| **数据同步**                       | 从主系统到备用系统持续复制数据的过程，以保持一致性并启用灾难恢复。                                                                                                    |
+| **热数据，冷计算**                 | 一种架构模式，其中数据持续同步（热），而计算资源保持非活动状态（冷），直到发生故障转移。                                                                                  |
 
 ## 架构
 
-SonarQube 灾难恢复解决方案为 SonarQube 服务实现了**热数据、冷计算架构**。这种架构通过准实时数据同步和手动 SonarQube 服务故障转移程序提供灾难恢复能力。架构由部署在不同集群或区域的两个 SonarQube 实例组成，备用 SonarQube 并不会提前部署，直到在灾难场景中激活，而数据库层保持持续同步。
+SonarQube 灾难恢复解决方案为 SonarQube 服务实现了 **热数据，冷计算架构**。该架构通过近实时数据同步和手动 SonarQube 服务故障转移操作步骤提供灾难恢复能力。该架构由两个部署在不同集群或地域的 SonarQube 实例组成，备用 SonarQube 实例在灾难场景中被激活之前不会提前部署，而数据库层保持持续同步。
 
 ### 数据同步策略
 
-该解决方案通过 PostgreSQL 流式复制确保主数据库和备用数据库之间的实时事务日志同步，包括所有 SonarQube 应用程序数据
+该解决方案通过 PostgreSQL 流复制确保主数据库和备用数据库之间的实时事务日志同步，包括所有 SonarQube 应用数据。
 
 ### 灾难恢复配置
 
-1. **部署主 SonarQube**：配置域名访问，连接到主 PostgreSQL 数据库
-2. **准备备用 SonarQube 部署环境**：配置备用实例所需要的 secret 资源，以便于灾难发生时快速恢复
+1. **部署主 SonarQube**：配置域访问，连接到主 PostgreSQL 数据库。
+2. **准备备用 SonarQube 部署环境**：配置备用实例所需的 Secret 资源，以便在发生灾难时能够快速恢复。
 
-### 故障转移程序
+### 故障转移操作步骤
 
-当发生灾难时，以下步骤确保转换到备用环境：
+当发生灾难时，以下步骤确保切换到备用环境：
 
-1. **验证主故障**：确认所有主 SonarQube 组件都不可用
-2. **提升数据库**：使用数据库故障转移程序将备用 PostgreSQL 提升为主
-3. **部署备用 SonarQube**：在备集群使用灾备数据快速部署 SonarQube 实例
-4. **更新路由**：将外部访问地址切换到指向备用 SonarQube 实例
+1. **验证主故障**：确认所有主 SonarQube 组件不可用。
+2. **提升数据库**：使用数据库故障转移操作步骤将备用 PostgreSQL 提升为主。
+3. **部署备用 SonarQube**：使用灾难恢复数据快速部署备用集群中的 SonarQube 实例。
+4. **更新路由**：切换外部访问地址以指向备用 SonarQube 实例。
 
-## SonarQube 容灾配置
+## SonarQube 灾难恢复配置
 
 ::: warning
 
-为了简化配置过程，降低配置难度，推荐主备两个环境中使用一致的信息，包括：
+为了简化配置过程并降低配置难度，建议在主环境和备用环境中使用一致的信息，包括：
 
 - 一致的数据库实例名称和密码
 - 一致的 SonarQube 实例名称
@@ -66,30 +67,30 @@ SonarQube 灾难恢复解决方案为 SonarQube 服务实现了**热数据、冷
 
 :::
 
-### 前置条件
+### 前提条件
 
-1. 提前准备一个主集群和一个灾难恢复集群（或包含不同区域的集群）。
-2. 完成 `Alauda support for PostgreSQL` 灾难恢复配置的部署。
+1. 提前准备一个主集群和一个灾难恢复集群（或包含不同地域的集群）。
+2. 完成 `Alauda 对 PostgreSQL 的支持` 灾难恢复配置的部署。
 
-### 使用 `Alauda support for PostgreSQL` 构建 PostgreSQL 灾难恢复集群
+### 使用 `Alauda 对 PostgreSQL 的支持` 构建 PostgreSQL 灾难恢复集群
 
-参考 `PostgreSQL 热备用集群配置指南`，使用 `Alauda support for PostgreSQL` 构建灾难恢复集群。
+参考 `PostgreSQL 热备用集群配置指南` 使用 `Alauda 对 PostgreSQL 的支持` 构建灾难恢复集群。
 
-确保主 PostgreSQL 和备用 PostgreSQL 位于不同的集群（或不同的区域）。
+确保主 PostgreSQL 和备用 PostgreSQL 在不同的集群（或不同的地域）中。
 
-您可以在 [Alauda Knowledge](https://cloud.alauda.io/knowledges#/) 上搜索 `PostgreSQL 热备用集群配置指南` 来获取它。
+您可以在 [Alauda 知识](https://cloud.alauda.io/knowledges#/) 上搜索 `PostgreSQL 热备用集群配置指南` 以获取该文档。
 
 :::warning
 
-`PostgreSQL 热备用集群配置指南` 是一份描述如何使用 `Alauda support for PostgreSQL` 构建灾难恢复集群的文档。使用此配置时，请确保与相应的 ACP 版本兼容。
+`PostgreSQL 热备用集群配置指南` 是一份描述如何使用 `Alauda 对 PostgreSQL 的支持` 构建灾难恢复集群的文档。请确保在使用此配置时与适当的 ACP 版本兼容。
 
 :::
 
 ### 设置主 SonarQube
 
-按照 SonarQube 实例部署指南部署主 SonarQube 实例。配置域名访问，连接到主 PostgreSQL 数据库。
+通过遵循 SonarQube 实例部署指南来部署主 SonarQube 实例。配置域访问，连接到主 PostgreSQL 数据库。
 
-配置示例（仅包含了容灾关注的配置项，完整配置项见产品文档）：
+配置示例（仅包括与灾难恢复相关的配置项，完整配置项请参见产品文档）：
 
 ```yaml
 apiVersion: operator.alaudadevops.io/v1alpha1
@@ -98,7 +99,7 @@ metadata:
   name: <SONARQUBE_NAME>
   namespace: <SONARQUBE_NAMESPACE>
 spec:
-  externalURL: http://dr-sonar.alaudatech.net # 配置域名并解析到主集群
+  externalURL: http://dr-sonar.alaudatech.net # 配置域并解析到主集群
   helmValues:
     ingress:
       enabled: true
@@ -107,26 +108,26 @@ spec:
     jdbcOverwrite:
       enable: true
       jdbcSecretName: sonarqube-pg
-      jdbcUrl: jdbc:postgresql://sonar-dr.sonar-dr:5432/sonar_db? # 连接到主 PostgreSql
+      jdbcUrl: jdbc:postgresql://sonar-dr.sonar-dr:5432/sonar_db? # 连接到主 PostgreSQL
       jdbcUsername: postgres
 ```
 
 ### 设置备用 SonarQube
 
 :::warning
-当 PostgreSQL 处于备用状态时，备用数据库无法接受写操作，因此备集群的 SonarQube 无法部署成功。
+当 PostgreSQL 处于备用状态时，备用数据库无法接受写操作，因此备用集群中的 SonarQube 无法成功部署。
 
-如需验证备集群 SonarQube 是否可以部署成功，可以临时将备集群的 PostgreSQL 提升为主集群，测试完成后再设置回备用状态。同时需要将测试过程中创建的 SonarQube 资源都删除。
+如果您需要验证备用集群中的 SonarQube 是否可以成功部署，您可以暂时将备用集群的 PostgreSQL 提升为主，并在测试完成后将其恢复为备用状态。同时，您需要删除测试期间创建的 `sonarqube` 资源。
 :::
 
-1. 创建备 SonarQube 使用的 Secret
-2. 备份主 SonarQube 实例 YAML
+1. 创建备用 SonarQube 使用的 Secrets。
+2. 备份主 SonarQube 实例 YAML。
 
-#### 创建备 SonarQube 使用的 Secret
+#### 创建备用 SonarQube 使用的 Secrets
 
-备 SonarQube 需要两个 secret，分别保存数据库连接 (连接到备 PostgreSQL) 和 root 密码。参考 [SonarQube 部署文档](https://docs.alauda.cn/alauda-build-of-sonarqube/2025.1/install/02_sonarqube_credential.html#pg-credentials) 创建（Secret 名称保持和主 SonarQube 配置时使用的名称一致）。
+备用 SonarQube 需要两个 secrets，一个用于数据库连接（连接到备用 PostgreSQL），一个用于 root 密码。参考 [SonarQube 部署文档](https://docs.alauda.cn/alauda-build-of-sonarqube/2025.1/install/02_sonarqube_credential.html#pg-credentials) 创建它们（保持 Secret 名称与主 SonarQube 配置中使用的一致）。
 
-示例:
+示例：
 
 ```bash
 apiVersion: v1
@@ -158,16 +159,16 @@ type: Opaque
 kubectl -n "$SONARQUBE_NAMESPACE" get sonarqube "$SONARQUBE_NAME" -oyaml > sonarqube.yaml
 ```
 
-根据容灾环境实际情况修改 `sonarqube.yaml` 中的信息，包括 PostgreSQL 连接地址等。
+根据灾难恢复环境的实际情况修改 `sonarqube.yaml` 中的信息，包括 PostgreSQL 连接地址等。
 
 :::warning
-`SonarQube` 资源**不需要**立即创建在容灾环境，只需要在灾难发生时，执行容灾切换时创建到备集群即可。
+在灾难恢复环境中 **不需要** 立即创建 `sonarqube` 资源。仅在发生灾难并执行灾难恢复切换时，才需要在备用集群中创建它。
 :::
 
 :::warning
-如需进行容灾演练，可以按照 [灾难场景中的主备切换程序](#灾难切换) 中的步骤进行演练。演练完毕后需要在容灾环境完成以下清理操作：
+如果您需要进行灾难恢复演练，可以按照 [灾难场景中的主-备用切换操作步骤](#disaster-switchover) 进行演练。演练完成后，您需要在灾难恢复环境中执行以下清理操作：
 
-- 将容灾环境中的 `SonarQube` 实例删除
+- 删除灾难恢复环境中的 `sonarqube` 实例
 - 将 PostgreSQL 集群切换为备用状态
 
 :::
@@ -176,40 +177,40 @@ kubectl -n "$SONARQUBE_NAMESPACE" get sonarqube "$SONARQUBE_NAME" -oyaml > sonar
 
 #### 恢复点目标 (RPO)
 
-RPO 表示在灾难恢复场景中最大可接受的数据丢失。在此 SonarQube 灾难恢复解决方案中：
+RPO 表示在灾难恢复场景中可接受的最大数据丢失。 在此 SonarQube 灾难恢复解决方案中：
 
-- **数据库层**：由于 PostgreSQL 热备用流式复制，数据丢失接近零
-- **总体 RPO**：总体 RPO 接近零，取决于 PostgreSQL 流式复制的延迟
+- **数据库层**：由于 PostgreSQL 热备用流复制，数据丢失几乎为零。
+- **整体 RPO**：整体 RPO 接近零，取决于 PostgreSQL 流复制的延迟。
 
 #### 恢复时间目标 (RTO)
 
-RTO 表示在灾难恢复期间最大可接受的停机时间。此解决方案提供：
+RTO 表示在灾难恢复期间可接受的最大停机时间。该解决方案提供：
 
-- **手动组件**：SonarQube 服务激活和外部路由更新需要手动干预
-- **典型 RTO**：完整服务恢复需要 7-20 分钟
+- **手动组件**：SonarQube 服务激活和外部路由更新需要手动干预。
+- **典型 RTO**：完整服务恢复需要 5-20 分钟。
 
-**RTO 分解：**
+**RTO 细分：**
 
 - 数据库故障转移：1-2 分钟（手动）
-- SonarQube 服务激活：5-15 分钟（手动）
+- SonarQube 服务激活：3-15 分钟（手动）
 - 外部路由更新：1-3 分钟（手动，取决于 DNS 传播）
 
 ## 灾难切换
 
-1. **确认主 SonarQube 故障**：确认所有主 SonarQube 组件都处于非工作状态，否则先停止所有主 SonarQube 组件。
+1. **确认主 SonarQube 故障**：确认所有主 SonarQube 组件处于非工作状态，否则首先停止所有主 SonarQube 组件。
 
-2. **提升备用 PostgreSQL**：将备用 PostgreSQL 提升为主 PostgreSQL。参考 `PostgreSQL 热备用集群配置指南` 的切换程序。
+2. **提升备用 PostgreSQL**：将备用 PostgreSQL 提升为主 PostgreSQL。参考 `PostgreSQL 热备用集群配置指南` 中的切换操作步骤。
 
-3. **部署备用 SonarQube**：恢复备份的 `sonarqube.yaml` 到容灾环境同名命名空间中。SonarQube 会利用容灾数据自动启动。
+3. **部署备用 SonarQube**：将备份的 `sonarqube.yaml` 恢复到灾难恢复环境中，使用相同的命名空间名称。SonarQube 将自动开始使用灾难恢复数据。
 
-4. **验证 SonarQube 组件**：验证所有 SonarQube 组件正在运行且健康。测试 SonarQube 功能（项目访问、代码分析、用户认证）以验证 SonarQube 是否正常工作。
+4. **验证 SonarQube 组件**：验证所有 SonarQube 组件是否正常运行并健康。测试 SonarQube 功能（项目访问、代码分析、用户认证）以验证 SonarQube 是否正常工作。
 
-5. **切换访问地址**：将外部访问地址切换到备用 SonarQube。
+5. **切换访问地址**：切换外部访问地址到备用 SonarQube。
 
 ## 使用其他 PostgreSQL 构建 SonarQube 灾难恢复解决方案
 
-操作步骤与使用 `Alauda support for PostgreSQL` 构建 SonarQube 灾难恢复解决方案类似。只需将 PostgreSQL 替换为其他支持灾难恢复的 PostgreSQL 解决方案。
+操作步骤与使用 `Alauda 对 PostgreSQL 的支持` 构建 SonarQube 灾难恢复解决方案类似。只需将 PostgreSQL 替换为其他支持灾难恢复的 PostgreSQL 解决方案。
 
 :::warning
-确保所选 PostgreSQL 解决方案支持灾难恢复能力，并在生产环境使用前进行充分的容灾演练。
+确保所选 PostgreSQL 解决方案支持灾难恢复能力，并在生产环境中使用之前进行充分的灾难恢复演练。
 :::
