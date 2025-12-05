@@ -212,7 +212,8 @@ spec:
 When fill in the form when installing Kubeflow pipeline plugin, you can use an external MySQL service or Minio service, or choose to use the built-in services. Be ware that:
 
 * Builtin MySQL and Minio services are single pod service, which may sufur from single point of failure.
-* When using an external MySQL service, the MySQL service must be of version "MySQL 5.7". If there's no such service, use the built-in MySQL.
+* NOTE: When using plugin version <= v1.10.8, you should NOT use external MySQL and MinIO settings which may cause errors. Update to the latest version to use external MySQL and MinIO.
+* NOTE: MUST use MySQL version 5.7 with kubeflow pipeline plugin.
 
 ### Notes when setup MLFlow plugin
 
@@ -419,3 +420,156 @@ If you have previous undeleted notebook instances, you should still be able to a
 4. Create a simple image build job for an existing model
 5. Check if notebook instances (if there are any) can be accessed from "Advanced" - "Kubeflow" - "Notebooks"
 6. Check if mlflow web ui can be accessed
+
+## FAQ
+
+### How to Configure Kubeflow to Use an Alternative Platform Address for Login?
+
+In some environments, the platform access address is configured as an internal network address, and users need to log in through an "Alternative Platform Address." In this scenario, while the OIDC issuer remains based on the original platform address, the login page URL must be updated to the alternative address.
+
+Modification Method:  
+
+1. Locate the ModuleInfo Resource:
+
+In the global cluster, find the ModuleInfo resource corresponding to the kfbase  plugin using the following command:
+
+```
+kubectl get moduleinfoes -l cpaas.io/module-name=kfbase,cpaas.io/cluster-name=<deployed-cluster-name>
+```
+
+2. Edit the ModuleInfo Resource:
+
+```
+kubectl edit moduleinfoes <ModuleInfo-name>
+```
+
+Add the valuesOverride  section under spec  as shown below. Replace <Alternative-Platform-Address> with the actual alternative address.
+
+```
+......
+spec: 
+  valuesOverride: 
+    mlops/kfbase:  
+      oidcAuthURL: https://<Alternative-Platform-Address>/dex/auth
+......
+```
+
+3. Restart the OAuth2 Proxy:
+
+Apply the changes by restart the oauth2-proxy  deployment in the target cluster:
+
+```
+kubectl rollout restart deploy -n kubeflow-oauth2-proxy oauth2-proxy
+```
+
+### How to start a Kubeflow Pipeline Run with external S3/MinIO storage
+
+When you installed Kubeflow with an external S3/MinIO storage service, you need to add a "KFP Launcher" configmap to setup storage used by current namespace or user. You can checkout Kubeflow document https://www.kubeflow.org/docs/components/pipelines/operator-guides/configure-object-store/#s3-and-s3-compatible-provider for more details. If no configuation is set, the pipeline runs may still accessing the default service address like "minio-service.kubeflow:9000" which is not correct.
+
+Below is a simple sample for you to start:
+
+```yaml
+apiVersion: v1
+data:
+  defaultPipelineRoot: s3://mlpipeline
+  providers: |-
+    s3:
+      default:
+        endpoint: minio.minio-system.svc:80
+        disableSSL: true
+        region: us-east-2
+        forcePathStyle: true
+        credentials:
+          fromEnv: false
+          secretRef:
+            secretName: mlpipeline-minio-artifact
+            accessKeyKey: accesskey
+            secretKeyKey: secretkey
+kind: ConfigMap
+metadata:
+  name: kfp-launcher
+  namespace: wy-testns
+```
+
+For example, you should setup below values in this configmap to point to your own S3/MinIO storage
+
+- defaultPipelineRoot: where to store the pipeline intermediate data
+- endpoint: s3/MinIO service endpoint. Note, should NOT start with "http" or "https"
+- disableSSL: whether disable "https" access to the endpoint
+- region: s3 region. If using MinIO, any value will be fine
+- credentials: AK/SK in the secrets
+
+After add this configmap, the newly started Kubeflow Pipeline Runs will automatically read this configration, and save stuff that is used by Kubeflow Pipeline.
+
+### Create Kubeflow profile after namespace creation, but namespace is still not useable in Kubeflow?
+
+If you created a namespace(or using existed namespace), and want to use this namespace in Kubeflow, you'll need to create a Profile to set the namespace owner and collaborators.
+
+After created the Profile resource, you still need to do below steps, so that profile controller will be able to deal with pre-created namespaces:
+
+1. Add owner label to the namespace:
+
+```
+kubectl label namespace <your-namespace> owner=<namespace-owner-username>
+```
+
+2. Make some changes to the Profile resource to trigger update
+
+```
+kubectl label profile <your-namespace> a=b
+kubectl label profile <your-namespace> a-
+```
+
+3. Execute below command, you'll get the service account managed by Kubeflow (service account: default-editor).
+
+```
+kubectl get serviceaccount -n <your-namespace>
+```
+
+
+### Configure Kubeflow Notebook to use custom GPU resources
+
+You can add other GPU resouce types so that Kubeflow Notebook web page can create instances leveraging these hardware, e.g. when using Ascend GPUs.
+
+Edit the configmap by running this command:
+
+```
+kubectl -n kubeflow get configmap | grep jupyter-web-app-config
+kubectl -n kubeflow edit configmap jupyter-web-app-config-<actual-cm-suffix>
+```
+
+Find below section and add your GPU resource types like "your-custom.com/gpu".
+
+NOTE you can only add resource types using integer values, like 1,2,4,8. Also, you can not add "Virtual" or "Shared" GPU resources using both "Cores" and "Memory" like when you are using HAMi.
+
+
+```yaml
+################################################################
+# GPU/Device-Plugin Resources
+################################################################
+gpus:
+  readOnly: false
+ 
+  # configs for gpu/device-plugin limits of the container
+  # https://kubernetes.io/docs/tasks/manage-gpus/scheduling-gpus/#using-device-plugins
+  value:
+    # the `limitKey` of the default vendor
+    # (to have no default, set as "")
+    vendor: ""
+ 
+    # the list of available vendors in the dropdown
+    #  `limitsKey` - what will be set as the actual limit
+    #  `uiName` - what will be displayed in the dropdown UI
+    vendors:
+    - limitsKey: "nvidia.com/gpu"
+      uiName: "NVIDIA"
+    - limitsKey: "amd.com/gpu"
+      uiName: "AMD"
+    - limitsKey: "habana.ai/gaudi"
+      uiName: "Intel Gaudi"
+    - limitsKey: "your-custom.com/gpu"
+      uiName: "Your Custom Vendor"
+    # the default value of the limit
+    # (possible values: "none", "1", "2", "4", "8")
+    num: "none"
+```
