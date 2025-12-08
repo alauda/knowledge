@@ -3,6 +3,7 @@ products:
   - Alauda Container Platform
 kind:
   - Solution
+id: KB1765182144-0B80
 ---
 
 # Unattended Installation of Alauda Cloud Platform (ACP)
