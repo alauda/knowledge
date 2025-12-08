@@ -47,7 +47,7 @@ See [Start the installer](https://docs.alauda.io/container_platform/4.1/install/
 
 ### Download and execute the installation script
 
-Put the downloaded [installation script](../../public/unattended_installation/platform-install.sh) into the extracted installer directory. Then execute it through the following command:
+Put the downloaded [installation script](https://raw.githubusercontent.com/alauda/knowledge/9b147b69045d7c84c709233c3c21397d1adcd7e3/docs/public/unattended_installation/platform-install.sh) into the extracted installer directory. Then execute it through the following command:
 ```shell
 bash platform-install.sh <options>
 ```
