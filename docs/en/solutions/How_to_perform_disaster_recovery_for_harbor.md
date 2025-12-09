@@ -394,6 +394,43 @@ flowchart TD
 ### Prerequisites
 
 - Complete the setup of primary and secondary clusters for the Harbor disaster recovery solution.
+- Download the disaster recovery program image and import it into the cluster registry.
+
+  The disaster recovery program images are available for different architectures:
+
+  ```bash
+  # Download URLs for AMD64 architecture:
+  # https://cloud.alauda.cn/attachments/knowledge/KB251000012/harbor-dr-amd.tgz
+  # https://cloud.alauda.io/attachments/knowledge/KB251000012/harbor-dr-amd.tgz
+  
+  # Download URLs for ARM64 architecture:
+  # https://cloud.alauda.cn/attachments/knowledge/KB251000012/harbor-dr-arm.tgz
+  # https://cloud.alauda.io/attachments/knowledge/KB251000012/harbor-dr-arm.tgz
+  ```
+
+  **Import the image into your cluster registry:**
+
+  1. Download the appropriate image archive based on your cluster's architecture (AMD64 or ARM64).
+
+  2. Load the image archive and import it into your cluster registry:
+
+     ```bash
+     # Load the image from the archive
+     docker load -i harbor-dr-amd.tgz  # or harbor-dr-arm.tgz for ARM64
+     
+     # Tag the image with your cluster registry address
+     # Replace <REGISTRY_ADDRESS> with your actual cluster registry address
+     docker tag build-harbor.alauda.cn/devops/harbor-disaster-recovery:v2.13.0-g590be78 <REGISTRY_ADDRESS>/devops/harbor-disaster-recovery:v2.13.0-g590be78
+     
+     # Push the image to your cluster registry
+     docker push <REGISTRY_ADDRESS>/devops/harbor-disaster-recovery:v2.13.0-g590be78
+     ```
+
+  3. Update the image reference in the Deployment YAML (see the deployment section below) to use your cluster registry address instead of `build-harbor.alauda.cn/devops/harbor-disaster-recovery:v2.13.0-g590be78`.
+
+  :::info
+  If you are using a private registry that requires authentication, ensure you have logged in using `docker login` or configured the appropriate image pull secrets in your Kubernetes cluster.
+  :::
 
 ### How to Configure and Run the Auto Start/Stop Program
 
@@ -607,7 +644,7 @@ spec:
         - -c
         - |
           exec /opt/bin/disaster-recovery -config /opt/config/config.yaml
-        image: build-harbor.alauda.cn/devops/harbor-disaster-recovery:v2.13.0-g590be78
+        image: build-harbor.alauda.cn/devops/harbor-disaster-recovery:v2.13.0-g590be78 # Replace with your own image
         name: controller
         resources:
           limits:
@@ -632,7 +669,7 @@ spec:
         - -c
         - |
           cp /disaster-recovery /opt/bin/disaster-recovery && chmod +x /opt/bin/disaster-recovery
-        image: build-harbor.alauda.cn/devops/harbor-disaster-recovery:v2.13.0-g590be78 # replace you image.
+        image: build-harbor.alauda.cn/devops/harbor-disaster-recovery:v2.13.0-g590be78 # Replace with the image address imported into the cluster.
         imagePullPolicy: Always
         name: copy-binary
         volumeMounts:
