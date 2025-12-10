@@ -11,7 +11,7 @@ id: none
 # How to Install KEDA Operator
 
 ## Overview
-**KEDA** is a Kubernetes-based Event Driven Autoscaler. [Home Page](https://keda.sh/). With KEDA, you can drive the scaling of any container in Kubernetes based on the number of events needing to be processed.
+[**KEDA**](https://keda.sh/) is a Kubernetes-based Event Driven Autoscaler. With KEDA, you can drive the scaling of any container in Kubernetes based on the number of events needing to be processed.
 
 ### Introduction
 KEDA is a single-purpose and lightweight component that can be added into any Kubernetes cluster. KEDA works alongside standard Kubernetes components like the [Horizontal Pod Autoscaling](https://kubernetes.io/docs/tasks/run-application/horizontal-pod-autoscale/) and can extend functionality without overwriting or duplication. With KEDA, you can explicitly map the apps you want to use event-driven scale, with other apps continuing to function. This makes KEDA a flexible and safe option to run alongside any number of any other Kubernetes applications or frameworks.
@@ -37,7 +37,7 @@ KEDA monitors external event sources and adjusts your app's resources based on t
 1. **KEDA Operator** keeps track of event sources and changes the number of app instances up or down, depending on the demand
 2. **Metrics Server** provides external metrics to Kubernetes' HPA so it can make scaling decisions
 3. **Scalers** connect to event sources like message queues or databases, pulling data on current usage or load
-4. **Custom Resource Definitions (CRDs)**define how your apps should scale based on triggers like queue length or API request rates
+4. **Custom Resource Definitions (CRDs)** define how your apps should scale based on triggers like queue length or API request rates
 
 In simple terms, KEDA listens to what's happening outside Kubernetes, fetches the data it needs, and scales your apps accordingly. It's efficient and integrates well with Kubernetes to handle scaling dynamically.
 
