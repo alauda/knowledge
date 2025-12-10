@@ -15,16 +15,16 @@ The Traffic-Based Idle Application Solution is an innovative cloud-native techno
 
 ### Introduction
 Core Features:
-- **Automatic Scale from Zero**: Automatically starts applications from zero replicas when HTTP requests arrive.
-- **Intelligent Scale to Zero**: Automatically scales applications to zero replicas during no-traffic periods, saving resource costs.
-- **Zero Request Loss**: Ensures no requests are lost during application startup through intelligent buffering mechanism.
-- **Fast Cold Start**: Optimized startup process ensures quick response to traffic spikes.
+- **Automatic Scale from Zero**: Automatically starts applications from zero replicas when HTTP requests arrive
+- **Intelligent Scale to Zero**: Automatically scales applications to zero replicas during no-traffic periods, saving resource costs
+- **Zero Request Loss**: Ensures no requests are lost during application startup through intelligent buffering mechanism
+- **Fast Cold Start**: Optimized startup process ensures quick response to traffic spikes
 
 Applicable Scenarios:
 - Web services with fluctuating traffic
-- Internal tools and dashboard applications.
+- Internal tools and dashboard applications
 - API frontends for batch processing jobs
-- Development and test environment resource optimization.
+- Development and test environment resource optimization
 
 ### Core Architecture Components
 The below diagram is the most common architecture that is shipped by default:
@@ -207,8 +207,7 @@ EOF
 ## Conclusion
 
 The traffic-driven idle application solution based on KEDA HTTP Add-on brings significant value to modern cloud-native environments:
-1. Ultimate Cost Optimization: Maximize cost efficiency by scaling idle applications to zero.
+1. Ultimate Cost Optimization: Maximize cost efficiency by scaling idle applications to zero
 2. Intelligent Elastic Scaling: Automatically adjust based on actual traffic, no manual intervention required
 3. High Availability Assurance: Zero request loss ensured through request buffering mechanism
 4. Simple and Easy to Use: Standard Kubernetes-native experience with low learning curve
-

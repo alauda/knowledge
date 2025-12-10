@@ -14,7 +14,7 @@ id: none
 ### Prerequisites
 Before using this functionality, ensure that:
 - [Installing KEDA Operator](/solutions/How_to_Install_KEDA_Operator.md)
-- Installing ACP Monitoring with Prometheus Plugin
+- [Installing ACP Monitoring with Prometheus Plugin](https://docs.alauda.io/container_platform/4.2/observability/monitor/install_monitor.html)
 - Retrieve the Prometheus endpoint URL and secretName for the current Kubernetes cluster:
     ```bash
     PrometheusEndpoint=$(kubectl get feature monitoring -o jsonpath='{.spec.accessInfo.database.address}')
@@ -23,7 +23,7 @@ Before using this functionality, ensure that:
     ```bash
     PrometheusSecret=$(kubectl get feature monitoring -o jsonpath='{.spec.accessInfo.database.basicAuth.secretName}')
     ```
-- Create a deployment named **`<your-deployment>`** in the **`<your-namespace>`** namespace.
+- Create a deployment named **`<your-deployment>`** in the **`<your-namespace>`** namespace
 
 ### Procedure
 
@@ -34,7 +34,8 @@ Before using this functionality, ensure that:
 # Get Prometheus auth info
 PrometheusUsername=$(kubectl get secret $PrometheusSecret -n cpaas-system -o jsonpath='{.data.username}' | base64 -d)
 PrometheusPassword=$(kubectl get secret $PrometheusSecret -n cpaas-system -o jsonpath='{.data.password}' | base64 -d)
-
+```
+```bash
 # create secret in keda namespace
 kubectl create secret generic $PrometheusSecret \
   -n keda \
@@ -62,7 +63,7 @@ spec:
 EOF
 ```
 
-- Configure Autoscaling for Kubernetes Deployments Using Prometheus Metrics with **ScaledObject**.
+- Configure Autoscaling for Kubernetes Deployment Using Prometheus Metrics with **ScaledObject**.
 
 To scale a Kubernetes Deployment based on Prometheus metrics, define a **ScaledObject** resource referencing the configured ClusterTriggerAuthentication. Below is an example configuration:
 ```bash
@@ -111,8 +112,7 @@ KEDA allows you to pause autoscaling of workloads temporarily, which is useful f
 - Cluster maintenance.
 - Avoiding resource starvation by scaling down non-critical workloads.
 
-### Procedure
-#### Immediate Pause with Current Replicas
+### Immediate Pause with Current Replicas
 Add the following annotation to your **ScaledObject** definition to pause scaling without changing the current replica count:
 ```yaml
 metadata:
@@ -120,7 +120,7 @@ metadata:
     autoscaling.keda.sh/paused: "true"
 ```
 
-#### Pause After Scaling to a Specific Replica Count
+### Pause After Scaling to a Specific Replica Count
 Use this annotation to scale the workload to a specific number of replicas and then pause:
 ```yaml
 metadata:
@@ -128,12 +128,12 @@ metadata:
     autoscaling.keda.sh/paused-replicas: "<number>"
 ```
 
-#### Behavior When Both Annotations are Set
+### Behavior When Both Annotations are Set
 If both **paused** and **paused-replicas** are specified:
   - KEDA scales the workload to the value defined in **paused-replicas**.
   - Autoscaling is paused afterward.
 
-#### Unpausing Autoscaling
+### Unpausing Autoscaling
 To resume autoscaling:
   - Remove both paused and paused-replicas annotations from the ScaledObject.
   - If only paused: "true" was used, set it to false:
@@ -143,9 +143,9 @@ To resume autoscaling:
         autoscaling.keda.sh/paused: "false"
     ```
 
-### Scaling to Zero
+## Scaling to Zero
 
-#### Autoscaling to Zero
+### Auto Scaling to Zero
 KEDA unlike the HPA, can scale to zero. If you set the minReplicaCount value in the `ScaledObject` CR to 0, KEDA scales the workload down from 1 to 0 replicas or up from 0 replicas to 1. This is known as the activation phase. After scaling up to 1 replica, the HPA takes control of the scaling. This is known as the scaling phase.
 
 Example ScaledObject Configuration:
@@ -161,7 +161,7 @@ spec:
   minReplicaCount: 0
 ```
 
-#### Manual Scaling to Zero and Pause Autoscaling
+### Manual Scaling to Zero and Pause Autoscaling
 Specifies the replicas to `0` and stop autoscaling:
 ```yaml
 apiVersion: keda.sh/v1alpha1
@@ -173,7 +173,7 @@ metadata:
     autoscaling.keda.sh/paused-replicas: "0"  # Scale to 0 replicas and pause
 ```
 
-#### Verification
+### Verification
 
 To verify that the ScaledObject has scaled to zero, you can check the number of replicas of the target deployment:
 ```bash
@@ -186,7 +186,7 @@ kubectl get pods -n <your-namespace> -l <your-deployment-label-key>=<your-deploy
 ```
 The number of pods should be zero, indicating that the deployment has scaled to zero.
 
-## Other KEDA scalers
+## Other KEDA Scalers
 
 KEDA **scalers** can both detect if a deployment should be activated or deactivated, and feed custom metrics for a specific event source.
 

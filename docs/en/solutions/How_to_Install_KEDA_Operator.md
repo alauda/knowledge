@@ -14,7 +14,7 @@ id: none
 **KEDA** is a Kubernetes-based Event Driven Autoscaler. [Home Page](https://keda.sh/). With KEDA, you can drive the scaling of any container in Kubernetes based on the number of events needing to be processed.
 
 ### Introduction
-KEDA is a single-purpose and lightweight component that can be added into any Kubernetes cluster. KEDA works alongside standard Kubernetes components like the [Horizontal Pod Autoscaler](https://kubernetes.io/docs/tasks/run-application/horizontal-pod-autoscale/) and can extend functionality without overwriting or duplication. With KEDA, you can explicitly map the apps you want to use event-driven scale, with other apps continuing to function. This makes KEDA a flexible and safe option to run alongside any number of any other Kubernetes applications or frameworks.
+KEDA is a single-purpose and lightweight component that can be added into any Kubernetes cluster. KEDA works alongside standard Kubernetes components like the [Horizontal Pod Autoscaling](https://kubernetes.io/docs/tasks/run-application/horizontal-pod-autoscale/) and can extend functionality without overwriting or duplication. With KEDA, you can explicitly map the apps you want to use event-driven scale, with other apps continuing to function. This makes KEDA a flexible and safe option to run alongside any number of any other Kubernetes applications or frameworks.
 
 See the official documentation for more details: [Keda Documentation](https://keda.sh/docs/)
 
@@ -22,22 +22,22 @@ See the official documentation for more details: [Keda Documentation](https://ke
 
 **Core advantages of KEDA:**
 
-- **Autoscaling Made Simple:** Bring rich scaling to every workload in your Kubernetes cluster.
-- **Event-driven:** Intelligently scale your event-driven application.
-- **Built-in Scalers:** Catalog of 70+ built-in scalers for various cloud platforms, databases, messaging systems, telemetry systems, CI/CD, and more.
-- **Multiple Workload Types:** Support for variety of workload types such as deployments, jobs & custom resources with **/scale** sub-resource.
-- **Reduce environmental impact:** Build sustainable platforms by optimizing workload scheduling and scale-to-zero.
-- **Extensible:** Bring-your-own or use community-maintained scalers.
-- **Vendor-Agnostic:** Support for triggers across variety of cloud providers & products.
-- **Azure Functions Support:** Run and scale your Azure Functions on Kubernetes in production workloads.
+- **Autoscaling Made Simple:** Bring rich scaling to every workload in your Kubernetes cluster
+- **Event-driven:** Intelligently scale your event-driven application
+- **Built-in Scalers:** Catalog of 70+ built-in scalers for various cloud platforms, databases, messaging systems, telemetry systems, CI/CD, and more
+- **Multiple Workload Types:** Support for variety of workload types such as deployments, jobs & custom resources with **/scale** sub-resource
+- **Reduce environmental impact:** Build sustainable platforms by optimizing workload scheduling and scale-to-zero
+- **Extensible:** Bring-your-own or use community-maintained scalers
+- **Vendor-Agnostic:** Support for triggers across variety of cloud providers & products
+- **Azure Functions Support:** Run and scale your Azure Functions on Kubernetes in production workloads
 
 ### How KEDA works
 KEDA monitors external event sources and adjusts your app's resources based on the demand. Its main components work together to make this possible:
 
-1. **KEDA Operator** keeps track of event sources and changes the number of app instances up or down, depending on the demand.
-2. **Metrics Server** provides external metrics to Kubernetes' HPA so it can make scaling decisions.
-3. **Scalers** connect to event sources like message queues or databases, pulling data on current usage or load.
-4. **Custom Resource Definitions (CRDs)**define how your apps should scale based on triggers like queue length or API request rates.
+1. **KEDA Operator** keeps track of event sources and changes the number of app instances up or down, depending on the demand
+2. **Metrics Server** provides external metrics to Kubernetes' HPA so it can make scaling decisions
+3. **Scalers** connect to event sources like message queues or databases, pulling data on current usage or load
+4. **Custom Resource Definitions (CRDs)**define how your apps should scale based on triggers like queue length or API request rates
 
 In simple terms, KEDA listens to what's happening outside Kubernetes, fetches the data it needs, and scales your apps accordingly. It's efficient and integrates well with Kubernetes to handle scaling dynamically.
 
@@ -45,9 +45,9 @@ In simple terms, KEDA listens to what's happening outside Kubernetes, fetches th
 
 KEDA uses **Custom Resource Definitions (CRDs)** to manage scaling behavior:
 
-- **ScaledObject**: Links your app (like a Deployment or StatefulSet) to an external event source, defining how scaling works.
-- **ScaledJob**: Handles batch processing tasks by scaling Jobs based on external metrics.
-- **TriggerAuthentication**: Provides secure ways to access event sources, supporting methods like environment variables or cloud-specific credentials.
+- **ScaledObject**: Links your app (like a Deployment or StatefulSet) to an external event source, defining how scaling works
+- **ScaledJob**: Handles batch processing tasks by scaling Jobs based on external metrics
+- **TriggerAuthentication**: Provides secure ways to access event sources, supporting methods like environment variables or cloud-specific credentials
 
 These CRDs give you control over scaling while keeping your apps secure and responsive to demand.
 
@@ -80,9 +80,9 @@ Use the `violet` command to publish to the platform repository:
 violet push --platform-address=<platform-access-address> --platform-username=<platform-admin-name> --platform-password=<platform-admin-password> keda.stable.*.tgz
 ```
 Parameter description:
-* `--platform-address`: ACP Platform address.
-* `--platform-username`: ACP Platform administrator username.
-* `--platform-password`: ACP Platform administrator password.
+* `--platform-address`: ACP Platform address
+* `--platform-username`: ACP Platform administrator username
+* `--platform-password`: ACP Platform administrator password
 
 ### Installing via Command Line
 
@@ -159,9 +159,9 @@ EOF
 
 #### Installing KEDA Operator
 
-1. Log in, and navigate to the **Administrator** page.
-2. Click **Marketplace** > **OperatorHub**.
-3. Find the **KEDA** operator, click **Install**, and enter the **Install** page.
+1. Log in, and navigate to the **Administrator** page
+2. Click **Marketplace** > **OperatorHub**
+3. Find the **KEDA** operator, click **Install**, and enter the **Install** page
 
 Configuration Parameters:
 
@@ -177,15 +177,15 @@ Configuration Parameters:
 
 #### Creating the KedaController instance
 
-1. Click on **Marketplace** > **OperatorHub**.
+1. Click on **Marketplace** > **OperatorHub**
 
-2. Find the installed **KEDA** operator, navigate to **All Instances**.
+2. Find the installed **KEDA** operator, navigate to **All Instances**
 
-3. Click **Create Instance** button, and click **KedaController** card in the resource area.
+3. Click **Create Instance** button, and click **KedaController** card in the resource area
 
-4. On the parameter configuration page for the instance, you may use the default configuration unless there are specific requirements.
+4. On the parameter configuration page for the instance, you may use the default configuration unless there are specific requirements
 
-5. Click **Create**.
+5. Click **Create**
 
 ### Verification
 
@@ -204,8 +204,8 @@ keda-operator-5c779f7f7-8b6h5            1/1     Running   0             1h
 
 #### Integrating ACP Log Collector
 
-- Ensure **ACP Log Collector Plugin** is installed in target cluster. Refer to <ExternalSiteLink name="logs" href="/install_log.html#install-alauda-container-platform-log-collector-plugin" children="Install Alauda Container Platform Log Collector Plugin" />。.
-- Enable the **Platform** logging switch when installing the **ACP Log Collector Plugin**.
+- Ensure **ACP Log Collector Plugin** is installed in target cluster. Refer to <ExternalSiteLink name="logs" href="/install_log.html#install-alauda-container-platform-log-collector-plugin" children="Install Alauda Container Platform Log Collector Plugin" />
+- Enable the **Platform** logging switch when installing the **ACP Log Collector Plugin**
 - Use the following command to add label to the **keda** namespace:
     ```bash
     kubectl label namespace keda cpaas.io/product=Container-Platform --overwrite
