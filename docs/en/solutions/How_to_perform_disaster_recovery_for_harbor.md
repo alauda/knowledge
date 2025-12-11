@@ -400,12 +400,13 @@ flowchart TD
 
   ```bash
   # Download URLs for AMD64 architecture:
-  # https://cloud.alauda.cn/attachments/knowledge/KB251000012/harbor-dr-amd.tgz
-  # https://cloud.alauda.io/attachments/knowledge/KB251000012/harbor-dr-amd.tgz
+  # https://cloud.alauda.cn/attachments/knowledge/KB251000012/harbor-dr-amd-v2.13.0-g590be78.tgz
+  # https://cloud.alauda.io/attachments/knowledge/KB251000012/harbor-dr-amd-v2.13.0-g590be78.tgz
+  
   
   # Download URLs for ARM64 architecture:
-  # https://cloud.alauda.cn/attachments/knowledge/KB251000012/harbor-dr-arm.tgz
-  # https://cloud.alauda.io/attachments/knowledge/KB251000012/harbor-dr-arm.tgz
+  # https://cloud.alauda.cn/attachments/knowledge/KB251000012/harbor-dr-arm-v2.13.0-g590be78.tgz
+  # https://cloud.alauda.io/attachments/knowledge/KB251000012/harbor-dr-arm-v2.13.0-g590be78.tgz
   ```
 
   **Import the image into your cluster registry:**
@@ -416,7 +417,7 @@ flowchart TD
 
      ```bash
      # Load the image from the archive
-     docker load -i harbor-dr-amd.tgz  # or harbor-dr-arm.tgz for ARM64
+     docker load -i harbor-dr-amd-v2.13.0-g590be78.tgz  # or harbor-dr-arm-v2.13.0-g590be78.tgz for ARM64
      
      # Tag the image with your cluster registry address
      # Replace <REGISTRY_ADDRESS> with your actual cluster registry address
@@ -644,7 +645,7 @@ spec:
         - -c
         - |
           exec /opt/bin/disaster-recovery -config /opt/config/config.yaml
-        image: build-harbor.alauda.cn/devops/harbor-disaster-recovery:v2.13.0-g590be78 # Replace with your own image
+        image: <disaster-recovery image with monitoring sequence and test script tools> # Replace with your disaster-recovery image that includes monitoring sequence and test script tools
         name: controller
         resources:
           limits:
@@ -669,7 +670,7 @@ spec:
         - -c
         - |
           cp /disaster-recovery /opt/bin/disaster-recovery && chmod +x /opt/bin/disaster-recovery
-        image: build-harbor.alauda.cn/devops/harbor-disaster-recovery:v2.13.0-g590be78 # Replace with the image address imported into the cluster.
+        image: harbor-disaster-recovery:v2.13.0-g590be78 # Replace with the image address imported into the cluster.
         imagePullPolicy: Always
         name: copy-binary
         volumeMounts:
@@ -734,8 +735,8 @@ When using the `Alauda support for PostgreSQL` solution with the `PostgreSQL Hot
 clusterReplication:
   enabled: true
   isReplica: false
-  peerHost: 192.168.130.206  # Secondary cluster node IP
-  peerPort: 31661            # Secondary cluster NodePort
+  peerHost: < Secondary cluster node IP >  # Secondary cluster node IP
+  peerPort: < Secondary cluster NodePort >  # Secondary cluster NodePort
   replSvcType: NodePort
   bootstrapSecret: standby-bootstrap-secret
 ```
@@ -748,8 +749,8 @@ The `standby-bootstrap-secret` should be configured according to the `Standby Cl
 clusterReplication:
   enabled: true
   isReplica: true
-  peerHost: 192.168.12.108  # Primary cluster node IP
-  peerPort: 30078            # Primary cluster NodePort
+  peerHost: < Primary cluster node IP >  # Primary cluster node IP
+  peerPort: < Primary cluster NodePort >            # Primary cluster NodePort
   replSvcType: NodePort
   bootstrapSecret: standby-bootstrap-secret
 ```
@@ -790,6 +791,8 @@ rules:
 
 #### Start Script Example
 
+> Note: The following is an example script. Do not use it directly in production.
+
 ```bash
 POSTGRES_NAMESPACE="${POSTGRES_NAMESPACE:-pg-namespace}"
 POSTGRES_CLUSTER="${POSTGRES_CLUSTER:-acid-pg}"
@@ -797,6 +800,8 @@ kubectl -n "$POSTGRES_NAMESPACE" patch pg "$POSTGRES_CLUSTER" --type=merge -p '{
 ```
 
 #### Stop Script Example
+
+> Note: The following is an example script. Do not use it directly in production.
 
 ```bash
 POSTGRES_NAMESPACE="${POSTGRES_NAMESPACE:-pg-namespace}"
@@ -854,7 +859,7 @@ rules:
   - create
 ```
 
-- **Start Script Example**: For more details, refer to [Object Storage Disaster Recovery](https://docs.alauda.io/container_platform/4.1/storage/storagesystem_ceph/how_to/disaster_recovery/dr_object.html)
+- **Start Script Example**: The following is an example script. Do not use it directly in production. Customize the script according to the instructions in [Object Storage Disaster Recovery](https://docs.alauda.io/container_platform/4.1/storage/storagesystem_ceph/how_to/disaster_recovery/dr_object.html).
 
   ```bash
   REALM_NAME="${REALM_NAME:-realm}"
