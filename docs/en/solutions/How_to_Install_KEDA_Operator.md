@@ -11,7 +11,7 @@ id: none
 # How to Install KEDA Operator
 
 ## Overview
-[**KEDA**](https://keda.sh/) is a Kubernetes-based Event Driven Autoscaling. With KEDA, you can drive the scaling of any container in Kubernetes based on the number of events needing to be processed.
+With [**KEDA(Kubernetes Event-driven Autoscaling)**](https://keda.sh/), you can drive the scaling of any container in Kubernetes based on the number of events needing to be processed.
 
 ### Introduction
 KEDA is a single-purpose and lightweight component that can be added into any Kubernetes cluster. KEDA works alongside standard Kubernetes components like the [Horizontal Pod Autoscaling](https://kubernetes.io/docs/tasks/run-application/horizontal-pod-autoscale/) and can extend functionality without overwriting or duplication. With KEDA, you can explicitly map the apps you want to use event-driven scale, with other apps continuing to function. This makes KEDA a flexible and safe option to run alongside any number of any other Kubernetes applications or frameworks.
@@ -71,10 +71,13 @@ spec:
 
 ## Installation
 
+### Obtaining the Upload Tool
+
+Navigate to `Platform Management` -> `Marketplace` -> `Upload Packages` to download the upload tool named `violet`. After downloading, grant execute permissions to the binary.
+
 ### Upload KEDA Operator package
 Download the KEDA installation file: `keda.stable.*.tgz`
 
-Download the latest version of the `violet` tool.
 Use the `violet` command to publish to the platform repository:
 ```bash
 violet push --platform-address=<platform-access-address> --platform-username=<platform-admin-name> --platform-password=<platform-admin-password> keda.stable.*.tgz

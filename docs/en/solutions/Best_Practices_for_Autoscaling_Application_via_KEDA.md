@@ -8,7 +8,7 @@ ProductsVersion:
 id: none
 ---
 
-# Auto Scaling Application via KEDA
+# Auto Scaling Application via KEDA(Kubernetes Event-driven Autoscaling)
 
 ## Integrating ACP Monitoring with Prometheus Plugin
 ### Prerequisites

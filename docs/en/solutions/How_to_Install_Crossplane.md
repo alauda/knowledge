@@ -22,10 +22,13 @@ Official Documentation:
 
 # Installation
 
+## Obtaining the Upload Tool
+
+Navigate to `Platform Management` -> `Marketplace` -> `Upload Packages` to download the upload tool named `violet`. After downloading, grant execute permissions to the binary.
+
 ## Upload
 Download the crossplane installation file: `crossplane-ALL.2.x.tgz`
 
-Download the latest version of the `violet` tool.
 Use the `violet` command to publish to the platform repository:
 ```bash
 violet push --platform-address=<platform-access-address> --platform-username=<platform-admin-name> --platform-password=<platform-admin-password> crossplane-ALL.2.x.tgz
