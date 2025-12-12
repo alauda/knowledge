@@ -108,7 +108,7 @@ You need to create a CephObjectStoreUser in advance to obtain the access credent
    You only need to create the CephObjectStoreUser on the Primary Object Storage. The user information will be automatically synchronized to the Secondary Object Storage through the disaster recovery replication mechanism.
    :::
 
-2. This `PRIMARY_OBJECT_STORAGE_ADDRESS` is the access address of the Object Storage, you can get it from the step [Configure External Access for Primary Zone](https://docs.alauda.io/container_platform/4.1/storage/storagesystem_ceph/how_to/disaster_recovery/dr_object.html#configure-external-access-for-primary-zone) of `Object Storage Disaster Recovery`.
+2. This `PRIMARY_OBJECT_STORAGE_ADDRESS` is the access address of the Object Storage, you can get it from the step [Configure External Access for Primary Zone](https://docs.alauda.io/container_platform/4.1/storage/storagesystem_ceph/how_to/disaster_recovery/dr_object.html#address) of `Object Storage Disaster Recovery`.
 
 3. Create a Harbor registry bucket on Primary Object Storage using mc, in this example, the bucket name is `harbor-registry`.
 
@@ -279,7 +279,7 @@ spec:
       replicas: 0
 ```
 
-### Primary-Standby Switchover Procedure in Disaster Scenarios
+### Failover
 
 1. First confirm that all Primary Harbor components are not in working state, otherwise stop all Primary Harbor components first.
 2. Promote Secondary PostgreSQL to Primary PostgreSQL. Refer to `PostgreSQL Hot Standby Cluster Configuration Guide`, the switchover procedure.
@@ -311,7 +311,27 @@ spec:
 5. Test image push and pull to verify that Harbor is working properly.
 6. Switch external access addresses to Secondary Harbor.
 
-### Disaster Recovery Data Check
+### Disaster Recovery
+
+When the primary cluster recovers from a disaster, you can restore the original Primary Harbor to operate as a Secondary Harbor. Follow these steps to perform the recovery:
+
+1. Set the replica count of all Harbor components to 0.
+2. Configure the original Primary PostgreSQL to operate as Secondary PostgreSQL according to the `PostgreSQL Hot Standby Cluster Configuration Guide`.
+3. Convert the original Primary Object Storage to Secondary Object Storage.
+
+  ```bash
+  # From within the recovered zone, pull the latest realm configuration from the current master zone:
+  radosgw-admin realm pull --url={url-to-master-zone-gateway} \
+                            --access-key={access-key} --secret={secret}
+  # Make the recovered zone the master and default zone:
+  radosgw-admin zone modify --rgw-realm=<realm-name> --rgw-zonegroup=<zone-group-name> --rgw-zone=<primary-zone-name> --master
+  ```
+
+After completing these steps, the original Primary Harbor will operate as a Secondary Harbor.
+
+If you need to restore the original Primary Harbor to continue operating as the Primary Harbor, follow the Failover procedure to promote the current Secondary Harbor to Primary Harbor, and then configure the new Primary Harbor to operate as Secondary Harbor.
+
+### Data sync check
 
 Check the synchronization status of Object Storage and PostgreSQL to ensure that the disaster recovery is successful.
 
@@ -353,3 +373,506 @@ The RTO represents the maximum acceptable downtime during disaster recovery. Thi
 The operational steps are similar to building a Harbor disaster recovery solution with `Alauda Build of Rook-Ceph` and `Alauda support for PostgreSQL`. Simply replace Object Storage and PostgreSQL with other object storage and PostgreSQL solutions.
 
 Ensure that the Object Storage and PostgreSQL solutions support disaster recovery capabilities.
+
+## Automatic Start/Stop of Disaster Recovery Instance
+
+Deploy a control program in both the primary and secondary clusters, along with a set of scripts, to automatically control the start and stop of Harbor instances.
+
+This mechanism enables automatic activation of the Secondary Harbor instance when a disaster occurs. It supports custom check mechanisms through user-defined scripts and provides control over Harbor dependency configurations.
+
+```mermaid
+flowchart TD
+  Start[Monitoring Program] --> condition_check_script[Execute condition_check_script]
+  condition_check_script -->|"Yes (Script return start)"| StatusBeforeStart[Before Start Execute status_script]
+  StatusBeforeStart -->|"Status != started"| start_script[Execute start_script]
+  StatusBeforeStart -->|"Status == started"| End1[Skip Start]
+  condition_check_script -->|"No (Script return stop)"| StatusBeforeStop[Before Stop Execute status_script]
+  StatusBeforeStop -->|"Status != stopped"| stop_script[Execute stop_script]
+  StatusBeforeStop -->|"Status == stopped"| End[Skip Stop]
+```
+
+### Prerequisites
+
+- Complete the setup of primary and secondary clusters for the Harbor disaster recovery solution.
+- Download the disaster recovery program image and import it into the cluster registry.
+
+  The disaster recovery program images are available for different architectures:
+
+  ```bash
+  # Download URLs for AMD64 architecture:
+  # https://cloud.alauda.cn/attachments/knowledge/KB251000012/harbor-dr-amd-v2.13.0-g590be78.tgz
+  # https://cloud.alauda.io/attachments/knowledge/KB251000012/harbor-dr-amd-v2.13.0-g590be78.tgz
+  
+  
+  # Download URLs for ARM64 architecture:
+  # https://cloud.alauda.cn/attachments/knowledge/KB251000012/harbor-dr-arm-v2.13.0-g590be78.tgz
+  # https://cloud.alauda.io/attachments/knowledge/KB251000012/harbor-dr-arm-v2.13.0-g590be78.tgz
+  ```
+
+  **Import the image into your cluster registry:**
+
+  1. Download the appropriate image archive based on your cluster's architecture (AMD64 or ARM64).
+
+  2. Load the image archive and import it into your cluster registry:
+
+     ```bash
+     # Load the image from the archive
+     docker load -i harbor-dr-amd-v2.13.0-g590be78.tgz  # or harbor-dr-arm-v2.13.0-g590be78.tgz for ARM64
+     
+     # Tag the image with your cluster registry address
+     # Replace <REGISTRY_ADDRESS> with your actual cluster registry address
+     docker tag build-harbor.alauda.cn/devops/harbor-disaster-recovery:v2.13.0-g590be78 <REGISTRY_ADDRESS>/devops/harbor-disaster-recovery:v2.13.0-g590be78
+     
+     # Push the image to your cluster registry
+     docker push <REGISTRY_ADDRESS>/devops/harbor-disaster-recovery:v2.13.0-g590be78
+     ```
+
+  3. Update the image reference in the Deployment YAML (see the deployment section below) to use your cluster registry address instead of `build-harbor.alauda.cn/devops/harbor-disaster-recovery:v2.13.0-g590be78`.
+
+  :::info
+  If you are using a private registry that requires authentication, ensure you have logged in using `docker login` or configured the appropriate image pull secrets in your Kubernetes cluster.
+  :::
+
+### How to Configure and Run the Auto Start/Stop Program
+
+1. Prepare the configuration file `config.yaml`:
+
+    ```yaml
+    condition_check_script: /path/to/condition_check.sh # Path to the condition check script. Executed periodically at check_interval intervals. Returns "start" to trigger start_script or "stop" to trigger stop_script.
+    start_script: /path/to/start.sh # Path to the script that activates Harbor and its dependencies. Performs operations such as promoting PostgreSQL to primary, activating object storage, and scaling up Harbor components.
+    stop_script: /path/to/stop.sh # Script path that deactivates Harbor and dependencies (e.g., scales down Harbor components, configures dependencies to standby mode).
+    status_script: /path/to/status.sh # Script path that checks system state. Must output "started", "stopped", or "unknown".
+    check_interval: 30s # Interval between condition check script executions
+    failure_threshold: 6 # Number of consecutive failures required to trigger stop script. Prevents false positives from transient network issues.
+    script_timeout: 120s # Maximum execution time for each script. Scripts exceeding this timeout will be terminated.
+    ```
+
+2. Create the corresponding script files:
+
+    - **condition_check.sh**: Please customize this script according to your actual failover decision process. The script should output `start` if the cluster node should be activated, and output `stop` if it should be deactivated. If the script execution fails, no scripts will be called. Below is an example for reference—a simple DNS IP check (not recommended for production use):
+
+      ```bash
+      set -euo pipefail
+      HARBOR_DOMAIN="${HARBOR_DOMAIN:-}"
+      HARBOR_IP="${HARBOR_IP:-}"
+
+      RESOLVED_IP=$(nslookup "$HARBOR_DOMAIN" 2>/dev/null | grep -A 1 "Name:" | grep "Address:" | awk '{print $2}' | head -n 1)
+      if [ "$RESOLVED_IP" = "$HARBOR_IP" ]; then
+        echo start
+        exit 0
+      else
+        echo stop
+        exit 0
+      fi
+      ```
+
+    - **status.sh**: Script path that checks system state. Must output "started", "stopped", or "unknown". If script execution fails, it will be treated as unknown status and no changes will be made.
+
+      ```bash
+      set -euo pipefail
+      
+      # Status script for disaster recovery
+      # This script will be executed before stop script to verify harbor is actually running
+      
+      # Read environment variables with validation
+      HARBOR_NAMESPACE="${HARBOR_NAMESPACE:-harbor-ns}"
+      HARBOR_NAME="${HARBOR_NAME:-harbor}"
+      HARBOR_REPLICAS="${HARBOR_REPLICAS:-1}"
+      
+      # Check Harbor health status via health endpoint
+      # Use HTTPS if available, fallback to HTTP for internal cluster communication
+      HARBOR_SVC="${HARBOR_NAME}-core.${HARBOR_NAMESPACE}.svc"
+      
+      set +e
+      # Check health endpoint with proper timeout and error handling
+      HTTP_CODE=$(curl -sf --max-time 10 --connect-timeout 5 \
+        -o /dev/null -w "%{http_code}" \
+        "http://${HARBOR_SVC}/api/v2.0/health" 2>/dev/null)
+      set -e
+      
+      # Get running pods count with proper error handling
+      RUNNING_PODS=$(kubectl -n "$HARBOR_NAMESPACE" \
+        get pods -l release="$HARBOR_NAME" \
+        --field-selector=status.phase=Running \
+        --no-headers 2>/dev/null | wc -l | tr -d ' ')
+      
+      # Validate pod count is numeric
+      if [[ ! "$RUNNING_PODS" =~ ^[0-9]+$ ]]; then
+        RUNNING_PODS="0"
+      fi
+      
+      # Determine status based on HTTP code and running pods count
+      # At least MIN_PODS_REQUIRED running pods are required (core, portal, jobservice, registry, trivy)
+      # When service has no endpoints (pods not running), curl will fail and HTTP_CODE will be empty or "000"
+      if [ "$HTTP_CODE" = "200" ] && [ -n "$RUNNING_PODS" ] && [ "$RUNNING_PODS" -ge 5 ]; then
+        # Harbor is healthy: HTTP 200 and sufficient pods running
+        echo "started"
+      elif ([ -z "$HTTP_CODE" ] || [ "$HTTP_CODE" = "000" ] || [ "$HTTP_CODE" = "" ]) && \
+           ([ -z "$RUNNING_PODS" ] || [ "$RUNNING_PODS" -eq 0 ]); then
+        echo "stopped"
+      else
+        # Other network errors, unexpected HTTP codes, or inconsistent states
+        # This includes cases like:
+        # - HTTP 5xx errors (service degraded but pods running)
+        # - HTTP 4xx errors (authentication/authorization issues)
+        # - Partial pod failures (some pods running but not all)
+        # - Network timeouts or connection refused
+        echo "unknown"
+      fi
+      ```
+
+    - **start.sh**: The start script should include checks for Harbor dependencies and the startup of the Harbor instance.
+
+      ```bash
+      set -euo pipefail
+      # Check and control dependencies, such as verifying if the database is the primary instance
+      # and if the object storage is ready
+      #####################################
+      # Add your PostgreSQL start script here.
+      # This script should promote the secondary PostgreSQL to primary role and ensure
+      # the database is ready to serve Harbor before starting Harbor components.
+      #####################################
+
+      #####################################
+      # Add your S3/Object Storage start script here.
+      # This script should promote the secondary object storage to primary role and ensure
+      # the storage system is ready to serve Harbor before starting Harbor components.
+      #####################################
+
+      # Start Harbor script - this section is required
+      HARBOR_NAMESPACE="${HARBOR_NAMESPACE:-harbor-ns}"
+      HARBOR_NAME="${HARBOR_NAME:-harbor}"
+      HARBOR_REPLICAS="${HARBOR_REPLICAS:-1}"
+      kubectl -n "$HARBOR_NAMESPACE" patch harbor "$HARBOR_NAME" --type=merge -p "{\"spec\":{\"helmValues\":{\"core\":{\"replicas\":$HARBOR_REPLICAS},\"portal\":{\"replicas\":$HARBOR_REPLICAS},\"jobservice\":{\"replicas\":$HARBOR_REPLICAS},\"registry\":{\"replicas\":$HARBOR_REPLICAS},\"trivy\":{\"replicas\":$HARBOR_REPLICAS}}}}"
+      ```
+
+    - **stop.sh**: The stop script should include shutdown procedures for Harbor dependencies and the Harbor instance.
+
+      ```bash
+      set -euo pipefail
+      # Stop Harbor script - this section is required
+      HARBOR_NAMESPACE="${HARBOR_NAMESPACE:-harbor-ns}"
+      HARBOR_NAME="${HARBOR_NAME:-harbor}"
+      kubectl -n "$HARBOR_NAMESPACE" patch harbor "$HARBOR_NAME" --type=merge -p '{"spec":{"helmValues":{"core":{"replicas":0},"portal":{"replicas":0},"jobservice":{"replicas":0},"registry":{"replicas":0},"trivy":{"replicas":0}}}}'
+      
+      # Check and control dependencies, such as setting the database to replica mode
+      #####################################
+      # Add your PostgreSQL stop script here.
+      # This script should configure the PostgreSQL cluster to operate as a replica
+      # and scale down instances when stopping Harbor components.
+      #####################################
+
+      #####################################
+      # Add your S3/Object Storage stop script here.
+      # This script should handle any necessary cleanup or configuration changes
+      # for the object storage when stopping Harbor components.
+      #####################################
+      ```
+
+3. Deploy the control program as a Deployment in the Harbor namespace. Note: This must be deployed on both the primary and standby clusters, with parameters adjusted according to the target cluster:
+
+```yaml
+---
+apiVersion: v1
+automountServiceAccountToken: true
+kind: ServiceAccount
+metadata:
+  name: disaster-recovery
+  namespace: system # replace with your own namespace
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: disaster-recovery-clusterrole
+rules: []  # Add necessary permissions
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: disaster-recovery-clusterrolebinding
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: disaster-recovery-clusterrole
+subjects:
+- kind: ServiceAccount
+  name: disaster-recovery
+  namespace: system # replace with your own namespace
+---
+apiVersion: v1
+data:
+  config.yaml: |
+    condition_check_script: /opt/scripts/check.sh
+    start_script: /opt/scripts/start.sh
+    stop_script: /opt/scripts/stop.sh
+    status_script: /opt/scripts/status.sh
+    check_interval: 10s
+    failure_threshold: 3
+    script_timeout: 120s
+  check.sh: |
+    # replace with your own script, refer to the previous section for script requirements
+  start.sh: |
+    # replace with your own script, refer to the previous section for script requirements
+  status.sh: |
+    # replace with your own script, refer to the previous section for script requirements
+  stop.sh: |
+    # replace with your own script, refer to the previous section for script requirements
+kind: ConfigMap
+metadata:
+  name: disaster-recovery-config
+  namespace: system # replace with your own namespace
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: disaster-recovery
+  name: disaster-recovery
+  namespace: system # replace with your own namespace
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: disaster-recovery
+  template:
+    metadata:
+      labels:
+        app: disaster-recovery
+    spec:
+      containers:
+      - command:
+        - sh
+        - -c
+        - |
+          exec /opt/bin/disaster-recovery -config /opt/config/config.yaml
+        image: <disaster-recovery image with monitoring sequence and test script tools> # Replace with your disaster-recovery image that includes monitoring sequence and test script tools
+        name: controller
+        resources:
+          limits:
+            cpu: 500m
+            memory: 512Mi
+          requests:
+            cpu: 100m
+            memory: 128Mi
+        volumeMounts:
+        - mountPath: /opt/bin/
+          name: bin
+          readOnly: true
+        - mountPath: /opt/config
+          name: config
+          readOnly: true
+        - mountPath: /opt/scripts
+          name: scripts
+          readOnly: true
+      initContainers:
+      - command:
+        - sh
+        - -c
+        - |
+          cp /disaster-recovery /opt/bin/disaster-recovery && chmod +x /opt/bin/disaster-recovery
+        image: harbor-disaster-recovery:v2.13.0-g590be78 # Replace with the image address imported into the cluster.
+        imagePullPolicy: Always
+        name: copy-binary
+        volumeMounts:
+        - mountPath: /opt/bin/
+          name: bin
+      serviceAccountName: disaster-recovery
+      volumes:
+      - emptyDir: {}
+        name: bin
+      - configMap:
+          name: disaster-recovery-config
+        name: scripts
+      - configMap:
+          items:
+          - key: config.yaml
+            path: config.yaml
+          name: disaster-recovery-config
+        name: config
+```
+
+> **Note**: Ensure that the ServiceAccount used by the Deployment has the necessary RBAC permissions to operate on Harbor resources and any other resources controlled by your custom scripts (such as database resources, object storage configurations, etc.) in the target namespace. The control program needs permissions to modify Harbor CRD resources to start and stop Harbor components, as well as permissions for any resources managed by the custom start/stop scripts. The following are the permissions required for Harbor operations:
+
+  ```yaml
+  apiVersion: rbac.authorization.k8s.io/v1
+  kind: ClusterRole
+  metadata:
+    name: disaster-recovery-clusterrole
+  rules:
+  - apiGroups:
+    - operator.alaudadevops.io
+    resources:
+    - harbors
+    verbs:
+    - get
+    - list
+    - watch
+    - update
+    - patch
+  - apiGroups:
+    - ""
+    resources:
+    - pods
+    verbs:
+    - get
+    - list
+    - watch
+  - apiGroups:
+    - ""
+    resources:
+    - pods/exec
+    verbs:
+    - create
+  ```
+
+### `Alauda support for PostgreSQL` Start/Stop Script Examples
+
+When using the `Alauda support for PostgreSQL` solution with the `PostgreSQL Hot Standby Cluster Configuration Guide` to configure a disaster recovery cluster, you need to configure replication information in both Primary and Secondary PostgreSQL clusters. This ensures that during automatic failover, you only need to modify `clusterReplication.isReplica` and `numberOfInstances` to complete the switchover:
+
+**Primary Configuration:**
+
+```yaml
+clusterReplication:
+  enabled: true
+  isReplica: false
+  peerHost: < Secondary cluster node IP >  # Secondary cluster node IP
+  peerPort: < Secondary cluster NodePort >  # Secondary cluster NodePort
+  replSvcType: NodePort
+  bootstrapSecret: standby-bootstrap-secret
+```
+
+The `standby-bootstrap-secret` should be configured according to the `Standby Cluster Configuration` section in the `PostgreSQL Hot Standby Cluster Configuration Guide`, using the same value as the Secondary cluster.
+
+**Secondary Configuration:**
+
+```yaml
+clusterReplication:
+  enabled: true
+  isReplica: true
+  peerHost: < Primary cluster node IP >  # Primary cluster node IP
+  peerPort: < Primary cluster NodePort >            # Primary cluster NodePort
+  replSvcType: NodePort
+  bootstrapSecret: standby-bootstrap-secret
+```
+
+**Note**: The following RBAC permissions are required:
+
+```yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: disaster-recovery-clusterrole
+rules:
+- apiGroups:
+  - acid.zalan.do
+  resources:
+  - postgresqls
+  verbs:
+  - get
+  - list
+  - watch
+  - update
+  - patch
+- apiGroups:
+  - ""
+  resources:
+  - pods
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - ""
+  resources:
+  - pods/exec
+  verbs:
+  - create
+```
+
+#### Start Script Example
+
+> Note: The following is an example script. Do not use it directly in production.
+
+```bash
+POSTGRES_NAMESPACE="${POSTGRES_NAMESPACE:-pg-namespace}"
+POSTGRES_CLUSTER="${POSTGRES_CLUSTER:-acid-pg}"
+kubectl -n "$POSTGRES_NAMESPACE" patch pg "$POSTGRES_CLUSTER" --type=merge -p '{"spec":{"clusterReplication":{"isReplica":false},"numberOfInstances":2}}'
+```
+
+#### Stop Script Example
+
+> Note: The following is an example script. Do not use it directly in production.
+
+```bash
+POSTGRES_NAMESPACE="${POSTGRES_NAMESPACE:-pg-namespace}"
+POSTGRES_CLUSTER="${POSTGRES_CLUSTER:-acid-pg}"
+kubectl -n "$POSTGRES_NAMESPACE" patch pg "$POSTGRES_CLUSTER" --type=merge -p '{"spec":{"clusterReplication":{"isReplica":true},"numberOfInstances":1}}'
+```
+
+### Alauda Build of Rook-Ceph Start/Stop Script Examples
+
+**Note**: The following RBAC permissions are required:
+
+```yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: disaster-recovery-clusterrole
+rules:
+- apiGroups:
+  - ""
+  resources:
+  - secrets
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - ""
+  resources:
+  - configmaps
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - ceph.rook.io
+  resources:
+  - cephobjectzones
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - ""
+  resources:
+  - pods
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - ""
+  resources:
+  - pods/exec
+  verbs:
+  - create
+```
+
+- **Start Script Example**: The following is an example script. Do not use it directly in production. Customize the script according to the instructions in [Object Storage Disaster Recovery](https://docs.alauda.io/container_platform/4.1/storage/storagesystem_ceph/how_to/disaster_recovery/dr_object.html).
+
+  ```bash
+  REALM_NAME="${REALM_NAME:-realm}"
+  ZONE_GROUP_NAME="${ZONE_GROUP_NAME:-group}"
+  ZONE_NAME="${ZONE_NAME:-zone}"
+
+  ACCESS_KEY=$(kubectl -n rook-ceph get secrets "${REALM_NAME}-keys" -o jsonpath='{.data.access-key}' 2>/dev/null | base64 -d)
+  SECRET_KEY=$(kubectl -n rook-ceph get secrets "${REALM_NAME}-keys" -o jsonpath='{.data.secret-key}' 2>/dev/null | base64 -d)
+  ENDPOINT=$(kubectl -n rook-ceph get cephobjectzone ${ZONE_NAME} -o jsonpath='{.spec.customEndpoints[0]}')
+  TOOLS_POD=$(kubectl -n rook-ceph get po -l app=rook-ceph-tools -o jsonpath='{.items[0].metadata.name}' 2>/dev/null)
+
+  kubectl -n rook-ceph exec "$TOOLS_POD" -- radosgw-admin realm pull --url="$ENDPOINT" --access-key="$ACCESS_KEY" --secret="$SECRET_KEY";
+  kubectl -n rook-ceph exec "$TOOLS_POD" -- radosgw-admin zone modify --rgw-realm="$REALM_NAME" --rgw-zonegroup="$ZONE_GROUP_NAME" --rgw-zone="$ZONE_NAME" --master
+  ```
+
+- **Stop Script**: No action is required when stopping Alauda Build of Rook-Ceph, so you can add an empty script or skip this step.
