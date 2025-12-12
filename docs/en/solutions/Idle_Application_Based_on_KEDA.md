@@ -11,7 +11,7 @@ id: none
 # Traffic-Based Idle Application Solution
 
 ## Overview
-The Traffic-Based Idle Application Solution is an innovative cloud-native technology that automatically adjusts resource allocation based on application HTTP traffic. This solution, built on the KEDA HTTP Add-on project, delivers the following core capabilities:
+The Traffic-Based Idle Application Solution is an innovative cloud-native technology that automatically adjusts resource allocation based on application HTTP traffic. This solution, built on the KEDA(Kubernetes-based Event Driven Autoscaling) [HTTP Add-on project](https://github.com/kedacore/http-add-on), delivers the following core capabilities:
 
 ### Introduction
 Core Features:
