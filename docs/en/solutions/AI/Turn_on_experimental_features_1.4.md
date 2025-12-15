@@ -573,3 +573,11 @@ gpus:
     # (possible values: "none", "1", "2", "4", "8")
     num: "none"
 ```
+
+### Configure PVC size when using UI fine tuning (version <= v1.4)
+
+Before v1.4, when using UI to create fine tuning jobs (experimental feature), every created fine tunning job will be created together with a PVC. To modify the PVC size, you need to:
+
+1. Run command `kubectl -n kubeflow edit cm  aml-image-builder-config` and modify the configuration like: `TRAINING_PVC_SIZE: 10Gi`
+1. If you've already created user namespace, you still need to modify this setting under the user namespace like: `kubectl -n <user_namespace> edit cm aml-image-builder-config`
+1. Restart aml-api-deploy: `kubectl -n kubeflow rollout restart deploy aml-api-deploy`
