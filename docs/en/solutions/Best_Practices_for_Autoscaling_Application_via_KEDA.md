@@ -5,7 +5,7 @@ products:
   - Alauda Container Platform
 ProductsVersion:
    - 4.x
-id: none
+id: KB251200010
 ---
 
 # Auto Scaling Application via KEDA(Kubernetes Event-driven Autoscaling)
@@ -29,7 +29,7 @@ Before using this functionality, ensure that:
 
 - Configure Prometheus Authentication Secret in **keda** Namespace.
 
-**Steps to Copy Secret from cpaas-system to keda Namespace**
+Steps to Copy Secret from cpaas-system to keda Namespace
 ```bash
 # Get Prometheus auth info
 PrometheusUsername=$(kubectl get secret $PrometheusSecret -n cpaas-system -o jsonpath='{.data.username}' | base64 -d)

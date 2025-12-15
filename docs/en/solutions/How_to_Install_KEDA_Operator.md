@@ -5,7 +5,7 @@ products:
   - Alauda Container Platform
 ProductsVersion:
    - 4.x
-id: none
+id: KB251200009
 ---
 
 # How to Install KEDA Operator

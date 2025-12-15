@@ -5,7 +5,7 @@ products:
   - Alauda Container Platform
 ProductsVersion:
    - 4.x
-id: none
+id: KB251200008
 ---
 
 # Traffic-Based Idle Application Solution
