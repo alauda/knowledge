@@ -1,9 +1,11 @@
 ---
-id: KBxxx
+kind:
+  - How To
 products:
   - Alauda Container Platform
-kind:
-  - Solution
+ProductsVersion:
+  - 4.x
+id: KB251200011
 ---
 
 # Using Red Hat UBI Images in ACP
