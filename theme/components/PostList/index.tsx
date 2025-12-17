@@ -1,11 +1,12 @@
 import { Markdown } from "@alauda/doom/runtime";
-import { useI18n, useLocaleSiteData, usePageData } from "@rspress/core/runtime";
-import { Badge, LinkCard } from "@rspress/core/theme";
+import { useI18n, usePageData } from "@rspress/core/runtime";
+import { Badge } from "@rspress/core/theme-original";
 import { FC, useMemo } from "react";
 
 import { PostInfo } from "../../../plugins/plugin-post-resolver";
 import { DocID } from "../DocID";
 import EmptyState from "../Empty";
+import { LinkCard } from "../LinkCard";
 
 interface PostListProps {
   postList: PostInfo[];
@@ -13,18 +14,11 @@ interface PostListProps {
 
 export const PostList: FC<PostListProps> = ({ postList }) => {
   const notEmpty = useMemo(() => postList.length > 0, [postList]);
-  const t = useI18n();
+  const t = useI18n<typeof import("i18n")>();
 
   const { siteData } = usePageData();
 
   const { base } = siteData;
-
-  const { lastUpdatedText: localesLastUpdatedText = "Last Updated" } =
-    useLocaleSiteData();
-
-  const { themeConfig } = siteData;
-  const lastUpdatedText =
-    themeConfig?.lastUpdatedText || localesLastUpdatedText;
 
   return (
     <div>
@@ -52,9 +46,10 @@ export const PostList: FC<PostListProps> = ({ postList }) => {
                     ))}
                   </div>
                   <div className="flex justify-between">
-                    <div className="rp-flex rp-text-sm rp-text-text-2 rp-leading-6 sm:rp-leading-8 rp-font-medium">
+                    <div className="post-meta">
                       <p>
-                        {lastUpdatedText}: <span>{post.lastUpdatedTime}</span>
+                        {t("lastUpdatedText")}:{" "}
+                        <span>{post.lastUpdatedTime}</span>
                       </p>
                     </div>
 
