@@ -477,7 +477,7 @@ kubectl rollout restart deploy -n kubeflow-oauth2-proxy oauth2-proxy
 
 ### How to start a Kubeflow Pipeline Run with external S3/MinIO storage
 
-When you installed Kubeflow with an external S3/MinIO storage service, you need to add a "KFP Launcher" configmap to setup storage used by current namespace or user. You can checkout Kubeflow document https://www.kubeflow.org/docs/components/pipelines/operator-guides/configure-object-store/#s3-and-s3-compatible-provider for more details. If no configuation is set, the pipeline runs may still accessing the default service address like "minio-service.kubeflow:9000" which is not correct.
+When you installed Kubeflow with an external S3/MinIO storage service, you need to add a "KFP Launcher" configmap to setup storage used by current namespace or user. You can checkout Kubeflow document https://www.kubeflow.org/docs/components/pipelines/operator-guides/configure-object-store/#s3-and-s3-compatible-provider for more details. If no configuration is set, the pipeline runs may still accessing the default service address like "minio-service.kubeflow:9000" which is not correct.
 
 Below is a simple sample for you to start:
 
@@ -512,9 +512,9 @@ For example, you should setup below values in this configmap to point to your ow
 - region: s3 region. If using MinIO, any value will be fine
 - credentials: AK/SK in the secrets
 
-After add this configmap, the newly started Kubeflow Pipeline Runs will automatically read this configration, and save stuff that is used by Kubeflow Pipeline.
+After add this configmap, the newly started Kubeflow Pipeline Runs will automatically read this configuration, and save stuff that is used by Kubeflow Pipeline.
 
-### Create Kubeflow profile after namespace creation, but namespace is still not useable in Kubeflow?
+### Create Kubeflow profile after namespace creation, but namespace is still not usable in Kubeflow?
 
 If you created a namespace(or using existed namespace), and want to use this namespace in Kubeflow, you'll need to create a Profile to set the namespace owner and collaborators.
 
@@ -542,7 +542,7 @@ kubectl get serviceaccount -n <your-namespace>
 
 ### Configure Kubeflow Notebook to use custom GPU resources
 
-You can add other GPU resouce types so that Kubeflow Notebook web page can create instances leveraging these hardware, e.g. when using Ascend GPUs.
+You can add other GPU resource types so that Kubeflow Notebook web page can create instances leveraging these hardware, e.g. when using Ascend GPUs.
 
 Edit the configmap by running this command:
 
@@ -553,7 +553,7 @@ kubectl -n kubeflow edit configmap jupyter-web-app-config-<actual-cm-suffix>
 
 Find below section and add your GPU resource types like "your-custom.com/gpu".
 
-NOTE you can only add resource types using integer values, like 1,2,4,8. Also, you can not add "Virtual" or "Shared" GPU resources using both "Cores" and "Memory" like when you are using HAMi.
+NOTE you can only add resource types using integer values, like 1,2,4,8. Also, you cannot add "Virtual" or "Shared" GPU resources using both "Cores" and "Memory" like when you are using HAMi.
 
 
 ```yaml
