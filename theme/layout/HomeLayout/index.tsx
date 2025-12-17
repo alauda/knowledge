@@ -3,6 +3,7 @@ import { ReactNode } from "react";
 
 import { HomeBanner } from "../../components/HomeBanner";
 import { HomeContent } from "../../components/HomeContent";
+import React from "react";
 
 const HomeLayout: React.FC<{ children: ReactNode }> = ({ children }) => {
   return (
