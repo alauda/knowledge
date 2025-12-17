@@ -1,5 +1,5 @@
 import { Markdown } from "@alauda/doom/runtime";
-import { useI18n, usePageData, useSite } from "@rspress/core/runtime";
+import { useI18n, usePageData } from "@rspress/core/runtime";
 import { Badge } from "@rspress/core/theme-original";
 import { FC, useMemo } from "react";
 
@@ -7,7 +7,6 @@ import { PostInfo } from "../../../plugins/plugin-post-resolver";
 import { DocID } from "../DocID";
 import EmptyState from "../Empty";
 import { LinkCard } from "../LinkCard";
-import React from "react";
 
 interface PostListProps {
   postList: PostInfo[];
@@ -47,7 +46,7 @@ export const PostList: FC<PostListProps> = ({ postList }) => {
                     ))}
                   </div>
                   <div className="flex justify-between">
-                    <div className="rp-flex rp-text-sm rp-text-text-2 rp-leading-6 sm:rp-leading-8 rp-font-medium">
+                    <div className="post-meta">
                       <p>
                         {t("lastUpdatedText")}:{" "}
                         <span>{post.lastUpdatedTime}</span>

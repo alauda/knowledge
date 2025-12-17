@@ -33,14 +33,14 @@
   background-color: var(--rp-c-bg-soft);
   cursor: pointer;
   color: var(--rp-c-brand-dark);
-  border-radius: 12px;
+  border-radius: var(--rp-radius);
 }
 
 .paginationItem.active {
   background-color: var(--rp-c-bg-soft);
   cursor: pointer;
   color: var(--rp-c-brand-dark);
-  border-radius: 12px;
+  border-radius: var(--rp-radius);
 }
 
 .paginationItem.disabled {
@@ -54,206 +54,97 @@
   font-weight: 600;
 }
 
-/* ============================================
-   Rspress v2 自定义 CSS 类定义
-   用于 Card、LinkCard 等组件
-   ============================================ */
-
-/* 布局类 */
-.rp-block {
+.card {
   display: block;
+  border: 1px solid var(--rp-c-divider-light);
+  border-radius: var(--rp-radius);
+  background-color: var(--rp-c-bg);
+  padding: 1rem;
 }
 
-.rp-flex {
-  display: flex;
-}
-
-.rp-m-auto {
-  margin: auto;
-}
-
-.rp-w-full {
-  width: 100%;
-}
-
-/* 间距类 - 内边距 */
-.rp-p-4 {
-  padding: 1rem; /* 16px */
-}
-
-.rp-px-0 {
-  padding-left: 0;
-  padding-right: 0;
-}
-
-.rp-px-6 {
-  padding-left: 1.5rem; /* 24px */
-  padding-right: 1.5rem; /* 24px */
-}
-
-.rp-py-4 {
-  padding-top: 1rem; /* 16px */
-  padding-bottom: 1rem; /* 16px */
-}
-
-.rp-py-8 {
-  padding-top: 2rem; /* 32px */
-  padding-bottom: 2rem; /* 32px */
-}
-
-/* 间距类 - 外边距 */
-.rp-mb-2 {
-  margin-bottom: 0.5rem; /* 8px */
-}
-
-.rp-mb-3 {
-  margin-bottom: 0.75rem; /* 12px */
-}
-
-.rp-mb-10 {
-  margin-bottom: 2.5rem; /* 40px */
-}
-
-.rp-mt-12 {
-  margin-top: 3rem; /* 48px */
-}
-
-/* 边框类 */
-.rp-border {
-  border-width: 1px;
-}
-
-.rp-border-b {
-  border-bottom-width: 1px;
-}
-
-.rp-border-t {
-  border-top-width: 1px;
-}
-
-.rp-border-solid {
-  border-style: solid;
-}
-
-.rp-border-divider-light {
-  border-color: var(--rp-c-divider-light, rgba(0, 0, 0, 0.1));
-}
-
-.rp-border-divider {
-  border-color: var(--rp-c-divider, rgba(0, 0, 0, 0.15));
-}
-
-/* 圆角类 */
-.rp-rounded-lg {
-  border-radius: 0.5rem; /* 8px */
-}
-
-/* 背景类 */
-.rp-bg-bg {
-  background-color: var(--rp-c-bg, #ffffff);
-}
-
-.rp-bg-bg-soft {
-  background-color: var(--rp-c-bg-soft, rgba(0, 0, 0, 0.02));
-}
-
-.rp-bg-bg-mute {
-  background-color: var(--rp-c-bg-mute, rgba(0, 0, 0, 0.04));
-}
-
-/* 文本大小类 */
-.rp-text-sm {
-  font-size: 0.875rem; /* 14px */
-}
-
-.rp-text-lg {
-  font-size: 1.125rem; /* 18px */
-}
-
-/* 文本颜色类 */
-.rp-text-text-1 {
-  color: var(--rp-c-text-1, #1a1a1a);
-}
-
-.rp-text-text-2 {
-  color: var(--rp-c-text-2, #666666);
-}
-
-.rp-text-text-3 {
-  color: var(--rp-c-text-3, #999999);
-}
-
-/* 字体粗细类 */
-.rp-font-medium {
-  font-weight: 500;
-}
-
-.rp-font-semibold {
+.card__title {
+  font-size: 1.125rem;
   font-weight: 600;
+  margin-bottom: 0.75rem;
+  color: var(--rp-c-text-1);
 }
 
-/* 行高类 */
-.rp-leading-6 {
-  line-height: 1.5rem; /* 24px */
+.card__content {
+  color: var(--rp-c-text-2);
 }
 
-.rp-leading-7 {
-  line-height: 1.75rem; /* 28px */
-}
-
-.rp-leading-8 {
-  line-height: 2rem; /* 32px */
-}
-
-/* 文本装饰类 */
-.rp-no-underline {
+.link-card {
+  display: block;
+  border-bottom: 1px solid var(--rp-c-divider-light);
+  background-color: var(--rp-c-bg);
+  padding: 1.25rem;
   text-decoration: none;
-}
-
-.rp-text-center {
-  text-align: center;
-}
-
-/* 过渡效果类 */
-.rp-transition-colors {
   transition-property: color, background-color, border-color;
   transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
   transition-duration: 150ms;
 }
 
-/* 悬停状态类 */
-.hover\:rp-bg-bg-soft:hover {
-  background-color: var(--rp-c-bg-soft, rgba(0, 0, 0, 0.02));
+.link-card:hover {
+  background-color: var(--rp-c-bg-soft);
 }
 
-.hover\:rp-border-divider:hover {
-  border-color: var(--rp-c-divider, rgba(0, 0, 0, 0.15));
+.link-card__title {
+  font-size: 1.125rem;
+  font-weight: 600;
+  margin-bottom: 0.5rem;
+  color: var(--rp-c-text-1);
+  line-height: 1.75rem;
 }
 
-/* 响应式类 */
+.link-card__description {
+  color: var(--rp-c-text-2);
+  font-size: 0.875rem;
+  line-height: 1.5rem;
+}
+
+.post-meta {
+  display: flex;
+  font-size: 0.875rem;
+  color: var(--rp-c-text-3);
+  line-height: 1.5rem;
+  font-weight: 500;
+}
+
 @media (min-width: 640px) {
-  .sm\:rp-leading-8 {
-    line-height: 2rem; /* 32px */
-  }
-
-  .sm\:rp-p-8 {
-    padding: 2rem; /* 32px */
+  .post-meta {
+    line-height: 2rem;
   }
 }
 
-/* 深色模式适配 */
-:where(html.rp-dark) {
-  --rp-c-bg: #1a1a1a;
-  --rp-c-bg-soft: rgba(255, 255, 255, 0.05);
-  --rp-c-bg-mute: rgba(255, 255, 255, 0.08);
-  --rp-c-text-1: #e5e5e5;
-  --rp-c-text-2: #a0a0a0;
-  --rp-c-text-3: #666666;
-  --rp-c-divider: rgba(255, 255, 255, 0.15);
-  --rp-c-divider-light: rgba(255, 255, 255, 0.1);
+.breadcrumb {
+  margin-bottom: 2.5rem;
 }
 
-/* SidebarMenu 样式 */
+.home-footer {
+  margin-top: 3rem;
+  padding-top: 2rem;
+  padding-bottom: 2rem;
+  padding-left: 1.5rem;
+  padding-right: 1.5rem;
+  width: 100%;
+  border-top: 1px solid var(--rp-c-divider-light);
+}
+
+@media (min-width: 640px) {
+  .home-footer {
+    padding: 2rem;
+  }
+}
+
+.home-footer__content {
+  margin: auto;
+  width: 100%;
+  text-align: center;
+  font-weight: 500;
+  font-size: 0.875rem;
+  color: var(--rp-c-text-2);
+}
+
 .rp-doc-layout__menu {
   display: none;
   position: fixed;
@@ -261,14 +152,14 @@
   left: 0;
   right: 0;
   z-index: 100;
-  background-color: var(--rp-c-bg, #ffffff);
-  border-bottom: 1px solid var(--rp-c-divider-light, rgba(0, 0, 0, 0.1));
+  background-color: var(--rp-c-bg);
+  border-bottom: 1px solid var(--rp-c-divider-light);
   padding: 0.75rem 1rem;
   align-items: center;
   gap: 0.5rem;
 }
 
-@media (max-width: 768px) {
+@media (max-width: 1280px) {
   .rp-doc-layout__menu {
     display: flex;
   }
@@ -283,26 +174,21 @@
   padding: 0;
   border: none;
   background: transparent;
-  color: var(--rp-c-text-1, #1a1a1a);
+  color: var(--rp-c-text-1);
   cursor: pointer;
-  border-radius: 0.25rem;
+  border-radius: var(--rp-radius);
   transition: background-color 0.2s;
 }
 
 .rp-doc-layout__menu-button:hover {
-  background-color: var(--rp-c-bg-soft, rgba(0, 0, 0, 0.02));
+  background-color: var(--rp-c-bg-soft);
 }
 
 .rp-doc-layout__menu-button:active {
-  background-color: var(--rp-c-bg-mute, rgba(0, 0, 0, 0.04));
+  background-color: var(--rp-c-bg-mute);
 }
 
 .rp-doc-layout__menu-button svg {
   width: 100%;
   height: 100%;
-}
-
-/* 深色模式下的菜单按钮 */
-:where(html.rp-dark) .rp-doc-layout__menu-button {
-  color: var(--rp-c-text-1, #e5e5e5);
 }

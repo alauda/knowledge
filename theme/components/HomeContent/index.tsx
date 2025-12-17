@@ -39,7 +39,7 @@ export const HomeContent: React.FC = () => {
   const [searchedPosts, setSearchedPosts] = useState<PostInfo[]>([]);
   const { page, siteData } = usePageData();
   const [searchInitialized, setSearchInitialized] = useState<Boolean[]>([]);
-  const t = useI18n();
+  const t = useI18n<typeof import("i18n")>();
 
   const searchFull = useCallback(
     async (keyword: string) => {
