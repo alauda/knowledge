@@ -10,7 +10,8 @@
     "strict": true,
     "target": "ESNext",
     "paths": {
-      "*": ["./src/*"]
+      "*": ["./src/*"],
+      "i18n": ["./docs/i18n.json"]
     }
   },
   "include": ["plugins/plugin-post-resolver"]

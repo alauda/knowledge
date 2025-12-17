@@ -1,11 +1,12 @@
 import { usePageData } from "@rspress/core/runtime";
-import { Badge, LastUpdated, Layout } from "@rspress/core/theme";
-import { useEffect, useMemo } from "react";
+import { Badge, LastUpdated, Layout } from "@rspress/core/theme-original";
+import { useEffect } from "react";
 
 import { BreadCrumb } from "../components/BreadCrumb";
 import { DocID } from "../components/DocID";
 import { EditOnGithub } from "../components/EditOnGithub";
 import HomeLayout from "./HomeLayout";
+import React from "react";
 
 export function normalizeTags(tags: string | string[]): string[] {
   if (!tags) {
@@ -42,21 +43,12 @@ const Badges = () => {
 export default () => {
   const { page } = usePageData();
 
-  const uiSwitch = useMemo(
-    () =>
-      page.pageType === "doc"
-        ? { showSidebar: false, showDocFooter: false }
-        : {},
-    [page]
-  );
-
   useEffect(() => {
     window.parent.postMessage(window.location.href, "*");
   }, []);
 
   return (
     <Layout
-      uiSwitch={uiSwitch}
       HomeLayout={HomeLayout}
       beforeDocContent={
         <>
