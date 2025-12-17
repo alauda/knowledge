@@ -8,10 +8,10 @@ ProductsVersion:
 id: KB1763720171-AC5D
 ---
 
-# Turn on experimental features in Alauda AI 1.4
+# Turn on experimental features in Alauda AI >=1.4
 
 > **NOTE:**
-> Some of the plugins for Alauda AI only supports x86_64(amd64) CPU architecture, experimental features currently does not support other CPU archs like arm64.
+> KubeflowPipeline does not support deployment on ARM64 architecture.
 
 
 ## Prerequisites
@@ -422,6 +422,19 @@ If you have previous undeleted notebook instances, you should still be able to a
 6. Check if mlflow web ui can be accessed
 
 ## FAQ
+
+### How to use Kubeflow plugins when setting PSA=restricted in Kubernetes
+
+If your namespace have PSA=restricted, you may encounter errors when using Kubeflow components like when you create notebooks, kubeflow pipeline runs etc. To solve that, you need to change the default PSA to `baseline` for the current namespace:
+
+```bash
+kubectl label --overwrite ns [NAMESPACE_NAME] pod-security.kubernetes.io/audit=baseline
+kubectl label --overwrite ns [NAMESPACE_NAME] pod-security.kubernetes.io/enforce=baseline
+kubectl label --overwrite ns [NAMESPACE_NAME] pod-security.kubernetes.io/warn=baseline
+```
+
+> NOTE: You may need to consult your cluster admin to make sure changing the PSA is acceptable.
+
 
 ### How to Configure Kubeflow to Use an Alternative Platform Address for Login?
 
