@@ -1,5 +1,4 @@
 import { forwardRef, useCallback } from "react";
-import { useI18n } from "rspress/runtime";
 
 export interface CheckboxProps {
   label: string;
