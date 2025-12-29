@@ -1,4 +1,4 @@
-import { useI18n, usePageData } from "@rspress/runtime";
+import { useI18n } from "@rspress/runtime";
 
 interface StyledProps {
   className?: string;
@@ -9,8 +9,7 @@ interface BannerProps extends StyledProps {
 }
 
 export const HomeBanner: React.FC<BannerProps> = ({ className }) => {
-  const pageData = usePageData();
-  const t = useI18n();
+  const t = useI18n<typeof import("i18n")>();
 
   // const logo =
   //   typeof pageData.siteData.logo === "string"
