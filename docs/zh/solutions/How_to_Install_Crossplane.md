@@ -6,7 +6,7 @@ products:
 ProductsVersion:
   - 4.x
 id: KB251100008
-sourceSHA: 05e6407cde3e20a00845cfb83ae0a85361cd9593fd8d32811c59c473b6577adb
+sourceSHA: 5f9136e14597e107ae9b9d6c56f6d1ea59b13b45daa854de1ca078d0ebf7375c
 ---
 
 # 如何安装 Crossplane
@@ -15,7 +15,7 @@ sourceSHA: 05e6407cde3e20a00845cfb83ae0a85361cd9593fd8d32811c59c473b6577adb
 
 Crossplane 是一个用于平台工程的控制平面框架。Crossplane 允许您构建控制平面来管理您的云原生软件。它使您能够设计用户与控制平面交互所使用的 API 和抽象。
 
-Crossplane 拥有丰富的扩展生态系统，使构建控制平面变得更快、更容易。它建立在 Kubernetes 之上，因此可以与您已经使用的所有 Kubernetes 工具一起工作。
+Crossplane 拥有丰富的扩展生态系统，使构建控制平面变得更快、更容易。它建立在 Kubernetes 之上，因此可以与您已经使用的所有 Kubernetes 工具兼容。
 
 Crossplane 的关键价值在于，它解锁了构建您自己的 Kubernetes 自定义资源的好处，而无需为它们编写控制器。
 
@@ -25,11 +25,14 @@ Crossplane 的关键价值在于，它解锁了构建您自己的 Kubernetes 自
 
 # 安装
 
+## 获取上传工具
+
+导航至 `平台管理` -> `Marketplace` -> `上架软件包` 下载名为 `violet` 的上传工具。下载后，授予二进制文件执行权限。
+
 ## 上传
 
-下载 Crossplane 安装文件： `crossplane-ALL.2.x.tgz`
+下载 Crossplane 安装文件：`crossplane-ALL.2.x.tgz`
 
-下载最新版本的 `violet` 工具。
 使用 `violet` 命令发布到平台仓库：
 
 ```bash
@@ -42,45 +45,45 @@ violet push --platform-address=<platform-access-address> --platform-username=<pl
 - `--platform-username`：ACP 平台管理员用户名。
 - `--platform-password`：ACP 平台管理员密码。
 
-在 `violet` 命令执行完成后，导航到 \[public-charts] 的详细页面，路径为 \[Administrator] -> \[Marketplace] -> \[Chart Repositories]。您将看到列出的 Crossplane chart。
+在 `violet` 命令执行完成后，导航至 \[public-charts] 的详细信息页面，路径为 \[管理员] -> \[Marketplace] -> \[Chart Repositories]。您将看到列出的 Crossplane chart。
 
 ## 安装
 
 ### 先决条件
 
-- 导航到 \[Projects] 页面，点击 `Create Project` 按钮。
+- 导航至 \[项目] 页面，点击 `创建项目` 按钮。
 - 提供以下信息：
-  - 名称： `crossplane`
+  - 名称：`crossplane`
   - 集群：选择将安装 Crossplane 的集群。
-- 点击 `Create Project` 按钮以创建项目。
-- 导航到 \[Projects] -> \[Namespace] 页面，点击 `Create Namespace` 按钮。
+- 点击 `创建项目` 按钮以创建项目。
+- 导航至 \[项目] -> \[命名空间] 页面，点击 `创建命名空间` 按钮。
 - 提供以下信息：
   - 集群：选择将安装 Crossplane 的集群。
-  - 命名空间： `crossplane-system`
-- 点击 `Create` 按钮以创建命名空间。
+  - 命名空间：`crossplane-system`
+- 点击 `创建` 按钮以创建命名空间。
 
 ### 安装 Crossplane
 
 要安装 Crossplane，请按照以下步骤操作：
 
-- 导航到 Crossplane chart 的详细页面，路径为 \[Administrator] -> \[Marketplace] -> \[Chart Repositories]。
+- 导航至 Crossplane chart 的详细信息页面，路径为 \[管理员] -> \[Marketplace] -> \[Chart Repositories]。
 
-- 点击 \[Deploy Template] 安装 Crossplane chart。
+- 点击 \[部署模板] 安装 Crossplane chart。
 
 - 提供以下信息：
-  - 名称： `crossplane`
-  - 项目： `crossplane`
-  - 命名空间： `crossplane-system`
-  - Chart 版本： `2.x.x`
+  - 名称：`crossplane`
+  - 项目：`crossplane`
+  - 命名空间：`crossplane-system`
+  - Chart 版本：`2.x.x`
   - 自定义值：
   ```yaml
   replicas: 2
   image:
     repository: <platform-registry-address>/3rdparty/crossplane/crossplane
   ```
-  （将 <platform-registry-address> 替换为您的实际注册表地址。平台注册表地址可以从 `global` 集群详细信息页面获取，路径为： \[Administrator] -> \[Clusters] -> \[Clusters] -> \[global]）
+  （将 <platform-registry-address> 替换为您的实际注册表地址。平台注册表地址可以从 `global` 集群详细信息页面获取，路径为：\[管理员] -> \[集群] -> \[集群] -> \[global]）
 
-- 点击 \[Deploy] 开始安装。
+- 点击 \[部署] 开始安装。
 
 - 安装完成后，您可以通过运行以下命令来验证安装：
   ```bash
@@ -100,8 +103,8 @@ Crossplane 在功能标志后引入新功能。默认情况下，alpha 功能是
 
 要卸载 Crossplane，请按照以下步骤操作：
 
-- 导航到 \[Alauda Container Platform] -> \[Applications] -> \[Applications] 中的 `crossplane` 应用程序详细页面。
-- 点击 \[Actions] -> \[Delete] 开始卸载。
+- 导航至 \[Alauda Container Platform] -> \[应用程序] -> \[应用程序] 中的 `crossplane` 应用程序详细信息页面。
+- 点击 \[操作] -> \[删除] 开始卸载。
 - 卸载完成后，您可以通过运行以下命令来验证卸载：
   ```bash
   $ kubectl get pods -n crossplane-system
