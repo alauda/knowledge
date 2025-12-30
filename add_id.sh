@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+XSY_TOKEN="${XSY_TOKEN:-}"
+
 # 获取文件最后修改时间（兼容 macOS 和 Linux）
 mtime() {
   local f="$1"
@@ -9,6 +11,119 @@ mtime() {
   else
     stat -f %m "$f"      # macOS
   fi
+}
+
+get_token() {
+  local user="${XSY_USERNAME:?需要设置环境变量 XSY_USERNAME}"
+  local pass="${XSY_PASSWORD:?需要设置环境变量 XSY_PASSWORD}"
+  local client_id="${XSY_CLIENT_ID:?需要设置环境变量 XSY_CLIENT_ID}"
+  local client_secret="${XSY_CLIENT_SECRET:?需要设置环境变量 XSY_CLIENT_SECRET}"
+
+  local response
+  response=$(curl -sS -X POST 'https://login.xiaoshouyi.com/auc/oauth2/token' \
+    -H 'Content-Type: application/x-www-form-urlencoded' \
+    -d "client_id=${client_id}" \
+    -d "client_secret=${client_secret}" \
+    -d "grant_type=password" \
+    -d "username=${user}" \
+    -d "password=${pass}")
+  
+  local token
+  token=$(echo "$response" | jq -r '.access_token // empty')
+  if [ -z "$token" ]; then
+    echo "Error: Failed to obtain access token" >&2
+    echo "$response" >&2
+    return 1
+  fi
+  echo "$token"
+}
+
+
+# 根据标题获取 KB ID
+get_kb_id() {
+  local title="$1"
+  local escaped_title="${title//\'/\'\'}"
+  curl -sS -G 'https://api.xiaoshouyi.com/rest/data/v2/query' \
+    -H "Authorization: Bearer $XSY_TOKEN" \
+    --data-urlencode "q=select solutionId__c from solution__c where name='$escaped_title' limit 1" \
+    | jq -r '.result.records[0].solutionId__c // empty'
+}
+
+# 创建 KB
+create_kb() {
+  local title="$1"
+  local description="$2"
+
+  local response
+  response=$(curl -sS -X POST 'https://api.xiaoshouyi.com/rest/data/v2/objects/solution__c' \
+    -H "Authorization: Bearer $XSY_TOKEN" \
+    -H "xsy-tenant-id: 182943" \
+    -H 'Content-Type: application/json' \
+    -d "$(jq -n \
+          --arg title "$title" \
+          --arg desc "$description" \
+          '{data: {name: $title, description__c: $desc, level__c: 3, entityType: 3168503772938632, accountId__c: 896461406896469, source__c: 6}}')")
+  
+  if [ -z "$response" ]; then
+    echo "[ERR] 创建 KB 返回为空: $title" >&2
+    return 1
+  fi
+
+  if ! echo "$response" | jq -e '.code == 200' >/dev/null 2>&1; then
+    echo "[ERR] 创建 KB 失败: $title" >&2
+    echo "$response" >&2
+    return 1
+  fi
+  return 0
+}
+
+# 主流程：生成或获取 KB ID
+generate_id() {
+  local file="$1"
+  local title description KB_ID
+
+  # 假设你已有获取文件 title 的函数
+  title=$(get_md_title "$file") 
+  if [ -z "$title" ]; then
+    echo "Error: No title found in $file" >&2
+    return 1
+  fi
+
+  description="auto generated from github"
+
+  # 获取 token
+  if [ -z "$XSY_TOKEN" ]; then
+    XSY_TOKEN=$(get_token) || return 1
+  fi
+
+  # 查询 KB
+  KB_ID=$(get_kb_id "$title")
+  if [ -n "$KB_ID" ]; then
+    echo "$KB_ID"
+  else
+    create_kb "$title" "$description" >/dev/null
+    sleep 1
+    KB_ID=$(get_kb_id "$title")
+    echo "$KB_ID"
+  fi
+}
+
+get_md_title() {
+  local file="$1"
+
+  # 取 front matter 之后，第一个以 "# " 开头的标题
+  awk '
+    BEGIN { in_fm = 0 }
+    /^---$/ {
+      in_fm = !in_fm
+      next
+    }
+    !in_fm && /^# / {
+      sub(/^# +/, "", $0)
+      print
+      exit
+    }
+  ' "$file"
 }
 
 # 生成短 hash，兼容 macOS 和 Linux
@@ -84,14 +199,14 @@ for target in "$@"; do
 
   for f in "${files[@]}"; do
     [[ "${f##*.}" != "md" ]] && continue
-    ts=$(mtime "$f")
-    hash=$(file_hash "$f")
-    new_id="KB${ts}-${hash}"
-
     if has_frontmatter "$f"; then
       if has_id "$f"; then
         echo "[OK]   $f  (已有 id)"
       else
+        if ! new_id=$(generate_id "$f") || [ -z "$new_id" ]; then
+          echo "[FAIL] $f  (failed to generate id)" >&2
+          continue
+        fi
         insert_id "$f" "$new_id"
         echo "[ADD]  $f  (添加 id: $new_id)"
       fi
