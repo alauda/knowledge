@@ -68,7 +68,7 @@ create_kb() {
     echo "[ERR] 创建 KB 返回为空: $title" >&2
     return 1
   fi
-  
+
   if ! echo "$response" | jq -e '.code == 200' >/dev/null 2>&1; then
     echo "[ERR] 创建 KB 失败: $title" >&2
     echo "$response" >&2
@@ -84,7 +84,6 @@ generate_id() {
 
   # 假设你已有获取文件 title 的函数
   title=$(get_md_title "$file") 
-  title=$(get_md_title "$file")
   if [ -z "$title" ]; then
     echo "Error: No title found in $file" >&2
     return 1
