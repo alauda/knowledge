@@ -22,6 +22,10 @@ jobs:
     env:
       AZURE_OPENAI_API_KEY: ${{ secrets.AZURE_OPENAI_API_KEY }}
       AZURE_OPENAI_ENDPOINT: ${{ secrets.AZURE_OPENAI_ENDPOINT }}
+      XSY_CLIENT_ID: ${{ secrets.XSY_CLIENT_ID }}
+      XSY_CLIENT_SECRET: ${{ secrets.XSY_CLIENT_SECRET }}
+      XSY_PASSWORD: ${{ secrets.XSY_PASSWORD }}
+      XSY_USERNAME: ${{ secrets.XSY_USERNAME }}
       RAW_TERMS_URL: https://gist.github.com/JounQin/8f323563651794ec371588c0d5c3bf1b/raw/71f1eae4f5744e4a78b95244c1d1fa9305d8c471/terms.yaml
       AZURE_OPENAI_MODEL: gpt-4o-mini
     permissions:
