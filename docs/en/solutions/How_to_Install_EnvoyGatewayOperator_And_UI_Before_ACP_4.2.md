@@ -5,6 +5,7 @@ products:
   - Alauda Container Platform
 ProductsVersion:
   - 4.x
+id: KB251200023
 ---
 
 # How to Install Envoy Gateway Operator and UI Before ACP 4.2

@@ -6,26 +6,26 @@ kind:
 ProductsVersion:
   - 1.4
 id: KB1763720171-AC5D
-sourceSHA: 13b91cfc6fb279b4a98edd599dbf601f2ed838aa3dad66902f55f622b5cb44ad
+sourceSHA: 637dd192932442208dd5abb7dc1bd32787668e220cb7f322bb4d8662be0042ba
 ---
 
-# 在 Alauda AI 1.4 中启用实验性功能
+# 在 Alauda AI >=1.4 中启用实验性功能
 
 > **注意：**
-> 某些 Alauda AI 的插件仅支持 x86_64(amd64) CPU 架构，实验性功能目前不支持其他 CPU 架构，如 arm64。
+> KubeflowPipeline 不支持在 ARM64 架构上部署。
 
 ## 先决条件
 
 - 已安装 ACP 和 AML。
 - 部署 Istio（版本 >= 1.22，非 CNI 模式）。您也可以利用 ASM 来部署 Istio。
 - 准备一个运行中的 MySQL 服务。请注意，“Kubeflow Pipeline” 插件仅支持 MySQL 版本 == 5.7，因此您可以选择以下部署方法：
-  - **选项 1：** 使用 ACP 数据服务部署一个 MySQL MGR 实例（MySQL 版本 >= 8.0），并在下面的“AmlCluster”配置中使用此服务。“Kubeflow Pipeline”可以选择使用内置的 MySQL 服务（Kubeflow pipeline 不支持 MySQL 版本 >= 8.0）。
+  - **选项 1：** 使用 ACP 数据服务部署一个 MySQL MGR 实例（MySQL 版本 >= 8.0），并在下面的“AmlCluster”配置中使用此服务。“Kubeflow Pipeline” 可以选择使用内置的 MySQL 服务（Kubeflow pipeline 不支持 MySQL 版本 >= 8.0）。
   - **选项 2：** 使用 ACP 数据服务部署一个 MySQL PXC 实例（MySQL 版本 == 5.7），并在“AmlCluster”配置和“Kubeflow Pipeline”中使用此服务。
   - 连接到其他现有的 MySQL 服务。
-- 为 MLFlow 准备一个 PostgreSQL 服务。
+- 准备一个用于 MLFlow 的 PostgreSQL 服务。
 - **可选：** 为“Kubeflow Pipeline”准备一个 MinIO 对象存储服务。或者您可以选择使用内置的单实例 MinIO 服务（不支持 HA）。
 
-## 为 istio 设置 oauth2-proxy 设置：
+## 为 Istio 设置 oauth2-proxy 配置：
 
 在 `global` 集群中运行以下命令以首先获取 CA 证书：
 
@@ -36,7 +36,7 @@ echo -n $crt | base64 -d
 
 前往“管理员 - 集群 - 资源”，在上方标题中选择 `global` 集群，然后找到并编辑资源“ServiceMesh”，在“spec”部分下添加以下内容（对于 servicemesh v2，请寻求帮助）。
 
-注意：如果在部署其他应用程序时 `spec.values.pilot.jwksResolverExtraRootCA` 已经设置，您可以仅为 Kubeflow 设置 `spec.meshConfig.extensionProviders`。请 **不要** 删除 `spec.meshConfig.extensionProviders` 中已存在的配置。
+注意：如果在部署其他应用程序时 `spec.values.pilot.jwksResolverExtraRootCA` 已经设置，您可以仅为 Kubeflow 设置 `spec.meshConfig.extensionProviders`。请**不要**删除 `spec.meshConfig.extensionProviders` 中已存在的配置。
 
 <details>
 
@@ -101,7 +101,7 @@ overlays:
 - Workspace：AML 工作区的后端控制器。
 - KubeflowBase：Kubeflow 的基础组件。安装此插件后，AML 导航栏中应出现“Kubeflow”菜单项。
 - Kubeflow Pipeline：支持开发、运行、监控 kubeflow 流水线。（默认使用 argo 作为 kubeflow 流水线后端）。
-- Kubeflow Training Operator：管理各种深度学习框架的训练作业，如 PytorchJob、TensorflowJob、MPIJob。
+- Kubeflow Training Operator：管理各种深度学习框架（如 PytorchJob、TensorflowJob、MPIJob）的训练作业。
 - MLFlow：用于跟踪训练实验的 MLFlow 跟踪服务器。安装此插件后，AML 导航栏中应出现“MLFlow”菜单项。
 - Volcano：使用各种调度程序插件（包括 Gang-Scheduling、Binpack 等）调度训练作业。
 
@@ -123,9 +123,9 @@ violet push --platform-address="https://192.168.171.123" \
 
 ### 设置 KubeflowBase 插件时的注意事项
 
-#### 创建 istio ingress 网关作为 kubeflow 的 Web 入口
+#### 创建 Istio 入口网关作为 Kubeflow 的 Web 入口
 
-在 Alauda Service Mesh 的“管理员”视图下创建一个 istio ingress 网关实例。使用 NodePort 访问网关服务。然后找到网关的 pod，并复制标签，如“istio: wy-kubeflow-gw-kubeflow-gw”，在安装 KubeflowBase 时填写表单。
+在 Alauda Service Mesh 的“管理员”视图下创建一个 Istio 入口网关实例。使用 NodePort 访问网关服务。然后找到网关的 pod 并复制标签，如“istio: wy-kubeflow-gw-kubeflow-gw”，在安装 KubeflowBase 时填写表单。
 
 #### 设置 dex 重定向 URI
 
@@ -142,7 +142,7 @@ redirectURIs:
 
 在首次登录 Kubeflow 之前，您需要将 ACP 用户绑定到命名空间。在以下示例中，您可以创建命名空间 `kubeflow-admin-cpaas-io` 并将用户 `admin@cpaas.io` 绑定为其所有者。
 
-> **注意：** 如果在部署 AML 时此配置资源已经部署，您可以跳过此步骤。
+> **注意：** 如果在部署 AML 时此配置资源已经被部署，您可以跳过此步骤。
 
 ```yaml
 apiVersion: kubeflow.org/v1beta1
@@ -207,14 +207,15 @@ spec:
 
 ### 设置 Kubeflow Pipeline 插件时的注意事项
 
-在安装 Kubeflow 流水线插件时填写表单时，您可以使用外部 MySQL 服务或 Minio 服务，或选择使用内置服务。请注意：
+在安装 Kubeflow pipeline 插件时填写表单时，您可以使用外部 MySQL 服务或 Minio 服务，或选择使用内置服务。请注意：
 
 - 内置的 MySQL 和 Minio 服务是单 pod 服务，可能会遭受单点故障。
-- 使用外部 MySQL 服务时，MySQL 服务必须为“MySQL 5.7”版本。如果没有这样的服务，请使用内置的 MySQL。
+- 注意：使用插件版本 <= v1.10.8 时，您**不应**使用外部 MySQL 和 MinIO 设置，这可能会导致错误。请更新到最新版本以使用外部 MySQL 和 MinIO。
+- 注意：必须使用 MySQL 版本 5.7 与 kubeflow pipeline 插件。
 
 ### 设置 MLFlow 插件时的注意事项
 
-您需要设置一个 PostgreSQL 服务，并填写 pgHost、pgPort、pgUsername、pgPassword 值。MySQL 不再支持（在 mlflow >= v3.1.1 后）。
+您需要设置一个 PostgreSQL 服务，并填写 pgHost、pgPort、pgUsername、pgPassword 值。MySQL 不再被支持（在 mlflow >= v3.1.1 之后）。
 
 ### 上传镜像
 
@@ -226,11 +227,11 @@ build-harbor.alauda.cn/mlops/buildkit-gitlfs:v0.13-rootless-aml
 build-harbor.alauda.cn/mlops/buildkit:v0.15.2-aml
 ```
 
-> **重要：** 上传 [build-harbor.alauda.cn/mlops/llm-trainer:v1.4.3](http://build-harbor.alauda.cn/mlops/llm-trainer:v1.4.3) 后，您需要通过运行以下命令检查 Alauda AI 正在使用的实际镜像地址和标签：`kubectl -n kubeflow get cm aml-image-builder-config -o yaml  | grep llm-trainer`，然后添加在 configmap 中使用的标签并指向上传的镜像，例如 `nerdctl tag your.registry.com/mlops/llm-trainer:v1.4.3 your.registry.com/mlops/llm-trainer:v1.4.2-rc.1.ge47ab59d`。
+> **重要：** 上传 [build-harbor.alauda.cn/mlops/llm-trainer:v1.4.3](http://build-harbor.alauda.cn/mlops/llm-trainer:v1.4.3) 后，您需要通过运行以下命令检查 Alauda AI 正在使用的实际镜像地址和标签：`kubectl -n kubeflow get cm aml-image-builder-config -o yaml  | grep llm-trainer`，然后添加配置映射中使用的标签并指向上传的镜像，例如 `nerdctl tag your.registry.com/mlops/llm-trainer:v1.4.3 your.registry.com/mlops/llm-trainer:v1.4.2-rc.1.ge47ab59d`。
 
 ## 在 AML UI 上启用实验性功能
 
-前往“市场 - OperatorHub - Alauda AI”，进入“All Instances”选项卡，找到“资源类型：AmlCluster，名称 default”这一行，点击右侧的“...”按钮并选择更新，然后切换到右上角的“YAML”模式并编辑 YAML 文件以包含以下设置。
+前往“市场 - OperatorHub - Alauda AI”，进入“All Instances”选项卡，找到“资源类型：AmlCluster，名称 default”这一行，点击右侧的“...”按钮并选择更新，然后在右上角切换到“YAML”模式并编辑 YAML 文件以包含以下设置。
 
 ```yaml
 spec:
@@ -250,7 +251,7 @@ spec:
         user: root # 数据库用户
 ```
 
-前往“市场 - OperatorHub - Alauda AI”，进入“All Instances”选项卡，找到“资源类型：Aml，名称 default-aml”这一行，点击右侧的“...”按钮并选择更新，然后切换到右上角的“YAML”模式并编辑 YAML 文件以包含以下设置。
+前往“市场 - OperatorHub - Alauda AI”，进入“All Instances”选项卡，找到“资源类型：Aml，名称 default-aml”这一行，点击右侧的“...”按钮并选择更新，然后在右上角切换到“YAML”模式并编辑 YAML 文件以包含以下设置。
 
 ```yaml
 spec:
@@ -263,7 +264,7 @@ spec:
 
 通过运行以下命令重启 aml-api-deploy 组件：`kubectl -n kubeflow rollout restart deploy aml-api-deploy`
 
-如果您使用微调和训练功能，请更新相应命名空间下的 `aml-image-builder-config` configmap：
+如果您使用微调和训练功能，请更新相应命名空间下的 `aml-image-builder-config` 配置映射：
 
 ```yaml
 apiVersion: v1
@@ -279,7 +280,7 @@ metadata:
   namespace: {your-ns}
 ```
 
-以及 `aml-image-builder-secret` 密钥：
+以及 aml-image-builder-secret 密钥：
 
 ```yaml
 apiVersion: v1
@@ -295,7 +296,7 @@ type: Opaque
 
 ### 关闭实验性功能并卸载插件
 
-1. 要关闭实验性功能，前往“市场 - OperatorHub - Alauda AI”，进入“All Instances”选项卡，找到“资源类型：AmlCluster，名称 default-aml”这一行，点击右侧的“...”按钮并选择更新，然后切换到右上角的“YAML”模式并删除之前添加的以下行：
+1. 要关闭实验性功能，前往“市场 - OperatorHub - Alauda AI”，进入“All Instances”选项卡，找到“资源类型：AmlCluster，名称 default-aml”这一行，点击右侧的“...”按钮并选择更新，然后在右上角切换到“YAML”模式并删除之前添加的以下行：
 
 ```yaml
 spec:
@@ -307,7 +308,7 @@ spec:
       tuneModels: true
 ```
 
-2. 要卸载为 Alauda AI 安装的插件，前往“管理员” - “市场” - “集群插件”，找到以下插件，如果已经安装，您可以点击右侧的“...”并点击“卸载”。请注意，您应按以下列出的顺序删除这些插件：
+2. 要卸载为 Alauda AI 安装的插件，前往“管理员” - “市场” - “集群插件”，找到以下插件，如果已经安装，可以点击右侧的“...”并点击“卸载”。请注意，您应该按照以下列出的顺序删除这些插件：
 
 3. MLFlow
 
@@ -317,26 +318,26 @@ spec:
 
 6. Kubeflow Base
 
-7. 在大多数情况下，您不需要卸载 volcano 插件，因为它只是一个基本的“低级”组件，不会影响其他组件。保留 volcano 安装，您将能够在想要重新安装 Alauda AI 时恢复微调、训练作业状态。不过，您仍然可以在“集群插件”下卸载 volcano，风险自负。
+7. 在大多数情况下，您**不需要**卸载 volcano 插件，因为它只是一个基本的“低级”组件，不会影响其他组件。保留 volcano 安装，如果您想再次安装 Alauda AI，您将能够恢复微调、训练作业状态。不过，您仍然可以在“集群插件”下卸载 volcano，风险自负。
 
-### 从 Alauda AI 1.3（1.3\~1.4）升级到实验性功能
+### 从 Alauda AI 1.3（1.3~1.4）升级到实验性功能
 
-在将 AML 从 1.3 升级到 1.4 后，如果之前的 1.3 安装是以实验性功能部署的，您需要遵循以下步骤卸载之前版本的插件并将其升级到 Alauda AI 1.4 的插件。
+在将 AML 从 1.3 升级到 1.4 之后，如果之前的 1.3 安装是以实验性功能部署的，您需要按照以下步骤卸载之前版本的插件并将其升级到 Alauda AI 1.4 的插件。
 
 > **警告：** 此操作将删除旧版本的 Kubeflow、volcano 和 MLFlow 以及使用这些组件创建的实例，包括笔记本、tensorboards、mlflow 实验记录（这可能导致“微调”作业中的跟踪图表丢失）。如果您需要备份数据并在新版本中恢复，请查看以下步骤以获取详细信息。
 
 #### 备份笔记本、tensorboards、mlflow 和 MySQL 使用的数据
 
 1. 笔记本
-2. 只需保留用户命名空间下之前创建的 PVC。请勿在更新期间或用户命名空间中删除它们。
-3. **注意：** 如果您有之前运行的笔记本并安装了额外的依赖项，如使用 `pip install`，当在新版本中重新创建笔记本时，这些依赖项将丢失，您需要重新安装它们。
+2. 只需保留在用户命名空间下创建的 PVC。请勿在更新期间或用户命名空间中删除它们。
+3. **注意：** 如果您有之前正在运行的笔记本并安装了额外的依赖项，例如使用 `pip install`，当在新版本中重新创建笔记本时，这些依赖项将丢失，您需要重新安装它们。
 4. Tensorboards
    1. 同上，保留 PVC 和用户命名空间。
 5. MLFlow
-   1. **注意：** Alauda AI 1.4 的 mlflow 将更改为使用 PostgreSQL 作为跟踪服务器数据库。如果数据很重要，您必须执行以下步骤备份 mlflow 数据。
+   1. **注意：** Alauda AI 1.4 的 mlflow 将更改为使用 PostgreSQL 作为跟踪服务器数据库。如果数据很重要，您必须执行以下步骤以备份 mlflow 数据。
    2. 您可以使用此工具 <https://github.com/mlflow/mlflow-export-import> 从 mlflow 跟踪服务器导出当前数据，然后导入到新版本中。
    3. **注意：** Alauda AI 1.3 附带 mlflow 2.6.0，而 Alauda AI 1.4 升级到 v3.1.1。因此，请确保导出的数据可以导入到此新版本中。
-6. 如果您已经执行了“在 Alauda AI 1.3 中启用所有功能”的步骤，您将拥有一个 MySQL 数据库实例。如果此 MySQL 实例是某个独立服务（未通过 Alauda AI 或 kubeflow 插件安装），您可以重用此实例并在升级后保留记录。为确保数据不会丢失，您需要手动备份数据库（例如 <https://stackoverflow.com/questions/8725646/backing-up-mysql-db-from-the-command-line>）或使用 Alauda 数据服务提供的功能。
+6. 如果您已经执行了“在 Alauda AI 1.3 中启用所有功能”的步骤，您将拥有一个 MySQL 数据库实例。如果此 MySQL 实例是某个独立服务（未由 Alauda AI 或 kubeflow 插件安装），您可以在升级后重用此实例并保留记录。为了确保数据不会丢失，您需要手动备份数据库（例如 <https://stackoverflow.com/questions/8725646/backing-up-mysql-db-from-the-command-line>）或使用 Alauda 数据服务提供的功能。
 
 #### 删除笔记本、Tensorboard 实例（可选）
 
@@ -346,15 +347,15 @@ spec:
 
 #### 等待所有微调和训练作业完成
 
-如果集群中仍有微调、训练作业正在运行，您需要等待它们完成。在升级过程中请勿创建新作业。
+如果集群中仍有微调、训练作业在运行，您需要等待它们完成。在升级过程中**不要**创建新作业。
 
-> **注意：** 在卸载之前的“kubeflow 插件”后，所有 volcano 作业（简称 vcjob）资源将被删除。因此，作业状态、pod 日志将被删除。但由于微调作业已完成，作业记录将保存在 MySQL 数据库中。如果您已备份 MySQL 数据库，或只是重用相同的独立 MySQL 实例，所有作业记录在升级后应可用。
+> **注意：** 在卸载之前的“kubeflow 插件”后，所有 volcano 作业（简称 vcjob）资源将被删除。因此，作业状态、pod 日志将被删除。但由于微调作业已完成，作业记录将保存在 MySQL 数据库中。如果您已经备份了 MySQL 数据库，或者只是重用相同的独立 MySQL 实例，所有作业记录在升级后应可用。
 
 但请注意，实际的“作业” k8s 资源在删除后丢失。
 
 #### 将 Alauda AI 从 1.3 升级到 1.4
 
-在完成上述备份、删除步骤后，您可以进行一般升级，将 Alauda AI 从 1.3 升级到 1.4。
+在完成备份、删除步骤后，您可以进行一般升级，将 Alauda AI 从 1.3 升级到 1.4。
 
 #### 卸载 kubeflow chart 插件
 
@@ -362,7 +363,7 @@ spec:
 
 #### 按以下顺序安装 Alauda AI 1.4 的插件
 
-请从本文件的开头获取有关安装 Alauda AI 1.4 插件的更多详细信息。
+从本文档的开头获取有关安装 Alauda AI 1.4 插件的更多详细信息。
 
 1. kfbase: Kubeflow Base
 2. kfp: Kubeflow Pipelines
@@ -372,11 +373,11 @@ spec:
 
 #### 检查实验性功能开关和 MySQL 连接
 
-检查“管理员 - 集群 - 资源”下的“AmlCluster”资源（在顶部栏中选择当前集群）。检查资源 YAML 代码是否已经包含在 [启用实验性功能](#turn-on-experimental-features-on-aml-ui) 中提到的设置。如果您使用相同的 MySQL 实例，请检查微调作业记录是否仍然可用。如果没有，您可能需要去 MySQL 实例检查数据是否可用或恢复数据库备份。
+检查“管理员 - 集群 - 资源”下的“AmlCluster”资源（在顶部栏选择当前集群）。检查资源 YAML 代码是否已经包含在 [启用实验性功能](#turn-on-experimental-features-on-aml-ui) 中提到的那些设置。如果您使用的是相同的 MySQL 实例，请检查微调作业记录是否仍然可用。如果没有，您可能需要去 MySQL 实例检查数据是否可用或恢复数据库备份。
 
 如果在之前的 Alauda AI 1.3 安装中未启用实验性功能，您需要从头开始查看文档以启用实验性功能。
 
-前往“管理员 - 集群 - 资源”，选择 **CURRENT** 集群，然后更新“AmlCluster”资源：“default”，检查以下字段是否为最新：
+前往“管理员 - 集群 - 资源”，选择**当前**集群，然后更新“AmlCluster”资源：“default”，检查以下字段是否是最新的：
 
 ```yaml
 spec:
@@ -396,9 +397,9 @@ spec:
         user: root # 数据库用户
 ```
 
-#### 创建 Kubeflow Profile 以启用用户命名空间访问 Kubeflow 组件（例如：笔记本）
+#### 创建 Kubeflow Profile 以启用用户命名空间访问 Kubeflow 组件（例如笔记本）
 
-前往 [创建 Kubeflow 用户](#create-kubeflow-user-and-bind-to-a-namespace) 为 kubeflow 用户创建配置文件，以访问 kubeflow 组件。
+前往 [创建 Kubeflow 用户](#create-kubeflow-user-and-bind-to-a-namespace) 为 kubeflow 用户创建配置文件以访问 kubeflow 组件。
 
 如果配置文件已经创建且未删除，则在安装新 kubeflow 插件后应可用。
 
@@ -413,7 +414,178 @@ spec:
    1. Kubeflow
    2. MLFlow
 5. 检查数据集是否可以缓存和预览
-6. 创建一个简单的微调作业，查看作业是否可以成功运行
+6. 创建一个简单的微调作业，看看作业是否可以成功运行
 7. 为现有模型创建一个简单的镜像构建作业
 8. 检查笔记本实例（如果有）是否可以从“高级” - “Kubeflow” - “笔记本”访问
 9. 检查是否可以访问 mlflow web ui
+
+## 常见问题解答
+
+### 如何在 Kubernetes 中设置 PSA=restricted 时使用 Kubeflow 插件
+
+如果您的命名空间设置为 PSA=restricted，您可能在使用 Kubeflow 组件时遇到错误，例如创建笔记本、kubeflow 流水线运行等。要解决此问题，您需要将当前命名空间的默认 PSA 更改为 `baseline`：
+
+```bash
+kubectl label --overwrite ns [NAMESPACE_NAME] pod-security.kubernetes.io/audit=baseline
+kubectl label --overwrite ns [NAMESPACE_NAME] pod-security.kubernetes.io/enforce=baseline
+kubectl label --overwrite ns [NAMESPACE_NAME] pod-security.kubernetes.io/warn=baseline
+```
+
+> 注意：您可能需要咨询集群管理员以确保更改 PSA 是可接受的。
+
+### 如何配置 Kubeflow 使用替代平台地址进行登录？
+
+在某些环境中，平台访问地址被配置为内部网络地址，用户需要通过“替代平台地址”登录。在这种情况下，虽然 OIDC 发行者仍基于原始平台地址，但登录页面 URL 必须更新为替代地址。
+
+修改方法：
+
+1. 定位 ModuleInfo 资源：
+
+在 global 集群中，使用以下命令找到与 kfbase 插件对应的 ModuleInfo 资源：
+
+```
+kubectl get moduleinfoes -l cpaas.io/module-name=kfbase,cpaas.io/cluster-name=<deployed-cluster-name>
+```
+
+2. 编辑 ModuleInfo 资源：
+
+```
+kubectl edit moduleinfoes <ModuleInfo-name>
+```
+
+在 spec 下添加 valuesOverride 部分，如下所示。将 <Alternative-Platform-Address> 替换为实际的替代地址。
+
+```
+......
+spec: 
+  valuesOverride: 
+    mlops/kfbase:  
+      oidcAuthURL: https://<Alternative-Platform-Address>/dex/auth
+......
+```
+
+3. 重启 OAuth2 Proxy：
+
+通过在目标集群中重启 oauth2-proxy 部署来应用更改：
+
+```
+kubectl rollout restart deploy -n kubeflow-oauth2-proxy oauth2-proxy
+```
+
+### 如何使用外部 S3/MinIO 存储启动 Kubeflow 流水线运行
+
+当您使用外部 S3/MinIO 存储服务安装 Kubeflow 时，您需要添加一个“KFP Launcher”配置映射，以设置当前命名空间或用户使用的存储。您可以查看 Kubeflow 文档 <https://www.kubeflow.org/docs/components/pipelines/operator-guides/configure-object-store/#s3-and-s3-compatible-provider> 获取更多详细信息。如果未设置任何配置，流水线运行可能仍会访问默认服务地址，如“minio-service.kubeflow:9000”，这不正确。
+
+以下是您可以启动的简单示例：
+
+```yaml
+apiVersion: v1
+data:
+  defaultPipelineRoot: s3://mlpipeline
+  providers: |-
+    s3:
+      default:
+        endpoint: minio.minio-system.svc:80
+        disableSSL: true
+        region: us-east-2
+        forcePathStyle: true
+        credentials:
+          fromEnv: false
+          secretRef:
+            secretName: mlpipeline-minio-artifact
+            accessKeyKey: accesskey
+            secretKeyKey: secretkey
+kind: ConfigMap
+metadata:
+  name: kfp-launcher
+  namespace: wy-testns
+```
+
+例如，您应该在此配置映射中设置以下值以指向您自己的 S3/MinIO 存储：
+
+- defaultPipelineRoot：存储流水线中间数据的位置
+- endpoint：s3/MinIO 服务端点。注意，不应以“http”或“https”开头
+- disableSSL：是否禁用对端点的“https”访问
+- region：s3 区域。如果使用 MinIO，任何值都可以
+- credentials：AK/SK 在密钥中
+
+添加此配置映射后，新启动的 Kubeflow 流水线运行将自动读取此配置，并保存 Kubeflow 流水线使用的内容。
+
+### 创建命名空间后创建 Kubeflow 配置文件，但命名空间在 Kubeflow 中仍不可用？
+
+如果您创建了一个命名空间（或使用现有命名空间），并希望在 Kubeflow 中使用此命名空间，您需要创建一个配置文件以设置命名空间所有者和协作者。
+
+创建配置文件资源后，您仍需执行以下步骤，以便配置文件控制器能够处理预先创建的命名空间：
+
+1. 为命名空间添加所有者标签：
+
+```
+kubectl label namespace <your-namespace> owner=<namespace-owner-username>
+```
+
+2. 对配置文件资源进行一些更改以触发更新
+
+```
+kubectl label profile <your-namespace> a=b
+kubectl label profile <your-namespace> a-
+```
+
+3. 执行以下命令，您将获得由 Kubeflow 管理的服务帐户（服务帐户：default-editor）。
+
+```
+kubectl get serviceaccount -n <your-namespace>
+```
+
+### 配置 Kubeflow 笔记本以使用自定义 GPU 资源
+
+您可以添加其他 GPU 资源类型，以便 Kubeflow 笔记本网页可以创建利用这些硬件的实例，例如在使用 Ascend GPU 时。
+
+通过运行以下命令编辑配置映射：
+
+```
+kubectl -n kubeflow get configmap | grep jupyter-web-app-config
+kubectl -n kubeflow edit configmap jupyter-web-app-config-<actual-cm-suffix>
+```
+
+找到以下部分并添加您的 GPU 资源类型，如“your-custom.com/gpu”。
+
+注意，您只能使用整数值添加资源类型，如 1、2、4、8。此外，您不能使用“Cores”和“Memory”同时添加“虚拟”或“共享”GPU 资源，例如在使用 HAMi 时。
+
+```yaml
+################################################################
+# GPU/Device-Plugin Resources
+################################################################
+gpus:
+  readOnly: false
+ 
+  # configs for gpu/device-plugin limits of the container
+  # https://kubernetes.io/docs/tasks/manage-gpus/scheduling-gpus/#using-device-plugins
+  value:
+    # the `limitKey` of the default vendor
+    # (to have no default, set as "")
+    vendor: ""
+ 
+    # the list of available vendors in the dropdown
+    #  `limitsKey` - what will be set as the actual limit
+    #  `uiName` - what will be displayed in the dropdown UI
+    vendors:
+    - limitsKey: "nvidia.com/gpu"
+      uiName: "NVIDIA"
+    - limitsKey: "amd.com/gpu"
+      uiName: "AMD"
+    - limitsKey: "habana.ai/gaudi"
+      uiName: "Intel Gaudi"
+    - limitsKey: "your-custom.com/gpu"
+      uiName: "Your Custom Vendor"
+    # the default value of the limit
+    # (possible values: "none", "1", "2", "4", "8")
+    num: "none"
+```
+
+### 在使用 UI 微调时配置 PVC 大小（版本 <= v1.4）
+
+在 v1.4 之前，当使用 UI 创建微调作业（实验性功能）时，每个创建的微调作业将一起创建一个 PVC。要修改 PVC 大小，您需要：
+
+1. 运行命令 `kubectl -n kubeflow edit cm  aml-image-builder-config` 并修改配置，如：`TRAINING_PVC_SIZE: 10Gi`
+2. 如果您已经创建了用户命名空间，您仍然需要在用户命名空间下修改此设置，如：`kubectl -n <user_namespace> edit cm aml-image-builder-config`
+3. 重启 aml-api-deploy：`kubectl -n kubeflow rollout restart deploy aml-api-deploy`
