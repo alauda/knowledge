@@ -163,7 +163,7 @@ Navigate to `Administrator` -> `Marketplace` -> `Upload Packages` to download th
 #### 3.3 Upgrade the Plugin
 
 1. Navigate to the details page of **Alauda Container Platform Application Management for KubeVela** plugin at `Administrator` → `Marketplace` → `Cluster Plugins`. You should see the new plugin version available.
-2. Click **Upgrade** to Upgrade on the plugin details page.
+2. Click **Upgrade** to upgrade on the plugin details page.
 3. Confirm the upgrade operation.
 4. The upgrade process may take several minutes. Wait for the upgrade to complete.
 
