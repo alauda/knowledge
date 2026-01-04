@@ -29,15 +29,21 @@ Follow these steps to upgrade the OAM Application cluster plugin:
 
 ### Step 2: Critical Manual Configuration Update
 **IMPORTANT: MANUAL OPERATION REQUIRED BEFORE UPGRADE**
-Before upgrading the plugin, you must manually update the metis MutatingWebhookConfiguration and ValidatingWebhookConfiguration resources to remove a specific webhook configuration that will cause conflicts with the new plugin version.
+
+Before upgrading the plugin, you must manually update the MutatingWebhookConfiguration and ValidatingWebhookConfiguration resources of `metis` to remove a specific webhook configuration that will cause conflicts with the new plugin version.
 
 **Reason for this action**:
-In previous ACP versions (before 4.2), the webhook configuration for OAM application mutation and validation was managed directly by the platform. In ACP 4.2, this functionality has been migrated into the new version of the cluster plugin. If this webhook configuration is not removed from old metis MutatingWebhookConfiguration and ValidatingWebhookConfiguration resources, it will cause conflicts as duplicate webhooks will attempt to handle the same resources, potentially leading to admission errors or unexpected behavior.
+
+In previous ACP versions (before 4.2), the webhook configuration for OAM application mutation and validation was managed directly by the platform. In ACP 4.2, this functionality has been migrated into the new version of the cluster plugin. If this webhook configuration is not removed from the old resources, it will cause conflicts as duplicate webhooks will attempt to handle the same resources, potentially leading to admission errors or unexpected behavior.
 
 #### 2.1 Update MutatingWebhookConfiguration
 1. Backup the current configuration (recommended):
     ```bash
     kubectl get mutatingwebhookconfiguration metis-mutation -o yaml > metis-mutation-backup.yaml
+    ```
+    Recovery Note: If issues occur after upgrade and you need to revert to the previous state, use:
+    ```bash
+    kubectl apply -f metis-mutation-backup.yaml
     ```
 2. Edit the configuration to remove the webhook named `oamapp.cpaas.io`:
     ```bash
@@ -86,6 +92,10 @@ In previous ACP versions (before 4.2), the webhook configuration for OAM applica
 1. Backup the current configuration (recommended):
     ```bash
     kubectl get validatingwebhookconfiguration metis-validation -o yaml > metis-validation-backup.yaml
+    ```
+    Recovery Note: If issues occur after upgrade and you need to revert to the previous state, use:
+    ```bash
+    kubectl apply -f metis-validation-backup.yaml
     ```
 2. Edit the configuration to remove the webhook named `oamapp.cpaas.io`:
     ```bash
@@ -149,13 +159,13 @@ Navigate to `Administrator` -> `Marketplace` -> `Upload Packages` to download th
     * `--platform-username`: ACP Platform administrator username.
     * `--platform-password`: ACP Platform administrator password.
 
-3. After the `violet` command completes, navigate to the details page of **Alauda Container Platform Application Management for KubeVela** plugin at `Administrator` → `Marketplace` → `Cluster Plugins`. You should see the new plugin version available.
 
 #### 3.3 Upgrade the Plugin
 
-1. Click **Upgrade** to Upgrade on the plugin details page.
-2. Confirm the upgrade operation.
-3. The upgrade process may take several minutes. Wait for the upgrade to complete.
+1. Navigate to the details page of **Alauda Container Platform Application Management for KubeVela** plugin at `Administrator` → `Marketplace` → `Cluster Plugins`. You should see the new plugin version available.
+2. Click **Upgrade** to Upgrade on the plugin details page.
+3. Confirm the upgrade operation.
+4. The upgrade process may take several minutes. Wait for the upgrade to complete.
 
 ### Step 4: Post-Upgrade Verification
 After the upgrade is complete, verify that:
