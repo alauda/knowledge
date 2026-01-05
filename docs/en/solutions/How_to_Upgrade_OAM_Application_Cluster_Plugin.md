@@ -5,7 +5,6 @@ kind:
   - Solution
 ProductsVersion:
   - 4.2
-id: none
 ---
 
 # How to Upgrade OAM Application Cluster Plugin
