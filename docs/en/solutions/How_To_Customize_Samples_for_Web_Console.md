@@ -2,6 +2,8 @@
 id: KB250500032
 products:
    - Alauda Container Platform
+ProductsVersion:
+   - 4.2
 kind:
    - Solution
 ---

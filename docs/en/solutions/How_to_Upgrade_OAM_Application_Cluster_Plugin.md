@@ -3,6 +3,8 @@ products:
   - Alauda Container Platform
 kind:
   - Solution
+ProductsVersion:
+  - 4.2
 id: none
 ---
 
