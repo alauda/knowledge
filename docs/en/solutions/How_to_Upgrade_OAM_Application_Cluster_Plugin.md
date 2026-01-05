@@ -5,6 +5,7 @@ kind:
   - Solution
 ProductsVersion:
   - 4.2
+id: KB260100001
 ---
 
 # How to Upgrade OAM Application Cluster Plugin
