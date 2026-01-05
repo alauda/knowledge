@@ -35,6 +35,8 @@ apiVersion: storage.k8s.io/v1
 kind: StorageClass
 metadata:
   name: manual-hostpath
+  labels:
+    project.cpaas.io/<your-project-name>: "true" # Replace <your-project-name> with your actual project name
 provisioner: kubernetes.io/no-provisioner
 volumeBindingMode: WaitForFirstConsumer
 ```
@@ -123,7 +125,7 @@ Common issues include:
 - **StorageClass Mismatch**: The `storageClassName` in the PV must exactly match the one in the StorageClass and the Postgres manifest.
 - **Capacity**: The PV capacity must be equal to or greater than the requested `volume.size` in the Postgres manifest.
 - **Permissions**: If the Pod starts but crashes with a "Permission Denied" error in logs, verify the `chown -R 101:103` step on the host directory.
-- **Admission Webhook Denied**: If you see an error like `admission webhook "pvc-validator.cpaas.io" denied the request`, your Project is restricted to specific StorageClasses. You must enable `manual-hostpath` for your project in the platform console (typically under Project Settings > Storage or Attributes) or ask your administrator to grant permission.
+- **Admission Webhook Denied**: If you see an error like `admission webhook "pvc-validator.cpaas.io" denied the request`, check if the `<your-project-name>` in the `StorageClass` label matches the project name where the Postgres instance is deployed.
 - **Scheduling Failed (Node Affinity)**: If the PV is `Available` but the Pod fails with `didn't find available persistent volumes to bind`, check the PV's `nodeAffinity`. You likely forgot to replace `your-node-name` with a real node hostname from `kubectl get nodes`.
 
 ### Reusability
