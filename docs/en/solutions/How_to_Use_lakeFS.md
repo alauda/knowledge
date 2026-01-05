@@ -46,10 +46,10 @@ Applicable Versions: >=ACP 4.1.0, lakeFS: >=1.70.1
 
 | Scenario | Recommended Approach | Section Reference |
 |----------|---------------------|------------------|
-| **Data Versioning** | Create repositories and commit changes | [Basic Operations](#basic-operations) |
-| **Collaborative Development** | Use feature branches for isolated work | [Branching Strategy](#branching-strategy) |
-| **Data Quality Validation** | Implement pre-commit hooks and testing | [Data Validation](#data-validation) |
-| **Production Deployment** | Merge validated changes to main branch | [Production Workflows](#production-workflows) |
+| **Data Versioning** | Create repositories and commit changes | [Basic Operations](https://docs.lakefs.io/) |
+| **Collaborative Development** | Use feature branches for isolated work | [Branching Strategy](https://docs.lakefs.io/) |
+| **Data Quality Validation** | Implement pre-commit hooks and testing | [Data Validation](https://docs.lakefs.io/) |
+| **Production Deployment** | Merge validated changes to main branch | [Production Workflows](https://docs.lakefs.io/) |
 
 ## Prerequisites
 
@@ -90,7 +90,7 @@ violet push $CHART \
 
 1. Deploy Ceph storage system following the [Ceph installation guide](https://docs.alauda.io/container_platform/4.1/storage/storagesystem_ceph/installation/create_service_stand.html)
 
-2. Create Ceph Object Store User:
+2. [Create Ceph Object Store User](https://docs.alauda.io/container_platform/4.1/storage/storagesystem_ceph/how_to/create_object_user):
 
 ```yaml
 apiVersion: ceph.rook.io/v1
@@ -99,8 +99,8 @@ metadata:
   name: lakefs-user
   namespace: rook-ceph
 spec:
-  store: object-pool
-  displayName: object-pool
+  store: my-store
+  displayName: lakefs-storage-pool
   quotas:
     maxBuckets: 100
     maxSize: -1
@@ -114,8 +114,8 @@ spec:
 
 ```bash
 user_secret=$(kubectl -n rook-ceph get cephobjectstoreuser lakefs-user -o jsonpath='{.status.info.secretName}')
-ACCESS_KEY=$(kubectl -n rook-ceph get secret $user_secret -o jsonpath='{.data.AccessKey}' | base64 --decode)
-SECRET_KEY=$(kubectl -n rook-ceph get secret $user_secret -o jsonpath='{.data.SecretKey}' | base64 --decode)
+ACCESS_KEY=$(kubectl -n rook-ceph get secret $user_secret -o jsonpath='{.data.AccessKey}' | base64 -d)
+SECRET_KEY=$(kubectl -n rook-ceph get secret $user_secret -o jsonpath='{.data.SecretKey}' | base64 -d)
 ```
 
 #### Alternative: MinIO Setup
@@ -128,9 +128,15 @@ Deploy MinIO following the [MinIO installation guide](https://docs.alauda.io/con
 
 2. Create database for lakeFS:
 
-```sql
-CREATE DATABASE lakefs;
-```
+   Connect to the PostgreSQL pod and execute the creation command:
+
+   ```bash
+   # List pods to find the PostgreSQL pod
+   kubectl get pods
+
+   # Execute the database creation command (replace <postgres-pod-name> with actual name)
+   kubectl exec -it <postgres-pod-name> -- psql -U postgres -c "CREATE DATABASE lakefs;"
+   ```
 
 ### lakeFS Deployment
 
@@ -139,6 +145,10 @@ CREATE DATABASE lakefs;
 2. Select the lakeFS chart
 
 3. Configure deployment values:
+
+> **Note**:
+> 1. Replace `<YOUR_ACCESS_KEY>` and `<YOUR_SECRET_KEY>` with the actual credentials obtained from the Ceph user secret retrieval step.
+> 2. Update `databaseConnectionString` by replacing `<DB_USER>`, `<DB_PASSWORD>`, and `<DB_HOST>` with your actual PostgreSQL username, password, and service name.
 
 ```yaml
 image:
@@ -151,14 +161,14 @@ lakefsConfig: |
     type: s3
     s3:
       force_path_style: true
-      endpoint: "http://rook-ceph-rgw-object-pool.rook-ceph.svc:7480"
+      endpoint: "http://rook-ceph-rgw-my-store.rook-ceph.svc:7480"
       discover_bucket_region: false
       credentials:
-        access_key_id: QFKEJGDSGWFG44SL495W
-        secret_access_key: 67yy3SE5Epu2RC9EADlFIxedPcnO9AAglX8tYJyy
+        access_key_id: "<YOUR_ACCESS_KEY>"
+        secret_access_key: "<YOUR_SECRET_KEY>"
 
 secrets:
-  databaseConnectionString: "postgres://postgres:password@postgres-service:5432/lakefs"
+  databaseConnectionString: "postgres://<DB_USER>:<DB_PASSWORD>@<DB_HOST>:5432/lakefs"
 
 service:
   type: NodePort
