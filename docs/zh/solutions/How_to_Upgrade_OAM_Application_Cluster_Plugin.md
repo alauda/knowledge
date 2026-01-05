@@ -5,8 +5,8 @@ kind:
   - Solution
 ProductsVersion:
   - 4.2
-id: none
-sourceSHA: 624c8833ab25ad2698f522e03e197973aecc2fd2ad84a928cc1b760779e2ac46
+id: KB260100001
+sourceSHA: f83d166d747b01cebd59d4382f47551b66a99546a980e988d2bfe95d29773bab
 ---
 
 # 如何升级 OAM 应用集群插件
@@ -21,7 +21,7 @@ sourceSHA: 624c8833ab25ad2698f522e03e197973aecc2fd2ad84a928cc1b760779e2ac46
 
 - **插件已安装**：目标集群中已安装 OAM 应用插件。
 - **ACP 平台已升级**：ACP 平台本身必须已成功升级到 4.2 或更高版本。
-- **集群健康**：目标集群必须处于健康状态。请验证所有核心组件和节点正常运行。
+- **集群健康**：目标集群必须处于健康状态。验证所有核心组件和节点正常运行。
 - **管理员权限**：您必须在 ACP 中拥有必要的管理员权限（例如，集群管理员），以执行集群级插件的升级操作。
 
 ## 升级操作步骤
@@ -39,11 +39,11 @@ sourceSHA: 624c8833ab25ad2698f522e03e197973aecc2fd2ad84a928cc1b760779e2ac46
 
 **重要：升级前需要手动操作**
 
-在升级插件之前，您必须手动更新 `metis` 的 MutatingWebhookConfiguration 和 ValidatingWebhookConfiguration 资源，以删除特定的 webhook 配置，这将与新插件版本发生冲突。
+在升级插件之前，您必须手动更新 `metis` 的 MutatingWebhookConfiguration 和 ValidatingWebhookConfiguration 资源，以删除特定的 webhook 配置，这将导致与新插件版本的冲突。
 
 **此操作的原因**：
 
-在之前的 ACP 版本（4.2 之前），OAM 应用变更和验证的 webhook 配置由平台直接管理。在 ACP 4.2 中，此功能已迁移到集群插件的新版本中。如果不从旧资源中删除此 webhook 配置，将会导致冲突，因为重复的 webhook 将尝试处理相同的资源，可能导致准入错误或意外行为。
+在之前的 ACP 版本（4.2 之前），OAM 应用的变更和验证的 webhook 配置由平台直接管理。在 ACP 4.2 中，此功能已迁移到新版本的集群插件中。如果不从旧资源中删除此 webhook 配置，将导致冲突，因为重复的 webhook 将尝试处理相同的资源，可能导致入场错误或意外行为。
 
 #### 2.1 更新 MutatingWebhookConfiguration
 
@@ -51,7 +51,7 @@ sourceSHA: 624c8833ab25ad2698f522e03e197973aecc2fd2ad84a928cc1b760779e2ac46
    ```bash
    kubectl get mutatingwebhookconfiguration metis-mutation -o yaml > metis-mutation-backup.yaml
    ```
-   恢复说明：如果在升级后出现问题并需要恢复到之前的状态，请使用：
+   恢复说明：如果在升级后出现问题并需要恢复到先前状态，请使用：
    ```bash
    kubectl apply -f metis-mutation-backup.yaml
    ```
@@ -92,7 +92,7 @@ sourceSHA: 624c8833ab25ad2698f522e03e197973aecc2fd2ad84a928cc1b760779e2ac46
        timeoutSeconds: 10
    ```
 4. 保存更改并退出编辑器。
-5. 验证 webhook 是否已被移除：
+5. 验证 webhook 是否已被删除：
    ```bash
    kubectl get mutatingwebhookconfiguration metis-mutation -o yaml | grep -A5 "name: oamapp.cpaas.io"
    # 预期：无输出（未找到 webhook）
@@ -104,7 +104,7 @@ sourceSHA: 624c8833ab25ad2698f522e03e197973aecc2fd2ad84a928cc1b760779e2ac46
    ```bash
    kubectl get validatingwebhookconfiguration metis-validation -o yaml > metis-validation-backup.yaml
    ```
-   恢复说明：如果在升级后出现问题并需要恢复到之前的状态，请使用：
+   恢复说明：如果在升级后出现问题并需要恢复到先前状态，请使用：
    ```bash
    kubectl apply -f metis-validation-backup.yaml
    ```
@@ -144,7 +144,7 @@ sourceSHA: 624c8833ab25ad2698f522e03e197973aecc2fd2ad84a928cc1b760779e2ac46
        timeoutSeconds: 10
    ```
 4. 保存更改并退出编辑器。
-5. 验证 webhook 是否已被移除：
+5. 验证 webhook 是否已被删除：
    ```bash
    kubectl get validatingwebhookconfiguration metis-validation -o yaml | grep -A5 "name: oamapp.cpaas.io"
    # 预期：无输出（未找到 webhook）
@@ -174,17 +174,17 @@ chmod +x violet
 
 #### 3.3 升级插件
 
-1. 导航到 **Alauda Container Platform Application Management for KubeVela** 插件的详情页面，路径为 `管理员` → `Marketplace` → `集群插件`。您应该看到可用的新插件版本。
-2. 点击 **升级** 在插件详情页面进行升级。
+1. 导航到 **Alauda Container Platform Application Management for KubeVela** 插件的详细页面，路径为 `管理员` → `Marketplace` → `集群插件`。您应该看到新插件版本可用。
+2. 点击 **升级** 在插件详细页面进行升级。
 3. 确认升级操作。
-4. 升级过程可能需要几分钟。请耐心等待升级完成。
+4. 升级过程可能需要几分钟。请等待升级完成。
 
 ### 步骤 4：升级后验证
 
-升级完成后，请验证以下内容：
+升级完成后，请验证：
 
 1. 插件显示为 **已安装** 状态，并带有新版本号。
-2. 检查与 OAM 应用插件相关的所有 pod 是否在运行：
+2. 检查与 OAM 应用插件相关的所有 pod 是否正在运行：
    ```bash
    kubectl get pods -n cpaas-system | grep oam
    # 所有相关 pod 应该具有 **Running** 状态。
