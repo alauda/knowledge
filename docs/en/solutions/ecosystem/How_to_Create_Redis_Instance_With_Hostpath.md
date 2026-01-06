@@ -452,10 +452,10 @@ spec:
       slave: 1
   resources:
     limits:
-      cpu: "1"
+      cpu: 1
       memory: 1Gi
     requests:
-      cpu: "1"
+      cpu: 1
       memory: 1Gi
   sentinel:
     affinity:
