@@ -5,6 +5,7 @@ products:
   - Alauda Application Services
 ProductsVersion:
    - 3.x,4.x
+id: KB260100003
 ---
 
 # Create a PostgreSQL Instance Using Hostpath PV Without an External Provisioner
