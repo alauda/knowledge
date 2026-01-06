@@ -48,7 +48,7 @@ The directory distribution depends on the anti-affinity mode:
 
 #### Option A: AntiAffinityInSharding Mode
 
-In this mode, pods within the **same shard** (Primary and its Replica) are anti-affinity scheduled on different nodes. Pods from different shards may co-locate on the same node.
+In this mode, pods within the **same shard** (Primary and its Replica) are scheduled on different nodes using anti-affinity. Pods from different shards may co-locate on the same node.
 
 **Minimum nodes required**: 2
 
