@@ -83,7 +83,7 @@ chown 999:1000 /cpaas/data/redis/redis-cluster-0-1 \
 
 #### Option B: AntiAffinity Mode (Full Anti-Affinity)
 
-In this mode, **all pods** are anti-affinity scheduled on different nodes. Each pod runs on a dedicated node.
+In this mode, **all pods** are scheduled on different nodes using anti-affinity rules. Each pod runs on a dedicated node.
 
 **Minimum nodes required**: 6
 
