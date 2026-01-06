@@ -69,7 +69,7 @@ Before implementing lakeFS, ensure you have:
 
 ### Chart Upload
 
- Download the lakeFS chart from the Marketplace in the Alauda Customer Portal and upload the lakeFS chart to your ACP catalog:
+ Download the lakeFS chart from the Marketplace in the Alauda Customer Portal and upload the lakeFS chart to your ACP catalog. To download the `violet` tool and find usage information, refer to [Violet CLI Tool Documentation](https://docs.alauda.io/container_platform/4.1/ui/cli_tools/violet.html):
 
 ```bash
 CHART=lakefs.ALL.1.7.9.tgz
