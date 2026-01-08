@@ -6,14 +6,14 @@ products:
 ProductsVersion:
   - '3.16,3.18,4.0,4.1,4.2'
 id: KB251200002
-sourceSHA: fe78610c7c4ff3c50f59b8ba6d2217ec3aa106caba5613838c34268c27dad276
+sourceSHA: 2e3e2f76c20c76ae7af97e1b3ba1c9e1c512febddb54a52f703c54fcc99ef14d
 ---
 
 # 禁用 Calico 节点指标端口
 
 ## 问题
 
-在基于 Calico 的 Kubernetes 集群中，`calico-node` DaemonSet 在每个节点上通过 TCP 端口 `9091` 暴露 Felix 指标。该指标端点仅通过自签名的 TLS 证书进行保护，并不强制实施身份验证。在不需要此端点的环境中，平台所有者可能希望完全禁用它，并出于安全和合规原因关闭所有节点上的端口 `9091`。
+在基于 Calico 的 Kubernetes 集群中，`calico-node` DaemonSet 在每个节点上通过 TCP 端口 `9091` 暴露 Felix 指标。该指标端点仅由自签名 TLS 证书保护，并且不强制进行身份验证。在不需要此端点的环境中，平台所有者可能希望完全禁用它，并出于安全和合规原因关闭所有节点上的端口 `9091`。
 
 本文档描述了如何禁用 `calico-node` 上的 Felix Prometheus 指标并关闭端口 `9091`。
 
@@ -29,8 +29,9 @@ sourceSHA: fe78610c7c4ff3c50f59b8ba6d2217ec3aa106caba5613838c34268c27dad276
 
 按照以下步骤禁用 Felix Prometheus 指标并关闭端口 `9091`。
 
-> **警告**
-> 更新 `calico-node` DaemonSet 将导致 Pod 重启。这可能会暂时中断容器网络。请计划维护窗口并谨慎操作。
+:::warning
+更新 `calico-node` DaemonSet 将导致 Pod 重启。这可能会暂时中断容器网络。请计划维护窗口并谨慎操作。
+:::
 
 ### 步骤 1：禁用 Felix Prometheus 指标
 
@@ -54,13 +55,13 @@ kubectl -n kube-system rollout status ds/calico-node
 
 ### 步骤 3：验证端口 9091 是否关闭
 
-发布完成后，验证 Felix 指标是否不再在端口 `9091` 上暴露。
+在发布完成后，验证 Felix 指标是否不再在端口 `9091` 上暴露。
 
 示例（选择适合您环境和安全策略的方法）：
 
 1. **从托管 `calico-node` 的节点**
 
-   - 使用 `ss` 或 `netstat` 确认没有监听 `:9091`：
+   - 使用 `ss` 或 `netstat` 确认没有任何进程在 `:9091` 上监听：
 
      ```bash
      ss -lntp | grep ':9091[[:space:]]\+' || echo "port 9091 is not listening"
@@ -76,11 +77,11 @@ kubectl -n kube-system rollout status ds/calico-node
 
    - 指标端点应不再可访问。
 
-一旦验证，Felix 指标在端口 `9091` 上将在全集群范围内禁用。
+一旦验证，Felix 指标在端口 `9091` 上将在全局范围内禁用。
 
 ## 根本原因
 
-默认情况下（或根据先前配置），`calico-node` 配置为 `FELIX_PROMETHEUSMETRICSENABLED=true`，这导致 Felix 在每个节点的 TCP 端口 `9091` 上暴露 Prometheus 指标。该端点仅通过自签名的 TLS 证书进行保护，并不实施身份验证。在不需要此端点的环境中，保持其启用会不必要地在每个节点上暴露一个额外的开放端口。
+默认情况下（或根据先前的配置），`calico-node` 被配置为 `FELIX_PROMETHEUSMETRICSENABLED=true`，这导致 Felix 在每个节点的 TCP 端口 `9091` 上暴露 Prometheus 指标。该端点仅由自签名 TLS 证书保护，并未实现身份验证。在不需要此端点的环境中，保留它会不必要地在每个节点上暴露一个额外的开放端口。
 
 禁用 `FELIX_PROMETHEUSMETRICSENABLED` 将移除指标监听器并关闭端口 `9091`。
 
@@ -96,7 +97,7 @@ kubectl -n kube-system rollout status ds/calico-node
 kubectl -n kube-system get ds calico-node -o yaml | grep -A3 FELIX_PROMETHEUSMETRICSENABLED
 ```
 
-如果值为 `true` 或变量未明确设置（并且已知在您的构建中默认启用指标），则此解决方案适用。
+如果值为 `true` 或变量未显式设置（并且已知在您的构建中默认启用指标），则此解决方案适用。
 
 ### 2. 确认端口 9091 是否在监听
 
@@ -116,4 +117,4 @@ ss -lntp | grep ':9091[[:space:]]\+'
 curl -k https://<node-ip>:9091/metrics
 ```
 
-如果您收到指标输出，则 Felix Prometheus 指标已启用并通过端口 `9091` 暴露。在这种情况下，您可以应用 **解决方案** 步骤以禁用该端点并关闭端口。
+如果您收到指标输出，则 Felix Prometheus 指标已启用并通过端口 `9091` 暴露。在这种情况下，您可以应用 **解决方案** 步骤以禁用端点并关闭端口。
