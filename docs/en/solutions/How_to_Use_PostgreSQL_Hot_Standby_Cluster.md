@@ -481,7 +481,8 @@ Standby cluster failures don't affect primary operations. Recovery is automatic:
 
 #### Replication Slot Errors
 
-**Symptoms**: 
+##### Symptoms
+
 - "Exception when changing replication slots" errors in standby node logs
 - Specific error traceback showing TypeError with '>' not supported between 'int' and 'NoneType'
 - Example error log:
@@ -495,9 +496,13 @@ TypeError: '>' not supported between instances of 'int' and 'NoneType'
 ```
 - Cluster operations and replication may continue to function normally despite these errors
 
-**Cause**: Known bug in the current Patroni version that will be fixed in future releases
+##### Cause
 
-**Solution**: Manually drop the problematic replication slot:
+Known bug in the current Patroni version that will be fixed in future releases
+
+##### Solution
+
+Manually drop the problematic replication slot:
 
 ```sql
 SELECT pg_catalog.pg_drop_replication_slot('xdc_hotstandby');
@@ -505,11 +510,16 @@ SELECT pg_catalog.pg_drop_replication_slot('xdc_hotstandby');
 
 #### Standby Join Failures
 
-**Symptoms**: Standby cluster fails to join replication, data synchronization issues
+##### Symptoms
 
-**Cause**: Excessive data drift between clusters preventing WAL-based recovery
+Standby cluster fails to join replication, data synchronization issues
 
-**Solution**:
+##### Cause
+
+Excessive data drift between clusters preventing WAL-based recovery
+
+##### Solution
+
 1. Delete the failed standby cluster
 2. Remove cluster metadata from primary:
 ```sql
@@ -519,9 +529,12 @@ DELETE FROM sys_operator.multi_cluster_info WHERE cluster_name='<failed-cluster-
 
 #### Data Synchronization Issues
 
-**Symptoms**: Replication lag increases, standby falls behind
+##### Symptoms
 
-**Solutions**:
+Replication lag increases, standby falls behind
+
+##### Solutions
+
 - Verify network connectivity between clusters
 - Check storage performance on both clusters
 - Monitor `max_slot_wal_keep_size` setting to ensure sufficient WAL retention
