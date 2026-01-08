@@ -4,38 +4,40 @@ products:
   - Alauda Container Platform
 kind:
   - Solution
-sourceSHA: da8699511792337cf2a31a5089a8332ac2db8360458f676b9d0aee54f9196969
+sourceSHA: d7b0a5821ad3f759cfcc707dd8d01cce96dae843aa3f31283a16fde233a55ed9
 ---
 
-# Alauda 通过 DeepFlow 实现可观测性
+# Alauda 与 DeepFlow 的可观察性
 
 ## 概述
 
-本指南提供了在 Alauda 容器平台（ACP）上安装和部署 DeepFlow 的过程，并详细解释了如何利用 DeepFlow 强大的追踪、指标和日志功能，实现对 ACP 平台及其运行应用的全面可观测性。通过遵循本指南，读者将掌握在 ACP 环境中使用 DeepFlow 的最佳实践，从而显著提高运营效率，确保业务连续性。
+本指南提供了在 Alauda Container Platform(ACP) 上安装和部署 DeepFlow 的过程，并详细解释了如何利用 DeepFlow 强大的追踪、指标和日志功能，实现对 ACP 平台及其运行应用的全面可观察性。通过遵循本指南，读者将掌握在 ACP 环境中使用 DeepFlow 的最佳实践，从而显著提高运营效率，确保业务连续性。
 
-> 注意：本文档中提到的所有命令必须在您希望安装 DeepFlow 的集群的主节点上执行。
+:::note
+本文档中提到的所有命令必须在您希望安装 DeepFlow 的集群的主节点上执行。
+:::
 
 ## 先决条件
 
-1. 已安装 Alauda 容器平台。
+1. 已安装 Alauda Container Platform。
 2. 由 ACP 管理的 Kubernetes 集群。
-3. 为 ACP 配置了网络文件系统（NFS）。
+3. 为 ACP 提供的网络文件系统(NFS)。
 
 ## 第 1 章. 安装 DeepFlow
 
-### 步骤 1：下载打包工具
+### 步骤 1: 下载打包工具
 
-名为 `violet` 的打包和列出工具用于将工件上传到 Alauda 容器平台。
+名为 `violet` 的打包和列出工具用于将工件上传到 Alauda Container Platform。
 
-Alauda 容器平台提供的下载链接格式为 *\<PLATFORM\_URL>/platform/tools/download/violet/violet\_linux\_amd64*。
+Alauda Container Platform 提供了一个下载链接，格式为 *\<PLATFORM_URL>/platform/tools/download/violet/violet_linux_amd64*。
 
-假设 ACP 平台的 URL 为 *<https://43.138.134.22>*，则下载链接为 *<https://43.138.134.22/platform/tools/download/violet/violet_linux_amd64>*。您可以执行以下命令下载该工具：
+假设 ACP 平台 URL 为 *<https://43.138.134.22>*，则下载链接为 *<https://43.138.134.22/platform/tools/download/violet/violet_linux_amd64>*。您可以执行以下命令下载该工具：
 
 ```shell
 curl -k -O https://43.138.134.22/platform/tools/download/violet/violet_linux_amd64
 ```
 
-然后，您需要执行以下命令使二进制文件可执行：
+然后您需要执行以下命令使二进制文件可执行：
 
 ```shell
 mv violet_linux_amd64 /usr/local/bin/violet
@@ -49,14 +51,14 @@ chmod +x /usr/local/bin/violet
 violet v3.0.0
 ```
 
-### 步骤 2：上传工件
+### 步骤 2: 上传工件
 
-需要两个工件。一个是 DeepFlow，另一个是 NFS CSI 插件。在本示例中，它们的文件名分别为 `deepflow-v3.19.0-fix.49.27.gb547cdc5-dbs.tgz` 和 `nfs.amd64.v4.0.2.tgz`。
+需要两个工件。一个是 DeepFlow，另一个是 NFS CSI 插件。在本示例中，它们的文件名为 `deepflow-v3.19.0-fix.49.27.gb547cdc5-dbs.tgz` 和 `nfs.amd64.v4.0.2.tgz`。
 
 将文件上传到您正在工作的节点，然后执行以下命令上传工件：
 
 ```shell
-# 以下变量值必须根据您的实际环境设置
+# 以下变量值必须根据您的实际环境进行设置
 PLATFORM_URL="https://43.138.134.22"
 USERNAME="admin@cpaas.io"
 PASSWORD="07Apples@"
@@ -65,7 +67,7 @@ violet push --platform-address $PLATFORM_URL --platform-username $USERNAME --pla
 violet push --platform-address $PLATFORM_URL --platform-username $USERNAME --platform-password $PASSWORD deepflow-v3.19.0-fix.49.27.gb547cdc5-dbs.tgz
 ```
 
-### 步骤 3：安装 NFS CSI 插件
+### 步骤 3: 安装 NFS CSI 插件
 
 执行以下命令安装 NFS CSI 插件：
 
@@ -102,7 +104,7 @@ done
 kubectl -n cpaas-system wait --for=condition=Health=true ars/nfs
 ```
 
-### 步骤 4：创建 NFS 存储类
+### 步骤 4: 创建 NFS 存储类
 
 创建名为 `nfs` 的存储类：
 
@@ -110,7 +112,7 @@ kubectl -n cpaas-system wait --for=condition=Health=true ars/nfs
 # 可选环境变量
 export KUBECONFIG="/etc/kubernetes/admin.conf"
 
-# 以下变量值必须根据您的实际外部 NFS 服务器设置
+# 以下变量值必须根据您的实际外部 NFS 服务器进行设置
 NFS_SERVER="10.100.0.4" # NFS 服务器地址
 NFS_PATH="/nfs"         # NFS 共享路径
 
@@ -135,7 +137,7 @@ volumeBindingMode: Immediate
 EOF
 ```
 
-### 步骤 5：安装 DeepFlow
+### 步骤 5: 安装 DeepFlow
 
 执行以下命令安装 DeepFlow：
 
@@ -143,7 +145,7 @@ EOF
 # 可选环境变量
 export KUBECONFIG="/etc/kubernetes/admin.conf"
 
-# DeepFlow chart 版本
+# DeepFlow 图表版本
 VERSION="v3.19.0-fix.49.27.gb547cdc5-dbs"
 # 安装 DeepFlow 的集群名称
 CLUSTER_NAME="clsuter1"
@@ -238,7 +240,7 @@ kubectl -n cpaas-system rollout status deployment deepflow-app
 kubectl -n cpaas-system rollout status deployment deepflow-grafana
 kubectl -n cpaas-system rollout status daemonset deepflow-agent
 
-# 配置 DeepFlow Grafana Web UI 的 ingress
+# 配置 DeepFlow Grafana Web UI 的 Ingress
 cat <<EOF | kubectl apply -f -
 apiVersion: networking.k8s.io/v1
 kind: Ingress
@@ -269,9 +271,9 @@ EOF
 
 ### 登录 Grafana
 
-DeepFlow 仪表板安装在 Grafana 部署中。Grafana Web UI 的 URL 格式为 *\<PLATFORM\_URL>/clusters/\<CLUSTER\_NAME>/deepflow*。
+DeepFlow 仪表板安装在 Grafana 部署中。Grafana Web UI 的 URL 格式为 *\<PLATFORM_URL>/clusters/\<CLUSTER_NAME>/deepflow*。
 
-假设 ACP 平台的 URL 为 *<https://43.138.134.22>*，并且 DeepFlow 安装在集群 *cluster1* 中，则 URL 为 *<https://43.138.134.22/clusters/cluster1/deepflow>*。
+假设 ACP 平台 URL 为 *<https://43.138.134.22>*，并且 DeepFlow 安装在集群 *cluster1* 中，则 URL 为 *<https://43.138.134.22/clusters/cluster1/deepflow>*。
 
 在浏览器中访问 Grafana URL，您将看到登录页面：
 
@@ -291,7 +293,7 @@ DeepFlow 仪表板安装在 Grafana 部署中。Grafana Web UI 的 URL 格式为
 
 ### 使用 DeepFlow 进行故障排除
 
-以下是两个关于如何排除 DNS 故障和链式 HTTP 请求的示例。
+以下是如何排除 DNS 故障和链式 HTTP 请求的两个示例。
 
 #### DNS 故障
 
@@ -313,7 +315,7 @@ DNS 请求的域名和状态也可用：
 
 ![DNS 请求状态](../../en/assets/deepflow/dns-status.png)
 
-> *客户端错误* 表示请求的域名不存在。
+> *客户端错误* 意味着请求的域名不存在。
 
 #### 链式 HTTP 请求
 
