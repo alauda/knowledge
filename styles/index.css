@@ -1,4 +1,9 @@
 @import "tailwindcss";
+@import "./doc-layout.css";
+
+:root {
+  --rp-nav-height: 60px !important;
+}
 
 .editLink {
   color: var(--rp-c-brand);

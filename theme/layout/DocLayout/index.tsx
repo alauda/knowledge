@@ -4,7 +4,6 @@ import {
   DocFooter,
   Outline,
   Overview,
-  Sidebar,
   useWatchToc,
 } from '@rspress/core/theme-original';
 import clsx from 'clsx';
@@ -36,15 +35,12 @@ export function DocLayout(props: DocLayoutProps) {
     afterDocContent,
     beforeOutline,
     afterOutline,
-    beforeSidebar,
-    afterSidebar,
     components,
   } = props;
   const { frontmatter } = useFrontmatter();
 
   const isOverviewPage = frontmatter?.overview ?? false;
 
-  const showSidebar = false;
   const showDocFooter = false;
   
   const { outline: showOutline = true, pageType } = frontmatter || {};
@@ -53,10 +49,8 @@ export function DocLayout(props: DocLayoutProps) {
 
   const {
     isOutlineOpen,
-    isSidebarOpen,
     sidebarMenu,
     asideLayoutRef,
-    sidebarLayoutRef,
   } = useSidebarMenu();
 
   const { rspressDocRef } = useWatchToc();
@@ -67,7 +61,7 @@ export function DocLayout(props: DocLayoutProps) {
       {beforeDoc}
       <div className="rp-doc-layout__container">
         {/* Sidebar - 强制隐藏 */}
-        {showSidebar ? (
+        {/* {showSidebar ? (
           <aside
             className={clsx(
               'rp-doc-layout__sidebar',
@@ -85,12 +79,12 @@ export function DocLayout(props: DocLayoutProps) {
             className="rp-doc-layout__sidebar-placeholder"
             style={isDocWide ? { width: '0' } : {}}
           ></aside>
-        )}
+        )} */}
 
         {/* Main document content */}
         {isOverviewPage ? (
           <>
-            <main className="rp-doc-layout__overview">
+            <main className="rp-doc-layout__overview rp-doc-layout__overview--no-sidebar">
               {beforeDocContent}
               <Overview
                 content={<DocContent components={components} isOverviewPage />}
@@ -102,6 +96,7 @@ export function DocLayout(props: DocLayoutProps) {
           <div
             className={clsx(
               'rp-doc-layout__doc',
+              'rp-doc-layout__doc--no-sidebar',
               isDocWide && 'rp-doc-layout__doc--wide',
             )}
           >

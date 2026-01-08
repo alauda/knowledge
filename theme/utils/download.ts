@@ -37,7 +37,6 @@ export const downloadFile = (url: string, filename: string) => {
         a.download = filename;
         a.style.display = "none";
         document.body.appendChild(a);
-        console.log(a);
         a.click();
         setTimeout(() => {
           window.URL.revokeObjectURL(blobUrl);

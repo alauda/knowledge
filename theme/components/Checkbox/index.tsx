@@ -39,7 +39,10 @@ export default forwardRef<HTMLInputElement, CheckboxProps>(
           onChange={handleChange}
           disabled={disabled}
           className={`
-            w-4 h-4 
+            w-[16px] h-[16px] 
+            min-w-[16px] min-h-[16px] 
+            max-w-[16px] max-h-[16px] 
+            flex-shrink-0 
             rounded 
             border border-gray-300 
             bg-white 
