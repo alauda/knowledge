@@ -26,7 +26,9 @@ This document describes how to deploy and use an egress gateway on ACP.
 
 ## Installation Steps
 
-> NOTICE: All the commands mentioned in this document MUST be executed in a master node of the cluster where you want to create an egress gateway.
+:::note
+All the commands mentioned in this document MUST be executed in a master node of the cluster where you want to create an egress gateway.
+:::
 
 ### Installing Multus CNI
 
