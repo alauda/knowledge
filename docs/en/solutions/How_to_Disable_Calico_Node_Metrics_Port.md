@@ -28,8 +28,9 @@ The procedure is generic and applies to environments where `calico-node` exposes
 
 Follow the steps below to disable Felix Prometheus metrics and close port `9091`.
 
-> **Warning**
-> Updating the `calico-node` DaemonSet will cause the pods to restart. This may temporarily disrupt container networking. Plan a maintenance window and proceed with caution.
+:::warning
+Updating the `calico-node` DaemonSet will cause the pods to restart. This may temporarily disrupt container networking. Plan a maintenance window and proceed with caution.
+:::
 
 ### Step 1: Disable Felix Prometheus metrics
 

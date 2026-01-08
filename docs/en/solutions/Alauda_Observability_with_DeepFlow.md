@@ -11,7 +11,9 @@ kind:
 
 This guide provides the installation and deployment process of DeepFlow on Alauda Container Platform(ACP), and thoroughly explain how to leverage DeepFlow's powerful tracing, metrics, and logging capabilities to achieve comprehensive observability for the ACP platform and its running applications. By following this guide, readers will master best practices for DeepFlow within the ACP environment, thereby significantly enhancing operational efficiency and ensuring business continuity.
 
-> NOTICE: All the commands mentioned in this document MUST be executed in a master node of the cluster where you want to install DeepFlow.
+:::note
+All the commands mentioned in this document MUST be executed in a master node of the cluster where you want to install DeepFlow.
+:::
 
 ## Prerequisites
 
