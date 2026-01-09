@@ -4,7 +4,7 @@ kind:
 products: 
   - Alauda Application Services
 ProductsVersion:
-   - 3.x,4.x
+   - 4.x
 id: KB251000009
 ---
 
@@ -27,7 +27,7 @@ This guide provides comprehensive instructions for setting up PostgreSQL hot sta
 
 ## Environment Information
 
-Applicable Versions: >=ACP 4.1.0, PostgreSQL Operator: >=4.1.8
+Applicable Versions: >=ACP 4.1.0, PostgreSQL Operator: >=4.1.8 (LoadBalancer support requires PostgreSQL Operator >=4.2.0)
 
 ## Quick Reference
 
@@ -51,13 +51,13 @@ Applicable Versions: >=ACP 4.1.0, PostgreSQL Operator: >=4.1.8
 
 Before implementing PostgreSQL hot standby, ensure you have:
 
-- ACP v4.1.0 or later with PostgreSQL Operator v4.1.7 or later
+- ACP v4.1.0 or later with PostgreSQL Operator v4.1.8 or later
 - PostgreSQL plugin deployed following the [installation guide](https://docs.alauda.io/postgresql/4.1/installation.html)
 - Basic understanding of PostgreSQL operations and Kubernetes concepts
 - Read the [PostgreSQL Operator Basic Operations Guide](https://docs.alauda.io/postgresql/4.1/functions/index.html) to understand basic operations such as creating instances, backups, and monitoring
 - **Storage Resources**:
   - Primary cluster: Storage capacity should accommodate database size plus Write-Ahead Log (WAL) files (typically 10-20% additional space)
-  - Standby cluster: Same storage capacity as primary cluster to ensure complete data replication
+  - Standby cluster: Same storage capacity as primary cluster to ensure complete data replication. Ensure the **StorageClass performance (IOPS/Throughput)** matches the primary cluster to prevent performance degradation after failover.
   - Consider future growth and set appropriate `max_slot_wal_keep_size` (minimum 10GB recommended)
 - **Network Resources**:
   - Intra-cluster: Standard Kubernetes network performance
@@ -70,6 +70,7 @@ Before implementing PostgreSQL hot standby, ensure you have:
 ### Important Limitations
 
 - Source and target clusters must run the same PostgreSQL version
+- The `replSvcType` of the primary and standby clusters must be the same
 - Standby clusters initially support single replica instances only
 - Multi-replica high availability on standby clusters requires configuration adjustments after promotion
 - Monitoring and alerting for replication status require additional setup
@@ -157,18 +158,19 @@ stringData:
 **Important Notes:**
 - Replace the namespace with your standby cluster's namespace
 - The username and password must match the primary cluster's admin credentials
-- Use base64 encoding for the credentials (e.g., `echo -n "postgres" | base64`)
 - The secret name should be referenced in the standby cluster configuration as `bootstrapSecret`
 
 3. Execute checkpoint on primary cluster to ensure WAL consistency:
-```sql
-CHECKPOINT;
+```bash
+kubectl exec -n <primary-namespace> <primary-pod-name> -- psql -c "CHECKPOINT;"
 ```
 
 **Using Web Console:**
 
 1. Create instance with single replica configuration
 2. Switch to YAML view and configure replication:
+
+> **Note**: Replace `peerHost` with the actual Service IP of your Primary cluster.
 
 ```yaml
 spec:
@@ -233,6 +235,8 @@ $ kubectl -n $NAMESPACE exec $STANDBY_CLUSTER-0 -- patronictl list
 
 #### Primary Cluster Configuration
 
+**Option 1: Using NodePort**
+
 Configure primary cluster with NodePort service type for cross-cluster access:
 
 ```yaml
@@ -245,9 +249,49 @@ spec:
       max_slot_wal_keep_size: '10GB'
 ```
 
+**Option 2: Using LoadBalancer (Requires Operator v4.2.0+)**
+
+Configure primary cluster with LoadBalancer service type:
+
+```yaml
+spec:
+  clusterReplication:
+    enabled: true
+    replSvcType: LoadBalancer
+  postgresql:
+    parameters:
+      max_slot_wal_keep_size: '10GB'
+```
+
 #### Standby Cluster Configuration
 
+**Preparation:**
+
+1. Obtain primary cluster admin credentials
+2. Create bootstrap secret in the standby cluster namespace containing the primary cluster's admin credentials:
+
+```yaml
+kind: Secret
+apiVersion: v1
+metadata:
+  name: standby-bootstrap-secret
+  namespace: standby-namespace  # Replace with your standby cluster namespace
+type: kubernetes.io/basic-auth
+stringData:
+  username: postgres
+  password: "<YOUR-PRIMARY-ADMIN-PASSWORD>"
+```
+
+3. Execute checkpoint on primary cluster to ensure WAL consistency:
+```bash
+kubectl exec -n <primary-namespace> <primary-pod-name> -- psql -c "CHECKPOINT;"
+```
+
+**Option 1: Connecting via NodePort**
+
 Configure standby cluster to connect via NodePort:
+
+> **Note**: Replace `peerHost` with the actual Node IP of the Primary cluster and `peerPort` with the NodePort.
 
 ```yaml
 spec:
@@ -264,11 +308,54 @@ spec:
     bootstrapSecret: standby-bootstrap-secret
 ```
 
+**Option 2: Connecting via LoadBalancer (Requires Operator v4.2.0+)**
+
+Obtain the External IP from the primary cluster's service after creation, then configure the standby:
+
+```yaml
+spec:
+  postgresql:
+    parameters:
+      max_slot_wal_keep_size: '10GB'
+  numberOfInstances: 1
+  clusterReplication:
+    enabled: true
+    isReplica: true
+    peerHost: 203.0.113.10     # Primary cluster LoadBalancer External IP
+    peerPort: 5432             # Standard PostgreSQL port (or the specific LB port)
+    replSvcType: LoadBalancer
+    bootstrapSecret: standby-bootstrap-secret
+```
+
+**Verification Step:**
+
+After the standby cluster is successfully running, verify that its External IP is correctly recorded in the primary cluster's `sys_operator.multi_cluster_info` table.
+
+1. Check the table content on the primary cluster:
+   ```bash
+   kubectl exec <primary-pod> -- psql -x -c "SELECT * FROM sys_operator.multi_cluster_info;"
+   ```
+
+2. If the `external_ip` field for the standby cluster record is empty, manually update it with the standby cluster's LoadBalancer IP.
+
+   First, retrieve the LoadBalancer IP of the standby cluster:
+   ```bash
+   kubectl get svc -n <standby-namespace> <standby-cluster-name>
+   ```
+   Note the `EXTERNAL-IP` from the output.
+
+   Then, execute the update:
+   ```bash
+   kubectl exec <primary-pod> -- psql -c "UPDATE sys_operator.multi_cluster_info SET external_ip='<STANDBY-LB-IP>' WHERE cluster_name='<standby-cluster-name>';"
+   ```
+
 ## Normal Operations
 
 ### Switchover Procedure
 
 To avoid split-brain scenarios, perform planned switchovers in two phases:
+
+> **Important**: For Cross-cluster setups, ensure you switch your `kubectl` context to the appropriate cluster before executing commands.
 
 #### Phase 1: Demote Primary to Standby
 
@@ -279,10 +366,10 @@ kubectl -n $NAMESPACE patch pg $PRIMARY_CLUSTER --type=merge -p '{"spec":{"clust
 Verify demotion:
 ```bash
 $ kubectl -n $NAMESPACE exec $PRIMARY_CLUSTER-0 -- patronictl list
-+ Cluster: acid-primray (7562204126329651274) -------+---------+----+-----------+
++ Cluster: acid-primary (7562204126329651274) -------+---------+----+-----------+
 | Member         | Host             | Role           | State   | TL | Lag in MB |
 +----------------+------------------+----------------+---------+----+-----------+
-| acid-primray-0 | fd00:10:16::29b3 | Standby Leader | running |  1 |           |
+| acid-primary-0 | fd00:10:16::29b3 | Standby Leader | running |  1 |           |
 +----------------+------------------+----------------+---------+----+-----------+
 ```
 
@@ -394,7 +481,8 @@ Standby cluster failures don't affect primary operations. Recovery is automatic:
 
 #### Replication Slot Errors
 
-**Symptoms**: 
+##### Symptoms
+
 - "Exception when changing replication slots" errors in standby node logs
 - Specific error traceback showing TypeError with '>' not supported between 'int' and 'NoneType'
 - Example error log:
@@ -408,9 +496,13 @@ TypeError: '>' not supported between instances of 'int' and 'NoneType'
 ```
 - Cluster operations and replication may continue to function normally despite these errors
 
-**Cause**: Known bug in the current Patroni version that will be fixed in future releases
+##### Cause
 
-**Solution**: Manually drop the problematic replication slot:
+Known bug in the current Patroni version that will be fixed in future releases
+
+##### Solution
+
+Manually drop the problematic replication slot:
 
 ```sql
 SELECT pg_catalog.pg_drop_replication_slot('xdc_hotstandby');
@@ -418,11 +510,16 @@ SELECT pg_catalog.pg_drop_replication_slot('xdc_hotstandby');
 
 #### Standby Join Failures
 
-**Symptoms**: Standby cluster fails to join replication, data synchronization issues
+##### Symptoms
 
-**Cause**: Excessive data drift between clusters preventing WAL-based recovery
+Standby cluster fails to join replication, data synchronization issues
 
-**Solution**:
+##### Cause
+
+Excessive data drift between clusters preventing WAL-based recovery
+
+##### Solution
+
 1. Delete the failed standby cluster
 2. Remove cluster metadata from primary:
 ```sql
@@ -432,9 +529,12 @@ DELETE FROM sys_operator.multi_cluster_info WHERE cluster_name='<failed-cluster-
 
 #### Data Synchronization Issues
 
-**Symptoms**: Replication lag increases, standby falls behind
+##### Symptoms
 
-**Solutions**:
+Replication lag increases, standby falls behind
+
+##### Solutions
+
 - Verify network connectivity between clusters
 - Check storage performance on both clusters
 - Monitor `max_slot_wal_keep_size` setting to ensure sufficient WAL retention
@@ -484,7 +584,7 @@ kubectl exec -it <primary-pod> -- psql -c "SHOW max_slot_wal_keep_size;"
 
 **Primary Cluster Configuration:**
 - `clusterReplication.enabled`: Enable replication (true/false)
-- `clusterReplication.replSvcType`: Service type (ClusterIP/NodePort)
+- `clusterReplication.replSvcType`: Service type (ClusterIP/NodePort/LoadBalancer)
 - `postgresql.parameters.max_slot_wal_keep_size`: WAL retention size
 
 **Standby Cluster Configuration:**
