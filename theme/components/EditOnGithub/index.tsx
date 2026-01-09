@@ -43,7 +43,7 @@ function EditIcon() {
 
 export const EditOnGithub = () => {
   const { editLink, issueLink } = useEditLink();
-  const t = useI18n();
+  const t = useI18n<typeof import("i18n")>();
 
   return (
     <div className="mb-2">

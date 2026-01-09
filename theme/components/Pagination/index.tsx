@@ -15,7 +15,7 @@ interface PageItem {
 
 const Pagination = ({ currentPage, totalPage, onChange }: PaginationProps) => {
   const neighBorsNumber = 1;
-  const t = useI18n();
+  const t = useI18n<typeof import("i18n")>();
 
   const paginationItems = useMemo(() => {
     const items: Array<PageItem> = [];

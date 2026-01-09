@@ -4,7 +4,7 @@ import { useMemo } from "react";
 export const BreadCrumb = () => {
   const { page, siteData } = usePageData();
   const { base } = siteData;
-  const t = useI18n();
+  const t = useI18n<typeof import("i18n")>();
 
   const href = useMemo(() => {
     if (!base) {
@@ -14,7 +14,7 @@ export const BreadCrumb = () => {
   }, [page, base]);
 
   return (
-    <div className="rp-mb-10">
+    <div className="breadcrumb">
       <span className="editLink" style={{ paddingLeft: 0 }}>
         <a href={href}>
           <span>{t("knowledge_title")}</span>

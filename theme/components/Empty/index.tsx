@@ -1,4 +1,4 @@
-import { useThemeState } from "@rspress/core/theme";
+import { useThemeState } from "@rspress/core/theme-original";
 import React from "react";
 
 interface EmptyStateProps {
