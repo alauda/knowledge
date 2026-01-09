@@ -77,7 +77,8 @@ export default () => {
           return (
             <CustomMDXComponent.a
               {...props}
-              href=""
+              href="#"
+              download={pathname.split("/").pop() || "download"}
               onClick={(e: Event) => {
                 e.preventDefault();
                 e.stopPropagation();
@@ -86,6 +87,7 @@ export default () => {
                   props.href,
                   pathname.split("/").pop() || "download"
                 );
+                return false;
               }}
             ></CustomMDXComponent.a>
           );

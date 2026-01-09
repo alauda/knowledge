@@ -19,7 +19,7 @@
 }
 
 .paginationItem {
-  font-weight: 500;
+  font-weight: var(--font-weight-medium);
   cursor: pointer;
   font-size: var(--text-sm);
   line-height: var(--tw-leading, var(--text-sm--line-height));
