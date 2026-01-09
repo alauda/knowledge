@@ -4,9 +4,9 @@ kind:
 products:
   - Alauda Application Services
 ProductsVersion:
-  - '3.x,4.x'
+  - 4.x
 id: KB251000009
-sourceSHA: c8c3e3d32cc8cc9b580bf1f0594e05b16c93698c162705e0176444050ab80281
+sourceSHA: 5eae23c900f5a89e26fec5e773b3d048e043b171bab6d6bbf975d3c26b823250
 ---
 
 # PostgreSQL 热备份集群配置指南
@@ -21,14 +21,14 @@ sourceSHA: c8c3e3d32cc8cc9b580bf1f0594e05b16c93698c162705e0176444050ab80281
 
 本指南提供了使用 Alauda 容器平台 (ACP) 设置 PostgreSQL 热备份集群的全面说明。该解决方案支持集群内和跨集群的复制，能够实现：
 
-- **最小数据丢失**：持续的流式复制确保最小的数据丢失（通常最多几秒的数据）
-- **手动故障切换**：在需要时可控地提升备用集群的高可用性
-- **地理冗余**：跨集群复制用于灾难恢复
+- **最小数据丢失**：持续流式复制确保最小的数据丢失（通常最多几秒的数据）
+- **手动故障转移**：在需要时可控地提升备用集群的高可用性
+- **地理冗余**：跨集群复制以实现灾难恢复
 - **操作简便**：通过 Kubernetes 自定义资源实现自动配置
 
 ## 环境信息
 
-适用版本：>=ACP 4.1.0，PostgreSQL Operator：>=4.1.8
+适用版本：>=ACP 4.1.0，PostgreSQL Operator：>=4.1.8（负载均衡器支持需要 PostgreSQL Operator >=4.2.0）
 
 ## 快速参考
 
@@ -36,34 +36,34 @@ sourceSHA: c8c3e3d32cc8cc9b580bf1f0594e05b16c93698c162705e0176444050ab80281
 
 - **主集群**：接受读/写操作的主 PostgreSQL 集群
 - **备用集群**：持续从主集群同步的副本集群
-- **流式复制**：集群之间实时的 WAL（预写日志）复制
+- **流式复制**：集群之间的实时 WAL（预写日志）复制
 - **切换**：在维护期间计划的集群提升/降级
-- **故障切换**：当主集群不可用时的紧急提升
+- **故障转移**：当主集群不可用时的紧急提升
 
 ### 常见用例
 
-| 场景                  | 推荐方法                | 章节参考                                 |
-| --------------------- | ----------------------- | ----------------------------------------- |
-| **高可用性**          | 集群内复制              | [集群内设置](#intra-cluster-setup)      |
-| **灾难恢复**          | 跨集群复制              | [跨集群设置](#cross-cluster-setup)      |
-| **计划维护**          | 切换操作步骤            | [正常操作](#normal-operations)           |
-| **紧急恢复**          | 手动故障切换操作步骤    | [灾难恢复](#disaster-recovery)           |
+| 场景                  | 推荐方法              | 章节参考                                   |
+| --------------------- | --------------------- | ------------------------------------------ |
+| **高可用性**          | 集群内复制            | [集群内设置](#intra-cluster-setup)       |
+| **灾难恢复**          | 跨集群复制            | [跨集群设置](#cross-cluster-setup)       |
+| **计划维护**          | 切换操作步骤          | [正常操作](#normal-operations)            |
+| **紧急恢复**          | 手动故障转移步骤      | [灾难恢复](#disaster-recovery)            |
 
 ## 先决条件
 
 在实施 PostgreSQL 热备份之前，请确保您具备：
 
-- ACP v4.1.0 或更高版本，PostgreSQL Operator v4.1.7 或更高版本
+- ACP v4.1.0 或更高版本，PostgreSQL Operator v4.1.8 或更高版本
 - 按照 [安装指南](https://docs.alauda.io/postgresql/4.1/installation.html) 部署 PostgreSQL 插件
 - 对 PostgreSQL 操作和 Kubernetes 概念有基本了解
 - 阅读 [PostgreSQL Operator 基本操作指南](https://docs.alauda.io/postgresql/4.1/functions/index.html)，了解创建实例、备份和监控等基本操作
 - **存储资源**：
-  - 主集群：存储容量应能容纳数据库大小加上预写日志 (WAL) 文件（通常额外 10-20% 的空间）
-  - 备用集群：与主集群相同的存储容量，以确保完整的数据复制
+  - 主集群：存储容量应能容纳数据库大小加上预写日志 (WAL) 文件（通常需要额外 10-20% 的空间）
+  - 备用集群：与主集群相同的存储容量以确保完整的数据复制。确保 **StorageClass 性能 (IOPS/吞吐量)** 与主集群匹配，以防故障转移后性能下降。
   - 考虑未来增长并设置适当的 `max_slot_wal_keep_size`（建议最小 10GB）
 - **网络资源**：
   - 集群内：标准 Kubernetes 网络性能
-  - 跨集群：低延迟连接（<20ms）和足够的带宽（生产工作负载至少 1 Gbps）
+  - 跨集群：低延迟连接 (<20ms) 和足够的带宽（生产工作负载至少 1 Gbps）
   - 稳定的网络连接以防止复制中断
 - **计算资源**：
   - 主集群：足够的 CPU 和内存以支持数据库操作和复制过程
@@ -72,6 +72,7 @@ sourceSHA: c8c3e3d32cc8cc9b580bf1f0594e05b16c93698c162705e0176444050ab80281
 ### 重要限制
 
 - 源集群和目标集群必须运行相同的 PostgreSQL 版本
+- 主集群和备用集群的 `replSvcType` 必须相同
 - 备用集群最初仅支持单个副本实例
 - 备用集群上的多副本高可用性需要在提升后进行配置调整
 - 监控和警报复制状态需要额外的设置
@@ -84,7 +85,7 @@ sourceSHA: c8c3e3d32cc8cc9b580bf1f0594e05b16c93698c162705e0176444050ab80281
 
 **使用 Web 控制台：**
 
-请参考 [创建实例文档](https://docs.alauda.io/postgresql/4.1/functions/01_create_instance.html) 获取创建 PostgreSQL 实例的详细说明。然后，启用主集群的热备份配置：
+请参考 [创建实例文档](https://docs.alauda.io/postgresql/4.1/functions/01_create_instance.html) 获取创建 PostgreSQL 实例的详细说明。然后，为热备份启用主集群配置：
 
 1. 完成基本的 PostgreSQL 配置
 2. 切换到 YAML 视图并启用集群复制：
@@ -98,7 +99,7 @@ spec:
       max_slot_wal_keep_size: '10GB'
 ```
 
-4. 完成实例创建并等待运行状态
+4. 完成实例创建并等待状态为 Running
 
 **使用命令行：**
 
@@ -159,21 +160,22 @@ stringData:
 
 **重要说明：**
 
-- 将命名空间替换为您的备用集群的命名空间
+- 用您的备用集群命名空间替换命名空间
 - 用户名和密码必须与主集群的管理员凭据匹配
-- 使用 base64 编码凭据（例如，`echo -n "postgres" | base64`）
 - 密钥名称应在备用集群配置中引用为 `bootstrapSecret`
 
 3. 在主集群上执行检查点以确保 WAL 一致性：
 
-```sql
-CHECKPOINT;
+```bash
+kubectl exec -n <primary-namespace> <primary-pod-name> -- psql -c "CHECKPOINT;"
 ```
 
 **使用 Web 控制台：**
 
 1. 创建单副本配置的实例
 2. 切换到 YAML 视图并配置复制：
+
+> **注意**：将 `peerHost` 替换为主集群的实际服务 IP。
 
 ```yaml
 spec:
@@ -184,7 +186,7 @@ spec:
   clusterReplication:
     enabled: true
     isReplica: true
-    peerHost: 10.96.140.172  # 主集群读写服务 IP
+    peerHost: 10.96.140.172  # 主集群的读写服务 IP
     peerPort: 5432
     replSvcType: ClusterIP
     bootstrapSecret: standby-bootstrap-secret
@@ -239,6 +241,8 @@ $ kubectl -n $NAMESPACE exec $STANDBY_CLUSTER-0 -- patronictl list
 
 #### 主集群配置
 
+**选项 1：使用 NodePort**
+
 配置主集群为 NodePort 服务类型以便跨集群访问：
 
 ```yaml
@@ -251,9 +255,50 @@ spec:
       max_slot_wal_keep_size: '10GB'
 ```
 
+**选项 2：使用 LoadBalancer（需要 Operator v4.2.0+）**
+
+配置主集群为 LoadBalancer 服务类型：
+
+```yaml
+spec:
+  clusterReplication:
+    enabled: true
+    replSvcType: LoadBalancer
+  postgresql:
+    parameters:
+      max_slot_wal_keep_size: '10GB'
+```
+
 #### 备用集群配置
 
+**准备工作：**
+
+1. 获取主集群管理员凭据
+2. 在备用集群命名空间中创建引导密钥，包含主集群的管理员凭据：
+
+```yaml
+kind: Secret
+apiVersion: v1
+metadata:
+  name: standby-bootstrap-secret
+  namespace: standby-namespace  # 替换为您的备用集群命名空间
+type: kubernetes.io/basic-auth
+stringData:
+  username: postgres
+  password: "<YOUR-PRIMARY-ADMIN-PASSWORD>"
+```
+
+3. 在主集群上执行检查点以确保 WAL 一致性：
+
+```bash
+kubectl exec -n <primary-namespace> <primary-pod-name> -- psql -c "CHECKPOINT;"
+```
+
+**选项 1：通过 NodePort 连接**
+
 配置备用集群通过 NodePort 连接：
+
+> **注意**：将 `peerHost` 替换为主集群的实际节点 IP，`peerPort` 替换为 NodePort。
 
 ```yaml
 spec:
@@ -270,13 +315,59 @@ spec:
     bootstrapSecret: standby-bootstrap-secret
 ```
 
+**选项 2：通过 LoadBalancer 连接（需要 Operator v4.2.0+）**
+
+在创建主集群服务后获取外部 IP，然后配置备用集群：
+
+```yaml
+spec:
+  postgresql:
+    parameters:
+      max_slot_wal_keep_size: '10GB'
+  numberOfInstances: 1
+  clusterReplication:
+    enabled: true
+    isReplica: true
+    peerHost: 203.0.113.10     # 主集群 LoadBalancer 外部 IP
+    peerPort: 5432             # 标准 PostgreSQL 端口（或特定的 LB 端口）
+    replSvcType: LoadBalancer
+    bootstrapSecret: standby-bootstrap-secret
+```
+
+**验证步骤：**
+
+在备用集群成功运行后，验证其外部 IP 是否正确记录在主集群的 `sys_operator.multi_cluster_info` 表中。
+
+1. 检查主集群中的表内容：
+   ```bash
+   kubectl exec <primary-pod> -- psql -x -c "SELECT * FROM sys_operator.multi_cluster_info;"
+   ```
+
+2. 如果备用集群记录的 `external_ip` 字段为空，请手动使用备用集群的 LoadBalancer IP 更新它。
+
+   首先，获取备用集群的 LoadBalancer IP：
+
+   ```bash
+   kubectl get svc -n <standby-namespace> <standby-cluster-name>
+   ```
+
+   注意输出中的 `EXTERNAL-IP`。
+
+   然后，执行更新：
+
+   ```bash
+   kubectl exec <primary-pod> -- psql -c "UPDATE sys_operator.multi_cluster_info SET external_ip='<STANDBY-LB-IP>' WHERE cluster_name='<standby-cluster-name>';"
+   ```
+
 ## 正常操作
 
 ### 切换操作步骤
 
-为避免脑裂场景，进行计划切换时分为两个阶段：
+为避免脑裂场景，执行计划切换时分为两个阶段：
 
-#### 阶段 1：将主节点降级为备用
+> **重要**：对于跨集群设置，请确保在执行命令之前将您的 `kubectl` 上下文切换到适当的集群。
+
+#### 阶段 1：将主集群降级为备用
 
 ```bash
 kubectl -n $NAMESPACE patch pg $PRIMARY_CLUSTER --type=merge -p '{"spec":{"clusterReplication":{"isReplica":true},"numberOfInstances":1}}'
@@ -286,14 +377,14 @@ kubectl -n $NAMESPACE patch pg $PRIMARY_CLUSTER --type=merge -p '{"spec":{"clust
 
 ```bash
 $ kubectl -n $NAMESPACE exec $PRIMARY_CLUSTER-0 -- patronictl list
-+ Cluster: acid-primray (7562204126329651274) -------+---------+----+-----------+
++ Cluster: acid-primary (7562204126329651274) -------+---------+----+-----------+
 | Member         | Host             | Role           | State   | TL | Lag in MB |
 +----------------+------------------+----------------+---------+----+-----------+
-| acid-primray-0 | fd00:10:16::29b3 | Standby Leader | running |  1 |           |
+| acid-primary-0 | fd00:10:16::29b3 | Standby Leader | running |  1 |           |
 +----------------+------------------+----------------+---------+----+-----------+
 ```
 
-#### 阶段 2：将备用提升为主节点
+#### 阶段 2：将备用提升为主
 
 ```bash
 kubectl -n $NAMESPACE patch pg $STANDBY_CLUSTER --type=merge -p '{"spec":{"clusterReplication":{"isReplica":false},"numberOfInstances":2}}'
@@ -383,14 +474,14 @@ $ kubectl exec $(kubectl -n $NAMESPACE get pod -l spilo-role=master,cluster-name
 
 当主集群故障且无法及时恢复时：
 
-1. **需要手动干预**：使用手动故障切换程序提升备用集群
+1. **需要手动干预**：使用手动故障转移步骤提升备用集群
 2. 更新应用程序连接以指向新的主集群
 3. 当原主集群恢复时，将其重新配置为备用
 4. **注意**：根据故障时的复制延迟，可能会发生一些数据丢失
 
 ### 备用集群故障
 
-备用集群故障不会影响主操作。恢复是自动的：
+备用集群故障不会影响主集群的操作。恢复是自动的：
 
 1. 修复导致备用故障的根本问题
 2. 备用将自动重新连接并重新同步
@@ -402,10 +493,10 @@ $ kubectl exec $(kubectl -n $NAMESPACE get pod -l spilo-role=master,cluster-name
 
 #### 复制槽错误
 
-**症状**：
+##### 症状
 
 - 备用节点日志中出现“更改复制槽时异常”错误
-- 特定错误回溯显示 TypeError，提示 '>' 不支持 'int' 和 'NoneType' 之间的比较
+- 特定错误回溯显示 TypeError，'>' 不支持 'int' 和 'NoneType' 之间的比较
 - 示例错误日志：
 
 ```text
@@ -417,11 +508,15 @@ Traceback (most recent call last):
 TypeError: '>' not supported between instances of 'int' and 'NoneType'
 ```
 
-- 尽管出现这些错误，集群操作和复制可能仍会正常运行
+- 尽管出现这些错误，集群操作和复制可能仍然正常运行
 
-**原因**：当前 Patroni 版本中的已知错误，将在未来版本中修复
+##### 原因
 
-**解决方案**：手动删除有问题的复制槽：
+当前 Patroni 版本中的已知错误，将在未来版本中修复
+
+##### 解决方案
+
+手动删除有问题的复制槽：
 
 ```sql
 SELECT pg_catalog.pg_drop_replication_slot('xdc_hotstandby');
@@ -429,11 +524,15 @@ SELECT pg_catalog.pg_drop_replication_slot('xdc_hotstandby');
 
 #### 备用加入失败
 
-**症状**：备用集群无法加入复制，数据同步问题
+##### 症状
 
-**原因**：集群之间的数据漂移过大，导致无法基于 WAL 进行恢复
+备用集群未能加入复制，数据同步问题
 
-**解决方案**：
+##### 原因
+
+集群之间的数据漂移过大，导致无法基于 WAL 恢复
+
+##### 解决方案
 
 1. 删除失败的备用集群
 2. 从主集群中删除集群元数据：
@@ -446,15 +545,17 @@ DELETE FROM sys_operator.multi_cluster_info WHERE cluster_name='<failed-cluster-
 
 #### 数据同步问题
 
-**症状**：复制延迟增加，备用落后
+##### 症状
 
-**解决方案**：
+复制延迟增加，备用落后
+
+##### 解决方案
 
 - 验证集群之间的网络连接
 - 检查两个集群的存储性能
-- 监控 `max_slot_wal_keep_size` 设置，以确保足够的 WAL 保留
+- 监控 `max_slot_wal_keep_size` 设置以确保足够的 WAL 保留
 - 如果资源不足，考虑增加资源
-- **重要**：定期监控对于最小化故障切换期间的潜在数据丢失至关重要
+- **重要**：定期监控对于最小化故障转移期间潜在的数据丢失至关重要
 
 ### 诊断命令
 
@@ -485,15 +586,15 @@ kubectl exec -it <primary-pod> -- psql -c "SHOW max_slot_wal_keep_size;"
 ### 配置建议
 
 - 适当设置 `max_slot_wal_keep_size`（生产环境建议至少 10GB）
-- 使用具有足够 IOPS 的专用存储类以支持数据库工作负载
-- 实施复制延迟和集群健康的监控
-- 在非生产环境中定期测试故障切换程序
+- 为数据库工作负载使用专用存储类，确保足够的 IOPS
+- 实施复制延迟和集群健康监控
+- 在非生产环境中定期测试故障转移程序
 
 ### 操作指南
 
-- 在维护窗口期间与应用程序协调进行切换
+- 在维护窗口期间与应用程序协调执行切换
 - 监控主集群和备用集群的磁盘空间
-- 保持集群之间 PostgreSQL 版本的同步
+- 保持集群之间 PostgreSQL 版本同步
 - 除了复制外，保持最近的备份
 
 ## 参考
@@ -503,7 +604,7 @@ kubectl exec -it <primary-pod> -- psql -c "SHOW max_slot_wal_keep_size;"
 **主集群配置：**
 
 - `clusterReplication.enabled`：启用复制（true/false）
-- `clusterReplication.replSvcType`：服务类型（ClusterIP/NodePort）
+- `clusterReplication.replSvcType`：服务类型（ClusterIP/NodePort/LoadBalancer）
 - `postgresql.parameters.max_slot_wal_keep_size`：WAL 保留大小
 
 **备用集群配置：**
@@ -520,13 +621,13 @@ kubectl exec -it <primary-pod> -- psql -c "SHOW max_slot_wal_keep_size;"
 
 ## 总结
 
-本指南提供了在 Alauda 容器平台上实施 PostgreSQL 热备份集群的全面说明。该解决方案通过流式复制和手动故障切换管理提供企业级高可用性和灾难恢复能力。
+本指南提供了在 Alauda 容器平台上实施 PostgreSQL 热备份集群的全面说明。该解决方案通过流式复制和手动故障转移管理提供企业级的高可用性和灾难恢复能力。
 
 实现的关键好处：
 
 - **最小数据丢失**：持续的 WAL 复制最小化潜在的数据丢失（通常为几秒）
-- **可控故障切换**：手动提升确保适当验证并降低风险
+- **可控故障转移**：手动提升确保适当的验证并降低风险
 - **灵活部署**：支持集群内和跨集群场景
-- **生产就绪**：经过实战检验的配置模式，适用于企业工作负载
+- **生产就绪**：经过实战检验的企业工作负载配置模式
 
-通过遵循这些实践，组织可以确保其 PostgreSQL 数据库满足严格的可用性和恢复目标，同时保持对关键故障切换操作的控制。
+通过遵循这些实践，组织可以确保其 PostgreSQL 数据库满足严格的可用性和恢复目标，同时保持对关键故障转移操作的控制。
