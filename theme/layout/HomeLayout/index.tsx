@@ -1,4 +1,4 @@
-import { usePageData } from "@rspress/runtime";
+import { usePageData } from "@rspress/core/runtime";
 import { ReactNode } from "react";
 
 import { HomeBanner } from "../../components/HomeBanner";

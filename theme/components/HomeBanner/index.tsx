@@ -1,4 +1,4 @@
-import { useI18n } from "@rspress/runtime";
+import { useI18n } from "@rspress/core/runtime";
 
 interface StyledProps {
   className?: string;
