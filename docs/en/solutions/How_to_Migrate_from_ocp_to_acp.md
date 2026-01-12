@@ -819,7 +819,6 @@ delete_ingress() {
 convert_route() {
     local rf="$1" od="$2"
     local name=$(yq '.metadata.name' "$rf")
-    local ns=$(yq '.metadata.namespace // "default"' "$rf")
     local host=$(yq '.spec.host' "$rf")
     local path=$(yq '.spec.path // "/"' "$rf")
     local svc=$(yq '.spec.to.name' "$rf")
@@ -834,7 +833,6 @@ apiVersion: gateway.networking.k8s.io/v1alpha2
 kind: TLSRoute
 metadata:
   name: ${name}
-  namespace: ${ns}
 spec:
   parentRefs:
     - name: ${GATEWAY_NAME}
@@ -854,7 +852,6 @@ apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute
 metadata:
   name: ${name}
-  namespace: ${ns}
 spec:
   parentRefs:
     - name: ${GATEWAY_NAME}
@@ -1043,6 +1040,8 @@ metadata:
   namespace: cpaas-system
 ```
 
+[!WARNING] **UID Consistency**: The `runAsUser: 1000` must match the `APP_GID` configured in the Starlark transformer. If you modified APP_GID, update this value accordingly.
+
 > [!TIP] **Image Replacement**: Replace `alpine:latest` with an accessible image in your environment.
 
 **2. StorageClass Mapping ConfigMap** - Transform Storage Classes:
@@ -1126,9 +1125,9 @@ Once data restore is done, delete these temp Pods (Formal app will be deployed u
 kubectl delete pods -n ${TARGET_NS} -l velero.io/restore-name=${RESTORE_NAME}
 
 # 2. Clean related temp resources (ServiceAccount, Secret, ConfigMap)
-kubectl delete serviceaccounts -n ${TARGET_NS} -l velero.io/restore-name=${RESTORE_NAME} 2>/dev/null || true
-kubectl delete secrets -n ${TARGET_NS} -l velero.io/restore-name=${RESTORE_NAME} 2>/dev/null || true
-kubectl delete configmaps -n ${TARGET_NS} -l velero.io/restore-name=${RESTORE_NAME} 2>/dev/null || true
+kubectl delete serviceaccounts -n ${TARGET_NS} -l velero.io/restore-name=${RESTORE_NAME} --ignore-not-found=true
+kubectl delete secrets -n ${TARGET_NS} -l velero.io/restore-name=${RESTORE_NAME} --ignore-not-found=true
+kubectl delete configmaps -n ${TARGET_NS} -l velero.io/restore-name=${RESTORE_NAME} --ignore-not-found=true
 
 # 3. Verify PVC still exists and data intact
 kubectl get pvc -n ${TARGET_NS}
