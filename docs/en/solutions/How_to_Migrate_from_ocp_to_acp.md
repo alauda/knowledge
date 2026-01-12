@@ -190,9 +190,6 @@ EOF
 # 3. Verify BSL Status
 kubectl get bsl -n cpaas-system -w
 # Wait for Phase to become Available
-
-# 4. Verify visibility of source backups (after a backup exists)
-velero -n cpaas-system backup get
 ```
 
 :::info
