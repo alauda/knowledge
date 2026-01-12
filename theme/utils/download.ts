@@ -21,13 +21,13 @@ export const getPathname = (href: string): string => {
   }
 };
 
-const getBasePath = (): string => {
+const getBasePath = (base?: string): string => {
   const pathname = window.location.pathname;
   const match = pathname.match(/^(\/[^/]+\/)/);
   if (match) {
     return match[1];
   }
-  return "/knowledge/";
+  return base || "/";
 };
 
 const normalizePath = (base: string, path: string): string => {
@@ -36,21 +36,20 @@ const normalizePath = (base: string, path: string): string => {
   return `${normalizedBase}${normalizedPath}`.replace(/\/+/g, "/");
 };
 
-export const downloadFile = (url: string, filename: string) => {
+export const downloadFile = (url: string, filename: string, base?: string) => {
   const isSameOrigin =
     url.startsWith("/") || url.startsWith(window.location.origin);
 
   if (isSameOrigin) {
-    const basePath = getBasePath();
+    const basePath = getBasePath(base);
     let path = url;
     if (url.startsWith(window.location.origin)) {
       try {
         path = new URL(url).pathname;
-      } catch {
-      }
+      } catch {}
     }
     const normalizedUrl = normalizePath(basePath, path);
-    
+
     fetch(normalizedUrl)
       .then((res) =>
         res.ok ? res.blob() : Promise.reject(new Error("Failed to fetch"))
@@ -79,4 +78,3 @@ export const downloadFile = (url: string, filename: string) => {
     setTimeout(() => document.body.removeChild(a), 100);
   }
 };
-

@@ -46,6 +46,9 @@ const Badges = () => {
 };
 
 export default () => {
+  const { siteData } = usePageData();
+  const base = siteData.base;
+
   useEffect(() => {
     window.parent.postMessage(window.location.href, "*");
   }, []);
@@ -85,7 +88,8 @@ export default () => {
                 e.stopImmediatePropagation?.();
                 downloadFile(
                   props.href,
-                  pathname.split("/").pop() || "download"
+                  pathname.split("/").pop() || "download",
+                  base
                 );
                 return false;
               }}
