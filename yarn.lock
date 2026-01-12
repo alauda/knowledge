@@ -73,9 +73,9 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@alauda/doom@npm:^1.18.1":
-  version: 1.18.1
-  resolution: "@alauda/doom@npm:1.18.1"
+"@alauda/doom@npm:^1.18.2":
+  version: 1.18.2
+  resolution: "@alauda/doom@npm:1.18.2"
   dependencies:
     "@alauda/doom-export": "npm:^0.3.1"
     "@cspell/eslint-plugin": "npm:^9.4.0"
@@ -149,7 +149,7 @@ __metadata:
     yoctocolors: "npm:^2.1.2"
   bin:
     doom: lib/cli/index.js
-  checksum: 10c0/353df25bd9a80cfe6dd39ba95052da8fb02bbf7d40f0a23b81eef90c331c0203258a61e143a856c6d43258717754dd714498cb4c3bcb8e9c4b41a3aec071e23a
+  checksum: 10c0/e74a29e69f982cc844509318c7e24be74b5ec71047fab187600bb630e8923b30d0141e464b181dc7c5925d715344c842e46189308510d8372a47eb8923d2087b
   languageName: node
   linkType: hard
 
@@ -5533,7 +5533,7 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "doomslayer@workspace:."
   dependencies:
-    "@alauda/doom": "npm:^1.18.1"
+    "@alauda/doom": "npm:^1.18.2"
     "@tailwindcss/postcss": "npm:^4.1.12"
     "@ts-stack/markdown": "npm:^1.5.0"
     autoprefixer: "npm:^10.4.21"
