@@ -950,8 +950,10 @@ Starlark script uses `APP_GID = 1000` as default, generally suitable for most ap
 
 Adjust artifacts under `myproject/source/source-versionchanged` directory as needed.
 
-:::warning
-Make sure the image registry is accessible to the ACP cluster.
+:::warning Adjust Artifacts
+Make sure the **image registry** is accessible to the ACP cluster.
+
+Remember to adjust replicas and other configurations as needed.
 :::
 
 #### 3.3.3 Namespace and PSA Configuration
@@ -1150,6 +1152,10 @@ kubectl delete cm change-storage-class restore-helper-modifiers -n cpaas-system
 ### 4.2 Deploy Application Layer
 
 Starlark script has automatically injected fsGroup for StatefulSet and Deployment with PVC mounts. Kubernetes will handle permissions automatically.
+
+:::warning Adjust Replicas and Configs
+Remember to adjust replicas and other configurations in `myproject/source/source-versionchanged/` as needed before deployment.
+:::
 
 ```bash
 # Apply all transformed resources in myproject/source/source-versionchanged
