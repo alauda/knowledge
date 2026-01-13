@@ -854,6 +854,13 @@ spec:
 EOF
         log "Created TLSRoute: ${name}"
     else
+        # Determine path match type (exact vs prefix)
+        local path_type="PathPrefix"
+        if [[ "$path" != */ && "$path" != *\* ]]; then
+            # Path without trailing slash or wildcard suggests exact match
+            path_type="Exact"
+        fi
+
         cat > "${od}/${name}-httproute.yaml" << EOF
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute
@@ -868,7 +875,7 @@ spec:
   rules:
     - matches:
         - path:
-            type: PathPrefix
+            type: ${path_type}
             value: "${path}"
       backendRefs:
         - name: ${svc}
