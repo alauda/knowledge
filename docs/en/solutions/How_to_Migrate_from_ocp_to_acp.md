@@ -325,11 +325,7 @@ done
 # - Reference other namespace: other-project/my-app:dev
 # These cannot be resolved in target ACP cluster, need to replace with externally accessible image address (Docker Reference)
 
-echo "=== 1. Process ImageStream Image References ==="
-
 # 1.1 Export Mapping Table
-echo "Exporting cluster-wide ImageStream mappings..."
-rm -f image_mappings.txt
 
 # 1.1.1 Export full path mappings for all namespaces (namespace/name:tag)
 oc get is -A -o go-template='{{range .items}}{{$ns := .metadata.namespace}}{{$name := .metadata.name}}{{range .status.tags}}{{$ns}}/{{$name}}:{{.tag}}={{(index .items 0).dockerImageReference}}{{"\n"}}{{end}}{{end}}' > image_mappings.txt
@@ -363,12 +359,7 @@ while IFS='=' read -r key value; do
   fi
 done < image_mappings.txt
 
-echo "✅ Image Replacement Completed"
-
-# 2. Collect Metadata
-move2kube collect -s source -o source/
-
-# 3. Create Transformer Config
+# 2. Create Transformer Config
 mkdir -p customizations/ocp-to-acp
 
 cat << 'EOF' > customizations/ocp-to-acp/transformer.yaml
@@ -396,7 +387,7 @@ spec:
       disabled: false
 EOF
 
-# 4. Create Starlark Script
+# 3. Create Starlark Script
 cat << 'EOF' > customizations/ocp-to-acp/transformer.star
 # Move2Kube Starlark: OCP to ACP Transformation
 # 
@@ -789,7 +780,7 @@ def inject_fsgroup(resource):
     return True
 EOF
 
-# 5. Create Route → Gateway API Post-processing Script
+# 4. Create Route → Gateway API Post-processing Script
 # Feature: Delete Ingress + Generate HTTPRoute/TLSRoute from source Route
 cat << 'SCRIPT' > convert_routes_to_gateway.sh
 #!/bin/bash
