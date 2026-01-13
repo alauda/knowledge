@@ -1,4 +1,4 @@
-import { usePageData } from "@rspress/core/runtime";
+import { usePageData, withBase } from "@rspress/core/runtime";
 import {
   Badge,
   LastUpdated,
@@ -10,8 +10,8 @@ import { useEffect } from "react";
 import { BreadCrumb } from "../components/BreadCrumb";
 import { DocID } from "../components/DocID";
 import { EditOnGithub } from "../components/EditOnGithub";
-import { downloadFile, getPathname, shouldDownload } from "../utils/download";
 import HomeLayout from "./HomeLayout";
+import { getPathname, shouldDownload } from "theme/utils/download";
 
 export function normalizeTags(tags: string | string[]): string[] {
   if (!tags) {
@@ -46,9 +46,6 @@ const Badges = () => {
 };
 
 export default () => {
-  const { siteData } = usePageData();
-  const base = siteData.base;
-
   useEffect(() => {
     window.parent.postMessage(window.location.href, "*");
   }, []);
@@ -77,23 +74,15 @@ export default () => {
             return <CustomMDXComponent.a {...props}></CustomMDXComponent.a>;
           }
 
+          const href = props.href ? withBase(props.href) : props.href;
+
           return (
-            <CustomMDXComponent.a
+            <a
               {...props}
-              href="#"
+              href={href}
               download={pathname.split("/").pop() || "download"}
-              onClick={(e: Event) => {
-                e.preventDefault();
-                e.stopPropagation();
-                e.stopImmediatePropagation?.();
-                downloadFile(
-                  props.href,
-                  pathname.split("/").pop() || "download",
-                  base
-                );
-                return false;
-              }}
-            ></CustomMDXComponent.a>
+              className="rp-link"
+            ></a>
           );
         },
       }}
