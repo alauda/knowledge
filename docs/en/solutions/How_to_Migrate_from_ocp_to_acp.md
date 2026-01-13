@@ -73,7 +73,7 @@ flowchart LR
 
 > [!NOTE] **Reading Guide**: Execute tasks in each phase from left to right. Each phase has detailed commands and verification steps.
 
-## 0. Environment & Tool Preparation (T-Minus N Days)
+## 0. Environment and Tool Preparation
 
 ### 0.1 Tool Check
 
@@ -196,7 +196,26 @@ kubectl get bsl -n cpaas-system -w
 The Target Cluster's Velero BSL must be **identical** to the Source Cluster's configuration to access backups created by the source.
 :::
 
-## 1. Countdown Prep Phase (T-Minus 3 Days)
+### 0.3 Image Registry Preparation
+
+To ensure the smooth deployment of applications in the target ACP cluster, you need to ensure that the container images are accessible. You can choose one of the following methods based on your network environment and security requirements:
+
+#### Option 1: Connect OCP Registry to ACP (Recommended for Direct Connectivity)
+
+If the ACP cluster can directly access the network where the OCP registry resides, you can configure ACP to trust and pull images from the OCP registry.
+
+1. **Trust CA Certificate**: Import the CA certificate of the OCP internal registry into the ACP cluster's trust store. This ensures that ACP can establish a secure connection with the OCP registry.
+2. **Configure Pull Secrets**: Create a global pull secret in the ACP cluster containing the valid credentials (username and password/token) for the OCP registry. This authorizes ACP to pull images from the protected OCP registry.
+
+#### Option 2: Manually Push Images to ACP Registry (For Isolated Environments)
+
+If there is no direct network connectivity between the clusters, or if you prefer to consolidate images, you can manually transfer them.
+
+1. **Pull from OCP**: On a bastion host that has access to the OCP registry, pull the required application images to the local machine.
+2. **Retag Images**: Retag the local images to match the target ACP registry's address and project structure.
+3. **Push to ACP**: Push the retagged images to the ACP cluster's built-in registry or your external organization registry.
+
+## 1. Countdown Prep Phase
 
 **Goal**: Expose risks early and compress data sync time from "hours" to "minutes". Start this 3 days before the maintenance window.
 
@@ -238,20 +257,20 @@ velero -n openshift-adp backup describe migration-warmup-$(date +%F)
 
 **Action**: Log in to DNS provider console, change the TTL of business domains (e.g., `myapp.example.com`) from default to **60s**.
 
-## 2. Final Backup & Shutdown
+## 2. Final Backup and Shutdown
 
 > [!CAUTION] **Velero File System Backup Scope**  
 > ✅ File Storage Data (Logs, Static Files, Configs, etc.)  
 > ❌ **Database Data** (MySQL, PostgreSQL, MongoDB, etc.) - Please use database native backup tools.
 
-### 2.1 Execute Final Hot Backup (Pod Running)
+### 2.1 Execute Final Hot Backup
 
 :::info
 **Hot Backup Principle**: Execute backup while Pod is running, then **immediately shut down** after backup completes.
 Since warm-up backup was performed, this is an **Incremental Backup** (transfers differences only), extremely fast, compressing downtime window to minimum (seconds/minutes).
 :::
 
-**Backup Strategy (Same as Warm-up)**:
+**Backup Strategy**:
 
 - **✅ Must Backup**: Config data, static files, user uploads.
 - **❌ Suggest Skip**: Databases (use dump), Temp Caches (Redis/Memcached).
@@ -287,7 +306,7 @@ oc get pods -n ${SOURCE_NS} --field-selector=status.phase=Running
 
 > [!WARNING] `demo` → Your actual Namespace name.
 
-## 3. Resource Transformation & Auto Injection
+## 3. Resource Transformation and Auto Injection
 
 > [!NOTE] **Scheme**: Move2Kube runs all built-in transformations (DeploymentConfig→Deployment, Route→Ingress, etc.), post-processing script **deletes Ingress**, and generates HTTPRoute/TLSRoute based on original Routes.
 
@@ -909,7 +928,7 @@ move2kube transform --qa-skip
 **GATEWAY_NAME**=my-gw **GATEWAY_NAMESPACE**=ingress ./convert_routes_to_gateway.sh source myproject/source/source-versionchanged
 :::
 
-### 3.3 Artifact Correction & Namespace Prep
+### 3.3 Artifact Correction and Namespace Prep
 
 > [!NOTE] **Output Directory Selection**: We use `source-versionchanged` directory, which contains converted ACP YAMLs (Deployment, Service, etc.) and has the clearest structure.
 
@@ -929,11 +948,13 @@ Starlark script uses `APP_GID = 1000` as default, generally suitable for most ap
 
 #### 3.3.2 Artifact Verification List
 
-Enter output directory `myproject/source/source-versionchanged` and verify all the artifacts.
+Adjust artifacts under `myproject/source/source-versionchanged` directory as needed.
 
-> `myproject/source/source-versionchanged` is the default output directory of Move2Kube transformation. Adjust if you used a different output path.
+:::warning
+Make sure the image registry is accessible to the ACP cluster.
+:::
 
-#### 3.3.3 Namespace & PSA Configuration
+#### 3.3.3 Namespace and PSA Configuration
 
 ```bash
 # 1. Create Target Namespace (If not exists)
@@ -948,7 +969,7 @@ kubectl label ns ${TARGET_NS} pod-security.kubernetes.io/enforce=baseline --over
 
 **Order**: Restore PVC Data → Deploy Applications (fsGroup handles permissions).
 
-### 4.1 Restore Storage Layer (PVC + Data)
+### 4.1 Restore Storage Layer
 
 :::info
 **Cross-cluster Prerequisite**: Target Cluster Velero must be configured with same BackupStorageLocation (BSL) as Source Cluster to access backups.
@@ -1131,11 +1152,11 @@ kubectl delete cm change-storage-class restore-helper-modifiers -n cpaas-system
 Starlark script has automatically injected fsGroup for StatefulSet and Deployment with PVC mounts. Kubernetes will handle permissions automatically.
 
 ```bash
-# kubectl automatically sorts by Kind (Namespace → ConfigMap/Secret → Service → Deployment, etc.)
-kubectl apply -f . -n ${TARGET_NS}
+# Apply all transformed resources in myproject/source/source-versionchanged
+kubectl -n ${TARGET_NS} apply -f myproject/source/source-versionchanged/
 ```
 
-## 5. Verification & Cutover
+## 5. Verification and Cutover
 
 ### 5.1 Status Check
 
