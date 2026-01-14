@@ -1,5 +1,5 @@
 ---
-products: 
+products:
   - Alauda Application Services
 kind:
   - Solution
