@@ -1,5 +1,5 @@
 import { useI18n, usePageData } from "@rspress/core/runtime";
-import { Card, useFullTextSearch } from "@rspress/core/theme";
+import { useFullTextSearch } from "@rspress/core/theme-original";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { PostInfo, postInfos } from "virtual-post-data";
@@ -13,10 +13,12 @@ import {
   usePersistSearchParams,
   useSessionStorage,
 } from "../../hooks/SessionStorage";
+import { Card } from "../Card";
 import Checkbox from "../Checkbox";
 import Pagination from "../Pagination";
 import { PostList } from "../PostList";
 import Search from "../Search";
+import React from "react";
 
 const SEARCHED_LIMIT = 1000;
 const PAGE_SIZE = 10;
@@ -37,7 +39,7 @@ export const HomeContent: React.FC = () => {
   const [searchedPosts, setSearchedPosts] = useState<PostInfo[]>([]);
   const { page, siteData } = usePageData();
   const [searchInitialized, setSearchInitialized] = useState<Boolean[]>([]);
-  const t = useI18n();
+  const t = useI18n<typeof import("i18n")>();
 
   const searchFull = useCallback(
     async (keyword: string) => {
