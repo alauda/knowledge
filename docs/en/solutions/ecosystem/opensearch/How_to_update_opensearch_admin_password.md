@@ -53,7 +53,7 @@ admin:
   - "admin"
   description: "Demo admin user"
 kibanaserver:
-  hash: "$2y$12$lJsHWchewGVcGlYgE3js/O4bkTZynETyXChAITarCHLz8cuaueIyq" # It is recommended to set a separate complex password for kibanaserver; this is just an example
+  hash: "$2y$12$7N9cKpE4qvVvFQkHh8q6yeTqF5qYzGZQeO9Tn3lYp7dS5h3bC2u3a" # It is recommended to set a separate complex password for kibanaserver; this is just an example
   reserved: true
   description: "Demo kibanaserver user"
 ```
