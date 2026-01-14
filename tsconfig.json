@@ -9,9 +9,15 @@
     "skipLibCheck": true,
     "strict": true,
     "target": "ESNext",
+    "baseUrl": ".",
     "paths": {
-      "*": ["./src/*"]
+      "i18n": ["./docs/i18n.json"]
     }
   },
-  "include": ["plugins/plugin-post-resolver"]
+  "include": [
+    "plugins/**/*",
+    "theme/**/*",
+    "*.d.ts",
+    "virtual-modules.d.ts"
+  ]
 }

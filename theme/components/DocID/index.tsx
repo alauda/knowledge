@@ -8,7 +8,7 @@ export const DocID = ({ id }: { id?: string }) => {
     return id || (pageData.page.frontmatter.id as string);
   }, [id, pageData]);
   return docID ? (
-    <div className="rp-flex rp-text-sm rp-text-text-2 rp-leading-6 sm:rp-leading-8 rp-font-medium">
+    <div className="post-meta">
       ID: {docID}
     </div>
   ) : (

@@ -1,11 +1,17 @@
-import { usePageData } from "@rspress/core/runtime";
-import { Badge, LastUpdated, Layout } from "@rspress/core/theme";
-import { useEffect, useMemo } from "react";
+import { usePageData, withBase } from "@rspress/core/runtime";
+import {
+  Badge,
+  LastUpdated,
+  Layout,
+  getCustomMDXComponent,
+} from "@rspress/core/theme-original";
+import { useEffect } from "react";
 
 import { BreadCrumb } from "../components/BreadCrumb";
 import { DocID } from "../components/DocID";
 import { EditOnGithub } from "../components/EditOnGithub";
 import HomeLayout from "./HomeLayout";
+import { getPathname, shouldDownload } from "theme/utils/download";
 
 export function normalizeTags(tags: string | string[]): string[] {
   if (!tags) {
@@ -40,23 +46,12 @@ const Badges = () => {
 };
 
 export default () => {
-  const { page } = usePageData();
-
-  const uiSwitch = useMemo(
-    () =>
-      page.pageType === "doc"
-        ? { showSidebar: false, showDocFooter: false }
-        : {},
-    [page]
-  );
-
   useEffect(() => {
     window.parent.postMessage(window.location.href, "*");
   }, []);
 
   return (
     <Layout
-      uiSwitch={uiSwitch}
       HomeLayout={HomeLayout}
       beforeDocContent={
         <>
@@ -71,24 +66,26 @@ export default () => {
         </div>
       }
       beforeOutline={<EditOnGithub></EditOnGithub>}
-      // components={{
-      //   h1: (props: any) => {
-      //     const CustomMDXComponent = getDefaultCustomMDXComponent();
-      //     const { page } = usePageData();
-      //     return page.pageType === "doc" ? (
-      //       <>
-      //         <CustomMDXComponent.h1 {...props}   />
+      components={{
+        a: (props: any) => {
+          const CustomMDXComponent = getCustomMDXComponent();
+          const pathname = getPathname(props.href);
+          if (!shouldDownload(pathname)) {
+            return <CustomMDXComponent.a {...props}></CustomMDXComponent.a>;
+          }
 
-      //         <div className="flex justify-between" style={{marginTop:'-1.5rem'}}>
-      //           <LastUpdated></LastUpdated>
-      //           <DocID></DocID>
-      //         </div>
-      //       </>
-      //     ) : (
-      //       <CustomMDXComponent.h1 {...props} />
-      //     );
-      //   },
-      // }}
+          const href = props.href ? withBase(props.href) : props.href;
+
+          return (
+            <a
+              {...props}
+              href={href}
+              download={pathname.split("/").pop() || "download"}
+              className="rp-link"
+            ></a>
+          );
+        },
+      }}
     ></Layout>
   );
 };
