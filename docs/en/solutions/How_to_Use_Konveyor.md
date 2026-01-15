@@ -64,10 +64,7 @@ Ensure all pods are in `Running` or `Completed` state before proceeding.
 >
 > ```bash
 > # Delete common resources labeled for the Tackle instance
-> kubectl delete pvc,configmap,secret,sa -l app.kubernetes.io/instance=tackle -n <namespace>
->
-> # Verify that no Tackle-related resources remain
-> kubectl get all,pvc,configmap,secret,sa -n <namespace> | grep tackle || true
+> kubectl delete pvc,configmap,secret,sa -l app.kubernetes.io/instance=tackle -n konveyor-tackle
 > ```
 
 ### Configuration Options
