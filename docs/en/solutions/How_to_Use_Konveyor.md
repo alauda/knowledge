@@ -46,6 +46,8 @@ spec:
   rwx_supported: true
   hub_bucket_storage_class: nfs        # Replace with your RWX StorageClass
   rwo_storage_class: sc-topolvm         # Replace with your RWO StorageClass
+  cache_storage_class: nfs
+  cache_data_volume_size: 100Gi
 EOF
 ```
 
