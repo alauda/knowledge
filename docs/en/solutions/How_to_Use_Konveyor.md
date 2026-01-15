@@ -93,7 +93,7 @@ Ensure all pods are in `Running` or `Completed` state before proceeding.
 1. Set up port forwarding:
 
    ```bash
-   kubectl -n konveyor-tackle port-forward services/tackle-ui 8080:8080
+   kubectl -n konveyor-tackle port-forward service/tackle-ui 8080:8080
    ```
 
 2. Open [http://127.0.0.1:8080](http://127.0.0.1:8080) in your browser.
