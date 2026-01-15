@@ -22,7 +22,7 @@ Konveyor is a CNCF (Cloud Native Computing Foundation) project that provides a m
 
 ## Install Konveyor Operator
 
-Download the Konveyor Operator plugin from [Alauda Cloud Console](https://cloud.alauda.io/) Marketplace, and install it using the [violet tool](https://docs.alauda.io/container_platform/4.1/configure/backup/install.html).
+Download the Konveyor Operator plugin from [Alauda Cloud Console](https://cloud.alauda.io/) Marketplace, and according [Upload Packages](https://docs.alauda.io/container_platform/4.2/extend/upload_package.html) to upload the plugin to cluster.
 
 ## Deploy Konveyor Hub (Tackle)
 
@@ -258,7 +258,7 @@ Konveyor provides a modular architecture for application modernization:
 | **Konveyor AI (KAI)** | RAG-based AI assistant for automated code remediation. Uses Solved Incident Store for context-aware code patch generation. |
 | **Move2Kube** | Automates conversion from Cloud Foundry/OpenShift to Kubernetes. Three phases: Collect, Plan, Transform. Generates Dockerfiles, K8s manifests, Helm Charts, and Tekton Pipelines. |
 | **Forklift** | VM migration tool for moving VMs from VMware vSphere, oVirt, or OpenStack to KubeVirt. |
-| **Crane** | Kubernetes-to-Kubernetes migration tool for cluster upgrades or cross-distribution migrations. Handles PV data sync with Restic or VolSync. (Note: Community version is currently inactive). |
+| **Crane** | Kubernetes-to-Kubernetes migration tool for cluster upgrades or cross-distribution migrations. Handles PV data sync with Restic or VolSync. |
 
 ## Reference
 
