@@ -60,7 +60,15 @@ kubectl get pods -n konveyor-tackle
 Ensure all pods are in `Running` or `Completed` state before proceeding.
 
 > [!WARNING]
-> The Tackle instance must be in the same namespace as the konveyor-operator. Otherwise, resources may not be cleaned up properly when deleted.
+> The Tackle instance must be deployed in the same namespace as the `konveyor-operator`. If you deploy it in a different namespace, some resources created by the operator (such as PersistentVolumeClaims, ConfigMaps, Secrets, and ServiceAccounts) might not be automatically deleted when the Tackle custom resource is removed. In that case, you must manually clean up these resources in the affected namespaces, for example:
+>
+> ```bash
+> # Delete common resources labeled for the Tackle instance
+> kubectl delete pvc,configmap,secret,sa -l app.kubernetes.io/instance=tackle -n <namespace>
+>
+> # Verify that no Tackle-related resources remain
+> kubectl get all,pvc,configmap,secret,sa -n <namespace> | grep tackle || true
+> ```
 
 ### Configuration Options
 
