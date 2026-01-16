@@ -270,8 +270,7 @@ spec:
 Exclude system indices to avoid conflicts with OpenSearch's internal indices:
 
 ```bash
-curl -k -X POST "https://localhost:9200/_snapshot/migration_repo/snapshot_1/_restore" \
-  -u "admin:admin" \
+curl -k -u "admin:admin" -X POST "https://localhost:9200/_snapshot/migration_repo/snapshot_1/_restore" \
   -H 'Content-Type: application/json' -d'
 {
   "indices": "-.kibana*,-.security*,-.monitoring*",
@@ -285,10 +284,10 @@ Verify the index count and document count match the source cluster:
 
 ```bash
 # Check indices
-curl -X GET "https://localhost:9200/_cat/indices?v" -u "admin:admin" -k
+curl -k -u "admin:admin" -X GET "https://localhost:9200/_cat/indices?v"
 
 # Check document count
-curl -X GET "https://localhost:9200/<index_name>/_count" -u "admin:admin" -k
+curl -k -u "admin:admin" -X GET "https://localhost:9200/<index_name>/_count"
 ```
 
 ### Phase 2: Reindex and Upgrade to OpenSearch 3.x
@@ -415,15 +414,21 @@ spec:
 
 ### Procedure
 
-#### Step 1: Configure the Remote Whitelist in OpenSearch
+#### Step 1: Configure OpenSearch for Remote Reindex
 
-Modify `opensearch.yml` (via Helm ConfigMap or Operator configuration) to allow connections to the ES 8.x host:
+Add the following configurations to `OpenSearchCluster` CR's `additionalConfig`:
 
 ```yaml
-reindex.remote.whitelist: ["es8-cluster-host:9200"]
+spec:
+  general:
+    additionalConfig:
+      # Allow connections to ES 8.x host (OpenSearch 3.x uses 'allowlist')
+      reindex.remote.allowlist: "es8-cluster-host:9200"
+      # Disable SSL verification for self-signed certificates
+      reindex.ssl.verification_mode: "none"
 ```
 
-> **Note**: OpenSearch nodes must be restarted after this configuration change.
+> **Note**: Nodes will be restarted after applying this configuration change.
 
 #### Step 2: Create Index Templates (Optional but Recommended)
 
@@ -434,18 +439,18 @@ If your ES 8.x indices rely on specific settings or mappings, it is recommended 
 Initiate the reindex request from the OpenSearch cluster. Set `wait_for_completion=false` to run asynchronously.
 
 ```bash
-curl -X POST "http://localhost:9200/_reindex?wait_for_completion=false" -H 'Content-Type: application/json' -d'
+curl -k -u "admin:admin" -X POST "https://localhost:9200/_reindex?wait_for_completion=false" -H 'Content-Type: application/json' -d'
 {
   "source": {
     "remote": {
-      "host": "http://es8-cluster-host:9200",
+      "host": "https://es8-cluster-host:9200",
       "username": "elastic",
-      "password": "password"
+      "password": "<password>"
     },
-    "index": "my-index-001"
+    "index": "migration_test"
   },
   "dest": {
-    "index": "my-index-001"
+    "index": "migration_test"
   }
 }'
 ```
@@ -463,16 +468,28 @@ curl -X POST "http://localhost:9200/_reindex?wait_for_completion=false" -H 'Cont
 Use the Task ID from the previous step to check the task status:
 
 ```bash
-curl -X GET "http://localhost:9200/_tasks/N6q0j8s-T0m0j8s-T0m0j8:123456"
+curl -k -u "admin:admin" -X GET "https://localhost:9200/_tasks/N6q0j8s-T0m0j8s-T0m0j8:123456"
 ```
 
 You can also view all reindex tasks:
 
 ```bash
-curl -X GET "http://localhost:9200/_tasks?actions=*reindex&detailed=true"
+curl -k -u "admin:admin" -X GET "https://localhost:9200/_tasks?actions=*reindex&detailed=true"
 ```
 
-> Monitor the `response.created` (documents created) and `response.total` (total documents) fields in the response.
+> If the response shows `{"nodes":{}}`, it means no reindex tasks are currently running. The task may have completed or failed. Check the target index document count to verify.
+
+#### Step 5: Verify Reindex Completion
+
+Verify that the index was created and contains data:
+
+```bash
+# Check if index exists and document count
+curl -k -u "admin:admin" -X GET "https://localhost:9200/migration_test/_count"
+
+# Compare with source ES 8.x cluster
+curl -k -u "elastic:<password>" -X GET "https://es8-cluster-host:9200/migration_test/_count"
+```
 
 ## Client Migration Guide
 
