@@ -129,7 +129,7 @@ spec:
 ```
 
 :::note
-All three approaches will trigger a rolling restart of nodes to load the newly installed plugin.
+Both approaches will trigger a rolling restart of nodes to load the newly installed plugin.
 :::
 
 ### Procedure
