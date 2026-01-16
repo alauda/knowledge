@@ -502,8 +502,7 @@ For detailed migration instructions, refer to the [OpenSearch Clients Documentat
 
 ## References
 
-- [OpenSearch Migration Guide](https://opensearch.org/docs/latest/upgrade-or-migrate/)
-- [Snapshot and Restore](https://opensearch.org/docs/latest/tuning-your-cluster/availability-and-recovery/snapshots/snapshot-restore/)
-- [Reindex API](https://opensearch.org/docs/latest/api-reference/document-apis/reindex/)
-- [Keystore Management](https://opensearch.org/docs/latest/security/configuration/security-settings/)
-- [OpenSearch Clients](https://opensearch.org/docs/latest/clients/)
+- [OpenSearch Migration Guide](https://docs.opensearch.org/latest/upgrade-or-migrate/)
+- [Snapshot and Restore](https://docs.opensearch.org/latest/tuning-your-cluster/availability-and-recovery/snapshots/snapshot-restore/)
+- [Reindex API](https://docs.opensearch.org/latest/api-reference/document-apis/reindex/)
+- [Keystore Management](https://docs.opensearch.org/latest/security/configuration/opensearch-keystore/)
