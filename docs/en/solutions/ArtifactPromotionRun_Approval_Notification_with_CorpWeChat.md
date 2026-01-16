@@ -3,6 +3,7 @@ products:
    - Alauda DevOps
 kind:
    - Solution
+id: KB260100009
 ---
 
 # ArtifactPromotionRun Approval Event Notification with CorpWeChat

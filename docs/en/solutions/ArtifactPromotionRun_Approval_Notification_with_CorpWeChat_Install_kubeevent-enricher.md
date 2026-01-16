@@ -3,6 +3,7 @@ products:
    - Alauda DevOps
 kind:
    - Solution
+id: KB260100010
 ---
 
 # Kube Event Enricher Installation Guide

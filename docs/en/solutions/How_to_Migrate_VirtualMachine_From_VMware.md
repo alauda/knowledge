@@ -5,6 +5,7 @@ products:
   - Alauda Container Platform
 ProductsVersion:
   - 4.2.x
+id: KB260100011
 ---
 
 # Migrating VMware Virtual Machines to Alauda Container Platform Virtualization
