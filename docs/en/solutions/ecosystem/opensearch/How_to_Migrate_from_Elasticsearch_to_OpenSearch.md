@@ -14,7 +14,7 @@ Applicable Version: OpenSearch Operator ~= 2.8.*, OpenSearch ~= 2.x / 3.x
 This document provides detailed guidance for migrating from Elasticsearch (ES) to OpenSearch, covering two primary scenarios:
 
 1. **Elasticsearch 7.10 → OpenSearch 2.x → OpenSearch 3.x**: Using Snapshot & Restore (two-phase migration)
-2. **Elasticsearch 8.x/9.x → OpenSearch 3.x**: Using Reindex from Remote
+2. **Elasticsearch 8.x → OpenSearch 3.x**: Using Reindex from Remote
 
 It also includes client migration guides for Java, Python, and Golang.
 
@@ -24,23 +24,15 @@ It also includes client migration guides for Java, Python, and Golang.
 | :--- | :--- | :--- | :--- |
 | **ES 7.10** | **OS 2.x** | Snapshot & Restore | ✅ Direct restore supported |
 | **ES 7.10** | **OS 3.x** | Snapshot & Restore → Upgrade | ⚠️ Must restore to OS 2.x first, then upgrade |
-| **ES 8.x/9.x** | **OS 3.x** | Reindex from Remote | ✅ Direct migration supported |
+| **ES 8.x** | **OS 3.x** | Reindex from Remote | ✅ Direct migration supported |
 
 :::warning Key Compatibility Note
 
 - **ES 7.10 → OS 3.x direct restore is NOT supported**. OpenSearch 3.x requires indices to be created with OpenSearch 2.0.0+.
 - ES 7.10 snapshots must be restored to OpenSearch 2.x first, then upgrade the cluster to OS 3.x.
-- ES 8.x/9.x use incompatible Lucene versions, so Snapshot & Restore is not available; use Reindex from Remote instead.
+- ES 8.x use incompatible Lucene versions, so Snapshot & Restore is not available; use Reindex from Remote instead.
 
 :::
-
-### Migration Path Diagram
-
-```mermaid
-flowchart LR
-    ES710["ES 7.10"] -->|"Snapshot & Restore"| OS2["OS 2.x"] -->|"Upgrade"| OS3a["OS 3.x"]
-    ES8["ES 8.x/9.x"] -->|"Reindex from Remote"| OS3b["OS 3.x"]
-```
 
 ## Migrate from ES 7.10 to OpenSearch 2.x to 3.x
 
@@ -51,13 +43,13 @@ This migration requires a **two-phase approach**:
 
 ### Prerequisites
 
-- A shared storage backend (e.g., S3 Bucket, GCS Bucket, or NFS) accessible by both source and target clusters.
+- A shared storage backend (e.g., S3 Bucket, GCS Bucket) accessible by both source and target clusters.
 - The `repository-s3` plugin (or corresponding storage backend plugin) installed on both clusters.
 
 #### Check if Plugin is Installed
 
 ```bash
-curl -X GET "http://localhost:9200/_cat/plugins?v" -u "<username>:<password>"
+curl -u "elastic:<password>" -X GET "http://localhost:9200/_cat/plugins?v"
 ```
 
 #### Install repository-s3 Plugin
@@ -170,7 +162,7 @@ For security reasons, avoid including access keys directly in API request bodies
 2. Reload the secure settings:
 
     ```bash
-    curl -X POST "http://localhost:9200/_nodes/reload_secure_settings"
+    curl -u "elastic:<password>" -X POST "http://localhost:9200/_nodes/reload_secure_settings"
     ```
 
 **On OpenSearch:**
@@ -212,7 +204,8 @@ Use the Operator's declarative configuration:
 #### Step 2: Register Snapshot Repository on Source Cluster (ES 7.10)
 
 ```bash
-curl -X PUT "http://localhost:9200/_snapshot/migration_repo" -H 'Content-Type: application/json' -d'
+curl -u "elastic:<password>" -X PUT "http://localhost:9200/_snapshot/migration_repo" \
+  -H 'Content-Type: application/json' -d'
 {
   "type": "s3",
   "settings": {
@@ -225,7 +218,8 @@ curl -X PUT "http://localhost:9200/_snapshot/migration_repo" -H 'Content-Type: a
 #### Step 3: Create a Full Snapshot
 
 ```bash
-curl -X PUT "http://localhost:9200/_snapshot/migration_repo/snapshot_1?wait_for_completion=true" -H 'Content-Type: application/json' -d'
+curl -u "elastic:<password>" -X PUT "http://localhost:9200/_snapshot/migration_repo/snapshot_1?wait_for_completion=true" \
+  -H 'Content-Type: application/json' -d'
 {
   "indices": "*",
   "ignore_unavailable": true,
@@ -263,6 +257,7 @@ spec:
           bucket: my-migration-bucket
           base_path: es_710_backup
           readonly: "true"
+    ...
 ```
 
 #### Step 5: Restore the Snapshot
@@ -302,18 +297,16 @@ For each restored index, create a new index and reindex the data:
 
 ```bash
 # 1. Get the original index mapping and extract the mappings object using sed
-curl -s -X GET "https://localhost:9200/migration_test/_mapping" -u "admin:admin" -k | \
+curl -s -u "admin:admin" -k -X GET "https://localhost:9200/migration_test/_mapping" | \
   sed 's/^{"migration_test"://' | sed 's/}$//' > mapping.json
 
 # 2. Create a new index with the same mapping (add suffix _v2)
-curl -X PUT "https://localhost:9200/migration_test_v2" \
-  -u "admin:admin" -k \
+curl -u "admin:admin" -k -X PUT "https://localhost:9200/migration_test_v2" \
   -H 'Content-Type: application/json' \
   -d @mapping.json
 
 # 3. Reindex data from old index to new index
-curl -X POST "https://localhost:9200/_reindex?wait_for_completion=true" \
-  -u "admin:admin" -k \
+curl -u "admin:admin" -k -X POST "https://localhost:9200/_reindex?wait_for_completion=true" \
   -H 'Content-Type: application/json' -d'
 {
   "source": { "index": "migration_test" },
@@ -321,9 +314,8 @@ curl -X POST "https://localhost:9200/_reindex?wait_for_completion=true" \
 }'
 
 # 4. Delete old index and create alias (or rename)
-curl -X DELETE "https://localhost:9200/migration_test" -u "admin:admin" -k
-curl -X POST "https://localhost:9200/_aliases" \
-  -u "admin:admin" -k \
+curl -u "admin:admin" -k -X DELETE "https://localhost:9200/migration_test"
+curl -u "admin:admin" -k -X POST "https://localhost:9200/_aliases" \
   -H 'Content-Type: application/json' -d'
 {
   "actions": [
@@ -335,7 +327,7 @@ curl -X POST "https://localhost:9200/_aliases" \
 Repeat for all restored indices. After reindexing, verify the new index version:
 
 ```bash
-curl -X GET "https://localhost:9200/migration_test_v2/_settings?filter_path=**.version" -u "admin:admin" -k
+curl -u "admin:admin" -k -X GET "https://localhost:9200/migration_test_v2/_settings?filter_path=**.version"
 ```
 
 The `version.created` should show an OpenSearch 2.x internal version number (e.g., `136408127` for OS 2.19.x). ES 7.10.2 indices show `7102099`. If you see a number starting with `136` or higher, the reindex was successful.
@@ -359,8 +351,8 @@ The Operator will perform a rolling upgrade automatically.
 Verify all indices are accessible after upgrade:
 
 ```bash
-curl -X GET "https://localhost:9200/_cat/indices?v" -u "admin:admin" -k
-curl -X GET "https://localhost:9200/_cluster/health?pretty" -u "admin:admin" -k
+curl -u "admin:admin" -k -X GET "https://localhost:9200/_cat/indices?v"
+curl -u "admin:admin" -k -X GET "https://localhost:9200/_cluster/health?pretty"
 ```
 
 ## Migrate from ES 8.x/9.x to OpenSearch 3.x
@@ -389,7 +381,7 @@ spec:
   nodeSets:
   - name: default
     count: 3
-    config:
+    config: {}
     podTemplate:
       spec:
         containers:
@@ -434,7 +426,7 @@ spec:
 
 If your ES 8.x indices rely on specific settings or mappings, it is recommended to manually create the corresponding Index Templates or Mappings in OpenSearch beforehand.
 
-#### Step 3: Execute Reindex (Asynchronous Mode)
+#### Step 3: Execute Reindex
 
 Initiate the reindex request from the OpenSearch cluster. Set `wait_for_completion=false` to run asynchronously.
 
@@ -470,14 +462,6 @@ Use the Task ID from the previous step to check the task status:
 ```bash
 curl -k -u "admin:admin" -X GET "https://localhost:9200/_tasks/N6q0j8s-T0m0j8s-T0m0j8:123456"
 ```
-
-You can also view all reindex tasks:
-
-```bash
-curl -k -u "admin:admin" -X GET "https://localhost:9200/_tasks?actions=*reindex&detailed=true"
-```
-
-> If the response shows `{"nodes":{}}`, it means no reindex tasks are currently running. The task may have completed or failed. Check the target index document count to verify.
 
 #### Step 5: Verify Reindex Completion
 
