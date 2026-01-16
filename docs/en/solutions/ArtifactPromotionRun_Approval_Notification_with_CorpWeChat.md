@@ -280,8 +280,7 @@ spec:
       # Subscribed resource type
       kind: ArtifactPromotionRun
       apiVersion: artifacts.katanomi.dev/v1alpha1
-      namespace: "devops"  # Subscribe to this namespace
-
+      namespace: "devops"  # Namespace for the ArtifactPromotionRun CR; it should be the same as the project name.
     events:
     # 1. Approval pending event: for approvers
     - type: "dev.katanomi.cloudevents.kubeevent.artifactpromotionrun.approvalpending.v1alpha1"
