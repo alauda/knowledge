@@ -11,12 +11,7 @@ kind:
 Applicable Version: OpenSearch Operator ~= 2.8.*, OpenSearch ~= 2.x / 3.x
 :::
 
-This document provides detailed guidance for migrating from Elasticsearch (ES) to OpenSearch, covering two primary scenarios:
-
-1. **Elasticsearch 7.10 → OpenSearch 2.x → OpenSearch 3.x**: Using Snapshot & Restore (two-phase migration)
-2. **Elasticsearch 8.x → OpenSearch 3.x**: Using Reindex from Remote
-
-It also includes client migration guides for Java, Python, and Golang.
+This document provides detailed guidance for migrating from Elasticsearch (ES) to OpenSearch.
 
 ## Migration Strategy Overview
 
@@ -30,7 +25,7 @@ It also includes client migration guides for Java, Python, and Golang.
 
 - **ES 7.10 → OS 3.x direct restore is NOT supported**. OpenSearch 3.x requires indices to be created with OpenSearch 2.0.0+.
 - ES 7.10 snapshots must be restored to OpenSearch 2.x first, then upgrade the cluster to OS 3.x.
-- ES 8.x use incompatible Lucene versions, so Snapshot & Restore is not available; use Reindex from Remote instead.
+- ES 8.x uses incompatible Lucene versions, so Snapshot & Restore is not available; use Reindex from Remote instead.
 
 :::
 
@@ -49,7 +44,7 @@ This migration requires a **two-phase approach**:
 #### Check if Plugin is Installed
 
 ```bash
-curl -u "elastic:<password>" -X GET "http://localhost:9200/_cat/plugins?v"
+curl -u "elastic:<password>" "http://localhost:9200/_cat/plugins?v"
 ```
 
 #### Install repository-s3 Plugin
@@ -279,10 +274,10 @@ Verify the index count and document count match the source cluster:
 
 ```bash
 # Check indices
-curl -k -u "admin:admin" -X GET "https://localhost:9200/_cat/indices?v"
+curl -k -u "admin:admin" "https://localhost:9200/_cat/indices?v"
 
 # Check document count
-curl -k -u "admin:admin" -X GET "https://localhost:9200/<index_name>/_count"
+curl -k -u "admin:admin" "https://localhost:9200/<index_name>/_count"
 ```
 
 ### Phase 2: Reindex and Upgrade to OpenSearch 3.x
@@ -297,16 +292,19 @@ For each restored index, create a new index and reindex the data:
 
 ```bash
 # 1. Get the original index mapping and extract the mappings object using sed
-curl -s -u "admin:admin" -k -X GET "https://localhost:9200/migration_test/_mapping" | \
+
+curl -s -k -u "admin:admin" "https://localhost:9200/migration_test/_mapping" | \
   sed 's/^{"migration_test"://' | sed 's/}$//' > mapping.json
 
 # 2. Create a new index with the same mapping (add suffix _v2)
-curl -u "admin:admin" -k -X PUT "https://localhost:9200/migration_test_v2" \
+
+curl -k -u "admin:admin" -X PUT "https://localhost:9200/migration_test_v2" \
   -H 'Content-Type: application/json' \
   -d @mapping.json
 
 # 3. Reindex data from old index to new index
-curl -u "admin:admin" -k -X POST "https://localhost:9200/_reindex?wait_for_completion=true" \
+
+curl -k -u "admin:admin" -X POST "https://localhost:9200/_reindex?wait_for_completion=true" \
   -H 'Content-Type: application/json' -d'
 {
   "source": { "index": "migration_test" },
@@ -314,8 +312,8 @@ curl -u "admin:admin" -k -X POST "https://localhost:9200/_reindex?wait_for_compl
 }'
 
 # 4. Delete old index and create alias (or rename)
-curl -u "admin:admin" -k -X DELETE "https://localhost:9200/migration_test"
-curl -u "admin:admin" -k -X POST "https://localhost:9200/_aliases" \
+curl -k -u "admin:admin" -X DELETE "https://localhost:9200/migration_test"
+curl -k -u "admin:admin" -X POST "https://localhost:9200/_aliases" \
   -H 'Content-Type: application/json' -d'
 {
   "actions": [
@@ -327,7 +325,7 @@ curl -u "admin:admin" -k -X POST "https://localhost:9200/_aliases" \
 Repeat for all restored indices. After reindexing, verify the new index version:
 
 ```bash
-curl -u "admin:admin" -k -X GET "https://localhost:9200/migration_test_v2/_settings?filter_path=**.version"
+curl -k -u "admin:admin" "https://localhost:9200/migration_test_v2/_settings?filter_path=**.version"
 ```
 
 The `version.created` should show an OpenSearch 2.x internal version number (e.g., `136408127` for OS 2.19.x). ES 7.10.2 indices show `7102099`. If you see a number starting with `136` or higher, the reindex was successful.
@@ -351,8 +349,8 @@ The Operator will perform a rolling upgrade automatically.
 Verify all indices are accessible after upgrade:
 
 ```bash
-curl -u "admin:admin" -k -X GET "https://localhost:9200/_cat/indices?v"
-curl -u "admin:admin" -k -X GET "https://localhost:9200/_cluster/health?pretty"
+curl -k -u "admin:admin" "https://localhost:9200/_cat/indices?v"
+curl -k -u "admin:admin" "https://localhost:9200/_cluster/health?pretty"
 ```
 
 ## Migrate from ES 8.x/9.x to OpenSearch 3.x
@@ -460,7 +458,7 @@ curl -k -u "admin:admin" -X POST "https://localhost:9200/_reindex?wait_for_compl
 Use the Task ID from the previous step to check the task status:
 
 ```bash
-curl -k -u "admin:admin" -X GET "https://localhost:9200/_tasks/N6q0j8s-T0m0j8s-T0m0j8:123456"
+curl -k -u "admin:admin" "https://localhost:9200/_tasks/N6q0j8s-T0m0j8s-T0m0j8:123456"
 ```
 
 #### Step 5: Verify Reindex Completion
@@ -469,10 +467,10 @@ Verify that the index was created and contains data:
 
 ```bash
 # Check if index exists and document count
-curl -k -u "admin:admin" -X GET "https://localhost:9200/migration_test/_count"
+curl -k -u "admin:admin" "https://localhost:9200/migration_test/_count"
 
 # Compare with source ES 8.x cluster
-curl -k -u "elastic:<password>" -X GET "https://es8-cluster-host:9200/migration_test/_count"
+curl -k -u "elastic:<password>" "https://es8-cluster-host:9200/migration_test/_count"
 ```
 
 ## Client Migration Guide
