@@ -528,7 +528,7 @@ After running an evaluation, results are saved in JSON format. Here's what the k
 
 ### Example Notebook
 
-Download the Jupyter notebook example: [lm-eval Quick Start Notebook](../public/lm-eval/lm-eval_quick_star.ipynb)
+Download the Jupyter notebook example: [lm-eval Quick Start Notebook](/lm-eval/lm-eval_quick_star.ipynb)
 
 ### Tips & Best Practices
 
