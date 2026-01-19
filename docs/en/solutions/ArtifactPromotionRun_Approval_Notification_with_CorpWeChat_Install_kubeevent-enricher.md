@@ -35,11 +35,13 @@ The following components are required for installation:
 Download the installation package from AlaudaCloud to your working directory:
 
 ```bash
-export DOWNLOAD_URL=https://xxx.xx/kubeveent-enricher.tar.gz
+export DOWNLOAD_URL=https://cloud.alauda.cn/attachments/knowledge/KB260100010/kubeevent-enricher.tar.gz
 
 mkdir kubeevent-enricher
 cd kubeevent-enricher
-wget ${DOWNLOAD_URL}
+
+# download the package to current directory
+
 tar -xvzf ./kubeevent-enricher.tar.gz
 ```
 
