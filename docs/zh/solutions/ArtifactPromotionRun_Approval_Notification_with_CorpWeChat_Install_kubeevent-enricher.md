@@ -4,7 +4,7 @@ products:
 kind:
   - Solution
 id: KB260100010
-sourceSHA: 131c66b825a9d248105208246282981c1c6e40f5b9d5df395de2fd1cf5411944
+sourceSHA: 9e87cb0b120de0c26997fbce8285599b9474923f609591bf1ecd1127d096ff8b
 ---
 
 # Kube Event Enricher 安装指南
@@ -15,10 +15,10 @@ sourceSHA: 131c66b825a9d248105208246282981c1c6e40f5b9d5df395de2fd1cf5411944
 
 在安装 Kube Event Enricher Sink 之前，请确保您具备以下条件：
 
-- 一个 Kubernetes 集群（推荐 v1.33 或更高版本）
+- 一个 Kubernetes 集群（推荐使用 v1.33 或更高版本）
 - 已安装 [Knative Eventing](https://knative.dev/docs/install/)
 - 已配置 `kubectl` 以访问您的集群
-- 有足够的权限创建命名空间、部署和 RBAC 资源
+- 拥有创建命名空间、部署和 RBAC 资源的足够权限
 
 ## 离线包准备
 
@@ -36,11 +36,13 @@ sourceSHA: 131c66b825a9d248105208246282981c1c6e40f5b9d5df395de2fd1cf5411944
 从 AlaudaCloud 下载安装包到您的工作目录：
 
 ```bash
-export DOWNLOAD_URL=https://xxx.xx/kubeveent-enricher.tar.gz
+export DOWNLOAD_URL=https://cloud.alauda.cn/attachments/knowledge/KB260100010/kubeevent-enricher.tar.gz
 
 mkdir kubeevent-enricher
 cd kubeevent-enricher
-wget ${DOWNLOAD_URL}
+
+# 下载包到当前目录
+
 tar -xvzf ./kubeevent-enricher.tar.gz
 ```
 
@@ -62,13 +64,13 @@ podman tag build-harbor.alauda.cn/devops/kubeevent-enricher-sink/enricher:xxx ${
 podman push ${CLUSTER_REGISTRY}/devops/kubeevent-enricher-sink/enricher:xxx
 
 # 使用您的注册表地址更新清单
-# 注意：在 macOS 上，sed 需要在 -i 和备份扩展之间留一个空格
+# 注意：在 macOS 上，sed 需要在 -i 和备份扩展名之间添加空格
 # 在 macOS 上使用：sed -i '' "s/..."（带空格）
 # 在 Linux 上使用：sed -i "s/..."（不带 ''）
 sed -i'' "s/registry.alauda.cn:60070/${CLUSTER_REGISTRY}/g" dist/install.yaml
 ```
 
-**注意**：本指南中所有后续命令假设您在 `kubeevent-enricher` 目录中工作。
+**注意**：本指南中所有后续命令假设您在 `kubeevent-enricher` 目录下工作。
 
 ## 安装
 
@@ -88,7 +90,7 @@ kubectl apply -f dist/install.yaml
 # 检查部署状态
 kubectl -n kubeevent-enricher rollout status deploy/kubeevent-enricher-sink
 
-# 验证 Pods 是否正在运行
+# 验证 pods 是否正在运行
 kubectl -n kubeevent-enricher get pods
 
 ```
@@ -99,11 +101,11 @@ Kube Event Enricher Sink 通过部署清单中的命令行标志进行配置。�
 
 ### 可用标志
 
-| 标志                  | 描述                                                                                                                                         | 默认值                                               | 是否必需 |
-| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------- | -------- |
-| `--broker-ingress`    | Knative Broker 入口 URL，用于发送增强事件。增强器构造完整的 Broker URL 为 `<broker-ingress>/<namespace>/<broker-name>`                 | `http://broker-ingress.knative-operators.svc.cluster.local` | 否       |
-| `--log-level`         | 应用程序的日志级别。有效值：`debug`、`info`、`warn`、`error`                                                                             | `info`                                            | 否       |
-| `--event-type-prefix` | 要添加到 CloudEvent 类型属性的前缀。最终类型将为 `<prefix>.<kind>.<reason>.v1alpha1`                                                    | `dev.katanomi.cloudevents.kubeevent`              | 否       |
+| 标志                  | 描述                                                                                                                                         | 默认值                                                       | 是否必需 |
+| --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------ | -------- |
+| `--broker-ingress`    | 发送增强事件的 Knative Broker 入口 URL。增强器构造完整的 broker URL 为 `<broker-ingress>/<namespace>/<broker-name>`                     | `http://broker-ingress.knative-operators.svc.cluster.local`  | 否       |
+| `--log-level`         | 应用程序的日志级别。有效值：`debug`、`info`、`warn`、`error`                                                                               | `info`                                                      | 否       |
+| `--event-type-prefix` | 要添加到 CloudEvent 类型属性的前缀。最终类型将为 `<prefix>.<kind>.<reason>.v1alpha1`                                                    | `dev.katanomi.cloudevents.kubeevent`                        | 否       |
 
 ## 卸载
 
@@ -121,7 +123,7 @@ kubectl delete -f dist/install.yaml
 # 查看部署详情
 kubectl -n kubeevent-enricher describe deploy kubeevent-enricher-sink
 
-# 查看 Pod 日志
+# 查看 pod 日志
 kubectl -n kubeevent-enricher logs -l app=kubeevent-enricher-sink --tail=100
 ```
 
@@ -134,16 +136,16 @@ kubectl -n kubeevent-enricher logs -l app=kubeevent-enricher-sink --tail=100
 **问题**：事件未被增强
 
 - **解决方案**：
-  - 验证 APIServerSource 是否正确配置为发送到增强器服务
+  - 验证 APIServerSource 是否正确配置以发送到增强器服务
   - 检查增强器是否具有读取相关资源的适当 RBAC 权限
   - 查看增强器日志以获取错误消息
 
-**问题**：事件未到达 Broker
+**问题**：事件未到达 broker
 
 - **解决方案**：
-  - 验证 `--broker-ingress` 标志是否指向正确的 Broker 入口服务
-  - 检查网络策略是否允许从增强器命名空间到 Broker 的流量
-  - 确保 Broker 存在于目标命名空间
+  - 验证 `--broker-ingress` 标志是否指向正确的 broker 入口服务
+  - 检查网络策略是否允许从增强器命名空间到 broker 的流量
+  - 确保 broker 存在于目标命名空间
 
 ## 后续步骤
 

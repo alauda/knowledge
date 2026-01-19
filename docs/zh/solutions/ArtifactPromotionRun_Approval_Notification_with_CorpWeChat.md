@@ -4,14 +4,14 @@ products:
 kind:
   - Solution
 id: KB260100009
-sourceSHA: 9c257208435c4e01a05421e593b1db802a5eeb54afab8be0827db11df2b1cbc9
+sourceSHA: a4e5b065d074337074bf471590ddbd5022fe69884b7373d446969d86084bd506
 ---
 
-# 使用 CorpWeChat 的 ArtifactPromotionRun 审批事件通知
+# ArtifactPromotionRun 审批事件通知与企业微信集成
 
 ## 概述
 
-本指南演示如何使用 **Kube Event Enricher** 启用对工件推广审批事件的个性化订阅，并通过 CorpWeChat 发送通知。
+本指南演示如何使用 **Kube Event Enricher** 启用对工件推广审批事件的个性化订阅，并通过企业微信发送通知。
 
 ### 架构流程
 
@@ -26,17 +26,17 @@ Knative Broker (事件分发)
     ↓
 ClusterSubscription (个人订阅 + CloudEvent 过滤)
     ↓
-CorpWeChat 通知服务 (Katanomi 插件)
+企业微信通知服务 (Katanomi 插件)
 ```
 
 ### 支持的事件类型
 
-| 事件类型          | CloudEvent 类型                                                                    | 触发场景                                   | 通知接收者           |
-| ----------------- | ---------------------------------------------------------------------------------- | ------------------------------------------ | --------------------- |
-| 审批待定          | `dev.katanomi.cloudevents.kubeevent.artifactpromotionrun.approvalpending.v1alpha1` | 工件推广请求待审批                         | 审批者               |
-| 审批被拒          | `dev.katanomi.cloudevents.kubeevent.artifactpromotionrun.approvaldenied.v1alpha1`  | 推广请求已被拒绝                           | 请求者               |
-| 审批通过          | `dev.katanomi.cloudevents.kubeevent.artifactpromotionrun.running.v1alpha1`         | 推广请求已通过审批并开始执行              | 请求者               |
-| 推广失败          | `dev.katanomi.cloudevents.kubeevent.artifactpromotionrun.failed.v1alpha1`          | 推广操作失败                               | 请求者               |
+| 事件类型          | CloudEvent 类型                                                                    | 触发场景                                 | 通知接收者           |
+| ----------------- | ---------------------------------------------------------------------------------- | ---------------------------------------- | --------------------- |
+| 审批待定         | `dev.katanomi.cloudevents.kubeevent.artifactpromotionrun.approvalpending.v1alpha1` | 工件推广请求待审批                       | 审批者               |
+| 审批被拒         | `dev.katanomi.cloudevents.kubeevent.artifactpromotionrun.approvaldenied.v1alpha1`  | 推广请求已被拒绝                         | 请求者               |
+| 审批通过         | `dev.katanomi.cloudevents.kubeevent.artifactpromotionrun.running.v1alpha1`         | 推广请求已通过并开始执行                 | 请求者               |
+| 推广失败         | `dev.katanomi.cloudevents.kubeevent.artifactpromotionrun.failed.v1alpha1`          | 推广操作失败                             | 请求者               |
 
 ---
 
@@ -46,9 +46,9 @@ ACP 版本要求：>= 4.0
 
 ### 所需组件
 
-在继续之前，请确保已安装和配置以下组件：
+在继续之前，请确保已安装并配置以下组件：
 
-- **Alauda DevOps v3**：提供 ArtifactPromotion 和订阅/通知功能
+- **Alauda DevOps v3**：提供工件推广和订阅/通知功能
 - **Knative Eventing**：提供事件路由的 Broker 和 Trigger 机制，部署在 ACP Global
 - **Kube Event Enricher Sink**：事件丰富服务（本指南中安装），部署在 ACP Global
 
@@ -72,9 +72,9 @@ ACP 版本要求：>= 4.0
 
 ### 下载和准备安装包
 
-有关下载离线安装包和将容器镜像上传到集群注册表的详细信息，请参阅安装指南中的 **[离线包准备](./ArtifactPromotionRun_Approval_Notification_with_CorpWeChat_Install_kubeevent-enricher.html#offline-package-preparation)** 部分。
+有关下载离线安装包和将容器镜像上传到集群注册表的步骤，请参阅安装指南中的 **[离线包准备](./ArtifactPromotionRun_Approval_Notification_with_CorpWeChat_Install_kubeevent-enricher.html#offline-package-preparation)** 部分。
 
-**注意**：本指南中的所有后续命令假设您在 `kubeevent-enricher` 目录中工作。
+**注意**：本指南中所有后续命令假设您在 `kubeevent-enricher` 目录下工作。
 
 ## 设置概述
 
@@ -86,7 +86,7 @@ ACP 版本要求：>= 4.0
 
 ### 1.1 部署 Kube Event Enricher Sink
 
-有关部署说明，请参阅 [Kube Event Enricher Sink 安装指南](ArtifactPromotionRun_Approval_Notification_with_CorpWeChat_Install_kubeevent-enricher.md)。
+请参阅 [Kube Event Enricher Sink 安装指南](ArtifactPromotionRun_Approval_Notification_with_CorpWeChat_Install_kubeevent-enricher.md) 获取部署说明。
 
 ### 1.2 创建 APIServerSource 以监视 Kubernetes 事件
 
@@ -119,7 +119,7 @@ spec:
       kind: Service
       name: kubeevent-enricher-sink
       namespace: kubeevent-enricher
-    uri: "?broker=cloudevents-katanomi-dev" # 目标 Knative Broker，在集群中，cloudevents-katanomi-dev 是接收事件的默认 Broker 名称
+    uri: "?broker=cloudevents-katanomi-dev" # 目标 Knative Broker，cloudevents-katanomi-dev 是接收事件的默认 Broker 名称
 ---
 apiVersion: v1
 kind: ServiceAccount
@@ -153,11 +153,11 @@ EOF
 
 有关 `ApiServerSource` 的更多信息，请参阅 [Knative Eventing ApiServerSource 文档](https://knative.dev/docs/eventing/sources/apiserversource/getting-started/)。
 
-### 1.3 配置 CorpWeChat 通知服务器
+### 1.3 配置企业微信通知服务器
 
-配置 ACP 通知服务器以进行 CorpWeChat 集成。有关详细参数描述，请参阅 ACP 文档。
+配置 ACP 通知服务器以集成企业微信。有关详细参数描述，请参阅 ACP 文档。
 
-用您的 CorpWeChat 凭据替换占位符值：
+用您的企业微信凭据替换占位符值：
 
 ```bash
 cat <<EOF | kubectl apply -f -
@@ -179,7 +179,7 @@ type: NotificationServer
 EOF
 ```
 
-获取 WeChat Work corpId、corpSecret、agentId 的方法可以参考官方文档：<https://developer.work.weixin.qq.com/document/path/90665>
+获取企业微信的 corpId、corpSecret 和 agentId 的方法可以参考官方文档：<https://developer.work.weixin.qq.com/document/path/90665>
 
 ### 1.4 创建通知模板
 
@@ -199,12 +199,12 @@ cat dist/kubeevent.artifactpromotionrun.template.yaml | envsubst | kubectl apply
 
 ### 1.5 更新 Katanomi 平台配置
 
-更新 Katanomi 配置以启用 CorpWeChat 通知通道，并在 ACP Global 集群中关联通知模板：
+更新 Katanomi 配置以启用企业微信通知通道并在 ACP Global 集群中关联通知模板：
 
 ```bash
 cat <<EOF | kubectl patch configmap katanomi-config -n cpaas-system --patch-file /dev/stdin
 data:
-  # CorpWeChat 通知地址
+  # 企业微信通知地址
   cloudeventsDelivery.sinkPluginAddress.corpwechat: http://katanomi-plugin.cpaas-system.svc/plugins/v1alpha1/notifications/corpwechat
 
   # 通知插件类型
@@ -239,9 +239,9 @@ EOF
 
 本节由项目管理员或个人用户执行。
 
-### 2.1 在 ACP 平台中配置用户 CorpWeChat ID
+### 2.1 在 ACP 平台中配置用户企业微信 ID
 
-从您的 CorpWeChat 管理员处获取用户的 CorpWeChat ID，然后在 ACP 平台中进行配置：
+从您的企业微信管理员处获取用户的企业微信 ID，然后在 ACP 平台中进行配置：
 
 - 导航到 **管理员 → 用户 → 用户**（对于管理员）
 - 或在个人资料设置中更新（对于个人用户）
@@ -252,7 +252,7 @@ EOF
 
 - 定义订阅者信息
 - 指定要订阅的事件类型及过滤条件
-- 配置通知通道（例如，CorpWeChat）
+- 配置通知通道（例如，企业微信）
 
 #### 示例：为用户 `admin` 创建订阅
 
@@ -263,7 +263,7 @@ apiVersion: core.katanomi.dev/v1alpha1
 metadata:
   name: "admin-artifactpromotionrun-subscription"
   annotations:
-    # 指定通知通道：CorpWeChat
+    # 指定通知通道：企业微信
     "core.katanomi.dev/sink.pluginclasses": "corpwechat"
     # 用户所有权注释，必须与 spec.subscriber.name 匹配
     katanomi.dev/owned.username: "admin"
@@ -284,10 +284,9 @@ spec:
       # 订阅的资源类型
       kind: ArtifactPromotionRun
       apiVersion: artifacts.katanomi.dev/v1alpha1
-      namespace: "devops"  # 订阅此命名空间
-
+      namespace: "devops"  # ArtifactPromotionRun CR 的命名空间；应与项目名称相同。
     events:
-    # 1. 审批待定事件：对于审批者
+    # 1. 审批待定事件：针对审批者
     - type: "dev.katanomi.cloudevents.kubeevent.artifactpromotionrun.approvalpending.v1alpha1"
       filter:
         exact:
@@ -297,7 +296,7 @@ spec:
         cel: |
           ce.data.object.status.artifactPromotionSpec.approvalSpec.users.exists(item, item.name == "\$(subscriber.name)")
 
-    # 2. 审批被拒事件：对于请求者
+    # 2. 审批被拒事件：针对请求者
     - type: "dev.katanomi.cloudevents.kubeevent.artifactpromotionrun.approvaldenied.v1alpha1"
       filter:
         exact:
@@ -307,17 +306,17 @@ spec:
         cel: |
           ce.data.object.status.triggeredBy.user.name == "\$(subscriber.name)"
 
-    # 3. 审批通过事件：对于请求者
+    # 3. 审批通过事件：针对请求者
     - type: "dev.katanomi.cloudevents.kubeevent.artifactpromotionrun.running.v1alpha1"
       filter:
         exact:
           involvedobjectkind: ArtifactPromotionRun
           involvedobjectgroup: artifacts.katanomi.dev
-        # CEL 表达式：仅在请求者是请求者时在第一次运行事件上通知
+        # CEL 表达式：仅在首次运行事件时通知，且订阅者是请求者
         cel: |
           !has(ce.data.event.message) && ce.data.object.status.triggeredBy.user.name == "\$(subscriber.name)"
 
-    # 4. 推广失败事件：对于请求者
+    # 4. 推广失败事件：针对请求者
     - type: "dev.katanomi.cloudevents.kubeevent.artifactpromotionrun.failed.v1alpha1"
       filter:
         exact:
@@ -333,14 +332,14 @@ EOF
 
 为每个用户定制以下参数：
 
-| 参数                                                     | 描述                                                                          | 示例                                   |
-| ------------------------------------------------------- | ----------------------------------------------------------------------------- | -------------------------------------- |
-| `metadata.name`                                         | 唯一资源名称，标识订阅                                                       | `admin-artifactpromotionrun-subscription` |
-| `metadata.annotations["katanomi.dev/owned.username"]`  | 通知接收者的用户名（必须与 `spec.subscriber.name` 匹配）                    | `admin`                                |
-| `spec.subscriber.name`                                  | 订阅者的 Kubernetes 用户名                                                   | `admin`                                |
-| `spec.subscriber.info.id`                               | ACP 用户 ID，通过 `kubectl get users` 获取并按 `{subscriber.name}` 过滤      | `21232f297a57a5a743894a0e4a801fc3`     |
-| `spec.subscriber.info.mail`                             | 用户邮箱地址                                                                  | `admin@example.com`                    |
-| `spec.subscriptions[].object.namespace`                 | 订阅事件的命名空间                                                          | `devops`                               |
+| 参数                                                   | 描述                                                                          | 示例                                   |
+| ----------------------------------------------------- | ----------------------------------------------------------------------------- | -------------------------------------- |
+| `metadata.name`                                       | 唯一资源名称，标识订阅                                                       | `admin-artifactpromotionrun-subscription` |
+| `metadata.annotations["katanomi.dev/owned.username"]` | 通知接收者的用户名（必须与 `spec.subscriber.name` 匹配）                    | `admin`                                |
+| `spec.subscriber.name`                                | 订阅者的 Kubernetes 用户名                                                  | `admin`                                |
+| `spec.subscriber.info.id`                             | ACP 用户 ID，通过：`kubectl get users` 并按 `{subscriber.name}` 过滤获取   | `21232f297a57a5a743894a0e4a801fc3`     |
+| `spec.subscriber.info.mail`                           | 用户邮箱地址                                                                 | `admin@example.com`                    |
+| `spec.subscriptions[].object.namespace`               | 订阅事件的命名空间                                                           | `devops`                               |
 
 **注意**：为每个用户创建一个单独的 `ClusterSubscription`。有关详细配置选项，请参阅 [高级配置](#advanced-configuration-and-references) 部分。
 
@@ -356,7 +355,7 @@ kubectl -n kubeevent-watcher get apiserversource
 kubectl get clustersubscription -A
 ```
 
-### 3.2 使用 ArtifactPromotionRun 测试
+### 3.2 使用 ArtifactPromotionRun 进行测试
 
 使用 ACP DevOps v3 创建工件推广策略并发起推广请求以触发通知。
 
@@ -365,24 +364,24 @@ kubectl get clustersubscription -A
 当触发工件推广工作流时，用户应根据以下时间线接收通知：
 
 - **审批待定**：当推广请求等待审批时，审批者接收通知
-- **审批被拒**：当请求者的推广请求被拒绝时，请求者接收通知
-- **审批通过**：当请求者的推广请求被批准并开始执行时，请求者接收通知
+- **审批被拒**：当他们的推广请求被拒绝时，请求者接收通知
+- **审批通过**：当他们的推广请求被批准并开始执行时，请求者接收通知
 - **推广失败**：如果推广操作失败，请求者接收通知
 
 ## 故障排除
 
-### 未接收 CorpWeChat 通知
+### 未收到企业微信通知
 
-如果用户未接收通知，请按照以下故障排除步骤操作：
+如果用户未收到通知，请按照以下故障排除步骤操作：
 
-1. **验证 CorpWeChat 服务器配置**：
+1. **验证企业微信服务器配置**：
    ```bash
    kubectl get secret -n cpaas-system platform-corpwechat-server -o yaml
    ```
-   确保所有凭据已正确配置。
+   确保所有凭据配置正确。
 
-2. **确认用户 CorpWeChat ID**：
-   验证用户的 CorpWeChat ID 是否在 ACP 平台中正确配置。
+2. **确认用户企业微信 ID**：
+   验证用户的企业微信 ID 是否在 ACP 平台中正确配置。
 
 3. **检查 ClusterSubscription 状态**：
    ```bash
@@ -447,12 +446,12 @@ kubectl edit notificationtemplate -n cpaas-system kubeevent.artifactpromotionrun
 
 | 字段                                                          | 描述                                                                                                      | 示例                                |
 | ------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------- | ----------------------------------- |
-| `metadata.annotations["core.katanomi.dev/sink.pluginclasses"]` | 通知通道（支持多个以逗号分隔的值）                                                                      | `"wechat,corpwechat,email"`         |
+| `metadata.annotations["core.katanomi.dev/sink.pluginclasses"]` | 通知通道（支持多个以逗号分隔的值）                                                                       | `"wechat,corpwechat,email"`         |
 | `spec.subscriber.name`                                       | 订阅者的 Kubernetes 用户名                                                                                | `admin`                             |
-| `spec.subscriber.info.id`                                    | 唯一的 ACP 用户 ID（通过 `kubectl get users` 获取，并按 `{subscriber.name}` 过滤 ACP Global 集群）      | `21232f297a57a5a743894a0e4a801fc3`  |
+| `spec.subscriber.info.id`                                    | 唯一的 ACP 用户 ID（通过：`kubectl get users` 并按 `{subscriber.name}` 过滤获取）                       | `21232f297a57a5a743894a0e4a801fc3`  |
 | `spec.subscriber.info.mail`                                  | 用户邮箱地址                                                                                             | `admin@example.com`                 |
 | `subscriptions[].object.namespace`                           | 事件订阅的目标命名空间                                                                                   | `devops`                            |
-| `subscriptions[].events[].filter.cel`                        | 用于精确事件过滤的 CEL 过滤表达式。使用 `ce.data` 访问 CloudEvent 数据字段                           | 参见下面的示例                     |
+| `subscriptions[].events[].filter.cel`                        | CEL 过滤表达式，用于精确事件过滤。使用 `ce.data` 访问 CloudEvent 数据字段                             | 见下面的示例                       |
 
 #### CEL 过滤表达式示例
 
@@ -466,7 +465,7 @@ ce.data.object.status.triggeredBy.user.name == "$(subscriber.name)"
 
 ### CloudEvents 数据结构
 
-以下示例显示 Kube Event Enricher 发出的 CloudEvents 的结构：
+以下示例显示了 Kube Event Enricher 发出的 CloudEvents 的结构：
 
 ```json
 {
@@ -490,7 +489,7 @@ ce.data.object.status.triggeredBy.user.name == "$(subscriber.name)"
 
 此数据结构可用于：
 
-- 使用 CEL 表达式在 `ClusterSubscription` 资源中过滤 CloudEvents
+- 在 `ClusterSubscription` 资源中使用 CEL 表达式过滤 CloudEvents
 - 在通知模板中呈现动态内容
 
 ## 参考
