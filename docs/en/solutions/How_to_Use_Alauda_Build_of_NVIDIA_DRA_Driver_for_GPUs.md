@@ -26,11 +26,11 @@ Dynamic Resource Allocation (DRA) is a Kubernetes feature that provides a more f
 
 ### Installing Nvidia driver in your GPU node
 
-Prefer to [Installation guide of Nvidia Official website](https://docs.nvidia.com/cuda/cuda-installation-guide-linux/)
+Refer to [Installation guide of Nvidia Official website](https://docs.nvidia.com/cuda/cuda-installation-guide-linux/)
 
 ### Installing Nvidia Container Runtime
 
-Prefer to [Installation guide of Nvidia Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html)
+Refer to [Installation guide of Nvidia Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html)
 
 ### Enable CDI in Containerd
 
@@ -138,7 +138,7 @@ Please contact Consumer Support for more information.
 
 ### Uploading the Cluster plugin
 
-For more information on uploading the cluster plugin, please refer to [Uploading Cluster Plugins](https://docs.alauda.io/)
+For more information on uploading the cluster plugin, please refer to [Uploading Cluster Plugins](https://docs.alauda.io/container_platform/4.2/extend/upload_package.html)
 
 ### Installing Alauda Build of NVIDIA DRA Driver for GPUs
 
@@ -162,7 +162,7 @@ For more information on uploading the cluster plugin, please refer to [Uploading
     
     You should get results similar to:
     
-    ```
+    ```text
     nvidia-dra-driver-gpu-controller-675644bfb5-c2hq4   1/1     Running   0              18h
     nvidia-dra-driver-gpu-kubelet-plugin-65fjt          2/2     Running   0              18h
     ```
