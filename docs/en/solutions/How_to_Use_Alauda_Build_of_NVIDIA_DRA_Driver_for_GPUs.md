@@ -1,3 +1,12 @@
+---
+products:
+   - Alauda AI
+kind:
+   - Solution
+ProductsVersion:
+   - 4.x
+---
+
 # Alauda Build of NVIDIA DRA Driver for GPUs
 
 ## Introduction
@@ -123,11 +132,9 @@ On the all master nodes:
 
 ### Downloading Cluster plugin
 
-:::info
 `Alauda Build of NVIDIA DRA Driver for GPUs` cluster plugin can be retrieved from Customer Portal.
 
 Please contact Consumer Support for more information.
-:::
 
 ### Uploading the Cluster plugin
 
@@ -141,9 +148,7 @@ For more information on uploading the cluster plugin, please refer to [Uploading
     kubectl label nodes {nodeid} nvidia-device-enable=pgpu-dra
     ```
     
-    :::info
     **Note: On the same node, you can only set one of the following labels: `gpu=on`, `nvidia-device-enable=pgpu`, or `nvidia-device-enable=pgpu-dra`.**
-    :::
 
 2. Go to the `Administrator` -> `Marketplace` -> `Cluster Plugin` page, switch to the target cluster, and then deploy the `Alauda Build of NVIDIA DRA Driver for GPUs` Cluster plugin.
 
