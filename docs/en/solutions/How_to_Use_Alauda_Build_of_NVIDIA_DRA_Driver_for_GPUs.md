@@ -88,8 +88,7 @@ On the all master nodes:
         - command:
             - kube-apiserver
             - --feature-gates=DynamicResourceAllocation=true # required
-            - --runtime-config=resource.k8s.io/v1beta1 # required
-            - --runtime-config=resource.k8s.io/v1beta2 # required
+            - --runtime-config=resource.k8s.io/v1beta1=true,resource.k8s.io/v1beta2=true # required
           # ... other flags
     ```
 
