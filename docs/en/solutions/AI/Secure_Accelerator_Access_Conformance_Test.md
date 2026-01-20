@@ -326,7 +326,7 @@ Save the above script as `test_secure_accelerator_access.sh`.
 **Note**: For air-gapped environments, ensure the CUDA image is already pushed to your private registry and accessible to the cluster.
 
 ```bash
-CUDA_IMAGE=nvidia/cuda:11.0-base ./test_secure_accelerator_access.sh
+CUDA_IMAGE=nvidia/cuda:12.4.1-base-ubuntu20.04 ./test_secure_accelerator_access.sh
 ```
 
 
