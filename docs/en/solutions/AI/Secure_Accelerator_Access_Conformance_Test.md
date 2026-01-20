@@ -23,7 +23,8 @@ Before running the test, ensure you have:
 ### Step 1: Create an Alauda Container Platform Kubernetes Cluster with GPU Nodes
 
 ### Step 2: Install Alauda Build of NVIDIA GPU Device Plugin
-https://docs.alauda.io/pgpu/0.17/install/install.html
+
+[Alauda Build of NVIDIA GPU Device Plugin installation guide](https://docs.alauda.io/pgpu/0.17/install/install.html)
 
 ### Step 3: Label GPU Nodes
 
@@ -158,10 +159,18 @@ EOF
 
 echo "Waiting for pod completion..."
 kubectl wait --for=jsonpath='{.status.phase}'=Succeeded \
-  -n "$NAMESPACE" pod/no-gpu-pod --timeout=300s
+  -n "$NAMESPACE" pod/no-gpu-pod --timeout=300s || true
 
-TEST1_EXIT_CODE=$(kubectl get pod -n "$NAMESPACE" no-gpu-pod \
-  -o jsonpath='{.status.containerStatuses[0].state.terminated.exitCode}')
+TEST1_PHASE=$(kubectl get pod -n "$NAMESPACE" no-gpu-pod \
+  -o jsonpath='{.status.phase}')
+if [ "$TEST1_PHASE" != "Succeeded" ]; then
+    echo "❌ TEST 1 FAILED (phase: $TEST1_PHASE)"
+    kubectl logs -n "$NAMESPACE" no-gpu-pod
+    TEST1_EXIT_CODE=1
+else
+    TEST1_EXIT_CODE=$(kubectl get pod -n "$NAMESPACE" no-gpu-pod \
+      -o jsonpath='{.status.containerStatuses[0].state.terminated.exitCode}')
+fi
 
 if [ "$TEST1_EXIT_CODE" -eq 0 ]; then
     echo "✅ TEST 1 PASSED"
