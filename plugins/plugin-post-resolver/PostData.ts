@@ -57,6 +57,7 @@ export async function getPostInfo(
 
   const contentTitle = extractTitle(content);
   const createTime = dayjs(frontmatter.date) || dayjs();
+  const lastUpdatedTimestamp = lastUpdated || Date.now();
   return {
     title: frontmatter.title || contentTitle || filename,
     route: locale === "en" ? routePath.slice(3) : routePath,
@@ -67,7 +68,8 @@ export async function getPostInfo(
     id: frontmatter.id,
     excerpt: frontmatter.description || excerpt,
     locale,
-    lastUpdatedTime: transformTime(lastUpdated!, locale),
+    lastUpdatedTime: transformTime(lastUpdatedTimestamp, locale),
+    lastUpdatedTimestamp,
   };
 }
 
@@ -80,6 +82,6 @@ export function addPost(post: PostInfo) {
 
 export function sortPostInfos() {
   postInfos.sort((a, b) => {
-    return dayjs(b.date).unix() - dayjs(a.date).unix();
+    return b.lastUpdatedTimestamp - a.lastUpdatedTimestamp;
   });
 }

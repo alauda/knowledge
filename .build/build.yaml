@@ -164,4 +164,8 @@ spec:
                   secretKeyRef:
                     name: knowledge-k8s
                     key: io-token  
-
+  git:
+    options:
+      depth: 0
+      retries: 0
+      timeout: 0m
