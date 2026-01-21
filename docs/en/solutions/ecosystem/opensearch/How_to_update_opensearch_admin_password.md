@@ -91,14 +91,15 @@ spec:
         name: admin-credentials-secret # Admin credentials Secret used by the Operator
       securityConfigSecret:
         name: securityconfig-secret # Secret containing the custom Security Config
+    tls:
+      transport:
+        generate: true
+      http:
+        generate: true
   dashboards:
+    enable: true
     opensearchCredentialsSecret:
       name: dashboards-credentials-secret # Credentials used by Dashboards to connect to OpenSearch
-  tls:
-    transport:
-      generate: true
-    http:
-      generate: true
 ```
 
 ## 2. Updating the Instance Password (When Custom Password Is Already Configured)
@@ -190,11 +191,11 @@ spec:
         name: admin-credentials-secret # Admin credentials Secret used by the Operator
       securityConfigSecret:
         name: securityconfig-secret # Secret containing the custom Security Config
-  tls:
-    transport:
-      generate: true
-    http:
-      generate: true
+    tls:
+      transport:
+        generate: true
+      http:
+        generate: true
 ```
 
 :::note
