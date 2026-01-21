@@ -68,8 +68,13 @@ Build and push the container image:
   ```bash
   git clone https://github.com/zhhray/http-metrics-exporter.git
   cd http-metrics-exporter
+  # Build the application locally
   make build-linux
+
+  # Build the container image
   make docker-build
+
+  # Push the container image to a target registry
   # You can modify the DOCKER_REGISTRY in Makefile as needed
   make docker-push
   ```
@@ -101,10 +106,15 @@ Key resources include:
 Deploy the application resources to Kubernetes:
   ```bash
   kubectl apply -f deploy/resources.yaml
+  # Output:
+  service/metrics-app created
+  deployment.apps/metrics-app created
   ```
 Deploy the Prometheus ServiceMonitor Configuration:
   ```bash
   kubectl apply -f deploy/servicemonitor.yaml
+  # Output:
+  servicemonitor.monitoring.coreos.com/metrics-app-monitor created
   ```
 Configure Prometheus Adapter Configuration:
   ```bash
@@ -123,6 +133,8 @@ Configure Prometheus Adapter Configuration:
    
   # Delete prometheus-adapter pod to reload config
   kubectl delete pod -n cpaas-system $(kubectl get pod -n cpaas-system | grep prometheus-adapter | awk '{print $1}')
+  # Output:
+  pod "cpaas-monitor-prometheus-adapter-57fbc5cb78-gjclc" deleted
 
   # Check metrics
   kubectl get --raw "/apis/custom.metrics.k8s.io/v1beta1/namespaces/demo-ns/pods/*/http_requests_per_second" | jq .
@@ -161,16 +173,20 @@ Configure Prometheus Adapter Configuration:
 Deploy the Horizontal Pod Autoscaler Configuration:
   ```bash
   kubectl apply -f deploy/hpa.yaml
+  # Output:
+  horizontalpodautoscaler.autoscaling/metrics-app-hpa created
   ```
 ### Step 5: Load Test and Verify
 
 Scp `deploy/load-test-scaling.sh` to the master node of k8s cluster which the metrics-app is running.
 
+The script will send requests to the metrics-app endpoint, triggering the HPA to scale up or down based on the defined metrics.
+
 Execute the load test script:
   ```bash
   chmod 755 load-test-scaling.sh
   ./load-test-scaling.sh
-  # You can see the result of load-test-scaling.sh:
+  # Output:
   === Effective Load Test Script ===
 
   1. Current Status:
@@ -222,7 +238,6 @@ Execute the load test script:
   NAME              REFERENCE                TARGETS    MINPODS   MAXPODS   REPLICAS   AGE
   metrics-app-hpa   Deployment/metrics-app   29217m/5   1         10        10         17h
   ```
-The script will send requests to the metrics-app endpoint, triggering the HPA to scale up or down based on the defined metrics.
 
 The load test successfully validated that the HPA implementation is working correctly. The system automatically scales based on HTTP request rates, ensuring optimal resource utilization during traffic spikes. The custom metrics pipeline (application → Prometheus → Prometheus Adapter → HPA) is functioning as designed, providing a robust auto-scaling solution for HTTP-based applications.
 
