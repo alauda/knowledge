@@ -22,7 +22,7 @@ Konveyor is a CNCF (Cloud Native Computing Foundation) project that provides a m
 
 ## Install Konveyor Operator
 
-Download the Konveyor Operator plugin from [Alauda Cloud Console](https://cloud.alauda.io/) Marketplace, and according [Upload Packages](https://docs.alauda.io/container_platform/4.2/extend/upload_package.html) to upload the plugin to cluster.
+Download the Konveyor Operator plugin from [Alauda Cloud Console](https://cloud.alauda.io/) Marketplace, and follow the [Upload Packages](https://docs.alauda.io/container_platform/4.2/extend/upload_package.html) guide to upload the plugin to the cluster.
 
 ## Deploy Konveyor Hub (Tackle)
 
