@@ -38,7 +38,7 @@ CDI (Container Device Interface) provides a standard mechanism for device vendor
 
 CDI support is enabled by default in containerd version 2.0 and later. Earlier versions, starting from 1.7.0, support for this feature requires manual activation.
 
-#### Steps to Enable CDI in containerd v1.7.x
+#### Steps to Enable CDI in containerd v1.7.x(Only need to be executed on the GPU node.)
 
 1. Update containerd configuration.
 
@@ -82,6 +82,18 @@ On the all master nodes:
 
 1. Edit `kube-apiserver` component manifests in `/etc/kubernetes/manifests/kube-apiserver.yaml`:
 
+    For Kubernetes 1.32:
+    ```yaml
+    spec:
+      containers:
+        - command:
+            - kube-apiserver
+            - --feature-gates=DynamicResourceAllocation=true # required
+            - --runtime-config=resource.k8s.io/v1beta1=true # required
+          # ... other flags
+    ```
+   
+    For Kubernetes 1.33:
     ```yaml
     spec:
       containers:
