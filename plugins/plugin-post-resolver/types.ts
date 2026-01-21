@@ -13,4 +13,5 @@ export interface PostInfo {
   excerpt: string;
   locale: string;
   lastUpdatedTime: string;
+  lastUpdatedTimestamp: number;
 }
