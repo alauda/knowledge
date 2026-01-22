@@ -1,6 +1,6 @@
 ---
 products:
-   - Secure Accelerator Access Conformance Test
+   - Alauda AI
 kind:
    - Article
 ---
