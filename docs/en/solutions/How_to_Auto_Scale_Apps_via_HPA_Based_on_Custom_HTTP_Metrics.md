@@ -131,10 +131,10 @@ Configure Prometheus Adapter Configuration:
       as: "http_requests_per_second"
     metricsQuery: 'sum(rate(<<.Series>>{<<.LabelMatchers>>}[2m])) by (<<.GroupBy>>)'
    
-  # Delete prometheus-adapter pod to reload config
-  kubectl delete pod -n cpaas-system $(kubectl get pod -n cpaas-system | grep prometheus-adapter | awk '{print $1}')
+  # Restart prometheus-adapter to reload config
+  kubectl rollout restart deployment cpaas-monitor-prometheus-adapter -n cpaas-system
   # Output:
-  pod "cpaas-monitor-prometheus-adapter-57fbc5cb78-gjclc" deleted
+  deployment.apps/cpaas-monitor-prometheus-adapter restarted
 
   # Check metrics
   kubectl get --raw "/apis/custom.metrics.k8s.io/v1beta1/namespaces/demo-ns/pods/*/http_requests_per_second" | jq .
