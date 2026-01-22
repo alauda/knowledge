@@ -5,6 +5,7 @@ products:
   - Alauda Container Platform
 ProductsVersion:
    - 4.x
+id: KB260100017
 ---
 
 # How to Auto-Scale Applications via HPA Based on Custom HTTP Metrics

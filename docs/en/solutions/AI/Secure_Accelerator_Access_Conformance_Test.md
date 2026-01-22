@@ -3,6 +3,7 @@ products:
    - Alauda AI
 kind:
    - Article
+id: KB260100016
 ---
 # Secure Accelerator Access Conformance Test
 

@@ -5,6 +5,7 @@ kind:
    - Solution
 ProductsVersion:
    - 4.x
+id: KB260100012
 ---
 
 # Alauda Build of NVIDIA DRA Driver for GPUs

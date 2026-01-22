@@ -6,59 +6,60 @@ products:
 ProductsVersion:
   - 4.x
 id: KB260100013
+sourceSHA: 0f96d6302a006208b05138878c76e7bfcf6bd862123c635deb5234a45fcf043d
 ---
 
-# Create Redis Instances With HostPath
+# 使用 HostPath 创建 Redis 实例
 
-## Introduction
+## 介绍
 
-This guide explains how to configure an instance of Alauda Cache Service for Redis OSS to store its data in a specific directory on your Kubernetes host machine. This is achieved by creating manual `StorageClass` and `PersistentVolume` (PV) resources. This approach is useful when an external storage provisioner is not available.
+本指南解释了如何为 Alauda Cache Service 配置 Redis OSS 实例，以便将其数据存储在 Kubernetes 主机机器上的特定目录中。这是通过创建手动的 `StorageClass` 和 `PersistentVolume` (PV) 资源来实现的。当没有外部存储提供者时，这种方法非常有用。
 
-> **Note**: This document uses the term "Primary" to refer to the main Redis node in a replication setup. This is the current standard terminology, replacing the previously used term "Master".
+> **注意**：本文档使用“Primary”一词来指代复制设置中的主要 Redis 节点。这是当前的标准术语，替代了之前使用的“Master”一词。
 
-## Prerequisites
+## 先决条件
 
-1. **Alauda Cache Service for Redis OSS**: Ensure the Redis Operator is installed in your cluster.
-2. **Host Directory**: Create the target directories on your worker nodes and set the correct permissions. The node distribution depends on the deployment mode and anti-affinity settings.
+1. **Alauda Cache Service for Redis OSS**：确保在您的集群中安装了 Redis Operator。
+2. **主机目录**：在工作节点上创建目标目录并设置正确的权限。节点分布取决于部署模式和反亲和性设置。
 
-### For Sentinel Mode (1 Primary + 1 Replica)
+### 对于 Sentinel 模式 (1 Primary + 1 Replica)
 
-The Alauda Redis (Sentinel) image runs as `UID 999` and `GID 1000`.
+Alauda Redis (Sentinel) 镜像以 `UID 999` 和 `GID 1000` 运行。
 
-> **Important**: For Sentinel mode, the Primary and Replica pods should be scheduled on **different nodes** for high availability. Create each directory on a **separate node**.
+> **重要**：对于 Sentinel 模式，Primary 和 Replica Pod 应该调度在 **不同的节点** 上以实现高可用性。每个目录应在 **单独的节点** 上创建。
 
-**On Node 1**:
+**在节点 1 上**：
 
 ```bash
 mkdir -p /cpaas/data/redis/redis-sentinel-0
 chown 999:1000 /cpaas/data/redis/redis-sentinel-0
 ```
 
-**On Node 2**:
+**在节点 2 上**：
 
 ```bash
 mkdir -p /cpaas/data/redis/redis-sentinel-1
 chown 999:1000 /cpaas/data/redis/redis-sentinel-1
 ```
 
-### For Cluster Mode (3 Primaries + 1 Replica each)
+### 对于 Cluster 模式 (每个 3 Primaries + 1 Replica)
 
-The Alauda Redis (Cluster) image runs as `UID 999` and `GID 1000`.
+Alauda Redis (Cluster) 镜像以 `UID 999` 和 `GID 1000` 运行。
 
-The directory distribution depends on the anti-affinity mode:
+目录分布取决于反亲和性模式：
 
-#### Option A: AntiAffinityInSharding Mode
+#### 选项 A：AntiAffinityInSharding 模式
 
-In this mode, pods within the **same shard** (Primary and its Replica) are scheduled on different nodes using anti-affinity. Pods from different shards may co-locate on the same node.
+在此模式下，**同一分片**（Primary 及其 Replica）中的 Pod 被调度在不同的节点上，使用反亲和性。来自不同分片的 Pod 可以共存于同一节点。
 
-**Minimum nodes required**: 2
+**所需最小节点数**：2
 
-| Node | Directories to Create |
-|------|----------------------|
-| Node 1 | `redis-cluster-0-0`, `redis-cluster-1-0`, `redis-cluster-2-0` |
-| Node 2 | `redis-cluster-0-1`, `redis-cluster-1-1`, `redis-cluster-2-1` |
+| 节点   | 要创建的目录                                         |
+| ------ | --------------------------------------------------- |
+| 节点 1 | `redis-cluster-0-0`, `redis-cluster-1-0`, `redis-cluster-2-0` |
+| 节点 2 | `redis-cluster-0-1`, `redis-cluster-1-1`, `redis-cluster-2-1` |
 
-**On Node 1**:
+**在节点 1 上**：
 
 ```bash
 mkdir -p /cpaas/data/redis/redis-cluster-0-0 \
@@ -70,7 +71,7 @@ chown 999:1000 /cpaas/data/redis/redis-cluster-0-0 \
                /cpaas/data/redis/redis-cluster-2-0
 ```
 
-**On Node 2**:
+**在节点 2 上**：
 
 ```bash
 mkdir -p /cpaas/data/redis/redis-cluster-0-1 \
@@ -82,41 +83,41 @@ chown 999:1000 /cpaas/data/redis/redis-cluster-0-1 \
                /cpaas/data/redis/redis-cluster-2-1
 ```
 
-#### Option B: AntiAffinity Mode (Full Anti-Affinity)
+#### 选项 B：AntiAffinity 模式（完全反亲和性）
 
-In this mode, **all pods** are scheduled on different nodes using anti-affinity rules. Each pod runs on a dedicated node.
+在此模式下，**所有 Pod** 都使用反亲和性规则调度在不同的节点上。每个 Pod 在专用节点上运行。
 
-**Minimum nodes required**: 6
+**所需最小节点数**：6
 
-| Node | Directory to Create |
-|------|---------------------|
-| Node 1 | `redis-cluster-0-0` |
-| Node 2 | `redis-cluster-0-1` |
-| Node 3 | `redis-cluster-1-0` |
-| Node 4 | `redis-cluster-1-1` |
-| Node 5 | `redis-cluster-2-0` |
-| Node 6 | `redis-cluster-2-1` |
+| 节点   | 要创建的目录 |
+| ------ | ------------- |
+| 节点 1 | `redis-cluster-0-0` |
+| 节点 2 | `redis-cluster-0-1` |
+| 节点 3 | `redis-cluster-1-0` |
+| 节点 4 | `redis-cluster-1-1` |
+| 节点 5 | `redis-cluster-2-0` |
+| 节点 6 | `redis-cluster-2-1` |
 
-Execute the following on **each respective node**:
+在 **每个相应节点** 上执行以下操作：
 
 ```bash
-# Replace <directory-name> with the appropriate directory for each node
+# 将 <directory-name> 替换为每个节点的适当目录
 mkdir -p /cpaas/data/redis/<directory-name>
 chown 999:1000 /cpaas/data/redis/<directory-name>
 ```
 
-For example, on Node 1:
+例如，在节点 1 上：
 
 ```bash
 mkdir -p /cpaas/data/redis/redis-cluster-0-0
 chown 999:1000 /cpaas/data/redis/redis-cluster-0-0
 ```
 
-## Procedure
+## 操作步骤
 
-### 1. Create the Manual StorageClass
+### 1. 创建手动 StorageClass
 
-To bypass dynamic provisioning, create a StorageClass with the `no-provisioner` provisioner:
+为了绕过动态供应，创建一个使用 `no-provisioner` 供应者的 StorageClass：
 
 ```yaml
 apiVersion: storage.k8s.io/v1
@@ -124,18 +125,18 @@ kind: StorageClass
 metadata:
   name: local-storage
   labels:
-    project.cpaas.io/<your-project-name>: "true" # Replace <your-project-name> with your actual project name
+    project.cpaas.io/<your-project-name>: "true" # 将 <your-project-name> 替换为您的实际项目名称
 provisioner: kubernetes.io/no-provisioner
 volumeBindingMode: WaitForFirstConsumer
 ```
 
-### 2. Create the PersistentVolumes (PV)
+### 2. 创建 PersistentVolumes (PV)
 
-#### Option A: Sentinel Mode PVs
+#### 选项 A：Sentinel 模式 PV
 
-For a 1 Primary + 1 Replica Sentinel setup with 2Gi storage:
+对于 1 Primary + 1 Replica Sentinel 设置，存储为 2Gi：
 
-> **Important**: Replace `<node-1>` and `<node-2>` with actual node hostnames from `kubectl get nodes`.
+> **重要**：将 `<node-1>` 和 `<node-2>` 替换为 `kubectl get nodes` 中的实际节点主机名。
 
 ```yaml
 ---
@@ -152,8 +153,8 @@ spec:
   claimRef:
     apiVersion: v1
     kind: PersistentVolumeClaim
-    name: redis-data-rfr-<instance-name>-0  # Replace <instance-name> with your Redis instance name
-    namespace: <namespace>                   # Replace <namespace> with your namespace
+    name: redis-data-rfr-<instance-name>-0  # 将 <instance-name> 替换为您的 Redis 实例名称
+    namespace: <namespace>                   # 将 <namespace> 替换为您的命名空间
   hostPath:
     path: /cpaas/data/redis/redis-sentinel-0
     type: DirectoryOrCreate
@@ -166,7 +167,7 @@ spec:
         - key: kubernetes.io/hostname
           operator: In
           values:
-          - <node-1>  # Replace with the hostname of Node 1 where redis-sentinel-0 directory was created
+          - <node-1>  # 替换为创建 redis-sentinel-0 目录的节点 1 的主机名
 ---
 apiVersion: v1
 kind: PersistentVolume
@@ -181,8 +182,8 @@ spec:
   claimRef:
     apiVersion: v1
     kind: PersistentVolumeClaim
-    name: redis-data-rfr-<instance-name>-1  # Replace <instance-name> with your Redis instance name
-    namespace: <namespace>                   # Replace <namespace> with your namespace
+    name: redis-data-rfr-<instance-name>-1  # 将 <instance-name> 替换为您的 Redis 实例名称
+    namespace: <namespace>                   # 将 <namespace> 替换为您的命名空间
   hostPath:
     path: /cpaas/data/redis/redis-sentinel-1
     type: DirectoryOrCreate
@@ -195,20 +196,21 @@ spec:
         - key: kubernetes.io/hostname
           operator: In
           values:
-          - <node-2>  # Replace with the hostname of Node 2 where redis-sentinel-1 directory was created
+          - <node-2>  # 替换为创建 redis-sentinel-1 目录的节点 2 的主机名
 ```
 
-#### Option B: Cluster Mode PVs
+#### 选项 B：Cluster 模式 PV
 
-For a 3-shard Cluster setup (3 Primaries + 1 Replica each) with 2Gi storage.
+对于 3 分片 Cluster 设置（每个 3 Primaries + 1 Replica），存储为 2Gi。
 
-> **Important**: Replace `<node-X>` placeholders with actual node hostnames from `kubectl get nodes`.
+> **重要**：将 `<node-X>` 占位符替换为 `kubectl get nodes` 中的实际节点主机名。
 
-##### For AntiAffinityInSharding Mode (2 nodes)
+##### 对于 AntiAffinityInSharding 模式（2 个节点）
 
-In this mode, pods within the same shard are scheduled on different nodes. Pods from different shards may co-locate:
-- `<node-1>`: PVs for pod index 0 of each shard (0-0, 1-0, 2-0)
-- `<node-2>`: PVs for pod index 1 of each shard (0-1, 1-1, 2-1)
+在此模式下，同一分片中的 Pod 被调度在不同的节点上。来自不同分片的 Pod 可以共存：
+
+- `<node-1>`：每个分片的 Pod 索引 0 的 PV（0-0, 1-0, 2-0）
+- `<node-2>`：每个分片的 Pod 索引 1 的 PV（0-1, 1-1, 2-1）
 
 ```yaml
 ---
@@ -225,8 +227,8 @@ spec:
   claimRef:
     apiVersion: v1
     kind: PersistentVolumeClaim
-    name: redis-data-drc-<instance-name>-0-0  # Replace <instance-name> with your Redis instance name
-    namespace: <namespace>                     # Replace <namespace> with your namespace
+    name: redis-data-drc-<instance-name>-0-0  # 将 <instance-name> 替换为您的 Redis 实例名称
+    namespace: <namespace>                     # 将 <namespace> 替换为您的命名空间
   hostPath:
     path: /cpaas/data/redis/redis-cluster-0-0
     type: DirectoryOrCreate
@@ -387,33 +389,33 @@ spec:
           - <node-2>
 ```
 
-##### For Full AntiAffinity Mode (6 nodes)
+##### 对于完全反亲和性模式（6 个节点）
 
-In this mode, each pod runs on a dedicated node. Use separate node hostnames for each PV:
+在此模式下，每个 Pod 在专用节点上运行。为每个 PV 使用不同的节点主机名：
 
-| PV Name | Node Affinity |
-|---------|---------------|
-| `pv-redis-cluster-0-0` | `<node-1>` |
-| `pv-redis-cluster-0-1` | `<node-2>` |
-| `pv-redis-cluster-1-0` | `<node-3>` |
-| `pv-redis-cluster-1-1` | `<node-4>` |
-| `pv-redis-cluster-2-0` | `<node-5>` |
-| `pv-redis-cluster-2-1` | `<node-6>` |
+| PV 名称                | 节点亲和性 |
+| ---------------------- | ----------- |
+| `pv-redis-cluster-0-0` | `<node-1>`  |
+| `pv-redis-cluster-0-1` | `<node-2>`  |
+| `pv-redis-cluster-1-0` | `<node-3>`  |
+| `pv-redis-cluster-1-1` | `<node-4>`  |
+| `pv-redis-cluster-2-0` | `<node-5>`  |
+| `pv-redis-cluster-2-1` | `<node-6>`  |
 
-Use the same YAML structure as above, but replace each `nodeAffinity.values` with the corresponding unique node hostname.
+使用与上述相同的 YAML 结构，但将每个 `nodeAffinity.values` 替换为相应的唯一节点主机名。
 
-### 3. Create the Redis Instance
+### 3. 创建 Redis 实例
 
-#### Sentinel Mode
+#### Sentinel 模式
 
-Apply the following YAML to create a Sentinel mode Redis instance:
+应用以下 YAML 创建 Sentinel 模式 Redis 实例：
 
 ```yaml
 apiVersion: middleware.alauda.io/v1
 kind: Redis
 metadata:
-  name: <instance-name>        # Replace with your instance name
-  namespace: <namespace>       # Replace with your namespace
+  name: <instance-name>        # 替换为您的实例名称
+  namespace: <namespace>       # 替换为您的命名空间
 spec:
   affinity:
     podAntiAffinity:
@@ -443,7 +445,7 @@ spec:
         memory: 128Mi
   expose:
     type: NodePort
-  passwordSecret: <default user password secret> # Optional
+  passwordSecret: <default user password secret> # 可选
   persistent:
     storageClassName: local-storage
   persistentSize: 2Gi
@@ -479,20 +481,20 @@ spec:
   version: "6.0"
 ```
 
-Refer to documentation: [Create Redis Instance](https://docs.alauda.io/redis/) for more instance creation details.
+参考文档：[创建 Redis 实例](https://docs.alauda.io/redis/) 获取更多实例创建细节。
 
-> **Note**: Ensure the `metadata.name` matches the `<instance-name>` used in your PV `claimRef` definitions. The PVC naming pattern is `redis-data-rfr-<instance-name>-<index>`.
+> **注意**：确保 `metadata.name` 与您在 PV `claimRef` 定义中使用的 `<instance-name>` 匹配。PVC 命名模式为 `redis-data-rfr-<instance-name>-<index>`。
 
-#### Cluster Mode
+#### Cluster 模式
 
-Apply the following YAML to create a Cluster mode Redis instance:
+应用以下 YAML 创建 Cluster 模式 Redis 实例：
 
 ```yaml
 apiVersion: middleware.alauda.io/v1
 kind: Redis
 metadata:
-  name: <instance-name>        # Replace with your instance name
-  namespace: <namespace>       # Replace with your namespace
+  name: <instance-name>        # 替换为您的实例名称
+  namespace: <namespace>       # 替换为您的命名空间
 spec:
   affinityPolicy: AntiAffinityInSharding
   arch: cluster
@@ -502,7 +504,7 @@ spec:
     enabled: true
   expose:
     type: NodePort
-  passwordSecret: <default user password secret> # Optional
+  passwordSecret: <default user password secret> # 可选
   persistent:
     storageClassName: local-storage
   persistentSize: 2Gi
@@ -520,34 +522,34 @@ spec:
   version: "6.0"
 ```
 
-Refer to documentation: [Create Redis Instance](https://docs.alauda.io/redis/) for more instance creation details.
+参考文档：[创建 Redis 实例](https://docs.alauda.io/redis/) 获取更多实例创建细节。
 
-> **Note**: Ensure the `metadata.name` matches the `<instance-name>` used in your PV `claimRef` definitions. Ensure your PV `claimRef` names follow the pattern `redis-data-drc-<instance-name>-<shard>-<replica>`.
+> **注意**：确保 `metadata.name` 与您在 PV `claimRef` 定义中使用的 `<instance-name>` 匹配。确保您的 PV `claimRef` 名称遵循模式 `redis-data-drc-<instance-name>-<shard>-<replica>`。
 
-## Important Considerations
+## 重要考虑事项
 
-### PV Naming Convention
+### PV 命名约定
 
-The PVC names generated by the Redis Operator follow specific patterns:
+Redis Operator 生成的 PVC 名称遵循特定模式：
 
-| Mode | PVC Name Pattern | Example |
-|------|------------------|---------|
-| Sentinel | `redis-data-rfr-<instance-name>-<index>` | `redis-data-rfr-my-redis-0` |
-| Cluster | `redis-data-drc-<instance-name>-<shard>-<replica>` | `redis-data-drc-my-redis-0-0` |
+| 模式     | PVC 名称模式                                   | 示例                       |
+| -------- | ---------------------------------------------- | -------------------------- |
+| Sentinel | `redis-data-rfr-<instance-name>-<index>`       | `redis-data-rfr-my-redis-0` |
+| Cluster  | `redis-data-drc-<instance-name>-<shard>-<replica>` | `redis-data-drc-my-redis-0-0` |
 
-Ensure your PV `claimRef` names match exactly.
+确保您的 PV `claimRef` 名称完全匹配。
 
-### High Availability (HA)
+### 高可用性 (HA)
 
-- **Sentinel Mode**: Requires 2 PVs for 1 Primary + 1 Replica
-- **Cluster Mode**: Requires 6 PVs for 3 shards with 1 replica each (3 Primaries + 3 Replicas)
+- **Sentinel 模式**：需要 2 个 PV 以支持 1 Primary + 1 Replica
+- **Cluster 模式**：需要 6 个 PV 以支持 3 个分片，每个分片 1 个副本（3 Primaries + 3 Replicas）
 
-Each PV must point to a **different** host directory.
+每个 PV 必须指向 **不同** 的主机目录。
 
-### Reusability
+### 可重用性
 
-When you delete the Redis instance, the `PersistentVolume` will go into a `Released` state (because of the `Retain` policy in this guide). To reuse storage for a new instance:
+当您删除 Redis 实例时，`PersistentVolume` 将进入 `Released` 状态（因为本指南中的 `Retain` 策略）。要为新实例重用存储：
 
-1. Delete the existing PV
-2. Clean the host directory data if needed
-3. Recreate the PV with the new `claimRef` values
+1. 删除现有 PV
+2. 如有必要，清理主机目录数据
+3. 使用新的 `claimRef` 值重新创建 PV
