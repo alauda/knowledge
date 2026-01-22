@@ -53,7 +53,7 @@ kind: StatefulSet
 metadata:
   name: postgresql-db
 spec:
-  serviceName: postgresql-db-service
+  serviceName: postgres-db
   selector:
     matchLabels:
       app: postgresql-db
@@ -84,6 +84,8 @@ spec:
               value: keycloak
       volumes:
         - name: cache-volume
+          # WARNING: emptyDir will lose all data on pod restart/deletion.
+          # For production, use a PersistentVolumeClaim instead.
           emptyDir: {}
 ---
 # PostgreSQL StatefulSet Service
