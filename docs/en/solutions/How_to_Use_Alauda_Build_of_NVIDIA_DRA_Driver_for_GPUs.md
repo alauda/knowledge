@@ -38,7 +38,7 @@ CDI (Container Device Interface) provides a standard mechanism for device vendor
 
 CDI support is enabled by default in containerd version 2.0 and later. Earlier versions, starting from 1.7.0, support for this feature requires manual activation.
 
-#### Steps to Enable CDI in containerd v1.7.x(Only need to be executed on the GPU node.)
+#### Steps to Enable CDI in containerd v1.7.x (Only required on GPU nodes)
 
 1. Update containerd configuration.
 
