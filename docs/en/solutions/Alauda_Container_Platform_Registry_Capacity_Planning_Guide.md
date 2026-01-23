@@ -22,26 +22,27 @@ The recommendations are based on an analysis of component architectures, source 
 ### Alauda Container Platform Registry
 
 **Resource Profile**:
-  * **I/O Intensive**: Performance is heavily dependent on storage backend speed (for layer push/pull operations).
-  * **Memory Sensitive**: Requires adequate memory for layer caching during pushes and pulls, and for handling concurrent connections.
-  * **Moderate CPU**: CPU is used for compression, hashing, and request handling.
+* **I/O Intensive**: Performance is heavily dependent on storage backend speed (for layer push/pull operations).
+* **Memory Sensitive**: Requires adequate memory for layer caching during pushes and pulls, and for handling concurrent connections.
+* **Moderate CPU**: CPU is used for compression, hashing, and request handling.
 
 ### Registry Gateway
 
 **Resource Profile**:
-  * **CPU Intensive**: Due to JSON parsing, size calculation, and request proxying.
-  * **Latency Sensitive**: Performance is tightly coupled with the response time of the backend Registry's tag listing endpoint.
-  * **Memory Sensitive**: Needs buffer for large manifest requests and maintains session cache.
+* **CPU Intensive**: Due to JSON parsing, size calculation, and request proxying.
+* **Latency Sensitive**: Performance is tightly coupled with the response time of the backend Registry's tag listing endpoint.
+* **Memory Sensitive**: Needs buffer for large manifest requests and maintains session cache.
 
 ## Core Evaluation Dimensions
 This guide provides resource configuration recommendations based on the following two dynamic load indicators:
-  * **Daily Average Access Traffic**: Reflects ongoing daily load levels.
-  * **Peak Access Traffic**: Reflects the maximum concurrent pressure the system needs to handle.
+* **Daily Average Access Traffic**: Reflects ongoing daily load levels.
+* **Peak Access Traffic**: Reflects the maximum concurrent pressure the system needs to handle.
 These traffic flows primarily consist of two types of operations:
-  * **Push Operations**: Trigger image uploads, manifest parsing, and tag validation, placing higher demands on gateway CPU and memory.
-  * **Pull Operations**: Mainly generate pressure on registry I/O and network
+* **Push Operations**: Trigger image uploads, manifest parsing, and tag validation, placing higher demands on gateway CPU and memory.
+* **Pull Operations**: Mainly generate pressure on registry I/O and network
 
 ## Traffic Level Definitions
+
 | Traffic Level | Daily Pull/Push Operations | Peak Concurrent Pull/Push Operations | Typical Scenario |
 | --------- |  -------------- | --------------------- | -------------------------- |
 | Low Traffic | <1,000 | < 50 | Small team development/testing, light usage |
@@ -76,9 +77,9 @@ Applicable: Enterprise central registry serving multiple teams and all environme
 
 ## Considerations for Dedicated Node Deployment
 In production environments, deploying the `Alauda Container Platform Registry` and `Registry Gateway` on **dedicated nodes** (separate from core PaaS components) is strongly recommended when any of the following conditions apply:
-  * **High Concurrency/Throughput**: The registry handles over 10,000 daily operations, or experiences frequent batch image pulls during cluster scaling.
-  * **High Availability & Strict SLA Requirements**: Requires >99.9% availability, supports replication, or needs independent upgrade/disaster recovery procedures.
-  * **Resource Isolation & Security Compliance**: Mandated by multi-tenancy or regulatory audits, requiring separate security policies, logging, and data isolation.
+* **High Concurrency/Throughput**: The registry handles over 10,000 daily operations, or experiences frequent batch image pulls during cluster scaling.
+* **High Availability & Strict SLA Requirements**: Requires >99.9% availability, supports replication, or needs independent upgrade/disaster recovery procedures.
+* **Resource Isolation & Security Compliance**: Mandated by multi-tenancy or regulatory audits, requiring separate security policies, logging, and data isolation.
 **Benefits**: Prevents resource contention with critical platform services (e.g., API Server), minimizes performance interference, and simplifies security management.
 
 ## Final Recommendation
