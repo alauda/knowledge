@@ -106,6 +106,10 @@ extraVolumeMounts:
     mountPath: /usr/share/elasticsearch/plugins
 ```
 
+:::note
+The above configuration only sets S3 configs for master nodes. If you have dedicated data nodes, add the same S3 config to `dataNodes` as well.
+:::
+
 **OpenSearch:**
 
 In your `OpenSearchCluster` CR:
