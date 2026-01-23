@@ -5,6 +5,7 @@ products:
   - Alauda Container Platform
 ProductsVersion:
    - 4.x
+id: KB260100018
 ---
 
 # Alauda Container Platform Registry & Registry Gateway Capacity Planning Guide
