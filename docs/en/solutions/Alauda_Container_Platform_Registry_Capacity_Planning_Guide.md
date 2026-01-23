@@ -13,7 +13,7 @@ ProductsVersion:
 This document provides hardware resource specification recommendations for **Alauda Container Platform Registry** in Kubernetes environments. The stack consists of two core components:
 
 * **Alauda Container Platform Registry**: The OCI image registry server responsible for storing and distributing image layers and manifests. It is I/O and network-intensive.
-* **Registry Gateway**: A proxy middleware that enforces policies such as image size limits and repository tag count limits before requests reach the registry. It is primarily CPU and network-latency intensive.
+* **Registry Gateway**: A proxy middleware that enforces policies such as image size limits and repository tag count limits before requests reach the registry. It is primarily CPU and network-latency-intensive.
 
 The recommendations are based on an analysis of component architectures, source code, and known performance characteristics, targeting three common deployment scales.
 
@@ -38,8 +38,8 @@ This guide provides resource configuration recommendations based on the followin
 * **Daily Average Access Traffic**: Reflects ongoing daily load levels.
 * **Peak Access Traffic**: Reflects the maximum concurrent pressure the system needs to handle.
 These traffic flows primarily consist of two types of operations:
-* **Push Operations**: Trigger image uploads, manifest parsing, and tag validation, placing higher demands on gateway CPU and memory.
-* **Pull Operations**: Mainly generate pressure on registry I/O and network
+  - **Push Operations**: Trigger image uploads, manifest parsing, and tag validation, placing higher demands on gateway CPU and memory.
+  - **Pull Operations**: Mainly generate pressure on registry I/O and network
 
 ## Traffic Level Definitions
 
@@ -80,6 +80,7 @@ In production environments, deploying the `Alauda Container Platform Registry` a
 * **High Concurrency/Throughput**: The registry handles over 10,000 daily operations, or experiences frequent batch image pulls during cluster scaling.
 * **High Availability & Strict SLA Requirements**: Requires >99.9% availability, supports replication, or needs independent upgrade/disaster recovery procedures.
 * **Resource Isolation & Security Compliance**: Mandated by multi-tenancy or regulatory audits, requiring separate security policies, logging, and data isolation.
+
 **Benefits**: Prevents resource contention with critical platform services (e.g., API Server), minimizes performance interference, and simplifies security management.
 
 ## Final Recommendation
