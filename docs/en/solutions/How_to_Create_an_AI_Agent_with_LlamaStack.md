@@ -68,9 +68,12 @@ spec:
         - name: VLLM_URL
           value: "https://api.deepseek.com/v1"    # URL of the LLM API provider
         - name: VLLM_MAX_TOKENS
-          value: "8192"                            # Maximum output tokens (DeepSeek Chat supports up to 8K)
-        - name: VLLM_API_TOKEN
-          value: XXX                               # API authentication token
+          value: "8192"                           # Maximum output tokens
+        - name: VLLM_API_TOKEN                    # Load LLM API token from secret
+          valueFrom:
+            secretKeyRef:
+              key: token
+              name: deepseek-api
       name: llama-stack
       port: 8321
     distribution:
