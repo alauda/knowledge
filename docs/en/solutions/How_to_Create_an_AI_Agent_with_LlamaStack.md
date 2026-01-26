@@ -66,7 +66,7 @@ spec:
     containerSpec:
       env:
         - name: VLLM_URL
-          value: " https://api.deepseek.com/v1"    # URL of the LLM API provider
+          value: "https://api.deepseek.com/v1"    # URL of the LLM API provider
         - name: VLLM_MAX_TOKENS
           value: "8192"                            # Maximum output tokens (DeepSeek Chat supports up to 8K)
         - name: VLLM_API_TOKEN
