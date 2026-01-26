@@ -1,0 +1,60 @@
+version: "2"
+image_name: llama-stack-demo
+apis:
+  - inference
+  - agents
+  - safety
+  - tool_runtime
+  - vector_io
+  - files
+
+providers:
+  inference:
+    - provider_id: openai
+      provider_type: remote::openai
+      config:
+        api_key: ${env.API_KEY}
+        base_url: https://api.deepseek.com/v1
+  agents:
+    - provider_id: meta-reference
+      provider_type: inline::meta-reference
+      config:
+        persistence:
+          agent_state:
+            backend: kv_default
+            namespace: agents
+          responses:
+            backend: sql_default
+            table_name: responses
+  safety:
+    - provider_id: llama-guard
+      provider_type: inline::llama-guard
+      config:
+        excluded_categories: []
+  tool_runtime: []
+  vector_io:
+    - provider_id: sqlite-vec
+      provider_type: inline::sqlite-vec
+      config:
+        db_path: ${env.SQLITE_STORE_DIR:~/.llama/distributions/llama-stack-demo}/sqlite_vec.db
+        persistence:
+          backend: kv_default
+          namespace: vector_io::sqlite_vec
+  files:
+    - provider_id: localfs
+      provider_type: inline::localfs
+      config:
+        storage_dir: ${env.SQLITE_STORE_DIR:~/.llama/distributions/llama-stack-demo}/files
+        metadata_store:
+          backend: sql_default
+          table_name: files_metadata
+
+metadata_store:
+  type: sqlite
+
+models:
+  - metadata: {}
+    model_id: deepseek/deepseek-chat
+    provider_id: openai
+    provider_model_id: deepseek-chat
+    model_type: llm
