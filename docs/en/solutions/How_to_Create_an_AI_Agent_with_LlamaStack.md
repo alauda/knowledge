@@ -116,6 +116,7 @@ wget -O /tmp/python312.tar.gz https://github.com/astral-sh/python-build-standalo
 2. Extract with:
 
 ```bash
+mkdir -p ~/python312
 tar -xzf /tmp/python312.tar.gz -C ~/python312 --strip-components=1
 ```
 
