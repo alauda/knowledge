@@ -222,9 +222,13 @@ curl -u "elastic:<password>" -X PUT "http://localhost:9200/_snapshot/migration_r
 {
   "indices": "*",
   "ignore_unavailable": true,
-  "include_global_state": true
+  "include_global_state": true 
 }'
 ```
+
+:::note Excluding System Indices
+It is recommended to exclude system indices (`.kibana*`, `.security*`, `.monitoring*`, `apm*`, `.apm*`) during snapshot creation. These indices are Elasticsearch-specific and will conflict with OpenSearch's internal indices during restore. By excluding them at snapshot time, you reduce snapshot size and avoid potential restore issues.
+:::
 
 ### Phase 1: Restore to OpenSearch 2.x
 
@@ -267,7 +271,7 @@ Exclude system indices to avoid conflicts with OpenSearch's internal indices:
 curl -k -u "admin:admin" -X POST "https://localhost:9200/_snapshot/migration_repo/snapshot_1/_restore" \
   -H 'Content-Type: application/json' -d'
 {
-  "indices": "-.kibana*,-.security*,-.monitoring*",
+  "indices": "-.kibana*,-.security*,-.monitoring*,-apm*,-.apm*",
   "include_global_state": false
 }'
 ```
@@ -293,6 +297,10 @@ Indices restored from ES 7.10 snapshots retain their original version metadata (
 #### Step 7: Reindex All Restored Indices
 
 For each restored index, create a new index and reindex the data:
+
+:::note
+The examples below use `migration_test` as the index name. Replace `migration_test` with your actual index name when executing these commands.
+:::
 
 ```bash
 # 1. Get the original index mapping and extract the mappings object using sed
