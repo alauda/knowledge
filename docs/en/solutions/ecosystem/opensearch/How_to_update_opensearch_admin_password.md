@@ -3,6 +3,7 @@ products:
   - Alauda Application Services
 kind:
   - Solution
+id: KB260100022
 ---
 
 # How to Set and Update the OpenSearch Admin Password
