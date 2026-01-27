@@ -414,6 +414,20 @@ spec:
             storage: 5Gi
 ```
 
+:::note TLS Configuration
+If you disable TLS by setting:
+
+```yaml
+spec:
+  http:
+    tls:
+      selfSignedCertificate:
+        disabled: true
+```
+
+You must use `http://` instead of `https://` when accessing the Elasticsearch API.
+:::
+
 ### Procedure
 
 #### Step 1: Configure OpenSearch for Remote Reindex
