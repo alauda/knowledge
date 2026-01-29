@@ -5,6 +5,7 @@ ProductsVersion:
    - 4.2
 kind:
    - Solution
+id: KB260100025
 ---
 # Cluster Autoscaler Solution
 
