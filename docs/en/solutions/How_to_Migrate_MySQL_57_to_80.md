@@ -13,7 +13,7 @@ ProductsVersion:
 
 ### The Challenge
 
-MySQL 5.7 End of Life (EOL) is approaching in October 2023, and organizations must upgrade to MySQL 8.0 to continue receiving security updates and to leverage new features. Migrating production databases involves complex considerations, including schema compatibility, character set changes, authentication plugin updates, and ensuring data integrity during the migration process.
+MySQL 5.7 reached End of Life (EOL) in October 2023, and organizations must upgrade to MySQL 8.0 to continue receiving security updates and to leverage new features. Migrating production databases involves complex considerations, including schema compatibility, character set changes, authentication plugin updates, and ensuring data integrity during the migration process.
 
 ### The Solution
 
@@ -73,11 +73,11 @@ This migration solution has been **verified** in Kubernetes environments using P
 
 | Scenario | Database Size | Estimated Downtime | Section Reference |
 |----------|---------------|-------------------|------------------|
-| **Small Database** | < 10GB | 15-30 minutes | [Migration Procedure](#migration-procedure) |
-| **Medium Database** | 10-50GB | 30-60 minutes | [Migration Procedure](#migration-procedure) |
-| **Large Database** | 50-200GB | 1-2 hours | [Migration Procedure](#migration-procedure) |
-| **Schema Issues** | Any size | +1-2 hours for fixes | [Schema Compatibility](#schema-compatibility-analysis) |
-| **Character Set Migration** | Any size | +30-60 minutes | [Character Set Migration](#character-set-and-collation-analysis) |
+| **Small Database** | < 10GB | 15-30 minutes | [Migration Procedure](#step-4-migrate-data-users-and-privileges) |
+| **Medium Database** | 10-50GB | 30-60 minutes | [Migration Procedure](#step-4-migrate-data-users-and-privileges) |
+| **Large Database** | 50-200GB | 1-2 hours | [Migration Procedure](#step-4-migrate-data-users-and-privileges) |
+| **Schema Issues** | Any size | +1-2 hours for fixes | [Schema Compatibility](#step-1-schema-compatibility-analysis) |
+| **Character Set Migration** | Any size | +30-60 minutes | [Character Set Migration](#step-2-character-set-and-collation-analysis) |
 
 ## Prerequisites
 
@@ -96,8 +96,8 @@ Before performing MySQL migration, ensure you have:
   - Same or higher resource allocation (CPU/Memory) as source
   - Network connectivity from your local machine to both clusters
 - **Pre-Migration Tasks**:
-  - Complete [Schema Compatibility Analysis](#schema-compatibility-analysis) and fix issues
-  - Complete [Character Set Migration](#character-set-and-collation-analysis) if using legacy charsets
+  - Complete [Schema Compatibility Analysis](#step-1-schema-compatibility-analysis) and fix issues
+  - Complete [Character Set Migration](#step-2-character-set-and-collation-analysis) if using legacy charsets
   - Identify user databases to migrate (DO NOT include: `information_schema`, `mysql`, `performance_schema`, `sys`)
   - Schedule maintenance window with application team
   - Notify stakeholders about planned downtime
@@ -606,7 +606,7 @@ kubectl logs -n <app-namespace> <app-pod> --tail=100 -f
 #### Issue: GTID_PURGED Error
 
 **Symptoms:**
-```
+```text
 ERROR 3546 (HY000) at line XX: Cannot update GTID_PURGED with the Group Replication plugin running
 ```
 
@@ -615,7 +615,7 @@ ERROR 3546 (HY000) at line XX: Cannot update GTID_PURGED with the Group Replicat
 #### Issue: Character Set Conversion Errors
 
 **Symptoms:**
-```
+```text
 ERROR 1366 (HY000): Incorrect string value
 ```
 
@@ -639,7 +639,7 @@ kubectl exec ${TARGET_NAME}-0 -n ${TARGET_NAMESPACE} -c mysql -- \
 #### Issue: DEFINER Privilege Errors
 
 **Symptoms:**
-```
+```text
 ERROR 1449 (HY000): The user specified as a definer ('user'@'host') does not exist
 ```
 
@@ -664,7 +664,7 @@ kubectl exec ${TARGET_NAME}-0 -n ${TARGET_NAMESPACE} -c mysql -- \
 #### Issue: Authentication Plugin Errors
 
 **Symptoms:**
-```
+```text
 ERROR 2059 (HY000): Authentication plugin 'caching_sha2_password' cannot be loaded
 ```
 
@@ -849,7 +849,7 @@ chmod +x 00-pre-migration-check.sh
 ```
 
 **Expected Output:**
-```
+```text
 ========================================
 MySQL 5.7 to 8.0 Pre-Migration Check
 ========================================
@@ -926,7 +926,7 @@ chmod +x 01-migrate-all.sh
 ```
 
 **Expected Output:**
-```
+```text
 ========================================
 MySQL 5.7 to 8.0 Migration
 ========================================
@@ -1026,7 +1026,7 @@ chmod +x 02-verify-migration.sh
 ```
 
 **Expected Output:**
-```
+```text
 ========================================
 MySQL 5.7 to 8.0 Migration Verification
 ========================================
@@ -1072,18 +1072,18 @@ kubectl get secret mgr-<target-name>-password -n <target-namespace> -o jsonpath=
 
 ### Troubleshooting Scripts
 
-**Script fails with "Cannot connect to Kubernetes cluster"**
+#### Script fails with "Cannot connect to Kubernetes cluster"
 ```bash
 kubectl config current-context
 kubectl cluster-info
 ```
 
-**Script fails with "Source cluster not found"**
+#### Script fails with "Source cluster not found"
 ```bash
 kubectl get mysql -n <namespace>
 ```
 
-**Migration fails for specific database**
+#### Migration fails for specific database
 ```bash
 # Check target logs
 kubectl logs -n <target-namespace> <target-name>-0 -c mysql --tail=100
