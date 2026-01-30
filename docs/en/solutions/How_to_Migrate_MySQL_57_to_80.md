@@ -191,49 +191,11 @@ kubectl exec <target-name>-0 -n <namespace> -c mysql -- \
 - Use `-e "SQL"` for single statements, multiple `-e` for multiple statements
 - When using variables, place `-n <namespace>` before the pod name to avoid parsing issues
 
-## Configuration Guide
+## Execution Guide
 
-### Quick Start: Automated Migration Scripts
+This guide uses the automated migration scripts provided in the [Appendix](#appendix-migration-scripts-reference) to simplify the migration process.
 
-For automated execution, use the provided migration scripts which simplify the process into three steps:
-
-**📋 Available Scripts:**
-
-1. **00-pre-migration-check.sh** - Pre-migration compatibility analysis (run 1 week before)
-2. **01-migrate-all.sh** - Complete migration (data + users + privileges)
-3. **02-verify-migration.sh** - Comprehensive verification
-
-**🚀 Quick Usage:**
-
-```bash
-# Step 1: Pre-migration check (1 week before)
-vi 00-pre-migration-check.sh          # Edit configuration
-chmod +x 00-pre-migration-check.sh
-./00-pre-migration-check.sh           # Run check
-
-# Step 2: Migration (during maintenance window)
-vi 01-migrate-all.sh                  # Edit configuration
-chmod +x 01-migrate-all.sh
-./01-migrate-all.sh                   # Run migration
-
-# Step 3: Verification
-vi 02-verify-migration.sh             # Edit configuration
-chmod +x 02-verify-migration.sh
-./02-verify-migration.sh              # Run verification
-```
-
-**✨ Script Features:**
-- ✅ Color-coded output (success/error/warning)
-- ✅ Progress indicators
-- ✅ Automatic error detection
-- ✅ Comprehensive verification
-- ✅ Minimal configuration required
-
-See [README-SCRIPTS.md](#appendix-migration-scripts-reference) for detailed script documentation.
-
----
-
-### Step 0: Create Target MySQL 8.0 Instance
+### Step 1: Create Target MySQL 8.0 Instance
 
 **IMPORTANT**: Create the target MySQL 8.0 instance BEFORE starting migration.
 
@@ -242,7 +204,7 @@ See [README-SCRIPTS.md](#appendix-migration-scripts-reference) for detailed scri
 Refer to the [Create MySQL Instance documentation](https://docs.alauda.io/mysql-mgr/4.2/functions/01-create.html) for detailed instructions. Key configuration points:
 
 1. Select version **8.0**
-2. Configure resources (at minimum, match source cluster)
+2. Configure resources (recommend **+10-20% memory** over source cluster due to MySQL 8.0 overhead)
 3. Set storage size to **2-3x** source database size
 
 **Using Command Line:**
@@ -341,76 +303,27 @@ $TARGET_NAME-read-write.$NAMESPACE.svc.cluster.local:3306
 $TARGET_NAME-read-only.$NAMESPACE.svc.cluster.local:3306
 ```
 
-### Schema Compatibility Analysis
+### Step 2: Schema Compatibility Analysis
 
 Perform this analysis **1 week before** planned migration.
 
-> **IMPORTANT:** `DATABASES` must contain ONLY user/application databases. **DO NOT** include system databases: `information_schema`, `mysql`, `performance_schema`, `sys`. These are managed internally by MySQL and have different schemas between versions 5.7 and 8.0.
-
-#### Automated Compatibility Checks
+Run the `00-pre-migration-check.sh` script to automatically detect schema compatibility issues and identify databases to migrate.
 
 ```bash
-SOURCE_NAME="source"
-SOURCE_NAMESPACE="your-namespace"
-MYSQL_PASSWORD="your-password"
-DATABASES="db1 db2 db3"  # ← Space-separated list of YOUR databases only
+# Edit configuration
+vi 00-pre-migration-check.sh
 
-# 1. Check for reserved keywords
-kubectl exec ${SOURCE_NAME}-pxc-0 -n ${SOURCE_NAMESPACE} -- \
-  mysql -uroot -p${MYSQL_PASSWORD} -e "
-    SELECT TABLE_SCHEMA, TABLE_NAME, COLUMN_NAME, DATA_TYPE
-    FROM information_schema.COLUMNS
-    WHERE COLUMN_NAME IN ('RANK', 'GROUPS', 'FUNCTION', 'SYSTEM', 'RELOAD',
-                          'ARRAY', 'OFFSET', 'CUBE', 'ROLE', 'VALUES')
-    AND TABLE_SCHEMA NOT IN ('mysql', 'information_schema', 'performance_schema', 'sys')
-    AND TABLE_SCHEMA IN ('${DATABASES// /,\'','\'}')
-    ORDER BY TABLE_SCHEMA, TABLE_NAME;
-  "
-
-# 2. Check for invalid date defaults
-kubectl exec ${SOURCE_NAME}-pxc-0 -n ${SOURCE_NAMESPACE} -- \
-  mysql -uroot -p${MYSQL_PASSWORD} -e "
-    SELECT TABLE_SCHEMA, TABLE_NAME, COLUMN_NAME, COLUMN_DEFAULT
-    FROM information_schema.COLUMNS
-    WHERE DATA_TYPE IN ('date', 'datetime', 'timestamp')
-      AND COLUMN_DEFAULT LIKE '0000-00-00%'
-      AND TABLE_SCHEMA IN ('${DATABASES// /,\'','\'}')
-    ORDER BY TABLE_SCHEMA, TABLE_NAME;
-  "
-
-# 3. Check for ZEROFILL usage
-kubectl exec ${SOURCE_NAME}-pxc-0 -n ${SOURCE_NAMESPACE} -- \
-  mysql -uroot -p${MYSQL_PASSWORD} -e "
-    SELECT TABLE_SCHEMA, TABLE_NAME, COLUMN_NAME, COLUMN_TYPE
-    FROM information_schema.COLUMNS
-    WHERE COLUMN_TYPE LIKE '%ZEROFILL%'
-      AND TABLE_SCHEMA IN ('${DATABASES// /,\'','\'}')
-    ORDER BY TABLE_SCHEMA, TABLE_NAME;
-  "
-
-# 4. Check for TEXT columns with DEFAULT values
-kubectl exec ${SOURCE_NAME}-pxc-0 -n ${SOURCE_NAMESPACE} -- \
-  mysql -uroot -p${MYSQL_PASSWORD} -e "
-    SELECT TABLE_SCHEMA, TABLE_NAME, COLUMN_NAME, COLUMN_TYPE, COLUMN_DEFAULT
-    FROM information_schema.COLUMNS
-    WHERE DATA_TYPE IN ('text', 'tinytext', 'mediumtext', 'longtext')
-      AND COLUMN_DEFAULT IS NOT NULL
-      AND TABLE_SCHEMA IN ('${DATABASES// /,\'','\'}')
-    ORDER BY TABLE_SCHEMA, TABLE_NAME;
-  "
-
-# 5. Check for views using SELECT *
-kubectl exec ${SOURCE_NAME}-pxc-0 -n ${SOURCE_NAMESPACE} -- \
-  mysql -uroot -p${MYSQL_PASSWORD} -e "
-    SELECT TABLE_SCHEMA, TABLE_NAME, VIEW_DEFINITION
-    FROM information_schema.VIEWS
-    WHERE VIEW_DEFINITION LIKE 'SELECT %'
-      AND TABLE_SCHEMA IN ('${DATABASES// /,\'','\'}')
-    ORDER BY TABLE_SCHEMA, TABLE_NAME;
-  "
+# Run check
+chmod +x 00-pre-migration-check.sh
+./00-pre-migration-check.sh
 ```
 
-**Note:** If these queries return no results (empty output), it means no compatibility issues were found. This is the desired outcome for a smooth migration.
+The script will output:
+1. List of user databases to migrate (copy the `DATABASES="..."` line for later)
+2. Schema compatibility issues (Reserved keywords, Invalid dates, ZEROFILL, etc.)
+3. Character set analysis
+
+If the script reports issues, use the commands below to fix them.
 
 #### Fix Schema Issues
 
@@ -437,34 +350,9 @@ kubectl exec ${SOURCE_NAME}-pxc-0 -n ${SOURCE_NAMESPACE} -- \
   "
 ```
 
-### Character Set and Collation Analysis
+### Step 3: Character Set and Collation Analysis
 
-Perform this analysis **3-5 days before** planned migration.
-
-> **IMPORTANT:** `DATABASES` must contain ONLY user/application databases. **DO NOT** include system databases: `information_schema`, `mysql`, `performance_schema`, `sys`.
-
-#### Audit Character Sets
-
-```bash
-# Check database character sets
-kubectl exec ${SOURCE_NAME}-pxc-0 -n ${SOURCE_NAMESPACE} -- \
-  mysql -uroot -p${MYSQL_PASSWORD} -e "
-    SELECT SCHEMA_NAME, DEFAULT_CHARACTER_SET_NAME, DEFAULT_COLLATION_NAME
-    FROM information_schema.SCHEMATA
-    WHERE SCHEMA_NAME IN ('${DATABASES// /,\'','\'}')
-    ORDER BY SCHEMA_NAME;
-  "
-
-# Check table character sets
-kubectl exec ${SOURCE_NAME}-pxc-0 -n ${SOURCE_NAMESPACE} -- \
-  mysql -uroot -p${MYSQL_PASSWORD} -e "
-    SELECT TABLE_SCHEMA, TABLE_NAME, TABLE_COLLATION
-    FROM information_schema.TABLES
-    WHERE TABLE_SCHEMA IN ('${DATABASES// /,\'','\'}')
-      AND TABLE_COLLATION NOT LIKE 'utf8mb4%'
-    ORDER BY TABLE_SCHEMA, TABLE_NAME;
-  "
-```
+The `00-pre-migration-check.sh` script (run in Step 2) already checks for non-utf8mb4 tables. If it reported any "tables not using utf8mb4", you should convert them **3-5 days before** planned migration.
 
 #### Convert to utf8mb4
 
@@ -503,457 +391,55 @@ ALTER TABLE users DROP INDEX idx_email;
 ALTER TABLE users ADD UNIQUE INDEX idx_email (email(191));
 ```
 
-### Migration Procedure
+### Step 4: Migrate Data, Users, and Privileges
 
-#### Prerequisites Verification
+Use the `01-migrate-all.sh` script to perform the migration. This script:
+1. Verifies prerequisites (GTID, versions, connectivity)
+2. Streams data for all specified databases directly from source to target
+3. Migrates user accounts and privileges (using `mysql_native_password` for compatibility)
 
-```bash
-SOURCE_NAME="source"
-SOURCE_NAMESPACE="your-namespace"
-TARGET_NAME="mysql-8-target"
-TARGET_NAMESPACE="your-namespace"
-MYSQL_PASSWORD="your-password"
-DATABASES="db1 db2 db3"  # ← YOUR databases only (NOT: information_schema, mysql, performance_schema, sys)
+**Procedure:**
 
-# 1. Verify GTID enabled on source
-kubectl exec ${SOURCE_NAME}-pxc-0 -n ${SOURCE_NAMESPACE} -- \
-  mysql -uroot -p${MYSQL_PASSWORD} -e "SELECT @@gtid_mode, @@enforce_gtid_consistency;"
-# Expected: ON, ON
+1. **Stop Application Writes**: Scale down your application to zero replicas to ensure data consistency.
+   ```bash
+   kubectl scale deployment <app-name> --replicas=0 -n <app-namespace>
+   ```
 
-# 2. Verify target cluster healthy
-kubectl -n ${TARGET_NAMESPACE} get mysql ${TARGET_NAME}
-# Expected: All 3 members ready, status: Running
+2. **Configure Script**:
+   Edit `01-migrate-all.sh` and set your cluster names, namespaces, and the `DATABASES` variable (using the list from Step 2).
 
-# 3. Verify target is MySQL 8.0
-kubectl exec ${TARGET_NAME}-0 -n ${TARGET_NAMESPACE} -c mysql -- \
-  mysql -uroot -p${MYSQL_PASSWORD} -e "SELECT VERSION();"
-# Expected: 8.0.44 or later
+3. **Run Migration**:
+   ```bash
+   chmod +x 01-migrate-all.sh
+   ./01-migrate-all.sh
+   ```
 
-# 4. List databases to migrate
-kubectl exec ${SOURCE_NAME}-pxc-0 -n ${SOURCE_NAMESPACE} -- \
-  mysql -uroot -p${MYSQL_PASSWORD} -e "SHOW DATABASES;" | \
-  grep -v -E "^(Database|information_schema|mysql|performance_schema|sys)$"
-```
+**Important Notes:**
+- The script uses **streaming migration**, so no disk space is consumed for dump files.
+- It automatically handles `GTID_PURGED` filtering for MGR compatibility.
+- User accounts are migrated with `mysql_native_password` to maximize compatibility with existing applications.
 
-#### Migrate Data (Stream from Source to Target)
 
-This method streams data directly from source to target **without storing dump files** on disk:
+### Step 5: Verify Migration
+
+Run the `02-verify-migration.sh` script to confirm ALL database objects have been migrated successfully.
 
 ```bash
-# Set variables
-SOURCE_NAME="source"
-SOURCE_NAMESPACE="your-namespace"
-TARGET_NAME="mysql-8-target"
-TARGET_NAMESPACE="your-namespace"
-# NOTE: Source and target clusters typically have different passwords
-SOURCE_MYSQL_PASSWORD="source-root-password"
-TARGET_MYSQL_PASSWORD="target-root-password"
-DATABASES="db1 db2 db3"  # ← YOUR databases only (NOT: information_schema, mysql, performance_schema, sys)
-
-# Migrate each database (streaming, no intermediate storage)
-for db in ${DATABASES}; do
-  echo "Migrating ${db}..."
-
-  kubectl exec ${SOURCE_NAME}-pxc-0 -n ${SOURCE_NAMESPACE} -- \
-    mysqldump -uroot -p${SOURCE_MYSQL_PASSWORD} \
-      --single-transaction \
-      --quick \
-      --lock-tables=false \
-      --set-gtid-purged=ON \
-      --routines \
-      --events \
-      --triggers \
-      --databases ${db} \
-      2>/dev/null | \
-    grep -v "SET @@GLOBAL.GTID_PURGED" | \
-    kubectl exec -i ${TARGET_NAME}-0 -n ${TARGET_NAMESPACE} -c mysql -- \
-      mysql -uroot -p${TARGET_MYSQL_PASSWORD}
-
-  echo "  ✓ Migrated ${db}"
-done
+chmod +x 02-verify-migration.sh
+./02-verify-migration.sh
 ```
 
-**Note:** Source and target passwords are typically different. Get passwords from:
-- Source: `kubectl get secret <source-name> -n <namespace> -o jsonpath='{.data.root}' | base64 -d`
-- Target: `kubectl get secret mgr-<target-name>-password -n <namespace> -o jsonpath='{.data.root}' | base64 -d`
-
-**Why streaming?**
-- No disk space required on source cluster (important for long-running clusters)
-- No disk space required on target cluster (receives stream directly)
-- No disk space required on your local machine (only pipe buffer memory)
-- Faster migration (no intermediate I/O)
-
-**mysqldump flags explained:**
-- `--single-transaction`: Consistent snapshot using MVCC (recommended for InnoDB)
-- `--quick`: Retrieves rows one at a time (prevents memory issues with large tables)
-- `--lock-tables=false`: Don't lock tables (relies on single-transaction for consistency)
-- `--set-gtid-purged=ON`: Include GTID information for replication consistency
-- `--routines`: Export stored procedures and functions
-- `--events`: Export events
-- `--triggers`: Export triggers
-- `2>/dev/null`: Suppress warnings (filtering out MySQL 5.7->8.0 incompatibility warnings)
-
-**Important**: We filter out `SET @@GLOBAL.GTID_PURGED` because MGR clusters don't allow setting GTID_PURGED while Group Replication plugin is running. This is safe for migration scenarios.
-
-### User and Privilege Migration
-
-#### Stream Users and Privileges (Recommended)
-
-This method exports user accounts from the source and streams them directly to the target:
-
-```bash
-SOURCE_NAME="source"
-SOURCE_NAMESPACE="your-namespace"
-TARGET_NAME="mysql-8-target"
-TARGET_NAMESPACE="your-namespace"
-# NOTE: Source and target clusters typically have different passwords
-SOURCE_MYSQL_PASSWORD="source-root-password"
-TARGET_MYSQL_PASSWORD="target-root-password"
-
-# Exclude system users
-EXCLUDE_USERS="'mysql.sys', 'mysql.session', 'mysql.infoschema', 'root', 'clustercheck', 'monitor', 'operator', 'xtrabackup', 'repl'"
-
-# Step 1: Stream CREATE USER statements
-echo "Creating users on target..."
-kubectl exec ${SOURCE_NAME}-pxc-0 -n ${SOURCE_NAMESPACE} -- \
-  mysql -uroot -p${SOURCE_MYSQL_PASSWORD} -N -e "
-    SELECT CONCAT('CREATE USER IF NOT EXISTS ''', user, '''@''', host, ''' IDENTIFIED WITH mysql_native_password AS ''', replace(authentication_string, '\'', '\'\''), ''';')
-    FROM mysql.user
-    WHERE user NOT IN (${EXCLUDE_USERS});
-  " 2>/dev/null | grep -v "^Warning" | \
-  kubectl exec -i ${TARGET_NAME}-0 -n ${TARGET_NAMESPACE} -c mysql -- \
-    mysql -uroot -p${TARGET_MYSQL_PASSWORD} 2>&1 | grep -v "Using a password"
-
-# Step 2: Stream GRANT statements
-echo "Granting privileges..."
-kubectl exec ${SOURCE_NAME}-pxc-0 -n ${SOURCE_NAMESPACE} -- \
-  mysql -uroot -p${SOURCE_MYSQL_PASSWORD} -N -e "
-    SELECT CONCAT('SHOW GRANTS FOR ''', user, '''@''', host, ''';')
-    FROM mysql.user
-    WHERE user NOT IN (${EXCLUDE_USERS});
-  " 2>/dev/null | grep -v "^Warning" | while read query; do
-    kubectl exec ${SOURCE_NAME}-pxc-0 -n ${SOURCE_NAMESPACE} -- \
-      mysql -uroot -p${SOURCE_MYSQL_PASSWORD} -e "${query}" 2>/dev/null | grep "^GRANT" | sed 's/$/;/'
-  done | \
-  kubectl exec -i ${TARGET_NAME}-0 -n ${TARGET_NAMESPACE} -c mysql -- \
-    mysql -uroot -p${TARGET_MYSQL_PASSWORD} 2>&1 | grep -v "Using a password"
-
-# Step 3: Flush privileges
-kubectl exec ${TARGET_NAME}-0 -n ${TARGET_NAMESPACE} -c mysql -- \
-  mysql -uroot -p${TARGET_MYSQL_PASSWORD} -e "FLUSH PRIVILEGES;" 2>&1 | grep -v "Using a password"
-
-# Step 4: Verify
-kubectl exec ${TARGET_NAME}-0 -n ${TARGET_NAMESPACE} -c mysql -- \
-  mysql -uroot -p${TARGET_MYSQL_PASSWORD} -e "SELECT user, host FROM mysql.user WHERE user NOT IN (${EXCLUDE_USERS});" 2>&1 | grep -v "Using a password"
-
-echo "✓ Users and privileges migrated"
-```
-
-**Note:** Source and target passwords are typically different. Get passwords from:
-- Source: `kubectl get secret <source-name> -n <namespace> -o jsonpath='{.data.root}' | base64 -d`
-- Target: `kubectl get secret mgr-<target-name>-password -n <namespace> -o jsonpath='{.data.root}' | base64 -d`
-
-**Important:** This method uses `mysql_native_password` for compatibility. MySQL 8.0 uses `caching_sha2_password` by default, which may cause issues with older MySQL clients.
-
-#### MySQL 8.0 Authentication Considerations
-
-**Understanding MySQL 8.0 Authentication:**
-
-MySQL 8.0 changed the default authentication plugin from `mysql_native_password` to `caching_sha2_password`. This has important implications:
-
-| Plugin | MySQL 5.7 | MySQL 8.0 | Compatible With |
-|--------|-----------|-----------|------------------|
-| `mysql_native_password` | Default | Available | All MySQL clients |
-| `caching_sha2_password` | Available | **Default** | MySQL 8.0+ clients only |
-
-**When to Use Each Plugin:**
-
-**Use `mysql_native_password` if:**
-- Your application uses MySQL client library older than 5.7.23
-- Your application uses PHP, Python, or Java with older MySQL connectors
-- You need maximum compatibility during migration transition period
-
-**Use `caching_sha2_password` (default) if:**
-- Your application uses MySQL 8.0+ client library
-- Your application uses modern ORMs/frameworks (e.g., latest Sequelize, Django 3.0+)
-- You want better security (SHA-256 vs SHA-1)
-
-**Option 1: Change Users to mysql_native_password (Migration Compatibility)**
-
-```bash
-# For all application users
-kubectl exec ${TARGET_NAME}-0 -n ${TARGET_NAMESPACE} -c mysql -- \
-  mysql -uroot -p${MYSQL_PASSWORD} -e "
-    ALTER USER 'app_user'@'%' IDENTIFIED WITH mysql_native_password BY 'password';
-    ALTER USER 'readonly_user'@'%' IDENTIFIED WITH mysql_native_password BY 'password';
-    FLUSH PRIVILEGES;
-  "
-
-# Verify
-kubectl exec ${TARGET_NAME}-0 -n ${TARGET_NAMESPACE} -c mysql -- \
-  mysql -uroot -p${MYSQL_PASSWORD} -e "SELECT user, host, plugin FROM mysql.user WHERE user LIKE 'app_%';"
-```
-
-**Option 2: Keep caching_sha2_password (Recommended for New Apps)**
-
-```bash
-# No changes needed - users are created with default plugin
-# Verify your application client library supports it
-
-# Check current user plugins
-kubectl exec ${TARGET_NAME}-0 -n ${TARGET_NAMESPACE} -c mysql -- \
-  mysql -uroot -p${MYSQL_PASSWORD} -e "SELECT user, host, plugin FROM mysql.user WHERE user NOT IN ('mysql.sys', 'mysql.session', 'mysql.infoschema', 'root');"
-```
-
-**Option 3: Use MySQL 8.0 Roles (New Feature - Recommended)**
-
-```bash
-# Create roles for privilege management
-kubectl exec ${TARGET_NAME}-0 -n ${TARGET_NAMESPACE} -c mysql -- \
-  mysql -uroot -p${MYSQL_PASSWORD} -e "
-    CREATE ROLE IF NOT EXISTS 'app_read';
-    CREATE ROLE IF NOT EXISTS 'app_write';
-    CREATE ROLE IF NOT EXISTS 'app_admin';
-
-    GRANT SELECT ON app_db.* TO 'app_read';
-    GRANT SELECT, INSERT, UPDATE ON app_db.* TO 'app_write';
-    GRANT ALL PRIVILEGES ON app_db.* TO 'app_admin';
-
-    -- Grant roles to users
-    GRANT 'app_read' TO 'report_user'@'%';
-    GRANT 'app_write' TO 'app_user'@'%';
-    GRANT 'app_admin' TO 'dba_user'@'%';
-
-    SET DEFAULT ROLE ALL TO 'app_user'@'%';
-    FLUSH PRIVILEGES;
-  "
-```
-
-**Testing Authentication:**
-
-```bash
-# Test connection from application pod
-kubectl exec -it <app-pod> -n <app-namespace> -- \
-  mysql -h mysql-8-target-read-write.<namespace>.svc.cluster.local \
-    -uapp_user -ppassword -e "SELECT 1 AS test;"
-
-# If you see error "Authentication plugin 'caching_sha2_password' cannot be loaded":
-# → Switch user to mysql_native_password (Option 1 above)
-```
-
-### Complete Database Object Verification
-
-Verify ALL database objects have been migrated successfully.
-
-**Note:** This script uses temporary files to work around bash variable scoping issues with subshells.
-
-```bash
-SOURCE_NAME="source"
-SOURCE_NAMESPACE="your-namespace"
-TARGET_NAME="mysql-8-target"
-TARGET_NAMESPACE="your-namespace"
-MYSQL_PASSWORD="your-password"
-DATABASES="db1 db2 db3"  # ← YOUR databases only (NOT: information_schema, mysql, performance_schema, sys)
-WORK_DIR="/tmp/mysql-migration"
-
-echo "=== MySQL 5.7 to 8.0 Migration Verification ==="
-echo ""
-
-# Verification results tracking
-TOTAL_CHECKS=0
-PASSED_CHECKS=0
-
-# Create temp file for tracking
-VERIFY_TMP="${WORK_DIR}/verify_results.txt"
-echo "0" > ${VERIFY_TMP}  # VIEW_FAILED counter
-
-for db in ${DATABASES}; do
-  echo "Database: ${db}"
-  echo "----------------------------------------"
-
-  # 1. Tables
-  TOTAL_CHECKS=$((TOTAL_CHECKS + 1))
-  SOURCE_COUNT=$(kubectl exec ${SOURCE_NAME}-pxc-0 -n ${SOURCE_NAMESPACE} -- \
-    mysql -uroot -p${MYSQL_PASSWORD} -N -e "
-      SELECT COUNT(*) FROM information_schema.TABLES
-      WHERE TABLE_SCHEMA = '${db}' AND TABLE_TYPE = 'BASE TABLE';
-    " 2>/dev/null | grep -v "Warning")
-  TARGET_COUNT=$(kubectl exec ${TARGET_NAME}-0 -n ${TARGET_NAMESPACE} -c mysql -- \
-    mysql -uroot -p${MYSQL_PASSWORD} -N -e "
-      SELECT COUNT(*) FROM information_schema.TABLES
-      WHERE TABLE_SCHEMA = '${db}' AND TABLE_TYPE = 'BASE TABLE';
-    " 2>/dev/null | grep -v "Warning")
-
-  if [ "${SOURCE_COUNT}" = "${TARGET_COUNT}" ]; then
-    echo "  ✓ Tables: ${TARGET_COUNT} (match)"
-    PASSED_CHECKS=$((PASSED_CHECKS + 1))
-  else
-    echo "  ✗ Tables: Source=${SOURCE_COUNT}, Target=${TARGET_COUNT} (mismatch)"
-  fi
-
-  # 2. Views (with execution test)
-  TOTAL_CHECKS=$((TOTAL_CHECKS + 1))
-  SOURCE_COUNT=$(kubectl exec ${SOURCE_NAME}-pxc-0 -n ${SOURCE_NAMESPACE} -- \
-    mysql -uroot -p${MYSQL_PASSWORD} -N -e "
-      SELECT COUNT(*) FROM information_schema.VIEWS WHERE TABLE_SCHEMA = '${db}';
-    " 2>/dev/null | grep -v "Warning")
-  TARGET_COUNT=$(kubectl exec ${TARGET_NAME}-0 -n ${TARGET_NAMESPACE} -c mysql -- \
-    mysql -uroot -p${MYSQL_PASSWORD} -N -e "
-      SELECT COUNT(*) FROM information_schema.VIEWS WHERE TABLE_SCHEMA = '${db}';
-    " 2>/dev/null | grep -v "Warning")
-
-  if [ "${SOURCE_COUNT}" = "${TARGET_COUNT}" ]; then
-    # Test each view - write results to file to avoid subshell issues
-    echo "0" > ${VERIFY_TMP}
-    kubectl exec ${TARGET_NAME}-0 -n ${TARGET_NAMESPACE} -c mysql -- \
-      mysql -uroot -p${MYSQL_PASSWORD} -N -e "
-        SELECT TABLE_NAME FROM information_schema.VIEWS WHERE TABLE_SCHEMA = '${db}';
-      " 2>/dev/null | grep -v "Warning" | while read view_name; do
-      if ! kubectl exec ${TARGET_NAME}-0 -n ${TARGET_NAMESPACE} -c mysql -- \
-        mysql -uroot -p${MYSQL_PASSWORD} ${db} -e "SELECT COUNT(*) FROM \`${view_name}\`;" 2>&1 | grep -q "ERROR"; then
-        : # view works
-      else
-        echo "1" >> ${VERIFY_TMP}  # mark as failed
-      fi
-    done
-
-    if [ "$(cat ${VERIFY_TMP} | wc -l)" -eq 1 ] && [ "$(cat ${VERIFY_TMP})" = "0" ]; then
-      echo "  ✓ Views: ${TARGET_COUNT} (match, all executable)"
-      PASSED_CHECKS=$((PASSED_CHECKS + 1))
-    else
-      echo "  ✗ Views: ${TARGET_COUNT} (match, but some views failed execution)"
-    fi
-  else
-    echo "  ✗ Views: Source=${SOURCE_COUNT}, Target=${TARGET_COUNT} (mismatch)"
-  fi
-
-  # 3. Stored Procedures
-  TOTAL_CHECKS=$((TOTAL_CHECKS + 1))
-  SOURCE_COUNT=$(kubectl exec ${SOURCE_NAME}-pxc-0 -n ${SOURCE_NAMESPACE} -- \
-    mysql -uroot -p${MYSQL_PASSWORD} -N -e "
-      SELECT COUNT(*) FROM mysql.proc WHERE db = '${db}' AND type = 'PROCEDURE';
-    " 2>/dev/null | grep -v "Warning")
-  TARGET_COUNT=$(kubectl exec ${TARGET_NAME}-0 -n ${TARGET_NAMESPACE} -c mysql -- \
-    mysql -uroot -p${MYSQL_PASSWORD} -N -e "
-      SELECT COUNT(*) FROM mysql.proc WHERE db = '${db}' AND type = 'PROCEDURE';
-    " 2>/dev/null | grep -v "Warning")
-
-  if [ "${SOURCE_COUNT}" = "${TARGET_COUNT}" ]; then
-    echo "  ✓ Stored Procedures: ${TARGET_COUNT} (match)"
-    PASSED_CHECKS=$((PASSED_CHECKS + 1))
-  else
-    echo "  ✗ Stored Procedures: Source=${SOURCE_COUNT}, Target=${TARGET_COUNT} (mismatch)"
-  fi
-
-  # 4. Stored Functions
-  TOTAL_CHECKS=$((TOTAL_CHECKS + 1))
-  SOURCE_COUNT=$(kubectl exec ${SOURCE_NAME}-pxc-0 -n ${SOURCE_NAMESPACE} -- \
-    mysql -uroot -p${MYSQL_PASSWORD} -N -e "
-      SELECT COUNT(*) FROM mysql.proc WHERE db = '${db}' AND type = 'FUNCTION';
-    " 2>/dev/null | grep -v "Warning")
-  TARGET_COUNT=$(kubectl exec ${TARGET_NAME}-0 -n ${TARGET_NAMESPACE} -c mysql -- \
-    mysql -uroot -p${MYSQL_PASSWORD} -N -e "
-      SELECT COUNT(*) FROM mysql.proc WHERE db = '${db}' AND type = 'FUNCTION';
-    " 2>/dev/null | grep -v "Warning")
-
-  if [ "${SOURCE_COUNT}" = "${TARGET_COUNT}" ]; then
-    echo "  ✓ Stored Functions: ${TARGET_COUNT} (match)"
-    PASSED_CHECKS=$((PASSED_CHECKS + 1))
-  else
-    echo "  ✗ Stored Functions: Source=${SOURCE_COUNT}, Target=${TARGET_COUNT} (mismatch)"
-  fi
-
-  # 5. Triggers
-  TOTAL_CHECKS=$((TOTAL_CHECKS + 1))
-  SOURCE_COUNT=$(kubectl exec ${SOURCE_NAME}-pxc-0 -n ${SOURCE_NAMESPACE} -- \
-    mysql -uroot -p${MYSQL_PASSWORD} -N -e "
-      SELECT COUNT(*) FROM information_schema.TRIGGERS WHERE TRIGGER_SCHEMA = '${db}';
-    " 2>/dev/null | grep -v "Warning")
-  TARGET_COUNT=$(kubectl exec ${TARGET_NAME}-0 -n ${TARGET_NAMESPACE} -c mysql -- \
-    mysql -uroot -p${MYSQL_PASSWORD} -N -e "
-      SELECT COUNT(*) FROM information_schema.TRIGGERS WHERE TRIGGER_SCHEMA = '${db}';
-    " 2>/dev/null | grep -v "Warning")
-
-  if [ "${SOURCE_COUNT}" = "${TARGET_COUNT}" ]; then
-    echo "  ✓ Triggers: ${TARGET_COUNT} (match)"
-    PASSED_CHECKS=$((PASSED_CHECKS + 1))
-  else
-    echo "  ✗ Triggers: Source=${SOURCE_COUNT}, Target=${TARGET_COUNT} (mismatch)"
-  fi
-
-  # 6. Events
-  TOTAL_CHECKS=$((TOTAL_CHECKS + 1))
-  SOURCE_COUNT=$(kubectl exec ${SOURCE_NAME}-pxc-0 -n ${SOURCE_NAMESPACE} -- \
-    mysql -uroot -p${MYSQL_PASSWORD} -N -e "
-      SELECT COUNT(*) FROM information_schema.EVENTS WHERE EVENT_SCHEMA = '${db}';
-    " 2>/dev/null | grep -v "Warning")
-  TARGET_COUNT=$(kubectl exec ${TARGET_NAME}-0 -n ${TARGET_NAMESPACE} -c mysql -- \
-    mysql -uroot -p${MYSQL_PASSWORD} -N -e "
-      SELECT COUNT(*) FROM information_schema.EVENTS WHERE EVENT_SCHEMA = '${db}';
-    " 2>/dev/null | grep -v "Warning")
-
-  if [ "${SOURCE_COUNT}" = "${TARGET_COUNT}" ]; then
-    echo "  ✓ Events: ${TARGET_COUNT} (match)"
-    PASSED_CHECKS=$((PASSED_CHECKS + 1))
-  else
-    echo "  ✗ Events: Source=${SOURCE_COUNT}, Target=${TARGET_COUNT} (mismatch)"
-  fi
-
-  # 7. Row counts (sample check)
-  TOTAL_CHECKS=$((TOTAL_CHECKS + 1))
-  TABLES=$(kubectl exec ${SOURCE_NAME}-pxc-0 -n ${SOURCE_NAMESPACE} -- \
-    mysql -uroot -p${MYSQL_PASSWORD} -N -e "
-      SELECT TABLE_NAME FROM information_schema.TABLES
-      WHERE TABLE_SCHEMA = '${db}' AND TABLE_TYPE = 'BASE TABLE'
-      LIMIT 5;
-    " 2>/dev/null | grep -v "Warning")
-
-  ROW_MISMATCH=0
-  for table in ${TABLES}; do
-    SOURCE_ROWS=$(kubectl exec ${SOURCE_NAME}-pxc-0 -n ${SOURCE_NAMESPACE} -- \
-      mysql -uroot -p${MYSQL_PASSWORD} -N -e "
-        SELECT TABLE_ROWS FROM information_schema.TABLES
-        WHERE TABLE_SCHEMA = '${db}' AND TABLE_NAME = '${table}';
-      " 2>/dev/null | grep -v "Warning")
-    TARGET_ROWS=$(kubectl exec ${TARGET_NAME}-0 -n ${TARGET_NAMESPACE} -c mysql -- \
-      mysql -uroot -p${MYSQL_PASSWORD} -N -e "
-        SELECT TABLE_ROWS FROM information_schema.TABLES
-        WHERE TABLE_SCHEMA = '${db}' AND TABLE_NAME = '${table}';
-      " 2>/dev/null | grep -v "Warning")
-
-    if [ "${SOURCE_ROWS}" != "${TARGET_ROWS}" ]; then
-      echo "    ⚠ Row count mismatch for ${table}: Source=${SOURCE_ROWS}, Target=${TARGET_ROWS}"
-      ROW_MISMATCH=1
-    fi
-  done
-
-  if [ ${ROW_MISMATCH} -eq 0 ]; then
-    echo "  ✓ Row counts: Sample check passed"
-    PASSED_CHECKS=$((PASSED_CHECKS + 1))
-  else
-    echo "  ✗ Row counts: Sample check failed"
-  fi
-
-  echo ""
-done
-
-# Cleanup
-rm -f ${VERIFY_TMP}
-
-echo "=== Verification Summary ==="
-echo "Passed: ${PASSED_CHECKS}/${TOTAL_CHECKS}"
-echo ""
-
-if [ ${PASSED_CHECKS} -eq ${TOTAL_CHECKS} ]; then
-  echo "✅ ALL CHECKS PASSED"
-  exit 0
-else
-  echo "❌ SOME CHECKS FAILED"
-  exit 1
-fi
-```
-
-### Post-Migration Optimization
+The script performs the following checks for each database:
+1. **Tables**: Compares count on source vs target
+2. **Views**: Compares count AND tests execution of every view
+3. **Stored Procedures/Functions**: Compares counts
+4. **Triggers/Events**: Compares counts
+5. **Row Counts**: Performs sample row count checks
+6. **Users**: Verifies user accounts were migrated
+
+**Note**: If any check fails, the script will output a red failure message. Do NOT proceed to cutover until verification passes.
+
+### Step 6: Post-Migration Optimization
 
 Optimize the target MySQL 8.0 instance after successful migration.
 
@@ -1075,9 +561,9 @@ kubectl exec ${TARGET_NAME}-0 -n ${TARGET_NAMESPACE} -c mysql -- \
   " > /tmp/mysql-8-baseline.txt
 ```
 
-## Normal Operations
+## Cutover Phase
 
-### Application Cutover
+### Step 7: Application Cutover
 
 After migration verification is complete, cutover application traffic:
 
@@ -2018,6 +1504,21 @@ check_character_sets() {
     fi
 }
 
+check_lower_case_table_names() {
+    print_section "Checking lower_case_table_names"
+
+    LCTN=$(kubectl exec ${SOURCE_NAME}-pxc-0 -n ${SOURCE_NAMESPACE} -- \
+        mysql -uroot -p${MYSQL_PASSWORD} -N -e "SELECT @@lower_case_table_names" 2>/dev/null | grep -v "Warning")
+
+    if [ "${LCTN}" = "1" ]; then
+        print_warning "Source cluster has lower_case_table_names=1"
+        echo "   Ensure target MySQL 8.0 cluster is also configured with lower_case_table_names=1"
+        echo "   This setting cannot be changed after initialization in MySQL 8.0."
+    else
+        print_success "Source cluster has lower_case_table_names=${LCTN}"
+    fi
+}
+
 print_summary() {
     print_header "Pre-Migration Check Summary"
 
@@ -2050,6 +1551,7 @@ main() {
     check_zerofill
     check_text_defaults
     check_character_sets
+    check_lower_case_table_names
     print_summary
 
     print_success "Pre-migration check completed"
@@ -2227,7 +1729,7 @@ migrate_databases() {
                 2>/dev/null | \
             grep -v "SET @@GLOBAL.GTID_PURGED" | \
             kubectl exec -i ${TARGET_NAME}-0 -n ${TARGET_NAMESPACE} -c mysql -- \
-                mysql -uroot -p${TARGET_MYSQL_PASSWORD} 2>&1 | grep -v "Using a password"; then
+                mysql -uroot -p${TARGET_MYSQL_PASSWORD} --init-command="SET FOREIGN_KEY_CHECKS=0;" 2>&1 | grep -v "Using a password"; then
 
             print_success "Migrated ${db}"
             MIGRATED_DATABASES=$((MIGRATED_DATABASES + 1))
