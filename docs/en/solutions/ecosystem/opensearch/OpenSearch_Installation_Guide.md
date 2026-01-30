@@ -49,7 +49,7 @@ metadata:
 spec:
   general:
     serviceName: my-opensearch
-    version: 2.19.3
+    version: 3.3.1
     httpPort: 9200
   security:
     tls:
@@ -60,7 +60,7 @@ spec:
         generate: true
   dashboards:
     enable: true
-    version: 2.19.3
+    version: 3.3.0
     replicas: 1
     resources:
       requests:
@@ -308,7 +308,7 @@ metadata:
 spec:
   general:
     serviceName: opensearch-restricted
-    version: 2.19.3
+    version: 3.3.1
     httpPort: 9200
     
     # Disable init containers that require root
@@ -365,7 +365,7 @@ spec:
   
   dashboards:
     enable: true
-    version: 2.19.3
+    version: 3.3.0
     replicas: 1
     
     # Dashboards security context
