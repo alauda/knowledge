@@ -3,6 +3,7 @@ products:
   - Alauda Application Services
 kind:
   - Solution
+id: KB260100026
 ---
 
 # How to Migrate from Elasticsearch to OpenSearch
