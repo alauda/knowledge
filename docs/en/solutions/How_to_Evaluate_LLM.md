@@ -41,12 +41,6 @@ The framework is used by Hugging Face's Open LLM Leaderboard, referenced in hund
 
 ### Installation
 
-Install the base package:
-
-```bash
-pip install lm-eval
-```
-
 For API-based evaluation (recommended for production model services):
 
 ```bash
@@ -67,24 +61,28 @@ This is the recommended approach for evaluating model services deployed with Ope
 
 **Example** (evaluate a local model service):
 
+For local API servers, use the model name returned by the server (e.g. from `GET /v1/models`). Replace `MODEL_NAME` and `BASE_URL` with your actual values:
+
 ```bash
 lm-eval --model local-chat-completions \
-    --model_args model=Qwen/Qwen2.5-7B-Instruct,base_url=http://localhost:8000/v1 \
-    --tasks gsm8k,arc_easy,hellaswag \
-    --batch_size 8 \
+    --model_args model=MODEL_NAME,base_url=BASE_URL \
+    --apply_chat_template \
+    --tasks gsm8k,minerva_math \
+    --batch_size 1 \
     --output_path ./results
 ```
 
 **Key Parameters**:
 - `--model`: Use `local-chat-completions` for local API servers, `openai-chat-completions` for OpenAI
 - `--model_args`:
-  - `model`: Model name or identifier
-  - `base_url`: API endpoint (for local services only)
+  - `model`: Model name or identifier. For local APIs, use the name returned by the server (e.g. query `GET /v1/models` at your `base_url`).
+  - `base_url`: API base URL (for local services only). Use the full endpoint path: e.g. `http://localhost:8000/v1/chat/completions` for chat API, or `http://localhost:8000/v1/completions` for completions API.
   - `api_key`: API key if required (can also use environment variable)
-  - `tokenizer` (optional): Path to tokenizer for accurate token counting
+  - `tokenizer`: **Required for `local-completions`** (used for loglikelihood / multiple_choice tasks). Optional for `local-chat-completions` (only for token counting); **`--apply_chat_template`** does not require a tokenizer.
   - `tokenized_requests` (optional): Whether to use local tokenization (default: False)
 - `--tasks`: Comma-separated list of evaluation tasks
-- `--batch_size`: Number of requests to process in parallel (adjust based on API rate limits)
+- `--apply_chat_template`: Format prompts as chat messages (list[dict]). Use this flag when using `local-chat-completions`.
+- `--batch_size`: Number of requests to process in parallel. **For API-based evaluation, prefer `1`** to avoid rate limits and timeouts; increase only if your API supports higher concurrency.
 - `--output_path`: Directory to save evaluation results
 
 **About Tokenization**:
@@ -111,18 +109,21 @@ lm-eval supports two tokenization modes via the `tokenized_requests` parameter:
   - ❌ Not supported by most chat APIs (OpenAI ChatCompletions, etc.)
   - Use local models (HuggingFace, vLLM) for these tasks
 
-**Optional tokenizer configuration** (for accurate token counting or local tokenization):
+**Tokenizer**:
+- **`local-completions`**: A tokenizer is **required** when running loglikelihood or multiple_choice tasks (e.g. MMLU, ARC, HellaSwag). Pass it in `model_args`, e.g. `tokenizer=MODEL_NAME` or a path to the tokenizer.
+- **`local-chat-completions`**: Tokenizer is optional (e.g. for token counting). **If you see `LocalChatCompletion expects messages as list[dict]` or `AssertionError`**, pass the **`--apply_chat_template`** flag so that prompts are formatted as chat messages; a tokenizer is not required for this.
 
 ```bash
 lm-eval --model local-chat-completions \
-    --model_args model=MODEL_NAME,base_url=http://localhost:8000/v1,tokenizer=MODEL_NAME,tokenized_requests=False \
+    --model_args model=MODEL_NAME,base_url=BASE_URL \
+    --apply_chat_template \
     --tasks gsm8k
 ```
 
 Available tokenization parameters in `model_args`:
-- `tokenizer`: Path or name of the tokenizer (e.g., HuggingFace model name)
+- `tokenizer`: Path or name of the tokenizer. **Required for `local-completions`** (loglikelihood tasks). Optional for `local-chat-completions` (only for token counting).
 - `tokenizer_backend`: Tokenization system - `"huggingface"` (default), `"tiktoken"`, or `"none"`
-- `tokenized_requests`: `True` (client-side) or `False` (server-side, default)
+- `tokenized_requests`: `True` (client-side) or `False` (server-side, default). Keep `False` for chat API.
 
 ### Advanced Options
 
@@ -132,8 +133,9 @@ Enable `--log_samples` to save individual model responses for detailed analysis:
 
 ```bash
 lm-eval --model local-chat-completions \
-    --model_args model=Qwen/Qwen2.5-7B-Instruct,base_url=http://localhost:8000/v1 \
-    --tasks gsm8k,hellaswag \
+    --model_args model=MODEL_NAME,base_url=BASE_URL \
+    --apply_chat_template \
+    --tasks gsm8k,minerva_math \
     --output_path ./results \
     --log_samples
 ```
@@ -144,20 +146,21 @@ This creates a `results/` directory containing:
 
 #### Use Configuration File
 
-For complex evaluations, use a YAML configuration file:
+For complex evaluations, use a YAML configuration file. For benchmarks that rely heavily on `multiple_choice` scoring (MMLU, AGIEval, C-Eval, etc.), **use completion or local backends instead of chat backends**:
 
 ```yaml
-model: local-chat-completions
+model: local-completions
 model_args:
-  model: Qwen/Qwen2.5-7B-Instruct
-  base_url: http://localhost:8000/v1
+  model: MODEL_NAME
+  base_url: BASE_URL   # e.g. http://localhost:8000/v1/completions
+  tokenizer: TOKENIZER_PATH_OR_NAME   # required for local-completions (loglikelihood tasks)
 tasks:
   - mmlu
   - gsm8k
   - arc_easy
   - arc_challenge
   - hellaswag
-batch_size: 8
+batch_size: 1
 output_path: ./results
 log_samples: true
 ```
@@ -173,8 +176,8 @@ lm-eval --config config.yaml
 Test your setup with a small number of examples before running full evaluations:
 
 ```bash
-lm-eval --model local-chat-completions \
-    --model_args model=Qwen/Qwen2.5-7B-Instruct,base_url=http://localhost:8000/v1 \
+lm-eval --model local-completions \
+    --model_args model=MODEL_NAME,base_url=BASE_URL \
     --tasks mmlu \
     --limit 10
 ```
@@ -184,15 +187,15 @@ lm-eval --model local-chat-completions \
 Evaluate multiple model endpoints by running separate evaluations:
 
 ```bash
-# Evaluate base model
-lm-eval --model local-chat-completions \
-    --model_args model=Qwen/Qwen2.5-7B,base_url=http://localhost:8000/v1 \
+# Evaluate base model (multiple_choice-heavy benchmarks; use completions/local backends)
+lm-eval --model local-completions \
+    --model_args model=MODEL_NAME,base_url=BASE_URL,tokenizer=TOKENIZER_PATH_OR_NAME \
     --tasks gsm8k,mmlu \
     --output_path ./results/base_model
 
 # Evaluate fine-tuned model
-lm-eval --model local-chat-completions \
-    --model_args model=Qwen/Qwen2.5-7B-finetuned,base_url=http://localhost:8001/v1 \
+lm-eval --model local-completions \
+    --model_args model=MODEL_NAME_FINETUNED,base_url=BASE_URL_FINETUNED,tokenizer=TOKENIZER_PATH_OR_NAME \
     --tasks gsm8k,mmlu \
     --output_path ./results/finetuned_model
 ```
@@ -225,6 +228,21 @@ for task in base_results.keys():
             print(f"    Difference: {diff:+.4f}")
 ```
 
+#### Caching and Resume
+
+For long or multi-task evaluations, use `--use_cache <DIR>` so that lm-eval writes intermediate request results to a directory. If the run is interrupted (timeout, crash, or Ctrl+C), you can **resume** by running the same command again: lm-eval will load already-computed results from the cache and only run the remaining requests.
+
+```bash
+lm-eval --model local-chat-completions \
+    --model_args model=MODEL_NAME,base_url=BASE_URL \
+    --tasks gsm8k \
+    --batch_size 1 \
+    --use_cache ./cache \
+    --output_path ./results
+```
+
+To resume after an interruption, run the same command (same `--tasks`, `--model`, `--model_args`, and `--use_cache ./cache`). Do not change the cache path or task list between runs if you want to resume correctly.
+
 #### API-Specific Considerations
 
 **Controlling Request Rate**: Adjust these parameters to match your API capacity:
@@ -237,10 +255,10 @@ lm-eval --model local-chat-completions \
 ```
 
 **Available parameters in `model_args`**:
-- `num_concurrent`: Number of concurrent requests. Typical values: 1 (sequential), 10, 50, or 128 depending on API capacity.
+- `num_concurrent`: Number of concurrent requests. **For API-based evaluation, use `1`** (sequential) to avoid rate limits and timeouts; increase only if your API supports higher concurrency.
 - `max_retries`: Number of retries for failed requests. Common values: 3, 5, or more.
 - `timeout`: Request timeout in seconds. Adjust based on model size and API speed (e.g., 60, 300, or higher for large models).
-- `batch_size`: Number of requests to batch together (set via `--batch_size` flag, not in `model_args`)
+- `batch_size`: Number of requests to batch together (set via `--batch_size` flag, not in `model_args`). Use `1` for API evaluation to avoid rate limits and timeouts.
 
 **Authentication**: Set API keys via environment variables or model_args:
 
@@ -266,12 +284,38 @@ While API-based evaluation is recommended for production services, lm-eval also 
 
 lm-eval includes 60+ standard academic benchmarks. Below is a comprehensive overview of available datasets.
 
+### Offline Dataset Preparation
+
+In restricted or offline environments, you can pre-download all required datasets and point lm-eval to the local cache to avoid repeated downloads or external network access.
+
+- **Step 1: Pre-download datasets on an online machine**
+  - Use `lm-eval` or a small Python script with `datasets`/`lm_eval` to download the benchmarks you need (MMLU, GSM8K, ARC, HellaSwag, etc.).
+  - Verify that the datasets are stored under a known cache directory (for example, a shared NAS path).
+- **Step 2: Sync the cache to your offline environment**
+  - Copy the entire dataset cache directory (e.g., HuggingFace datasets cache and any lm-eval specific cache) to your offline machines.
+- **Step 3: Configure environment variables on offline machines**
+  - Point lm-eval and the underlying HuggingFace libraries to the local cache and enable offline mode, for example:
+
+```bash
+export HF_HOME=/path/to/offline_cache
+export TRANSFORMERS_CACHE=/path/to/offline_cache
+export HF_DATASETS_CACHE=/path/to/offline_cache
+
+export HF_DATASETS_OFFLINE=1
+export HF_HUB_OFFLINE=1
+export HF_EVALUATE_OFFLINE=1
+export TRANSFORMERS_OFFLINE=1
+```
+
+- **Step 4: Run lm-eval normally**
+  - Once the cache and environment variables are configured, you can run `lm-eval` commands as usual. The framework will read datasets from the local cache without trying to access the internet.
+
 ### Understanding Task Types
 
 Before reviewing the datasets, it's important to understand the different task types:
 
 - **`generate_until`**: Generate text until a stopping condition (e.g., newline, max tokens). Best for open-ended generation tasks. Works with both chat and completion APIs.
-- **`multiple_choice`**: Select from multiple options. Can work with or without logprobs (more accurate with logprobs). Works with both chat and completion APIs.
+- **`multiple_choice`**: Select from multiple options. Can work with or without logprobs (more accurate with logprobs). **If a multiple_choice benchmark uses `loglikelihood` (e.g., MMLU, AGIEval, C-Eval, and most exam-style datasets), you must run it with completion or local backends, not chat backends.**
 - **`loglikelihood`**: Calculate token-level log probabilities. Requires API to return logprobs. Only works with completion APIs or local models.
 - **`loglikelihood_rolling`**: Calculate perplexity over sequences. Requires logprobs. Only works with completion APIs or local models.
 
@@ -279,7 +323,7 @@ Before reviewing the datasets, it's important to understand the different task t
 
 | Category | Dataset | Task Name | Task Type | Output Metrics | API Interface | Tokenization | Description |
 |----------|---------|-----------|-----------|----------------|---------------|--------------|-------------|
-| **General Knowledge** | MMLU | `mmlu_*` (57 subjects) | `multiple_choice` | `acc`, `acc_norm` | Chat / Completion | Server-side | 57 subjects covering STEM, humanities, social sciences: abstract_algebra, anatomy, astronomy, business_ethics, clinical_knowledge, college_biology, college_chemistry, college_computer_science, college_mathematics, college_medicine, college_physics, computer_security, conceptual_physics, econometrics, electrical_engineering, elementary_mathematics, formal_logic, global_facts, high_school_biology, high_school_chemistry, high_school_computer_science, high_school_european_history, high_school_geography, high_school_government_and_politics, high_school_macroeconomics, high_school_mathematics, high_school_microeconomics, high_school_physics, high_school_psychology, high_school_statistics, high_school_us_history, high_school_world_history, human_aging, human_sexuality, international_law, jurisprudence, logical_fallacies, machine_learning, management, marketing, medical_genetics, miscellaneous, moral_disputes, moral_scenarios, nutrition, philosophy, prehistory, professional_accounting, professional_law, professional_medicine, professional_psychology, public_relations, security_studies, sociology, us_foreign_policy, virology, world_religions |
+| **General Knowledge** | MMLU | `mmlu_*` (57 subjects) | `multiple_choice` | `acc`, `acc_norm` | Chat / Completion | Server-side | 57 subjects covering STEM, humanities, social sciences, law, medicine, business, and more |
 | | MMLU-Pro | `mmlu_pro` | `multiple_choice` | `acc` | Chat / Completion | Server-side | Enhanced MMLU with 10 options per question and higher difficulty |
 | | AGIEval | `agieval` | `multiple_choice` | `acc` | Chat / Completion | Server-side | Academic exams including LSAT, SAT, GaoKao (Chinese & English) |
 | | C-Eval | `ceval` | `multiple_choice` | `acc` | Chat / Completion | Server-side | Chinese comprehensive evaluation across 52 subjects |
@@ -309,19 +353,19 @@ Before reviewing the datasets, it's important to understand the different task t
 | **Truthfulness & Safety** | TruthfulQA | `truthfulqa_mc1` | `multiple_choice` | `acc` | Chat / Completion | Server-side | Single-correct answer truthfulness |
 | | | `truthfulqa_mc2` | `multiple_choice` | `acc` | Chat / Completion | Server-side | Multiple-correct answer truthfulness |
 | | | `truthfulqa_gen` | `generate_until` | `bleu_max`, `rouge1_max`, `rougeL_max`, `bleurt_max` | Chat / Completion | Server-side | Generative truthfulness evaluation (also outputs _acc and _diff variants) |
-| | BBQ | `bbq_*` (11 categories) | `multiple_choice` | `acc` | Chat / Completion | Server-side | Bias benchmark: age, disability, gender, nationality, physical_appearance, race_ethnicity, religion, ses (socio-economic status), sexual_orientation, race_x_gender (intersectional), race_x_ses (intersectional) |
+| | BBQ | `bbq_*` (11 categories) | `multiple_choice` | `acc` | Chat / Completion | Server-side | Bias benchmark covering age, disability, gender, nationality, appearance, race, religion, SES, sexual orientation, and their intersections |
 | **Multilingual** | Belebele | `belebele_zho_Hans` | `multiple_choice` | `acc`, `acc_norm` | Chat / Completion | Server-side | Chinese (Simplified) reading comprehension |
 | | | `belebele_zho_Hant` | `multiple_choice` | `acc`, `acc_norm` | Chat / Completion | Server-side | Chinese (Traditional) reading comprehension |
 | | | `belebele_eng_Latn` | `multiple_choice` | `acc`, `acc_norm` | Chat / Completion | Server-side | English reading comprehension |
-| | | `belebele_*` | `multiple_choice` | `acc`, `acc_norm` | Chat / Completion | Server-side | 122 languages total (see full list with `lm-eval ls tasks`) |
-| | XCOPA | `xcopa_*` (11 languages) | `multiple_choice` | `acc` | Chat / Completion | Server-side | Causal reasoning: et (Estonian), ht (Haitian), id (Indonesian), it (Italian), qu (Quechua), sw (Swahili), ta (Tamil), th (Thai), tr (Turkish), vi (Vietnamese), zh (Chinese) |
-| | XWinograd | `xwinograd_*` (6 languages) | `multiple_choice` | `acc` | Chat / Completion | Server-side | Winograd schema: en (English), fr (French), jp (Japanese), pt (Portuguese), ru (Russian), zh (Chinese) |
+| | | `belebele_*` | `multiple_choice` | `acc`, `acc_norm` | Chat / Completion | Server-side | 122-language multilingual reading comprehension suite (see full list with `lm-eval ls tasks`) |
+| | XCOPA | `xcopa_*` (11 languages) | `multiple_choice` | `acc` | Chat / Completion | Server-side | Multilingual causal reasoning in 11 languages |
+| | XWinograd | `xwinograd_*` (6 languages) | `multiple_choice` | `acc` | Chat / Completion | Server-side | Multilingual Winograd schema benchmark in 6 languages |
 | **Factual Knowledge** | Natural Questions | `nq_open` | `generate_until` | `exact_match` | Chat / Completion | Server-side | Open-domain question answering |
 | | TriviaQA | `triviaqa` | `generate_until` | `exact_match` | Chat / Completion | Server-side | Trivia question answering |
 | | Web Questions | `webqs` | `multiple_choice` | `exact_match` | Chat / Completion | Server-side | Question answering from web search queries |
 | **Summarization** | CNN/DailyMail | `cnn_dailymail` | `generate_until` | `rouge1`, `rouge2`, `rougeL` | Chat / Completion | Server-side | News article summarization |
 | **Translation** | WMT | `wmt14`, `wmt16`, `wmt20` | `generate_until` | `bleu`, `chrf` | Chat / Completion | Server-side | Machine translation benchmarks (multiple language pairs) |
-| **BIG-Bench** | BIG-Bench Hard (BBH) | `bbh_cot_fewshot` (23 tasks) | `generate_until` | `acc`, `exact_match` | Chat / Completion | Server-side | 23 challenging tasks: boolean_expressions, causal_judgement, date_understanding, disambiguation_qa, dyck_languages, formal_fallacies, geometric_shapes, hyperbaton, logical_deduction (3/5/7 objects), movie_recommendation, multistep_arithmetic_two, navigate, object_counting, penguins_in_a_table, reasoning_about_colored_objects, ruin_names, salient_translation_error_detection, snarks, sports_understanding, temporal_sequences, tracking_shuffled_objects (3/5/7 objects), web_of_lies, word_sorting |
+| **BIG-Bench** | BIG-Bench Hard (BBH) | `bbh_cot_fewshot` (23 tasks) | `generate_until` | `acc`, `exact_match` | Chat / Completion | Server-side | 23 challenging reasoning and comprehension tasks (boolean logic, causal reasoning, arithmetic, navigation, etc.) |
 | **Domain-Specific** | MedQA | `medqa` | `multiple_choice` | `acc`, `acc_norm` | Chat / Completion | Server-side | Medical question answering from USMLE exams |
 | | MedMCQA | `medmcqa` | `multiple_choice` | `acc`, `acc_norm` | Chat / Completion | Server-side | Medical multiple choice questions from Indian medical exams |
 | | PubMedQA | `pubmedqa` | `multiple_choice` | `acc` | Chat / Completion | Server-side | Biomedical question answering from PubMed abstracts |
@@ -329,8 +373,8 @@ Before reviewing the datasets, it's important to understand the different task t
 **Legend**:
 - **Output Metrics**: These are the actual metric keys that appear in the output JSON (e.g., `acc`, `exact_match`, `pass@1`)
 - **API Interface**:
-  - `Chat / Completion`: Works with both OpenAI-compatible chat and completion APIs
-  - `❌ Requires logprobs`: Only works with APIs that return token-level log probabilities, or local models
+  - `Chat / Completion`: Conceptually works with both OpenAI-compatible chat and completion APIs. **Any benchmark that uses `loglikelihood` (including most exam-style `multiple_choice` tasks such as MMLU, AGIEval, C-Eval, etc.) should be treated as “completion/local only”.**
+  - `❌ Requires logprobs`: Only works with APIs that return token-level log probabilities, or local models.
 - **Tokenization**:
   - `Server-side`: Uses `tokenized_requests=False` (default). Text is sent to API server, which handles tokenization. Works for `generate_until` and `multiple_choice` tasks.
   - `Client-side`: Uses `tokenized_requests=True`. lm-eval tokenizes locally and sends token IDs. Required for `loglikelihood` tasks. Improves accuracy for `multiple_choice` tasks but requires logprobs support from API.
@@ -346,7 +390,7 @@ Before reviewing the datasets, it's important to understand the different task t
 
 ```bash
 lm-eval --model local-chat-completions \
-    --model_args model=MODEL_NAME,base_url=http://localhost:8000/v1 \
+    --model_args model=MODEL_NAME,base_url=BASE_URL \
     --tasks gsm8k \
     --output_path ./results
 ```
@@ -355,16 +399,16 @@ lm-eval --model local-chat-completions \
 
 ```bash
 lm-eval --model local-chat-completions \
-    --model_args model=MODEL_NAME,base_url=http://localhost:8000/v1 \
-    --tasks mmlu,gsm8k,arc_easy,arc_challenge,hellaswag \
+    --model_args model=MODEL_NAME,base_url=BASE_URL \
+    --tasks gsm8k,minerva_math,drop,squad_v2 \
     --output_path ./results
 ```
 
 **Task group evaluation** (all MMLU subjects):
 
 ```bash
-lm-eval --model local-chat-completions \
-    --model_args model=MODEL_NAME,base_url=http://localhost:8000/v1 \
+lm-eval --model local-completions \
+    --model_args model=MODEL_NAME,base_url=BASE_URL \
     --tasks mmlu \
     --output_path ./results
 ```
@@ -372,8 +416,8 @@ lm-eval --model local-chat-completions \
 **Wildcard pattern** (specific MMLU subjects):
 
 ```bash
-lm-eval --model local-chat-completions \
-    --model_args model=MODEL_NAME,base_url=http://localhost:8000/v1 \
+lm-eval --model local-completions \
+    --model_args model=MODEL_NAME,base_url=BASE_URL \
     --tasks "mmlu_mathematics,mmlu_physics,mmlu_chemistry" \
     --output_path ./results
 ```
@@ -381,8 +425,8 @@ lm-eval --model local-chat-completions \
 **Multilingual evaluation** (Chinese Belebele):
 
 ```bash
-lm-eval --model local-chat-completions \
-    --model_args model=MODEL_NAME,base_url=http://localhost:8000/v1 \
+lm-eval --model local-completions \
+    --model_args model=MODEL_NAME,base_url=BASE_URL \
     --tasks belebele_zho_Hans \
     --output_path ./results
 ```
@@ -392,8 +436,8 @@ lm-eval --model local-chat-completions \
 **General LLM Benchmark Suite** (recommended for API evaluation):
 
 ```bash
-lm-eval --model local-chat-completions \
-    --model_args model=MODEL_NAME,base_url=http://localhost:8000/v1 \
+lm-eval --model local-completions \
+    --model_args model=MODEL_NAME,base_url=BASE_URL \
     --tasks mmlu,gsm8k,arc_challenge,hellaswag,winogrande,truthfulqa_mc2 \
     --output_path ./results
 ```
@@ -401,9 +445,9 @@ lm-eval --model local-chat-completions \
 **Math & Reasoning Suite**:
 
 ```bash
-lm-eval --model local-chat-completions \
-    --model_args model=MODEL_NAME,base_url=http://localhost:8000/v1 \
-    --tasks gsm8k,math,arc_challenge \
+lm-eval --model local-completions \
+    --model_args model=MODEL_NAME,base_url=BASE_URL \
+    --tasks gsm8k,minerva_math,arc_challenge \
     --output_path ./results
 ```
 
@@ -411,7 +455,7 @@ lm-eval --model local-chat-completions \
 
 ```bash
 lm-eval --model local-chat-completions \
-    --model_args model=MODEL_NAME,base_url=http://localhost:8000/v1 \
+    --model_args model=MODEL_NAME,base_url=BASE_URL \
     --tasks humaneval,mbpp \
     --output_path ./results
 ```
@@ -419,8 +463,8 @@ lm-eval --model local-chat-completions \
 **Open LLM Leaderboard Suite**:
 
 ```bash
-lm-eval --model local-chat-completions \
-    --model_args model=MODEL_NAME,base_url=http://localhost:8000/v1 \
+lm-eval --model local-completions \
+    --model_args model=MODEL_NAME,base_url=BASE_URL \
     --tasks leaderboard \
     --output_path ./results
 ```
@@ -493,8 +537,8 @@ After running an evaluation, results are saved in JSON format. Here's what the k
   },
   "config": {
     "model": "local-chat-completions",
-    "model_args": "model=Qwen/Qwen2.5-7B-Instruct,base_url=http://localhost:8000/v1",
-    "batch_size": 8
+    "model_args": "model=MODEL_NAME,base_url=BASE_URL",
+    "batch_size": 1
   }
 }
 ```
@@ -514,7 +558,7 @@ After running an evaluation, results are saved in JSON format. Here's what the k
 | `loglikelihood_rolling` | Yes | Completion only | Client-side | For perplexity evaluation. Not supported by most chat APIs. |
 
 **Important Notes**:
-- **For API-based evaluation**: Focus on `generate_until` tasks (GSM8K, ARC, MMLU, etc.). These don't require local tokenization or logprobs.
+- **For API-based evaluation**: For **chat API**, use `generate_until` tasks (GSM8K, minerva_math, DROP, etc.). For **completion API** with tokenizer, you can run loglikelihood tasks (MMLU, ARC, HellaSwag, etc.).
 - **Tokenization**: With chat APIs, tokenization is handled server-side automatically. You only need to specify a local tokenizer if you want accurate token counting for cost estimation.
 - **Logprobs limitation**: OpenAI ChatCompletions and most chat APIs don't provide token-level logprobs, making `loglikelihood` tasks unavailable. Use local models (HuggingFace, vLLM) if you need these task types.
 
@@ -533,7 +577,7 @@ Download the Jupyter notebook example: [lm-eval Quick Start Notebook](/lm-eval/l
 ### Tips & Best Practices
 
 1. **Start Small**: Use `--limit 10` to test your setup before running full evaluations
-2. **Use Auto Batch Size**: Set `--batch_size auto` for optimal GPU utilization
+2. **Batch size**: For API-based evaluation use `--batch_size 1` to avoid rate limits and timeouts. For local GPU (e.g. vLLM, HuggingFace), `--batch_size auto` can improve utilization.
 3. **Save Results**: Always use `--output_path` and `--log_samples` for reproducibility
 4. **Cache Results**: Use `--use_cache <DIR>` to resume interrupted evaluations
 5. **Check Task Compatibility**: Verify your model supports the required output format (logprobs, generation, etc.)
