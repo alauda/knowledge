@@ -352,7 +352,7 @@ Before reviewing the datasets, it's important to understand the different task t
 | | StoryCloze | `storycloze_2016` | `multiple_choice` | `acc` | Chat / Completion | Server-side | Story completion task |
 | **Truthfulness & Safety** | TruthfulQA | `truthfulqa_mc1` | `multiple_choice` | `acc` | Chat / Completion | Server-side | Single-correct answer truthfulness |
 | | | `truthfulqa_mc2` | `multiple_choice` | `acc` | Chat / Completion | Server-side | Multiple-correct answer truthfulness |
-| | | `truthfulqa_gen` | `generate_until` | `bleu_max`, `rouge1_max`, `rougeL_max`, `bleurt_max` | Chat / Completion | Server-side | Generative truthfulness evaluation (also outputs _acc and _diff variants) |
+| | | `truthfulqa_gen` | `generate_until` | `bleu_max`, `rouge1_max`, `rougeL_max`, `bleurt_max` | Chat / Completion | Server-side | Generative truthfulness evaluation; also reports acc and diff metric variants |
 | | BBQ | `bbq_*` (11 categories) | `multiple_choice` | `acc` | Chat / Completion | Server-side | Bias benchmark covering age, disability, gender, nationality, appearance, race, religion, SES, sexual orientation, and their intersections |
 | **Multilingual** | Belebele | `belebele_zho_Hans` | `multiple_choice` | `acc`, `acc_norm` | Chat / Completion | Server-side | Chinese (Simplified) reading comprehension |
 | | | `belebele_zho_Hant` | `multiple_choice` | `acc`, `acc_norm` | Chat / Completion | Server-side | Chinese (Traditional) reading comprehension |
@@ -572,7 +572,7 @@ After running an evaluation, results are saved in JSON format. Here's what the k
 
 ### Example Notebook
 
-Download the Jupyter notebook example: [lm-eval Quick Start Notebook](/lm-eval/lm-eval_quick_star.ipynb)
+Download the Jupyter notebook example: [lm-eval Quick Start Notebook](/lm-eval/lm-eval_quick_start.ipynb)
 
 ### Tips & Best Practices
 
