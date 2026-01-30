@@ -90,6 +90,9 @@ spec:
         - "data"
 ```
 
+> [!WARNING]
+> Change the default password according to [How to Set and Update the OpenSearch Admin Password](./How_to_update_opensearch_admin_password.md) for production.
+
 ### Verify Deployment
 
 Check the status of the OpenSearch cluster:
@@ -99,8 +102,10 @@ Check the status of the OpenSearch cluster:
 kubectl get pods -n opensearch-demo
 
 # Check cluster health
-kubectl exec -n opensearch-demo my-opensearch-nodes-0 -- curl -sk -u admin:admin https://localhost:9200/_cluster/health?pretty
+kubectl exec -n opensearch-demo my-opensearch-nodes-0 -- curl -sk -u admin:<password> https://localhost:9200/_cluster/health?pretty
 ```
+
+> The default password for the `admin` user is `admin`.
 
 ### Access OpenSearch Dashboards
 
@@ -112,12 +117,12 @@ kubectl exec -n opensearch-demo my-opensearch-nodes-0 -- curl -sk -u admin:admin
 
 2. Open [http://127.0.0.1:5601](http://127.0.0.1:5601) in your browser.
 
-3. Login with default credentials:
+3. Login with credentials:
    - Username: `admin`
-   - Password: `admin`
+   - Password: `<password>`
+   
+   > The default password for the `admin` user is `admin`.
 
-> [!WARNING]
-> **Change the default password according to [How to Set and Update the OpenSearch Admin Password](./How_to_update_opensearch_admin_password.md) for production.
 
 ## Understanding Node Roles
 
@@ -129,15 +134,15 @@ By default, each node is a cluster-manager-eligible, data, ingest, and coordinat
 
 The following table provides descriptions of the node types and best practices for production deployments:
 
-| Node Type | Description | Best Practices for Production |
-|-----------|-------------|-------------------------------|
-| **`cluster_manager`** | Manages the overall operation of a cluster and keeps track of the cluster state. This includes creating and deleting indexes, keeping track of the nodes that join and leave the cluster, checking the health of each node in the cluster (by running ping requests), and allocating shards to nodes. | Three dedicated cluster manager nodes in three different zones is the right approach for almost all production use cases. This configuration ensures your cluster never loses quorum. Two nodes will be idle for most of the time except when one node goes down or needs some maintenance. |
-| **`data`** | Stores and searches data. Performs all data-related operations (indexing, searching, aggregating) on local shards. These are the worker nodes of your cluster and need more disk space than any other node type. | As you add data nodes, keep them balanced between zones. For example, if you have three zones, add data nodes in multiples of three, one for each zone. We recommend using storage and RAM-heavy nodes. |
-| **`ingest`** | Pre-processes data before storing it in the cluster. Runs an ingest pipeline that transforms your data before adding it to an index. | If you plan to ingest a lot of data and run complex ingest pipelines, we recommend you use dedicated ingest nodes. You can also optionally offload your indexing from the data nodes so that your data nodes are used exclusively for searching and aggregating. |
-| **`coordinating`** | Delegates client requests to the shards on the data nodes, collects and aggregates the results into one final result, and sends this result back to the client. | A couple of dedicated coordinating-only nodes is appropriate to prevent bottlenecks for search-heavy workloads. We recommend using CPUs with as many cores as you can. |
-| **`dynamic`** | Delegates a specific node for custom work, such as machine learning (ML) tasks, preventing the consumption of resources from data nodes and therefore not affecting any OpenSearch functionality. | Use dedicated nodes for ML workloads to isolate resource consumption from search and indexing operations. |
-| **`warm`** | Provides access to searchable snapshots. Incorporates techniques like frequently caching used segments and removing the least used data segments in order to access the searchable snapshot index (stored in a remote long-term storage source, for example, Amazon S3 or Google Cloud Storage). | Warm nodes contain an index allocated as a snapshot cache. Thus, we recommend using dedicated nodes with more compute (CPU and memory) than storage capacity (hard disk). |
-| **`search`** | Search nodes are dedicated nodes that host only search replica shards, helping separate search workloads from indexing workloads. | Because search nodes host search replicas and handle search traffic, we recommend using them for dedicated memory-optimized instances. |
+| Node Type | Description | 
+|-----------|-------------|
+| **`cluster_manager`** | Manages the overall operation of a cluster and keeps track of the cluster state. This includes creating and deleting indexes, keeping track of the nodes that join and leave the cluster, checking the health of each node in the cluster (by running ping requests), and allocating shards to nodes. |
+| **`data`** | Stores and searches data. Performs all data-related operations (indexing, searching, aggregating) on local shards. These are the worker nodes of your cluster and need more disk space than any other node type. |
+| **`ingest`** | Pre-processes data before storing it in the cluster. Runs an ingest pipeline that transforms your data before adding it to an index. |
+| **`coordinating`** | Delegates client requests to the shards on the data nodes, collects and aggregates the results into one final result, and sends this result back to the client. |
+| **`dynamic`** | Delegates a specific node for custom work, such as machine learning (ML) tasks, preventing the consumption of resources from data nodes and therefore not affecting any OpenSearch functionality. |
+| **`warm`** | Provides access to searchable snapshots. Incorporates techniques like frequently caching used segments and removing the least used data segments in order to access the searchable snapshot index (stored in a remote long-term storage source, for example, Amazon S3 or Google Cloud Storage). |
+| **`search`** | Search nodes are dedicated nodes that host only search replica shards, helping separate search workloads from indexing workloads. |
 
 > [!NOTE]
 > By default, nodes with no explicit roles specified become coordinating-only nodes. To create a coordinating-only node, set the `roles` field to an empty array `[]`.
@@ -267,18 +272,14 @@ nodePools:
 | JVM Heap Size | Set to **half of container memory**, max 32GB |
 | Coordinating Nodes | Use in large clusters to offload request routing from data nodes |
 
-## Deploy in Restricted Namespaces (Pod Security Standards)
-
-When deploying OpenSearch in namespaces with restricted Pod Security Admission (PSA), additional configuration is required.
-
-### Kubernetes Pod Security Admission Support
+## Deploy in Restricted Namespaces (Pod Security Admission)
 
 By default, the OpenSearch Operator creates init containers without security context restrictions to perform:
 
 1. Set `vm.max_map_count` kernel parameter
 2. Fix volume permissions via `chown`
 
-These operations violate restricted security policies.
+When deploying OpenSearch in namespaces with restricted Pod Security Admission (PSA), additional configuration is required.
 
 ### Solution
 
@@ -392,8 +393,6 @@ spec:
         memory: "512Mi"
         cpu: "200m"
 ```
-
-### Volume Permission Handling
 
 When the init container is disabled, you must ensure volumes are writable by UID 1000. The `fsGroup` setting handles this automatically:
 
