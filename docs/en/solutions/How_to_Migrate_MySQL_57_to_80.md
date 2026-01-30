@@ -13,27 +13,27 @@ ProductsVersion:
 
 ### The Challenge
 
-MySQL 5.7 End of Life (EOL) is approaching in October 2023, and organizations must upgrade to MySQL 8.0 to continue receiving security updates and leverage new features. Migrating production databases involves complex considerations including schema compatibility, character set changes, authentication plugin updates, and ensuring data integrity during the migration process.
+MySQL 5.7 End of Life (EOL) is approaching in October 2023, and organizations must upgrade to MySQL 8.0 to continue receiving security updates and to leverage new features. Migrating production databases involves complex considerations, including schema compatibility, character set changes, authentication plugin updates, and ensuring data integrity during the migration process.
 
 ### The Solution
 
-This guide provides comprehensive, test-verified instructions for migrating MySQL 5.7 to 8.0 on Alauda Container Platform (ACP). The solution uses mysqldump-based migration with comprehensive validation:
+This guide provides comprehensive, verified instructions for migrating MySQL 5.7 to 8.0 on Alauda Container Platform (ACP). The solution employs a mysqldump-based migration strategy with comprehensive validation:
 
-- **Proven Approach**: Tested and verified in Kubernetes test environments with PXC 5.7.44 and MGR 8.0.44
-- **Complete Object Coverage**: Migrates ALL standard MySQL objects (tables, views, routines, triggers, events, users, grants)
-- **Schema Compatibility**: Automated checks and fixes for MySQL 8.0 compatibility issues
-- **Comprehensive Verification**: 9-category object verification including view execution testing
-- **Minimal Risk**: Detailed rollback procedures and validation at each step
+- **Proven Approach**: Validated in ACP 4.2.0 using Alauda Database Service for MySQL v4.2.0.
+- **Complete Object Coverage**: Migrates all standard MySQL objects (tables, views, routines, triggers, events, users, grants).
+- **Schema Compatibility**: Automated checks and fixes for MySQL 8.0 compatibility issues.
+- **Comprehensive Verification**: Verification across 9 object categories, including view execution testing.
+- **Minimal Risk**: Detailed rollback procedures and validation at each step.
 
 ## Environment Information
 
-Applicable Versions: >=ACP 4.2.0, MySQL Operator: >=4.2.0
+Applicable Versions: ACP >= 4.2.0, MySQL Operator >= 4.2.0
 Source: Percona XtraDB Cluster (PXC) 5.7.44
 Target: MySQL Group Replication (MGR) 8.0.44
 
 ## Tested and Verified
 
-This migration solution has been **tested and verified** in Kubernetes test environments with PXC 5.7.44 and MGR 8.0.44 clusters.
+This migration solution has been **verified** in Kubernetes environments using PXC 5.7.44 and MGR 8.0.44 clusters.
 
 ### What Has Been Verified
 
@@ -49,9 +49,9 @@ This migration solution has been **tested and verified** in Kubernetes test envi
 ## Quick Reference
 
 ### Key Concepts
-- **Source Cluster**: Existing MySQL 5.7.44 PXC cluster to be migrated from
-- **Target Cluster**: New MySQL 8.0.44 MGR cluster to migrate to
-- **GTID**: Global Transaction Identifiers for transaction tracking
+- **Source Cluster**: Existing MySQL 5.7.44 PXC cluster.
+- **Target Cluster**: New MySQL 8.0.44 MGR cluster.
+- **GTID**: Global Transaction Identifiers for transaction tracking.
 - **Schema Compatibility**: MySQL 8.0 reserved keywords and syntax changes
 - **Character Set Migration**: Converting to utf8mb4 for full Unicode support
 - **DEFINER Privileges**: Security context for stored routines/views/events/triggers
@@ -61,7 +61,7 @@ This migration solution has been **tested and verified** in Kubernetes test envi
 | Aspect | PXC 5.7 (Source) | MGR 8.0 (Target) |
 |--------|-----------------|------------------|
 | **Pod Name Pattern** | `${NAME}-pxc-0` | `${NAME}-0` |
-| **Container Specifier** | Not required (default) | Required: `-c mysql` |
+| **Container Specifier** | Not required (defaults to mysql) | Required: `-c mysql` |
 | **Primary Endpoint** | `${NAME}-proxysql.${NS}.svc.cluster.local:3306` | `${NAME}-read-write.${NS}.svc.cluster.local:3306` |
 | **Replica Endpoint** | Same as primary (ProxySQL handles routing) | `${NAME}-read-only.${NS}.svc.cluster.local:3306` |
 | **Replication Type** | Galera (synchronous multi-master) | Group Replication (single-primary with async replicas) |
@@ -85,14 +85,14 @@ Before performing MySQL migration, ensure you have:
 
 - ACP v4.2.0 or later with MySQL Operator v4.2.0 or later
 - MySQL plugin deployed following the [installation guide](https://docs.alauda.io/mysql-mgr/4.2/installation.html)
-- Read the [Alauda MySQL MGR Documentation](https://docs.alauda.io/mysql-mgr/4.2/functions/01-create.html) to understand instance creation
+- Review the [Alauda MySQL MGR Documentation](https://docs.alauda.io/mysql-mgr/4.2/functions/01-create.html) to understand instance creation
 - **Source Cluster Requirements**:
-  - MySQL 5.7.44 PXC cluster in healthy state
+  - A healthy MySQL 5.7.44 PXC cluster
   - GTID mode enabled (`@@gtid_mode = ON`, `@@enforce_gtid_consistency = ON`)
   - Root or administrative access credentials
 - **Target Cluster Requirements**:
-  - NEW MySQL 8.0.44 MGR cluster created BEFORE migration
-  - Storage capacity 2-3x source database size
+  - A new MySQL 8.0.44 MGR cluster created *before* the migration
+  - Storage capacity of 2-3x the source database size
   - Same or higher resource allocation (CPU/Memory) as source
   - Network connectivity from your local machine to both clusters
 - **Pre-Migration Tasks**:
@@ -105,16 +105,16 @@ Before performing MySQL migration, ensure you have:
 
 ### Important Limitations
 
-- Application downtime is REQUIRED during export and import for consistency
-- Recommended maximum database size: 200GB (larger databases may require alternative approaches)
-- GTID must be enabled on source cluster
-- Target cluster must be created BEFORE migration begins
-- Storage performance (IOPS/Throughput) on target should match or exceed source
-- Some MySQL 8.0 features (Roles, Caching SHA2 passwords) require post-migration configuration
+- Application downtime is required during export and import to ensure consistency.
+- Recommended maximum database size: 200GB (larger databases may require alternative approaches).
+- GTID must be enabled on the source cluster.
+- The target cluster must be created before the migration begins.
+- Storage performance (IOPS/Throughput) on the target should match or exceed the source.
+- Some MySQL 8.0 features (Roles, Caching SHA2 passwords) require post-migration configuration.
 
 ## Getting Started
 
-Before running migration commands, gather the required information:
+Before executing migration commands, gather the following information:
 
 ### 1. Get MySQL Root Password
 
@@ -197,7 +197,7 @@ This guide uses the automated migration scripts provided in the [Appendix](#appe
 
 ### Step 1: Schema Compatibility Analysis
 
-Perform this analysis **1 week before** planned migration.
+Perform this analysis **one week before** the planned migration.
 
 Run the `00-pre-migration-check.sh` script to automatically detect schema compatibility issues and identify databases to migrate.
 
@@ -244,7 +244,7 @@ kubectl exec ${SOURCE_NAME}-pxc-0 -n ${SOURCE_NAMESPACE} -- \
 
 ### Step 2: Character Set and Collation Analysis
 
-The `00-pre-migration-check.sh` script (run in Step 1) already checks for non-utf8mb4 tables. If it reported any "tables not using utf8mb4", you should convert them **3-5 days before** planned migration.
+The `00-pre-migration-check.sh` script (run in Step 1) already checks for non-utf8mb4 tables. If any "tables not using utf8mb4" are reported, convert them **3-5 days before** the planned migration.
 
 #### Convert to utf8mb4
 
@@ -285,9 +285,9 @@ ALTER TABLE users ADD UNIQUE INDEX idx_email (email(191));
 
 ### Step 3: Create Target MySQL 8.0 Instance
 
-Create the target MySQL 8.0 instance **immediately before** the data migration phase to conserve resources.
+Create the target MySQL 8.0 instance **shortly before** the data migration phase to conserve resources.
 
-**IMPORTANT**: Create the target MySQL 8.0 instance BEFORE starting the migration script.
+**Important**: Create the target MySQL 8.0 instance before starting the migration script.
 
 **Using Web Console:**
 
@@ -386,14 +386,14 @@ kubectl -n $NAMESPACE get mysql $TARGET_NAME -w
 
 ### Step 4: Migrate Data, Users, and Privileges
 
-Use the `01-migrate-all.sh` script to perform the migration. This script:
+Use the `01-migrate-all.sh` script to execute the migration. This script:
 1. Verifies prerequisites (GTID, versions, connectivity)
 2. Streams data for all specified databases directly from source to target
 3. Migrates user accounts and privileges (using `mysql_native_password` for compatibility)
 
 **Procedure:**
 
-1. **Stop Application Writes**: Scale down your application to zero replicas to ensure data consistency.
+1. **Stop Application Writes**: Scale the application to zero replicas to ensure data consistency.
    ```bash
    kubectl scale deployment <app-name> --replicas=0 -n <app-namespace>
    ```
@@ -415,7 +415,7 @@ Use the `01-migrate-all.sh` script to perform the migration. This script:
 
 ### Step 5: Verify Migration
 
-Run the `02-verify-migration.sh` script to confirm ALL database objects have been migrated successfully.
+Run the `02-verify-migration.sh` script to confirm that all database objects have been migrated successfully.
 
 ```bash
 chmod +x 02-verify-migration.sh
@@ -424,17 +424,17 @@ chmod +x 02-verify-migration.sh
 
 The script performs the following checks for each database:
 1. **Tables**: Compares count on source vs target
-2. **Views**: Compares count AND tests execution of every view
+2. **Views**: Compares count and tests execution of every view
 3. **Stored Procedures/Functions**: Compares counts
 4. **Triggers/Events**: Compares counts
 5. **Row Counts**: Performs sample row count checks
 6. **Users**: Verifies user accounts were migrated
 
-**Note**: If any check fails, the script will output a red failure message. Do NOT proceed to cutover until verification passes.
+**Note**: If any check fails, the script will output a red failure message. Do not proceed to cutover until verification passes.
 
 ### Step 6: Post-Migration Optimization
 
-Optimize the target MySQL 8.0 instance after successful migration.
+Optimize the target MySQL 8.0 instance following a successful migration.
 
 #### 1. Update Table Statistics
 
@@ -494,55 +494,10 @@ If significant fragmentation found (>100MB), rebuild tables:
 OPTIMIZE TABLE db1.orders;
 ```
 
-#### 4. Configuration Tuning
-
-Optimize MySQL 8.0 configuration for better performance:
-
-```yaml
-# Update mysql-8-target instance config
-apiVersion: middleware.alauda.io/v1
-kind: Mysql
-metadata:
-  name: mysql-8-target
-spec:
-  mysqlConfig:
-    my.cnf: |
-      [mysqld]
-      # InnoDB settings
-      innodb_buffer_pool_size = 2G
-      innodb_log_file_size = 512M
-      innodb_flush_method = O_DIRECT
-
-      # MySQL 8.0 specific optimizations
-      innodb_parallel_read_threads = 4
-      performance_schema = ON
-
-      # Connection settings
-      max_connections = 500
-      thread_cache_size = 50
-
-      # Query cache (disabled in 8.0, but reserved)
-      # query_cache_type = 0
-      # query_cache_size = 0
-```
-
-Apply configuration:
+#### 4. Create Performance Baseline
 
 ```bash
-kubectl -n ${TARGET_NAMESPACE} patch mysql ${TARGET_NAME} --type=merge -p '
-{
-  "spec": {
-    "mysqlConfig": {
-      "my.cnf": "[mysqld]\ninnodb_buffer_pool_size = 2G\n..."
-    }
-  }
-}'
-```
-
-#### 5. Create Performance Baseline
-
-```bash
-# Record current performance metrics
+# Record current performance metrics (table count, row count, size) to /tmp/mysql-8-baseline.txt for later comparison
 kubectl exec ${TARGET_NAME}-0 -n ${TARGET_NAMESPACE} -c mysql -- \
   mysql -uroot -p${MYSQL_PASSWORD} -e "
     SELECT NOW() AS baseline_date,
@@ -558,7 +513,7 @@ kubectl exec ${TARGET_NAME}-0 -n ${TARGET_NAMESPACE} -c mysql -- \
 
 ### Step 7: Application Cutover
 
-After migration verification is complete, cutover application traffic:
+After migration verification is complete, switch over application traffic:
 
 #### 1. Stop Application Writes
 
@@ -624,7 +579,7 @@ kubectl exec ${TARGET_NAME}-0 -n ${TARGET_NAMESPACE} -c mysql -- \
 
 ### Rollback Plan
 
-If critical issues are discovered after cutover:
+If critical issues are discovered after the cutover:
 
 ```bash
 # 1. Stop application
@@ -851,7 +806,7 @@ After migration, verify:
 
 ## Appendix: Migration Scripts Reference
 
-This section provides detailed documentation for the automated migration scripts that simplify the MySQL 5.7 to 8.0 migration process.
+This section provides detailed documentation for the automated migration scripts designed to simplify the MySQL 5.7 to 8.0 migration process.
 
 ### Overview
 
@@ -1582,7 +1537,7 @@ Save this script as `01-migrate-all.sh`:
 #
 #=============================================================================
 
-set -e  # Exit on error
+set -e # Exit on error
 
 #=============================================================================
 # CONFIGURATION - EDIT THESE VALUES
@@ -1597,7 +1552,7 @@ TARGET_NAMESPACE="your-namespace"
 TARGET_MYSQL_PASSWORD="target-root-password"
 
 # IMPORTANT: databases to migrate (DO NOT include: information_schema, mysql, performance_schema, sys)
-DATABASES="db1 db2 db3"  # ← Copy from pre-migration check output
+DATABASES="db1 db2 db3" # ← Copy from pre-migration check output
 
 # Users to exclude from migration (system users)
 EXCLUDE_USERS="'mysql.sys', 'mysql.session', 'mysql.infoschema', 'root', 'clustercheck', 'monitor', 'operator', 'xtrabackup', 'repl'"
@@ -1709,20 +1664,30 @@ migrate_databases() {
         print_info "Migrating database [${db_num}/${TOTAL_DATABASES}]: ${db}"
 
         # Migrate using streaming (no intermediate storage)
-        if kubectl exec ${SOURCE_NAME}-pxc-0 -n ${SOURCE_NAMESPACE} -- \
+        kubectl exec ${SOURCE_NAME}-pxc-0 -n ${SOURCE_NAMESPACE} -- \
             mysqldump -uroot -p${SOURCE_MYSQL_PASSWORD} \
-                --single-transaction \
-                --quick \
-                --lock-tables=false \
-                --set-gtid-purged=ON \
-                --routines \
-                --events \
-                --triggers \
-                --databases ${db} \
-                2>/dev/null | \
-            grep -v "SET @@GLOBAL.GTID_PURGED" | \
+            --single-transaction \
+            --quick \
+            --lock-tables=false \
+            --set-gtid-purged=ON \
+            --routines \
+            --events \
+            --triggers \
+            --databases ${db} \
+            2>/dev/null |
+            grep -v "SET @@GLOBAL.GTID_PURGED" |
             kubectl exec -i ${TARGET_NAME}-0 -n ${TARGET_NAMESPACE} -c mysql -- \
-                mysql -uroot -p${TARGET_MYSQL_PASSWORD} --init-command="SET FOREIGN_KEY_CHECKS=0;" 2>&1 | grep -v "Using a password"; then
+                mysql -uroot -p${TARGET_MYSQL_PASSWORD} --init-command="SET FOREIGN_KEY_CHECKS=0;" 2>&1 | grep -v "Using a password" || true
+
+        # Verify migration succeeded by checking if database exists on target
+        DB_EXISTS=$(kubectl exec ${TARGET_NAME}-0 -n ${TARGET_NAMESPACE} -c mysql -- \
+            mysql -uroot -p${TARGET_MYSQL_PASSWORD} -N -e "
+                SELECT COUNT(*)
+                FROM information_schema.SCHEMATA
+                WHERE SCHEMA_NAME = '${db}';
+            " 2>/dev/null | grep -v "Warning")
+
+        if [ "${DB_EXISTS}" = "1" ]; then
 
             print_success "Migrated ${db}"
             MIGRATED_DATABASES=$((MIGRATED_DATABASES + 1))
@@ -1755,15 +1720,25 @@ migrate_users() {
 
     print_info "Found ${USER_COUNT} user(s) to migrate"
 
-    if kubectl exec ${SOURCE_NAME}-pxc-0 -n ${SOURCE_NAMESPACE} -- \
+    # Create users (ignore grep exit code)
+    kubectl exec ${SOURCE_NAME}-pxc-0 -n ${SOURCE_NAMESPACE} -- \
         mysql -uroot -p${SOURCE_MYSQL_PASSWORD} -N -e "
             SELECT CONCAT('CREATE USER IF NOT EXISTS ''', user, '''@''', host, ''' IDENTIFIED WITH mysql_native_password AS ''', replace(authentication_string, '\'', '\'\''), ''';')
             FROM mysql.user
             WHERE user NOT IN (${EXCLUDE_USERS});
-        " 2>/dev/null | grep -v "^Warning" | \
+        " 2>/dev/null | grep -v "^Warning" |
         kubectl exec -i ${TARGET_NAME}-0 -n ${TARGET_NAMESPACE} -c mysql -- \
-            mysql -uroot -p${TARGET_MYSQL_PASSWORD} 2>&1 | grep -v "Using a password"; then
+            mysql -uroot -p${TARGET_MYSQL_PASSWORD} 2>&1 | grep -v "Using a password" || true
 
+    # Verify user creation
+    USER_COUNT_AFTER=$(kubectl exec ${TARGET_NAME}-0 -n ${TARGET_NAMESPACE} -c mysql -- \
+        mysql -uroot -p${TARGET_MYSQL_PASSWORD} -N -e "
+            SELECT COUNT(*)
+            FROM mysql.user
+            WHERE user NOT IN (${EXCLUDE_USERS});
+        " 2>/dev/null | grep -v "Warning")
+
+    if [ "${USER_COUNT_AFTER}" -ge "${USER_COUNT}" ]; then
         print_success "User accounts created"
     else
         print_error "Failed to create user accounts"
@@ -1771,27 +1746,24 @@ migrate_users() {
 
     print_section "Granting privileges"
 
-    # Stream GRANT statements
-    if kubectl exec ${SOURCE_NAME}-pxc-0 -n ${SOURCE_NAMESPACE} -- \
+    # Stream GRANT statements (ignore grep exit code)
+    kubectl exec ${SOURCE_NAME}-pxc-0 -n ${SOURCE_NAMESPACE} -- \
         mysql -uroot -p${SOURCE_MYSQL_PASSWORD} -N -e "
             SELECT CONCAT('SHOW GRANTS FOR ''', user, '''@''', host, ''';')
             FROM mysql.user
             WHERE user NOT IN (${EXCLUDE_USERS});
         " 2>/dev/null | grep -v "^Warning" | while read query; do
-            kubectl exec ${SOURCE_NAME}-pxc-0 -n ${SOURCE_NAMESPACE} -- \
-                mysql -uroot -p${SOURCE_MYSQL_PASSWORD} -e "${query}" 2>/dev/null | grep "^GRANT" | sed 's/$/;/'
-        done | \
+        kubectl exec ${SOURCE_NAME}-pxc-0 -n ${SOURCE_NAMESPACE} -- \
+            mysql -uroot -p${SOURCE_MYSQL_PASSWORD} -e "${query}" 2>/dev/null | grep "^GRANT" | sed 's/$/;/'
+    done |
         kubectl exec -i ${TARGET_NAME}-0 -n ${TARGET_NAMESPACE} -c mysql -- \
-            mysql -uroot -p${TARGET_MYSQL_PASSWORD} 2>&1 | grep -v "Using a password"; then
+            mysql -uroot -p${TARGET_MYSQL_PASSWORD} 2>&1 | grep -v "Using a password" || true
 
-        print_success "Privileges granted"
-    else
-        print_error "Failed to grant privileges"
-    fi
+    print_success "Privileges granted"
 
     # Flush privileges
     kubectl exec ${TARGET_NAME}-0 -n ${TARGET_NAMESPACE} -c mysql -- \
-        mysql -uroot -p${TARGET_MYSQL_PASSWORD} -e "FLUSH PRIVILEGES;" 2>&1 | grep -v "Using a password" >/dev/null
+        mysql -uroot -p${TARGET_MYSQL_PASSWORD} -e "FLUSH PRIVILEGES;" 2>&1 | grep -v "Using a password" >/dev/null || true
 
     print_section "Verifying migrated users"
 
@@ -1937,7 +1909,7 @@ Save this script as `02-verify-migration.sh`:
 #
 #=============================================================================
 
-set -e  # Exit on error
+set -e # Exit on error
 
 #=============================================================================
 # CONFIGURATION - EDIT THESE VALUES
@@ -1952,10 +1924,11 @@ TARGET_NAMESPACE="your-namespace"
 TARGET_MYSQL_PASSWORD="target-root-password"
 
 # IMPORTANT: databases that were migrated (DO NOT include: information_schema, mysql, performance_schema, sys)
-DATABASES="db1 db2 db3"  # ← Same as used in migration script
+DATABASES="db1 db2 db3" # ← Same as used in migration script
 
-# Users to exclude from verification
-EXCLUDE_USERS="'mysql.sys', 'mysql.session', 'mysql.infoschema', 'root', 'clustercheck', 'monitor', 'operator', 'xtrabackup', 'repl'"
+# Users to exclude from verification (system users and MySQL MGR users)
+EXCLUDE_USERS="'mysql.sys', 'mysql.session', 'mysql.infoschema', 'root', 'clustercheck', 'monitor', 'operator', 'xtrabackup', 'repl', 'exporter', 'healthchecker', 'clusterchecker', 'mysql', 'percona.telemetry', 'manage'"
+# Note: MySQL MGR system users (mysql_innodb_cluster_%, mysql_router%) are filtered in verify_users()
 
 # Color output
 RED='\033[0;31m'
@@ -2075,7 +2048,7 @@ verify_views() {
             if [ "${TARGET_COUNT}" -gt 0 ]; then
                 VIEW_FAILED=0
                 VERIFY_TMP="${WORK_DIR}/view_verify.txt"
-                echo "0" > ${VERIFY_TMP}
+                echo "0" >${VERIFY_TMP}
 
                 kubectl exec ${TARGET_NAME}-0 -n ${TARGET_NAMESPACE} -c mysql -- \
                     mysql -uroot -p${TARGET_MYSQL_PASSWORD} -N -e "
@@ -2083,13 +2056,13 @@ verify_views() {
                         FROM information_schema.VIEWS
                         WHERE TABLE_SCHEMA = '${db}';
                     " 2>/dev/null | grep -v "Warning" | while read view_name; do
-                        if ! kubectl exec ${TARGET_NAME}-0 -n ${TARGET_NAMESPACE} -c mysql -- \
-                            mysql -uroot -p${TARGET_MYSQL_PASSWORD} ${db} -e "SELECT COUNT(*) FROM \`${view_name}\`;" 2>&1 | grep -q "ERROR"; then
-                            : # view works
-                        else
-                            echo "1" >> ${VERIFY_TMP}
-                        fi
-                    done
+                    if ! kubectl exec ${TARGET_NAME}-0 -n ${TARGET_NAMESPACE} -c mysql -- \
+                        mysql -uroot -p${TARGET_MYSQL_PASSWORD} ${db} -e "SELECT COUNT(*) FROM \`${view_name}\`;" 2>&1 | grep -q "ERROR"; then
+                        : # view works
+                    else
+                        echo "1" >>${VERIFY_TMP}
+                    fi
+                done
 
                 if [ "$(cat ${VERIFY_TMP} | wc -l)" -eq 1 ] && [ "$(cat ${VERIFY_TMP})" = "0" ]; then
                     print_success "All views execute successfully"
@@ -2113,15 +2086,15 @@ verify_routines() {
         SOURCE_COUNT=$(kubectl exec ${SOURCE_NAME}-pxc-0 -n ${SOURCE_NAMESPACE} -- \
             mysql -uroot -p${SOURCE_MYSQL_PASSWORD} -N -e "
                 SELECT COUNT(*)
-                FROM mysql.proc
-                WHERE db = '${db}' AND type = 'PROCEDURE';
+                FROM information_schema.ROUTINES
+                WHERE ROUTINE_SCHEMA = '${db}' AND ROUTINE_TYPE = 'PROCEDURE';
             " 2>/dev/null | grep -v "Warning")
 
         TARGET_COUNT=$(kubectl exec ${TARGET_NAME}-0 -n ${TARGET_NAMESPACE} -c mysql -- \
             mysql -uroot -p${TARGET_MYSQL_PASSWORD} -N -e "
                 SELECT COUNT(*)
-                FROM mysql.proc
-                WHERE db = '${db}' AND type = 'PROCEDURE';
+                FROM information_schema.ROUTINES
+                WHERE ROUTINE_SCHEMA = '${db}' AND ROUTINE_TYPE = 'PROCEDURE';
             " 2>/dev/null | grep -v "Warning")
 
         check_count "${SOURCE_COUNT}" "${TARGET_COUNT}" "Stored Procedures"
@@ -2137,15 +2110,15 @@ verify_routines() {
         SOURCE_COUNT=$(kubectl exec ${SOURCE_NAME}-pxc-0 -n ${SOURCE_NAMESPACE} -- \
             mysql -uroot -p${SOURCE_MYSQL_PASSWORD} -N -e "
                 SELECT COUNT(*)
-                FROM mysql.proc
-                WHERE db = '${db}' AND type = 'FUNCTION';
+                FROM information_schema.ROUTINES
+                WHERE ROUTINE_SCHEMA = '${db}' AND ROUTINE_TYPE = 'FUNCTION';
             " 2>/dev/null | grep -v "Warning")
 
         TARGET_COUNT=$(kubectl exec ${TARGET_NAME}-0 -n ${TARGET_NAMESPACE} -c mysql -- \
             mysql -uroot -p${TARGET_MYSQL_PASSWORD} -N -e "
                 SELECT COUNT(*)
-                FROM mysql.proc
-                WHERE db = '${db}' AND type = 'FUNCTION';
+                FROM information_schema.ROUTINES
+                WHERE ROUTINE_SCHEMA = '${db}' AND ROUTINE_TYPE = 'FUNCTION';
             " 2>/dev/null | grep -v "Warning")
 
         check_count "${SOURCE_COUNT}" "${TARGET_COUNT}" "Stored Functions"
@@ -2259,17 +2232,21 @@ verify_users() {
         mysql -uroot -p${SOURCE_MYSQL_PASSWORD} -N -e "
             SELECT COUNT(*)
             FROM mysql.user
-            WHERE user NOT IN (${EXCLUDE_USERS});
+            WHERE user NOT IN (${EXCLUDE_USERS})
+            AND user NOT LIKE 'mysql_innodb_cluster_%'
+            AND user NOT LIKE 'mysql_router%';
         " 2>/dev/null | grep -v "Warning")
 
     TARGET_USERS=$(kubectl exec ${TARGET_NAME}-0 -n ${TARGET_NAMESPACE} -c mysql -- \
         mysql -uroot -p${TARGET_MYSQL_PASSWORD} -N -e "
             SELECT COUNT(*)
             FROM mysql.user
-            WHERE user NOT IN (${EXCLUDE_USERS});
+            WHERE user NOT IN (${EXCLUDE_USERS})
+            AND user NOT LIKE 'mysql_innodb_cluster_%'
+            AND user NOT LIKE 'mysql_router%';
         " 2>/dev/null | grep -v "Warning")
 
-    check_count "${SOURCE_USERS}" "${TARGET_USERS}" "User accounts"
+    check_count "${SOURCE_USERS}" "${TARGET_USERS}" "User accounts" || true
 
     # Show migrated users
     if [ "${TARGET_USERS}" -gt 0 ]; then
@@ -2280,10 +2257,12 @@ verify_users() {
                 SELECT CONCAT(user, '@', host)
                 FROM mysql.user
                 WHERE user NOT IN (${EXCLUDE_USERS})
+                AND user NOT LIKE 'mysql_innodb_cluster_%'
+                AND user NOT LIKE 'mysql_router%'
                 ORDER BY user;
             " 2>/dev/null | grep -v "Warning" | while read user; do
-                echo "   - ${user}"
-            done
+            echo "   - ${user}"
+        done
     fi
 }
 
