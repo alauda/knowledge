@@ -294,15 +294,6 @@ kubectl -n $NAMESPACE get mysql $TARGET_NAME -w
 # mysql-8-target   8.0       Ready              ready
 ```
 
-**Target endpoints after creation:**
-```bash
-# Primary (read-write)
-$TARGET_NAME-read-write.$NAMESPACE.svc.cluster.local:3306
-
-# Replicas (read-only)
-$TARGET_NAME-read-only.$NAMESPACE.svc.cluster.local:3306
-```
-
 ### Step 2: Schema Compatibility Analysis
 
 Perform this analysis **1 week before** planned migration.
@@ -2435,55 +2426,3 @@ If you encounter issues not covered in this guide:
 3. Verify your environment matches the [Prerequisites](#prerequisites)
 4. Follow the [kubectl Exec Best Practices](#getting-started) to avoid common command errors
 5. Check MySQL error logs: `kubectl logs -n <namespace> <pod-name> -c mysql --tail=100`
-
----
-
-**Document Version:** 2.5
-**Last Updated:** 2026-01-30
-**Status:** Production-Ready
-
-**Testing History:**
-- **v2.0** (2026-01-30): Initial production testing with PXC 5.7.44 → MGR 8.0.44
-- **v2.1** (2026-01-30): Cross-namespace migration testing; updated test cases to focus on purpose and validation steps
-- **v2.2** (2026-01-30): Changed to streaming approach to eliminate disk space requirements
-- **v2.3** (2026-01-30): Clarified that source and target passwords are different; full end-to-end test verification
-- **v2.4** (2026-01-30): Added clear warnings that DATABASES variable must NOT include system databases
-- **v2.5** (2026-01-30): Added automated migration scripts for simplified execution
-
-**Changes in v2.5:**
-- Added automated migration scripts (3 scripts for complete workflow):
-  - `00-pre-migration-check.sh` - Pre-migration compatibility analysis
-  - `01-migrate-all.sh` - Complete migration (data + users + privileges)
-  - `02-verify-migration.sh` - Comprehensive verification
-- Added "Quick Start: Automated Migration Scripts" section in Configuration Guide
-- Added comprehensive "Appendix: Migration Scripts Reference" with:
-  - Detailed documentation for each script
-  - Expected output examples
-  - Configuration instructions
-  - Troubleshooting guide
-  - Full workflow example
-- Scripts feature:
-  - Color-coded output (success/error/warning/info)
-  - Progress indicators
-  - Automatic error detection and handling
-  - Auto-detection of user databases
-  - Minimal configuration (4-6 variables per script)
-- Scripts make migration accessible to users with minimal bash/kubectl knowledge
-- All scripts are executable and production-ready
-
-**Changes in v2.4:**
-- Added prominent warnings in all sections that use the `DATABASES` variable
-- Clarified that system databases (`information_schema`, `mysql`, `performance_schema`, `sys`) must NOT be migrated
-- Added inline comments to code examples: `# ← YOUR databases only (NOT: information_schema, mysql, performance_schema, sys)`
-- Updated Prerequisites section to explicitly mention identifying user databases only
-- System databases are managed internally by MySQL and have incompatible schemas between 5.7 and 8.0
-
-**Changes in v2.3:**
-- Clarified password variables: `SOURCE_MYSQL_PASSWORD` vs `TARGET_MYSQL_PASSWORD` (both sections)
-- Added kubectl commands to retrieve source and target passwords from secrets
-- Full end-to-end migration test verified:
-  - Target cluster creation from document YAML
-  - 10 databases migrated via streaming
-  - 3 users migrated with privileges
-  - Stored procedures, functions, and views verified working
-- Document is accurate and production-ready
