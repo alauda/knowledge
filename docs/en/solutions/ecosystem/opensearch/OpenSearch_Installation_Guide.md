@@ -162,6 +162,11 @@ nodePools:
   - component: all-in-one
     replicas: 3
     diskSize: "30Gi"
+    persistence:
+      pvc:
+        accessModes:
+        - ReadWriteOnce
+        storageClass: sc-topolvm
     resources:
       requests:
         memory: "2Gi"
@@ -185,6 +190,11 @@ nodePools:
   - component: masters
     replicas: 3
     diskSize: "10Gi"
+    persistence:
+      pvc:
+        accessModes:
+        - ReadWriteOnce
+        storageClass: sc-topolvm
     resources:
       requests:
         memory: "2Gi"
@@ -199,6 +209,11 @@ nodePools:
   - component: data
     replicas: 3
     diskSize: "100Gi"
+    persistence:
+      pvc:
+        accessModes:
+        - ReadWriteOnce
+        storageClass: sc-topolvm
     jvm: -Xmx4G -Xms4G
     resources:
       requests:
@@ -222,6 +237,11 @@ nodePools:
   - component: masters
     replicas: 3
     diskSize: "30Gi"
+    persistence:
+      pvc:
+        accessModes:
+        - ReadWriteOnce
+        storageClass: sc-topolvm
     resources:
       requests:
         memory: "4Gi"
@@ -236,6 +256,11 @@ nodePools:
   - component: hot-data
     replicas: 5
     diskSize: "500Gi"
+    persistence:
+      pvc:
+        accessModes:
+        - ReadWriteOnce
+        storageClass: sc-topolvm
     jvm: -Xmx8G -Xms8G
     resources:
       requests:
@@ -252,6 +277,11 @@ nodePools:
   - component: coordinators
     replicas: 2
     diskSize: "10Gi"
+    persistence:
+      pvc:
+        accessModes:
+        - ReadWriteOnce
+        storageClass: sc-topolvm
     resources:
       requests:
         memory: "4Gi"
