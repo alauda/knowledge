@@ -1,6 +1,6 @@
 ---
 products:
-  - Alauda Container Platform
+  - Alauda Application Services
 kind:
   - Solution
 ---
@@ -29,12 +29,15 @@ This document provides detailed guidance for migrating from Elasticsearch (ES) t
 
 :::
 
+This guide uses ES 7.10 as the source for the Snapshot & Restore method, and ES 8.17 for the Reindex from Remote method. Adjust accordingly if your source version differs.
+
+
 ## Migrate from ES 7.10 to OpenSearch 2.x to 3.x
 
 This migration requires a **two-phase approach**:
 
-1. **Phase 1**: Restore ES 7.10 snapshot to OpenSearch 2.x
-2. **Phase 2**: Upgrade OpenSearch 2.x to 3.x
+* **Phase 1**: Restore ES 7.10 snapshot to OpenSearch 2.x
+* **Phase 2**: Upgrade OpenSearch 2.x to 3.x
 
 ### Prerequisites
 
@@ -46,6 +49,12 @@ This migration requires a **two-phase approach**:
 ```bash
 curl -u "elastic:<password>" "http://localhost:9200/_cat/plugins?v"
 ```
+
+:::info
+Remember to replace `<password>` with your cluster's credentials above and in the following commands.
+
+For Elasticsearch, the default user is `elastic`, and the default password is randomly generated during creation.
+:::
 
 #### Install repository-s3 Plugin
 
@@ -75,13 +84,13 @@ In **Application Container Platform** > **Applications** > **Applications** page
 - Click **Update**
 - Switch to **YAML** edit page
 
-Update `values.yaml` on the **Custom** input textarea with below content:
+Update `values.yaml` on the **Custom** input textarea with the following content":
 
 ```yaml
 masterNodes:
   config:
     elasticsearch.yml: |
-      s3.client.default.endpoint: "http://minio.example.com:9000"
+      s3.client.default.endpoint: "<http://minio.example.com:9000>"
       s3.client.default.region: "us-east-1"
       s3.client.default.path_style_access: true  # Required for MinIO
 
@@ -125,7 +134,7 @@ spec:
     - https://artifacts.opensearch.org/releases/plugins/repository-s3/2.19.3/repository-s3-2.19.3.zip
   general:
     additionalConfig:
-      s3.client.default.endpoint: "http://minio.example.com:9000"
+      s3.client.default.endpoint: "<http://minio.example.com:9000>"
       s3.client.default.region: "us-east-1"
       s3.client.default.path_style_access: "true"
     pluginsList:
@@ -133,7 +142,7 @@ spec:
 ```
 
 :::note
-All three approaches will trigger a rolling restart of nodes to load the newly installed plugin.
+Both approaches will trigger a rolling restart of nodes to load the newly installed plugin.
 :::
 
 ### Procedure
@@ -142,7 +151,7 @@ All three approaches will trigger a rolling restart of nodes to load the newly i
 
 For security reasons, avoid including access keys directly in API request bodies. Use the keystore instead.
 
-**On Elasticsearch 7.10:**
+**On Elasticsearch 7.10 Pod:**
 
 1. Add S3 credentials to keystore (secure settings):
 
@@ -154,8 +163,8 @@ For security reasons, avoid including access keys directly in API request bodies
     Or use non-interactive mode:
 
     ```bash
-    echo "YOUR_ACCESS_KEY" | bin/elasticsearch-keystore add --stdin s3.client.default.access_key
-    echo "YOUR_SECRET_KEY" | bin/elasticsearch-keystore add --stdin s3.client.default.secret_key
+    echo "<YOUR_ACCESS_KEY>" | bin/elasticsearch-keystore add --stdin s3.client.default.access_key
+    echo "<YOUR_SECRET_KEY>" | bin/elasticsearch-keystore add --stdin s3.client.default.secret_key
     ```
 
 2. Reload the secure settings:
@@ -176,8 +185,8 @@ Use the Operator's declarative configuration:
     metadata:
       name: s3-secret
     stringData:
-      s3.client.default.access_key: "YOUR_ACCESS_KEY"
-      s3.client.default.secret_key: "YOUR_SECRET_KEY"
+      s3.client.default.access_key: "<YOUR_ACCESS_KEY>"
+      s3.client.default.secret_key: "<YOUR_SECRET_KEY>"
     ```
 
     :::note S3 Endpoint Configuration
@@ -214,7 +223,7 @@ curl -u "elastic:<password>" -X PUT "http://localhost:9200/_snapshot/migration_r
 }'
 ```
 
-#### Step 3: Create a Full Snapshot
+#### Step 3: Create a Full Snapshot on Source Cluster (ES 7.10)
 
 ```bash
 curl -u "elastic:<password>" -X PUT "http://localhost:9200/_snapshot/migration_repo/snapshot_1?wait_for_completion=true" \
@@ -232,7 +241,7 @@ It is recommended to exclude system indices (`.kibana*`, `.security*`, `.monitor
 
 ### Phase 1: Restore to OpenSearch 2.x
 
-#### Step 4: Deploy OpenSearch 2.x Cluster
+#### Step 1: Deploy OpenSearch 2.x Cluster
 
 Deploy a new OpenSearch **2.x** cluster using the OpenSearch Operator:
 
@@ -245,7 +254,7 @@ spec:
   general:
     version: 2.19.3
     additionalConfig:
-      s3.client.default.endpoint: "http://minio.example.com:9000"
+      s3.client.default.endpoint: "<http://minio.example.com:9000>"
       s3.client.default.region: "us-east-1"
       s3.client.default.path_style_access: "true"
     pluginsList:
@@ -263,12 +272,12 @@ spec:
     ...
 ```
 
-#### Step 5: Restore the Snapshot
+#### Step 2: Restore the Snapshot on OpenSearch
 
 Exclude system indices to avoid conflicts with OpenSearch's internal indices:
 
 ```bash
-curl -k -u "admin:admin" -X POST "https://localhost:9200/_snapshot/migration_repo/snapshot_1/_restore" \
+curl -k -u "admin:<password>" -X POST "https://localhost:9200/_snapshot/migration_repo/snapshot_1/_restore" \
   -H 'Content-Type: application/json' -d'
 {
   "indices": "-.kibana*,-.security*,-.monitoring*,-apm*,-.apm*",
@@ -276,16 +285,22 @@ curl -k -u "admin:admin" -X POST "https://localhost:9200/_snapshot/migration_rep
 }'
 ```
 
-#### Step 6: Verification
+:::info
+Remember to replace `<password>` with your cluster's credentials above and in the following commands.
+
+For OpenSearch, the default user is `admin`, and the default password is `admin`.
+:::
+
+#### Step 3: Verification
 
 Verify the index count and document count match the source cluster:
 
 ```bash
-# Check indices
-curl -k -u "admin:admin" "https://localhost:9200/_cat/indices?v"
+# Check indices on OpenSearch pod
+curl -k -u "admin:<password>" "https://localhost:9200/_cat/indices?v"
 
-# Check document count
-curl -k -u "admin:admin" "https://localhost:9200/<index_name>/_count"
+# Check document count on OpenSearch pod
+curl -k -u "admin:<password>" "https://localhost:9200/<index_name>/_count"
 ```
 
 ### Phase 2: Reindex and Upgrade to OpenSearch 3.x
@@ -294,7 +309,7 @@ curl -k -u "admin:admin" "https://localhost:9200/<index_name>/_count"
 Indices restored from ES 7.10 snapshots retain their original version metadata (`7.10.2`). OpenSearch 3.x requires indices to have version `2.0.0+`. You **MUST reindex** all restored indices within OpenSearch 2.x before upgrading.
 :::
 
-#### Step 7: Reindex All Restored Indices
+#### Step 1: Reindex All Restored Indices on the Restored OpenSearch
 
 For each restored index, create a new index and reindex the data:
 
@@ -305,18 +320,18 @@ The examples below use `migration_test` as the index name. Replace `migration_te
 ```bash
 # 1. Get the original index mapping and extract the mappings object using sed
 
-curl -s -k -u "admin:admin" "https://localhost:9200/migration_test/_mapping" | \
+curl -s -k -u "admin:<password>" "https://localhost:9200/migration_test/_mapping" | \
   sed 's/^{"migration_test"://' | sed 's/}$//' > mapping.json
 
 # 2. Create a new index with the same mapping (add suffix _v2)
 
-curl -k -u "admin:admin" -X PUT "https://localhost:9200/migration_test_v2" \
+curl -k -u "admin:<password>" -X PUT "https://localhost:9200/migration_test_v2" \
   -H 'Content-Type: application/json' \
   -d @mapping.json
 
 # 3. Reindex data from old index to new index
 
-curl -k -u "admin:admin" -X POST "https://localhost:9200/_reindex?wait_for_completion=true" \
+curl -k -u "admin:<password>" -X POST "https://localhost:9200/_reindex?wait_for_completion=true" \
   -H 'Content-Type: application/json' -d'
 {
   "source": { "index": "migration_test" },
@@ -324,8 +339,8 @@ curl -k -u "admin:admin" -X POST "https://localhost:9200/_reindex?wait_for_compl
 }'
 
 # 4. Delete old index and create alias (or rename)
-curl -k -u "admin:admin" -X DELETE "https://localhost:9200/migration_test"
-curl -k -u "admin:admin" -X POST "https://localhost:9200/_aliases" \
+curl -k -u "admin:<password>" -X DELETE "https://localhost:9200/migration_test"
+curl -k -u "admin:<password>" -X POST "https://localhost:9200/_aliases" \
   -H 'Content-Type: application/json' -d'
 {
   "actions": [
@@ -337,12 +352,12 @@ curl -k -u "admin:admin" -X POST "https://localhost:9200/_aliases" \
 Repeat for all restored indices. After reindexing, verify the new index version:
 
 ```bash
-curl -k -u "admin:admin" "https://localhost:9200/migration_test_v2/_settings?filter_path=**.version"
+curl -k -u "admin:<password>" "https://localhost:9200/migration_test_v2/_settings?filter_path=**.version"
 ```
 
 The `version.created` should show an OpenSearch 2.x internal version number (e.g., `136408127` for OS 2.19.x). ES 7.10.2 indices show `7102099`. If you see a number starting with `136` or higher, the reindex was successful.
 
-#### Step 8: Upgrade OpenSearch Cluster
+#### Step 2: Upgrade OpenSearch Cluster
 
 Update the `OpenSearchCluster` CR to upgrade the version:
 
@@ -352,20 +367,22 @@ spec:
     version: 3.3.1  # Upgrade to OpenSearch 3.x
     pluginsList:
     - https://artifacts.opensearch.org/releases/plugins/repository-s3/3.3.1/repository-s3-3.3.1.zip
+  dashboards:
+    version: 3.3.0  # Upgrade OpenSearch Dashboards as well
 ```
 
 The Operator will perform a rolling upgrade automatically.
 
-#### Step 9: Post-Upgrade Verification
+#### Step 3: Post-Upgrade Verification
 
 Verify all indices are accessible after upgrade:
 
 ```bash
-curl -k -u "admin:admin" "https://localhost:9200/_cat/indices?v"
-curl -k -u "admin:admin" "https://localhost:9200/_cluster/health?pretty"
+curl -k -u "admin:<password>" "https://localhost:9200/_cat/indices?v"
+curl -k -u "admin:<password>" "https://localhost:9200/_cluster/health?pretty"
 ```
 
-## Migrate from ES 8.x/9.x to OpenSearch 3.x
+## Migrate from ES 8.x to OpenSearch 3.x
 
 Elasticsearch 8.x uses a newer Lucene version with incompatible metadata protocols, making snapshots unreadable by OpenSearch. Use **Reindex from Remote** instead.
 
@@ -375,7 +392,7 @@ Elasticsearch 8.x uses a newer Lucene version with incompatible metadata protoco
 
 ### Deploy ES 8.x Using ECK Operator
 
-Deploy an Elasticsearch 8.x cluster using ECK Operator:
+Deploy an Elasticsearch 8.17 cluster using ECK Operator:
 
 ```yaml
 apiVersion: elasticsearch.k8s.elastic.co/v1
@@ -446,16 +463,16 @@ spec:
 
 > **Note**: Nodes will be restarted after applying this configuration change.
 
-#### Step 2: Create Index Templates (Optional but Recommended)
+#### Step 2: Create Index Templates on OpenSearch (Optional but Recommended)
 
 If your ES 8.x indices rely on specific settings or mappings, it is recommended to manually create the corresponding Index Templates or Mappings in OpenSearch beforehand.
 
-#### Step 3: Execute Reindex
+#### Step 3: Execute Reindex on OpenSearch
 
 Initiate the reindex request from the OpenSearch cluster. Set `wait_for_completion=false` to run asynchronously.
 
 ```bash
-curl -k -u "admin:admin" -X POST "https://localhost:9200/_reindex?wait_for_completion=false" -H 'Content-Type: application/json' -d'
+curl -k -u "admin:<password>" -X POST "https://localhost:9200/_reindex?wait_for_completion=false" -H 'Content-Type: application/json' -d'
 {
   "source": {
     "remote": {
@@ -484,7 +501,7 @@ curl -k -u "admin:admin" -X POST "https://localhost:9200/_reindex?wait_for_compl
 Use the Task ID from the previous step to check the task status:
 
 ```bash
-curl -k -u "admin:admin" "https://localhost:9200/_tasks/N6q0j8s-T0m0j8s-T0m0j8:123456"
+curl -k -u "admin:<password>" "https://localhost:9200/_tasks/N6q0j8s-T0m0j8s-T0m0j8:123456"
 ```
 
 #### Step 5: Verify Reindex Completion
@@ -492,10 +509,10 @@ curl -k -u "admin:admin" "https://localhost:9200/_tasks/N6q0j8s-T0m0j8s-T0m0j8:1
 Verify that the index was created and contains data:
 
 ```bash
-# Check if index exists and document count
-curl -k -u "admin:admin" "https://localhost:9200/migration_test/_count"
+# Check if index exists and document count (run on OpenSearch pod)
+curl -k -u "admin:<password>" "https://localhost:9200/migration_test/_count"
 
-# Compare with source ES 8.x cluster
+# Compare with source ES 8.x cluster (run on ES 8.x pod)
 curl -k -u "elastic:<password>" "https://es8-cluster-host:9200/migration_test/_count"
 ```
 
