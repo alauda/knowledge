@@ -195,9 +195,99 @@ kubectl exec <target-name>-0 -n <namespace> -c mysql -- \
 
 This guide uses the automated migration scripts provided in the [Appendix](#appendix-migration-scripts-reference) to simplify the migration process.
 
-### Step 1: Create Target MySQL 8.0 Instance
+### Step 1: Schema Compatibility Analysis
 
-**IMPORTANT**: Create the target MySQL 8.0 instance BEFORE starting migration.
+Perform this analysis **1 week before** planned migration.
+
+Run the `00-pre-migration-check.sh` script to automatically detect schema compatibility issues and identify databases to migrate.
+
+```bash
+# Edit configuration
+vi 00-pre-migration-check.sh
+
+# Run check
+chmod +x 00-pre-migration-check.sh
+./00-pre-migration-check.sh
+```
+
+The script will output:
+1. List of user databases to migrate (copy the `DATABASES="..."` line for later)
+2. Schema compatibility issues (Reserved keywords, Invalid dates, ZEROFILL, etc.)
+3. Character set analysis
+
+If the script reports issues, use the commands below to fix them.
+
+#### Fix Schema Issues
+
+```bash
+# Fix reserved keyword columns (example)
+kubectl exec ${SOURCE_NAME}-pxc-0 -n ${SOURCE_NAMESPACE} -- \
+  mysql -uroot -p${MYSQL_PASSWORD} -e "
+    USE db1;
+    ALTER TABLE users CHANGE COLUMN rank user_rank INT;
+  "
+
+# Fix invalid date defaults (example)
+kubectl exec ${SOURCE_NAME}-pxc-0 -n ${SOURCE_NAMESPACE} -- \
+  mysql -uroot -p${MYSQL_PASSWORD} -e "
+    USE db1;
+    ALTER TABLE events MODIFY COLUMN created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP;
+  "
+
+# Fix ZEROFILL columns (remove ZEROFILL)
+kubectl exec ${SOURCE_NAME}-pxc-0 -n ${SOURCE_NAMESPACE} -- \
+  mysql -uroot -p${MYSQL_PASSWORD} -e "
+    USE db1;
+    ALTER TABLE products MODIFY COLUMN price DECIMAL(10,2);
+  "
+```
+
+### Step 2: Character Set and Collation Analysis
+
+The `00-pre-migration-check.sh` script (run in Step 1) already checks for non-utf8mb4 tables. If it reported any "tables not using utf8mb4", you should convert them **3-5 days before** planned migration.
+
+#### Convert to utf8mb4
+
+```bash
+# Convert databases to utf8mb4
+for db in ${DATABASES}; do
+  kubectl exec ${SOURCE_NAME}-pxc-0 -n ${SOURCE_NAMESPACE} -- \
+    mysql -uroot -p${MYSQL_PASSWORD} -e "
+      ALTER DATABASE ${db} CHARACTER SET = utf8mb4 COLLATE = utf8mb4_unicode_ci;
+    "
+done
+
+# Convert tables to utf8mb4
+for db in ${DATABASES}; do
+  TABLES=$(kubectl exec ${SOURCE_NAME}-pxc-0 -n ${SOURCE_NAMESPACE} -- \
+    mysql -uroot -p${MYSQL_PASSWORD} -N -e "
+      SELECT TABLE_NAME FROM information_schema.TABLES
+      WHERE TABLE_SCHEMA = '${db}' AND TABLE_TYPE = 'BASE TABLE';
+    ")
+
+  for table in ${TABLES}; do
+    echo "Converting ${db}.${table}..."
+    kubectl exec ${SOURCE_NAME}-pxc-0 -n ${SOURCE_NAMESPACE} -- \
+      mysql -uroot -p${MYSQL_PASSWORD} ${db} -e "
+        ALTER TABLE ${table} CONVERT TO CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+      "
+  done
+done
+```
+
+**Important Note**: For tables with long VARCHAR/TEXT indexes (>191 characters), you may need to adjust index lengths:
+
+```sql
+-- Example: Fix index length for utf8mb4
+ALTER TABLE users DROP INDEX idx_email;
+ALTER TABLE users ADD UNIQUE INDEX idx_email (email(191));
+```
+
+### Step 3: Create Target MySQL 8.0 Instance
+
+Create the target MySQL 8.0 instance **immediately before** the data migration phase to conserve resources.
+
+**IMPORTANT**: Create the target MySQL 8.0 instance BEFORE starting the migration script.
 
 **Using Web Console:**
 
@@ -294,94 +384,6 @@ kubectl -n $NAMESPACE get mysql $TARGET_NAME -w
 # mysql-8-target   8.0       Ready              ready
 ```
 
-### Step 2: Schema Compatibility Analysis
-
-Perform this analysis **1 week before** planned migration.
-
-Run the `00-pre-migration-check.sh` script to automatically detect schema compatibility issues and identify databases to migrate.
-
-```bash
-# Edit configuration
-vi 00-pre-migration-check.sh
-
-# Run check
-chmod +x 00-pre-migration-check.sh
-./00-pre-migration-check.sh
-```
-
-The script will output:
-1. List of user databases to migrate (copy the `DATABASES="..."` line for later)
-2. Schema compatibility issues (Reserved keywords, Invalid dates, ZEROFILL, etc.)
-3. Character set analysis
-
-If the script reports issues, use the commands below to fix them.
-
-#### Fix Schema Issues
-
-```bash
-# Fix reserved keyword columns (example)
-kubectl exec ${SOURCE_NAME}-pxc-0 -n ${SOURCE_NAMESPACE} -- \
-  mysql -uroot -p${MYSQL_PASSWORD} -e "
-    USE db1;
-    ALTER TABLE users CHANGE COLUMN rank user_rank INT;
-  "
-
-# Fix invalid date defaults (example)
-kubectl exec ${SOURCE_NAME}-pxc-0 -n ${SOURCE_NAMESPACE} -- \
-  mysql -uroot -p${MYSQL_PASSWORD} -e "
-    USE db1;
-    ALTER TABLE events MODIFY COLUMN created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP;
-  "
-
-# Fix ZEROFILL columns (remove ZEROFILL)
-kubectl exec ${SOURCE_NAME}-pxc-0 -n ${SOURCE_NAMESPACE} -- \
-  mysql -uroot -p${MYSQL_PASSWORD} -e "
-    USE db1;
-    ALTER TABLE products MODIFY COLUMN price DECIMAL(10,2);
-  "
-```
-
-### Step 3: Character Set and Collation Analysis
-
-The `00-pre-migration-check.sh` script (run in Step 2) already checks for non-utf8mb4 tables. If it reported any "tables not using utf8mb4", you should convert them **3-5 days before** planned migration.
-
-#### Convert to utf8mb4
-
-```bash
-# Convert databases to utf8mb4
-for db in ${DATABASES}; do
-  kubectl exec ${SOURCE_NAME}-pxc-0 -n ${SOURCE_NAMESPACE} -- \
-    mysql -uroot -p${MYSQL_PASSWORD} -e "
-      ALTER DATABASE ${db} CHARACTER SET = utf8mb4 COLLATE = utf8mb4_unicode_ci;
-    "
-done
-
-# Convert tables to utf8mb4
-for db in ${DATABASES}; do
-  TABLES=$(kubectl exec ${SOURCE_NAME}-pxc-0 -n ${SOURCE_NAMESPACE} -- \
-    mysql -uroot -p${MYSQL_PASSWORD} -N -e "
-      SELECT TABLE_NAME FROM information_schema.TABLES
-      WHERE TABLE_SCHEMA = '${db}' AND TABLE_TYPE = 'BASE TABLE';
-    ")
-
-  for table in ${TABLES}; do
-    echo "Converting ${db}.${table}..."
-    kubectl exec ${SOURCE_NAME}-pxc-0 -n ${SOURCE_NAMESPACE} -- \
-      mysql -uroot -p${MYSQL_PASSWORD} ${db} -e "
-        ALTER TABLE ${table} CONVERT TO CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-      "
-  done
-done
-```
-
-**Important Note**: For tables with long VARCHAR/TEXT indexes (>191 characters), you may need to adjust index lengths:
-
-```sql
--- Example: Fix index length for utf8mb4
-ALTER TABLE users DROP INDEX idx_email;
-ALTER TABLE users ADD UNIQUE INDEX idx_email (email(191));
-```
-
 ### Step 4: Migrate Data, Users, and Privileges
 
 Use the `01-migrate-all.sh` script to perform the migration. This script:
@@ -397,7 +399,7 @@ Use the `01-migrate-all.sh` script to perform the migration. This script:
    ```
 
 2. **Configure Script**:
-   Edit `01-migrate-all.sh` and set your cluster names, namespaces, and the `DATABASES` variable (using the list from Step 2).
+   Edit `01-migrate-all.sh` and set your cluster names, namespaces, and the `DATABASES` variable (using the list from Step 1).
 
 3. **Run Migration**:
    ```bash
