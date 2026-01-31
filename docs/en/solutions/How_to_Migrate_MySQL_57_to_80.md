@@ -394,6 +394,9 @@ Use the `01-migrate-all.sh` script to execute the migration. This script:
 **Procedure:**
 
 1. **Stop Application Writes**: Scale the application to zero replicas to ensure data consistency.
+
+   **Critical**: The application must remain stopped (or strictly read-only) from this point until the Cutover Phase is complete. Any data written to the source database after this step will be lost.
+
    ```bash
    kubectl scale deployment <app-name> --replicas=0 -n <app-namespace>
    ```
@@ -515,10 +518,12 @@ kubectl exec ${TARGET_NAME}-0 -n ${TARGET_NAMESPACE} -c mysql -- \
 
 After migration verification is complete, switch over application traffic:
 
-#### 1. Stop Application Writes
+#### 1. Verify Application is Stopped
+
+Ensure the application is still stopped (as performed in Step 4).
 
 ```bash
-# Scale down application to zero
+# Ensure application is scaled down
 kubectl scale deployment <app-name> --replicas=0 -n <app-namespace>
 
 # Verify no active connections
