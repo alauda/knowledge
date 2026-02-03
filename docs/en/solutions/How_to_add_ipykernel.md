@@ -5,6 +5,7 @@ kind:
    - Solution
 ProductsVersion:
    - 1.5
+id: KB260200003
 ---
 # Add a New ipykernel in JupyterLab
 
