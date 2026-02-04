@@ -102,7 +102,7 @@ Check the status of the OpenSearch cluster:
 kubectl get pods -n opensearch-demo
 
 # Check cluster health
-kubectl exec -n opensearch-demo my-opensearch-nodes-0 -- curl -sk -u admin:<password> https://localhost:9200/_cluster/health?pretty
+kubectl exec -n opensearch-demo my-opensearch-nodes-0 -- curl -sk -u admin:<password> 'https://localhost:9200/_cluster/health?pretty'
 ```
 
 > The default password for the `admin` user is `admin`.
