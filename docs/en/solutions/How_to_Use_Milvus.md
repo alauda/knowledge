@@ -635,7 +635,7 @@ Use this checklist to quickly identify and resolve common deployment issues:
 | PVCs stuck in Pending with "waiting for consumer" | Storage class binding mode | [PVC Pending - Storage Class Binding Mode](#pvc-pending---storage-class-binding-mode) |
 | etcd pods fail with "invalid reference format" | Image prefix bug | [etcd Invalid Image Name Error](#etcd-invalid-image-name-error) |
 | Multi-Attach volume errors | Storage class access mode | [Multi-Attach Volume Errors](#multi-attach-volume-errors) |
-| Milvus pod crashes with exit code 134 | Permission issues | See notes in [PodSecurity Admission Violations](#podsecurity-admission-violations) |
+| Milvus standalone pod crashes (exit code 134) | Health check & non-root compatibility | [Milvus Standalone Pod Crashes (Exit Code 134)](#milvus-standalone-pod-crashes-exit-code-134) |
 | Cannot connect to Milvus service | Network or service issues | [Connection Refused](#connection-refused) |
 | Slow vector search performance | Index or resource issues | [Poor Search Performance](#poor-search-performance) |
 
@@ -902,6 +902,59 @@ kubectl patch statefulset milvus-<name>-etcd -n <namespace> --type='json' -p='
 ```
 
 Replace `registry.alauda.cn:60070` with your cluster's registry address.
+
+#### Milvus Standalone Pod Crashes (Exit Code 134)
+
+**Symptoms**: Milvus standalone pod repeatedly crashes with exit code 134 (SIGABRT) and logs show:
+
+```
+check health failed] [UnhealthyComponent="[querynode,streamingnode]"]
+Set runtime dir at /run/milvus failed, set it to /tmp/milvus directory
+```
+
+**Cause**: This is a known compatibility issue with Milvus v2.6.7 when running under PodSecurity "restricted" policies:
+
+1. **Health Check Issue**: The `/healthz` endpoint returns HTTP 500 because it checks for cluster-mode components (querynode, streamingnode) that don't exist in standalone mode
+2. **Non-Root Compatibility**: The container has permission issues running as non-root user (UID 1000) as required by PodSecurity policies
+3. **Operator Management**: Manual patches to the deployment are reverted by the Milvus operator
+
+**Workarounds**:
+
+**Option 1**: Use cluster mode instead of standalone mode (Recommended)
+- Cluster mode has better compatibility with ACP's PodSecurity policies
+- The health check properly detects cluster components
+
+**Option 2**: Request namespace exemption from PodSecurity policies (for testing only):
+```bash
+# Remove PodSecurity enforcement (NOT recommended for production)
+kubectl label namespace <namespace> pod-security.kubernetes.io/enforce-
+kubectl label namespace <namespace> pod-security.kubernetes.io/enforce=privileged
+```
+
+Then delete and recreate the Milvus CR.
+
+**Option 3**: Disable readiness/startup probes (temporary workaround):
+```bash
+# Patch deployment to use TCP probe instead of HTTP probe
+kubectl patch deployment milvus-<name>-milvus-standalone -n <namespace> --type=json -p='
+[
+  {
+    "op": "replace",
+    "path": "/spec/template/spec/containers/0/readinessProbe",
+    "value": {
+      "tcpSocket": {"port": 9091},
+      "initialDelaySeconds": 30,
+      "periodSeconds": 15,
+      "timeoutSeconds": 3,
+      "failureThreshold": 10
+    }
+  }
+]'
+```
+
+> **Note**: The operator may revert this change. Monitor and re-apply if needed.
+
+> **Known Issue**: This is a documented limitation in Milvus v2.6.7. Future versions should address the non-root compatibility and health check issues. For production deployments, use cluster mode or wait for updated charts.
 
 #### PVC Pending - Storage Class Binding Mode
 
