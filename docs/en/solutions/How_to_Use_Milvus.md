@@ -63,9 +63,31 @@ Applicable Versions: >=ACP 4.2.0, Milvus: >=v2.4.0
 | **Deployment Complexity** | Simple | Complex |
 | **Best For** | Simplicity, lower cost, new deployments | Mission-critical workloads, existing Kafka users |
 
+### Important Deployment Considerations
+
+| Aspect | Standalone Mode | Cluster Mode |
+|--------|----------------|--------------|
+| **PodSecurity Compatibility** | ⚠️ Requires namespace exemption for testing | ✓ Better compatibility |
+| **Production Readiness** | Development/testing only | Production-ready |
+| **Resource Requirements** | Lower (4 cores, 8GB RAM) | Higher (16+ cores, 32GB+ RAM) |
+| **Scalability** | Limited | Horizontal scaling |
+| **Complexity** | Simple to deploy | More components to manage |
+
+> **⚠️ Warning**: Milvus v2.6.7 standalone mode has known compatibility issues with ACP's PodSecurity "restricted" policy. For production deployments, use cluster mode or apply namespace exemptions (see [Troubleshooting](#milvus-standalone-pod-crashes-exit-code-134)).
+
 ## Prerequisites
 
 Before implementing Milvus, ensure you have:
+
+- ACP v4.2.0 or later
+- Basic understanding of vector embeddings and similarity search concepts
+- Access to your cluster's container image registry (registry addresses vary by cluster)
+
+> **⚠️ PodSecurity Policy Requirement**: ACP clusters enforce PodSecurity policies by default. Milvus v2.6.7 standalone mode has known compatibility issues with PodSecurity "restricted" policy. For testing/development, you may need to exempt your namespace:
+> ```bash
+> kubectl label namespace <namespace> pod-security.kubernetes.io/enforce=privileged
+> ```
+> See [Milvus Standalone Pod Crashes](#milvus-standalone-pod-crashes-exit-code-134) for details and workarounds.
 
 - ACP v4.2.0 or later
 - Basic understanding of vector embeddings and similarity search concepts
@@ -635,6 +657,7 @@ Use this checklist to quickly identify and resolve common deployment issues:
 | PVCs stuck in Pending with "waiting for consumer" | Storage class binding mode | [PVC Pending - Storage Class Binding Mode](#pvc-pending---storage-class-binding-mode) |
 | etcd pods fail with "invalid reference format" | Image prefix bug | [etcd Invalid Image Name Error](#etcd-invalid-image-name-error) |
 | Multi-Attach volume errors | Storage class access mode | [Multi-Attach Volume Errors](#multi-attach-volume-errors) |
+| Milvus panic: MinIO PutObjectIfNoneMatch failed | MinIO PVC corruption | [MinIO Storage Corruption Issues](#minio-storage-corruption-issues) |
 | Milvus standalone pod crashes (exit code 134) | Health check & non-root compatibility | [Milvus Standalone Pod Crashes (Exit Code 134)](#milvus-standalone-pod-crashes-exit-code-134) |
 | Cannot connect to Milvus service | Network or service issues | [Connection Refused](#connection-refused) |
 | Slow vector search performance | Index or resource issues | [Poor Search Performance](#poor-search-performance) |
@@ -1026,30 +1049,108 @@ kubectl get storageclass <storage-class-name> -o jsonpath='{.allowedTopologies}'
 
 3. **For CephFS storage classes**, RWX is typically supported and recommended for Milvus cluster deployments.
 
+#### MinIO Storage Corruption Issues
+
+**Symptoms**: Milvus standalone pod crashes with panic related to MinIO:
+
+```
+panic: CheckIfConditionWriteSupport failed: PutObjectIfNoneMatch not supported or failed.
+BucketName: milvus-test, ObjectKey: files/wp/conditional_write_test_object,
+Error: Resource requested is unreadable, please reduce your request rate
+```
+
+Or MinIO logs show:
+
+```
+Error: Following error has been printed 3 times.. UUID on positions 0:0 do not match with
+expected... inconsistent drive found
+Error: Storage resources are insufficient for the write operation
+```
+
+**Cause**: The MinIO persistent volume claim (PVC) has corrupted data from previous deployments. This can happen when:
+- The MinIO deployment was deleted but the PVC was retained
+- Multiple MinIO deployments used the same PVC
+- The MinIO data became inconsistent due to incomplete writes or crashes
+
+**Solution**: Completely recreate MinIO by uninstalling the Helm release and deleting the PVC:
+
+```bash
+# 1. Check MinIO Helm release
+helm list -n <namespace>
+
+# 2. Uninstall the MinIO Helm release (keeps PVC by default)
+helm uninstall milvus-<name>-minio -n <namespace>
+
+# 3. List PVCs to find the MinIO PVC
+kubectl get pvc -n <namespace> | grep minio
+
+# 4. Delete the corrupted MinIO PVC
+kubectl delete pvc -n <namespace> milvus-<name>-minio
+
+# 5. Delete the Milvus CR to trigger full recreation
+kubectl delete milvus <name> -n <namespace>
+
+# 6. Recreate the Milvus instance
+kubectl apply -f <your-milvus-cr>.yaml
+```
+
+The Milvus operator will automatically:
+- Deploy a fresh MinIO instance using Helm
+- Create a new PVC with clean data
+- Initialize the MinIO bucket properly
+
+**Verification**:
+```bash
+# Check new MinIO pod is running
+kubectl get pods -n <namespace> -l app.kubernetes.io/instance=<name>
+
+# Verify MinIO Helm release is deployed
+helm list -n <namespace> | grep minio
+
+# Check Milvus can connect to MinIO
+kubectl logs -n <namespace> deployment/milvus-<name>-milvus-standalone | grep -i minio
+```
+
+> **Note**: Always delete both the Helm release AND the PVC when encountering MinIO corruption. Deleting only the deployment or pod will not fix the underlying data corruption.
+
 ### Deployment Verification
 
 After deploying Milvus, verify the deployment is successful:
 
 ```bash
 # 1. Check Milvus custom resource status
-# Should show "Ready" or "Running"
+# Should show "Healthy" status
 kubectl get milvus -n <namespace>
 
 # 2. Check all pods are running
 # All pods should be in "Running" state with no restarts
 kubectl get pods -n <namespace>
 
-# 3. Check services are created
+# 3. Verify all dependencies are healthy
+# etcd should be 1/1 Ready
+kubectl get pod -n <namespace> -l app.kubernetes.io/component=etcd
+
+# MinIO should be Running
+kubectl get pod -n <namespace> | grep minio
+
+# 4. Check services are created
 kubectl get svc -n <namespace>
 
-# 4. Verify PVCs are bound
+# 5. Verify PVCs are bound
 kubectl get pvc -n <namespace>
 
-# 5. Check Milvus logs for errors
-kubectl logs -n <namespace> deployment/milvus-<name>-milvus-standalone -c milvus --tail=50
+# 6. Check MinIO health for corruption
+kubectl logs -n <namespace> deployment/milvus-<name>-minio | grep -i "error\|inconsistent\|corrupt"
+# Should return no errors
 
-# 6. Port-forward and test connectivity
+# 7. Check Milvus logs for errors
+kubectl logs -n <namespace> deployment/milvus-<name>-milvus-standalone -c milvus --tail=50 | grep -i "panic\|fatal\|error"
+
+# 8. Port-forward and test connectivity
 kubectl port-forward svc/milvus-<name>-milvus 19530:19530 -n <namespace>
+
+# In another terminal, test the connection
+nc -zv localhost 19530
 ```
 
 Expected output for a healthy standalone deployment:
