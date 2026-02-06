@@ -69,8 +69,11 @@ Before implementing Milvus, ensure you have:
 
 - ACP v4.2.0 or later
 - Basic understanding of vector embeddings and similarity search concepts
+- Access to your cluster's container image registry (registry addresses vary by cluster)
 
 > **Note**: ACP v4.2.0 and later supports in-cluster MinIO and etcd deployment through the Milvus Operator. External storage (S3-compatible) and external message queue (Kafka) are optional.
+
+> **Important**: Different ACP clusters may use different container registry addresses. The documentation uses `build-harbor.alauda.cn` as an example, but you may need to replace this with your cluster's registry (e.g., `registry.alauda.cn:60070`). See the [Troubleshooting section](#image-pull-authentication-errors) for details.
 
 ### Storage Requirements
 
@@ -84,6 +87,47 @@ Before implementing Milvus, ensure you have:
 |-----------------|-------------|----------------|-----------------|
 | **Standalone** | 4 cores | 8GB | Development, testing |
 | **Cluster** | 16+ cores | 32GB+ | Production, large-scale |
+
+### Pre-Deployment Checklist
+
+Before deploying Milvus, complete this checklist to ensure a smooth deployment:
+
+- [ ] **Cluster Registry Address**: Verify your cluster's container registry address
+  ```bash
+  # Check existing deployments for registry address
+  kubectl get deployment -n <namespace> -o jsonpath='{.items[0].spec.template.spec.containers[0].image}'
+  ```
+
+- [ ] **Storage Class**: Verify storage classes are available and check binding mode
+  ```bash
+  kubectl get storageclasses
+  kubectl get storageclass <storage-class-name> -o jsonpath='{.volumeBindingMode}'
+  ```
+  Prefer storage classes with `Immediate` binding mode.
+
+- [ ] **Namespace**: Create a dedicated namespace for Milvus
+  ```bash
+  kubectl create namespace milvus
+  ```
+
+- [ ] **PodSecurity Policy**: Verify if your cluster enforces PodSecurity policies
+  ```bash
+  kubectl get namespace <namespace> -o jsonpath='{.metadata.labels}'
+  ```
+  If `pod-security.kubernetes.io/enforce=restricted`, be ready to apply security patches.
+
+- [ ] **Message Queue Decision**: Decide which message queue to use for cluster mode:
+  - Woodpecker (embedded, simpler) - No additional setup required
+  - Kafka (external, production-proven) - Deploy Kafka service first
+
+- [ ] **Storage Decision**: Decide storage configuration:
+  - In-cluster MinIO (simpler, recommended for most cases)
+  - External S3-compatible storage (for production with existing storage infrastructure)
+
+- [ ] **Resource Availability**: Ensure sufficient resources in the cluster
+  ```bash
+  kubectl top nodes
+  ```
 
 ## Installation Guide
 
@@ -102,6 +146,8 @@ violet push $CHART \
 --platform-username "$USER" \
 --platform-password "$PASS"
 ```
+
+> **Important**: Before deploying, verify the image registry address in the chart matches your cluster's registry. If your cluster uses a different registry (e.g., `registry.alauda.cn:60070` instead of `build-harbor.alauda.cn`), you'll need to update the image references. See [Image Pull Authentication Errors](#image-pull-authentication-errors) in the Troubleshooting section.
 
 ### Backend Storage Configuration
 
@@ -578,6 +624,21 @@ results = client.search(
 
 ## Troubleshooting
 
+### Quick Troubleshooting Checklist
+
+Use this checklist to quickly identify and resolve common deployment issues:
+
+| Symptom | Likely Cause | Solution Section |
+|---------|--------------|------------------|
+| Pods stuck in Pending with PodSecurity violations | PodSecurity policy | [PodSecurity Admission Violations](#podsecurity-admission-violations) |
+| Pods fail with ErrImagePull or ImagePullBackOff | Wrong registry or authentication | [Image Pull Authentication Errors](#image-pull-authentication-errors) |
+| PVCs stuck in Pending with "waiting for consumer" | Storage class binding mode | [PVC Pending - Storage Class Binding Mode](#pvc-pending---storage-class-binding-mode) |
+| etcd pods fail with "invalid reference format" | Image prefix bug | [etcd Invalid Image Name Error](#etcd-invalid-image-name-error) |
+| Multi-Attach volume errors | Storage class access mode | [Multi-Attach Volume Errors](#multi-attach-volume-errors) |
+| Milvus pod crashes with exit code 134 | Permission issues | See notes in [PodSecurity Admission Violations](#podsecurity-admission-violations) |
+| Cannot connect to Milvus service | Network or service issues | [Connection Refused](#connection-refused) |
+| Slow vector search performance | Index or resource issues | [Poor Search Performance](#poor-search-performance) |
+
 ### Common Issues
 
 #### Pod Not Starting
@@ -610,6 +671,347 @@ results = client.search(
 - Use partitioning to limit search scope
 - Optimize search parameters (nprobe, ef)
 - Consider using GPU-enabled indices for large-scale deployments
+
+#### PodSecurity Admission Violations
+
+**Symptoms**: All Milvus components (operator, etcd, MinIO, Milvus) fail to create with PodSecurity errors:
+
+```
+Error creating: pods is forbidden: violates PodSecurity "restricted:latest":
+- unrestricted capabilities (container must set securityContext.capabilities.drop=["ALL"])
+- seccompProfile (pod or container must set securityContext.seccompProfile.type to "RuntimeDefault" or "Localhost")
+- allowPrivilegeEscalation != false (container must set securityContext.allowPrivilegeEscalation=false)
+- runAsNonRoot != true (pod or container must set securityContext.runAsNonRoot=true)
+```
+
+**Cause**: ACP clusters enforce PodSecurity "restricted:latest" policy. All Helm charts deployed by Milvus Operator require security context patches to comply with this policy.
+
+**Comprehensive Solution** - Patch all components:
+
+```bash
+NAMESPACE="<your-namespace>"
+
+# 1. Patch Milvus Operator
+kubectl patch deployment milvus-operator -n $NAMESPACE --type='json' -p='
+[
+  {
+    "op": "add",
+    "path": "/spec/template/spec/securityContext/seccompProfile",
+    "value": {"type": "RuntimeDefault"}
+  },
+  {
+    "op": "add",
+    "path": "/spec/template/spec/containers/0/securityContext/capabilities",
+    "value": {"drop": ["ALL"]}
+  }
+]'
+
+# 2. Patch etcd StatefulSet
+kubectl patch statefulset milvus-<name>-etcd -n $NAMESPACE --type='json' -p='
+[
+  {
+    "op": "add",
+    "path": "/spec/template/spec/securityContext",
+    "value": {"runAsNonRoot": true, "seccompProfile": {"type": "RuntimeDefault"}}
+  },
+  {
+    "op": "add",
+    "path": "/spec/template/spec/containers/0/securityContext",
+    "value": {"allowPrivilegeEscalation": false, "capabilities": {"drop": ["ALL"]}, "runAsNonRoot": true, "runAsUser": 1000}
+  },
+  {
+    "op": "add",
+    "path": "/spec/template/spec/securityContext/fsGroup",
+    "value": 1000
+  }
+]'
+
+# 3. Patch MinIO Deployment
+kubectl patch deployment milvus-<name>-minio -n $NAMESPACE --type='json' -p='
+[
+  {
+    "op": "add",
+    "path": "/spec/template/spec/securityContext",
+    "value": {"fsGroup": 1000, "runAsNonRoot": true, "seccompProfile": {"type": "RuntimeDefault"}}
+  },
+  {
+    "op": "add",
+    "path": "/spec/template/spec/containers/0/securityContext",
+    "value": {"allowPrivilegeEscalation": false, "capabilities": {"drop": ["ALL"]}, "runAsNonRoot": true, "runAsUser": 1000}
+  }
+]'
+
+# 4. Patch Milvus Standalone/Cluster Deployment
+kubectl patch deployment milvus-<name>-milvus-standalone -n $NAMESPACE --type='json' -p='
+[
+  {
+    "op": "add",
+    "path": "/spec/template/spec/securityContext",
+    "value": {"runAsNonRoot": true, "fsGroup": 1000, "seccompProfile": {"type": "RuntimeDefault"}}
+  }
+]'
+
+kubectl patch deployment milvus-<name>-milvus-standalone -n $NAMESPACE --type='json' -p='
+[
+  {
+    "op": "add",
+    "path": "/spec/template/spec/containers/0/securityContext",
+    "value": {"allowPrivilegeEscalation": false, "capabilities": {"drop": ["ALL"]}, "runAsNonRoot": true, "runAsUser": 1000}
+  }
+]'
+
+kubectl patch deployment milvus-<name>-milvus-standalone -n $NAMESPACE --type='json' -p='
+[
+  {
+    "op": "add",
+    "path": "/spec/template/spec/containers/1/securityContext",
+    "value": {"allowPrivilegeEscalation": false, "capabilities": {"drop": ["ALL"]}, "runAsNonRoot": true, "runAsUser": 1000}
+  }
+]'
+
+# 5. Patch initContainer (config) for Milvus Standalone
+kubectl patch deployment milvus-<name>-milvus-standalone -n $NAMESPACE --type='json' -p='
+[
+  {
+    "op": "add",
+    "path": "/spec/template/spec/initContainers[0]/securityContext/allowPrivilegeEscalation",
+    "value": false
+  },
+  {
+    "op": "add",
+    "path": "/spec/template/spec/initContainers[0]/securityContext/capabilities",
+    "value": {"drop": ["ALL"]}
+  }
+]'
+```
+
+**Verification**:
+```bash
+# Check if all pods are running
+kubectl get pods -n $NAMESPACE
+
+# Verify security contexts are applied
+kubectl get pod <pod-name> -n $NAMESPACE -o jsonpath='{.spec.securityContext}'
+kubectl get pod <pod-name> -n $NAMESPACE -o jsonpath='{.spec.containers[*].securityContext}'
+```
+
+> **Important**: These patches must be applied after each deployment. For a permanent solution, the Helm charts need to be updated to include these security contexts by default.
+
+> **Known Issue**: Some containers may fail with permission errors when running as non-root (user 1000). This is a known limitation that requires chart updates to resolve properly.
+
+#### Image Pull Authentication Errors
+
+**Symptoms**: Pods fail with `ErrImagePull` or `ImagePullBackOff` status.
+
+**Error Message**:
+```
+Failed to pull image "build-harbor.alauda.cn/middleware/milvus-operator:v1.3.5":
+authorization failed: no basic auth credentials
+```
+
+**Cause**: The image registry requires authentication or the registry address is incorrect for your cluster.
+
+**Solutions**:
+
+1. **Check if the registry address is correct for your cluster**:
+   ```bash
+   # Describe the pod to see which registry it's trying to pull from
+   kubectl describe pod <pod-name> -n <namespace> | grep "Image:"
+   ```
+
+2. **If the registry address is wrong**, patch the deployment with the correct registry:
+   ```bash
+   # Replace registry.alauda.cn:60070 with your cluster's registry
+   kubectl patch deployment milvus-operator -n <namespace> --type='json' -p='
+   [
+     {
+       "op": "replace",
+       "path": "/spec/template/spec/containers/0/image",
+       "value": "registry.alauda.cn:60070/middleware/milvus-operator:v1.3.5"
+     }
+   ]'
+   ```
+
+3. **If authentication is required**, create an image pull secret:
+   ```bash
+   # Create a docker-registry secret
+   kubectl create secret docker-registry harbor-pull-secret \
+     --docker-server=<REGISTRY_ADDRESS> \
+     --docker-username=<USERNAME> \
+     --docker-password=<PASSWORD> \
+     -n <namespace>
+
+   # Patch the deployment to use the secret
+   kubectl patch deployment milvus-operator -n <namespace> --type='json' -p='
+   [
+     {
+       "op": "add",
+       "path": "/spec/template/spec/imagePullSecrets",
+       "value": [{"name": "harbor-pull-secret"}]
+     }
+   ]'
+   ```
+
+4. **For existing Milvus deployments**, update image references in the Milvus CR:
+   ```yaml
+   spec:
+     components:
+       image: registry.alauda.cn:60070/middleware/milvus:v2.6.7
+     dependencies:
+       etcd:
+         inCluster:
+           values:
+             image:
+               repository: registry.alauda.cn:60070/middleware/etcd
+       storage:
+         inCluster:
+           values:
+             image:
+               repository: registry.alauda.cn:60070/middleware/minio
+   ```
+
+> **Note**: Different ACP clusters may use different registry addresses. Common registries include:
+> - `build-harbor.alauda.cn` - Default in documentation
+> - `registry.alauda.cn:60070` - Private registry
+> - Other custom registries per cluster configuration
+
+#### etcd Invalid Image Name Error
+
+**Symptoms**: etcd pods fail to start with invalid image reference format error:
+
+```
+Error: failed to pull and unpack image "docker.io/registry.alauda.cn:60070/middleware/etcd:3.5.25-r1":
+failed to resolve reference "docker.io/registry.alauda.cn:60070/middleware/etcd:3.5.25-r1":
+"docker.io/registry.alauda.cn:60070/middleware/etcd:3.5.25-r1": invalid reference format
+```
+
+**Cause**: The etcd Helm chart automatically prepends "docker.io/" to the image repository, creating an invalid image reference when using a custom registry.
+
+**Solution**: Patch the etcd StatefulSet to use the correct image reference without the "docker.io/" prefix:
+
+```bash
+# Patch the etcd StatefulSet image
+kubectl patch statefulset milvus-<name>-etcd -n <namespace> --type='json' -p='
+[
+  {
+    "op": "replace",
+    "path": "/spec/template/spec/containers/0/image",
+    "value": "registry.alauda.cn:60070/middleware/etcd:3.5.25-r1"
+  }
+]'
+```
+
+Replace `registry.alauda.cn:60070` with your cluster's registry address.
+
+#### PVC Pending - Storage Class Binding Mode
+
+**Symptoms**: PersistentVolumeClaims remain in Pending state with events like:
+
+```
+Warning  ProvisioningFailed  persistentvolumeclaim  <storage-class>
+storageclass.storage.k8s.io "<storage-class>" is waiting for a consumer to be found
+```
+
+**Cause**: Some storage classes (e.g., Topolvm) use `volumeBindingMode: WaitForFirstConsumer`, which delays PVC binding until a Pod using the PVC is scheduled. However, some controllers and operators may have issues with this delayed binding mode.
+
+**Solution**: Use a storage class with `volumeBindingMode: Immediate` for Milvus deployments:
+
+1. **List available storage classes**:
+
+```bash
+kubectl get storageclasses
+```
+
+2. **Check storage class binding mode**:
+
+```bash
+kubectl get storageclass <storage-class-name> -o jsonpath='{.volumeBindingMode}'
+```
+
+3. **Use Immediate binding storage class** in your Milvus CR:
+
+```yaml
+dependencies:
+  etcd:
+    inCluster:
+      values:
+        persistence:
+          storageClass: <immediate-binding-storage-class>  # e.g., jpsu2-rook-cephfs-sc
+  storage:
+    inCluster:
+      values:
+        persistence:
+          storageClass: <immediate-binding-storage-class>
+```
+
+Common storage classes with Immediate binding include CephFS-based storage classes (e.g., `jpsu2-rook-cephfs-sc`).
+
+#### Multi-Attach Volume Errors
+
+**Symptoms**: Pods fail with multi-attach error:
+
+```
+Warning  FailedMount  Unable to attach or mount volumes:
+unmounted volumes=[<volume-name>], unattached volumes=[<volume-name>]:
+timed out waiting for the condition
+Multi-Attach error: Volume is already used by pod(s) <pod-name>
+```
+
+**Cause**: This occurs when multiple Pods attempt to use the same PersistentVolume simultaneously with a storage class that doesn't support read-write-many (RWX) access mode.
+
+**Solution**: Verify your storage class supports the required access mode:
+
+1. **Check storage class access modes**:
+
+```bash
+kubectl get storageclass <storage-class-name> -o jsonpath='{.allowedTopologies}'
+```
+
+2. **Use appropriate storage class** for your deployment:
+   - **Standalone mode**: ReadWriteOnce (RWO) is sufficient
+   - **Cluster mode**: Use ReadWriteMany (RWX) if multiple pods need shared access, or ensure each pod has its own PVC
+
+3. **For CephFS storage classes**, RWX is typically supported and recommended for Milvus cluster deployments.
+
+### Deployment Verification
+
+After deploying Milvus, verify the deployment is successful:
+
+```bash
+# 1. Check Milvus custom resource status
+# Should show "Ready" or "Running"
+kubectl get milvus -n <namespace>
+
+# 2. Check all pods are running
+# All pods should be in "Running" state with no restarts
+kubectl get pods -n <namespace>
+
+# 3. Check services are created
+kubectl get svc -n <namespace>
+
+# 4. Verify PVCs are bound
+kubectl get pvc -n <namespace>
+
+# 5. Check Milvus logs for errors
+kubectl logs -n <namespace> deployment/milvus-<name>-milvus-standalone -c milvus --tail=50
+
+# 6. Port-forward and test connectivity
+kubectl port-forward svc/milvus-<name>-milvus 19530:19530 -n <namespace>
+```
+
+Expected output for a healthy standalone deployment:
+
+```
+# kubectl get pods -n milvus
+NAME                                          READY   STATUS    RESTARTS   AGE
+milvus-standalone-etcd-0                      1/1     Running   0          5m
+milvus-standalone-minio-7f6f9d8b4c-x2k9q      1/1     Running   0          5m
+milvus-standalone-milvus-standalone-6b8c9d    1/1     Running   0          3m
+
+# kubectl get milvus -n milvus
+NAME               MODE        STATUS    Updated
+milvus-standalone   standalone   Ready     True
+```
 
 ### Diagnostic Commands
 
