@@ -55,6 +55,31 @@ Once installation is complete, the status will change to **Installed** on the Op
 4. Select **EnvoyGatewayCtl** as the instance type and click **Create**
 5. In most cases, the default configuration is sufficient. Click **Create** to complete the setup.
 
+##### How to Add Taint Tolerations to the Operator
+```bash
+kubectl -n envoy-gateway-operator patch subscription envoy-gateway-operator  \
+  --type='merge' \
+  -p='{
+    "spec": {
+      "config": {
+        "tolerations": [
+          {
+            "operator": "Exists"
+          }
+        ]
+      }
+    }
+  }'
+```
+###### How to Check the Operator Status
+After installation, you can verify the operator status using the following methods:
+
+```bash
+kubectl get pods -n envoy-gateway-operator
+```
+The operator is running correctly when:
+- All pods in the `envoy-gateway-operator` namespace are in **Running** state
+
 ## Installing the GatewayAPI UI
 
 ### Important Notes
@@ -85,5 +110,6 @@ Before installing the GatewayAPI UI, ensure the following requirements are met:
 ### Installation Steps
 
 1. Navigate to **Administrator** > **Marketplace** > **Cluster Plugins**
-2. Locate and install the **Alauda Container Platform GatewayAPI Plugin**
-3. Once installed, a new **Gateway** menu item will appear under **Container Platform** > **Network**
+2. Switch to `global` cluster
+3. Locate and install the **Alauda Container Platform GatewayAPI Plugin**
+4. Once installed, a new **Gateway** menu item will appear under **Container Platform** > **Network**
