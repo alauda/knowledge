@@ -5,6 +5,7 @@ kind:
    - Solution
 ProductsVersion:
    - 4.1,4.2
+id: KB260200006
 ---
 
 # How to clean up platform built-in Image Registry
