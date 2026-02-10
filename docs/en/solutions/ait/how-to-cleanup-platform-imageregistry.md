@@ -4,8 +4,7 @@ products:
 kind:
    - Solution
 ProductsVersion:
-   - 4.2
-   - 4.1
+   - 4.1,4.2
 ---
 
 # How to clean up platform built-in Image Registry
