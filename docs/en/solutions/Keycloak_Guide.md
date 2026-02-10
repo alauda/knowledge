@@ -5,6 +5,7 @@ products:
   - Alauda Application Services
 ProductsVersion:
   - 4.x
+id: KB260200005
 ---
 
 # Keycloak Overview
