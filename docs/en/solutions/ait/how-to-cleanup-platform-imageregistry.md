@@ -36,9 +36,9 @@ Before performing the cleanup operation, you must:
 
 The cleanup process consists of three main parts:
 
-1. **Clean up Image Registry**: Back up MinIO data and clear the registry storage
+1. **Clean up Image Registry**: Back up MinIO data, record installed plugins/Operators, and clear registry storage
 2. **Restore ACP Core Images**: Re-upload ACP Core images and verify functionality
-3. **Restore Cluster Plugins and Operator Images**: Record installed plugins/Operators, prepare packages, re-upload, and verify
+3. **Restore Cluster Plugins and Operator Images**: Prepare packages, re-upload, and verify
 
 ---
 
@@ -66,6 +66,85 @@ du -sh /cpaas/minio
 - Perform this backup on all three control plane nodes
 - Verify the backup file size to ensure data integrity
 - Store the backup files in a safe location
+
+### Get Installed Operators
+
+Before clearing the registry, record all installed Operators. Execute the following command on the global cluster to list all Operators installed across clusters:
+
+```bash
+kubectl get operatorviews -A   -o custom-columns='CLUSTER:.metadata.namespace,NAME:.metadata.name,PHASE:.status.operatorStatus.phase,ARTIFACT:.status.operatorStatus.installation.artifactName,INSTALLED_CSV:.status.operatorStatus.installation.subscription.installedCSV,DISPLAY_NAME:.status.packageManifestStatus.channels[0].currentCSVDesc.displayName' | awk 'NR==1 || ($3 == "Installed")'  
+```
+
+**Output Example**:
+
+```text
+CLUSTER      NAME                             PHASE       ARTIFACT                 INSTALLED_CSV                                        DISPLAY_NAME
+global       clickhouse-operator              Installed   clickhouse-operator      clickhouse-operator.v4.2.0                           ClickHouse
+global       envoy-gateway-operator           Installed   envoy-gateway-operator   envoy-gateway-operator.v1.5.0-build.20251226181113   Alauda build of Envoy Gateway
+global       rds-operator                     Installed   rds-operator             rds-operator.v4.2.2                                  Alauda Container Platform Data Services RDS Framework
+```
+
+**Field Descriptions**:
+- **CLUSTER**: Cluster name
+- **NAME**: Operator name
+- **PHASE**: Operator phase (should be "Installed")
+- **ARTIFACT**: Artifact resource name corresponding to the Operator
+- **INSTALLED_CSV**: Installed CSV version (Note: This field may be empty if Operator creation failed or waiting for approval)
+- **DISPLAY_NAME**: Display name
+
+### Get Installed Cluster Plugins
+
+Execute the following command on the global cluster to list all aligned/agnostic cluster plugins installed across clusters:
+
+```bash
+kubectl get modulepluginview -o go-template='{{-
+printf "%-40s %-10s %-40s %s\n" "MODULE" "LIFECYCLE" "INSTALLED(CLUSTER:VERSION)" "DISPLAY_NAME"
+-}}{{- range .items }}
+{{- $module := index .metadata.labels "cpaas.io/module-name" -}}
+{{- $displayName := index .metadata.annotations "cpaas.io/display-name" -}}
+
+{{- $lifecycle := index .metadata.labels "cpaas.io/lifecycle-type" -}}
+{{- if or (not $lifecycle) (eq $lifecycle "") -}}
+{{- $lifecycle = "agnostic" -}}
+{{- end -}}
+ 
+{{- if or (eq $lifecycle "agnostic") (eq $lifecycle "aligned") -}}
+  {{- $installed := "" -}}
+  {{- range $i, $ins := .status.installed -}}
+    {{- if $i -}}
+      {{- $installed = printf "%s, %s:%s" $installed $ins.cluster $ins.version -}}
+    {{- else -}}
+      {{- $installed = printf "%s:%s" $ins.cluster $ins.version -}}
+    {{- end -}}
+  {{- end -}}
+{{- printf "%-40s %-10s %-40s %-40s" $module $lifecycle $installed $displayName -}}
+{{ "\n" -}}
+{{- end -}}
+{{- end -}}'
+```
+
+**Output Example**:
+
+```text
+MODULE                                   LIFECYCLE  INSTALLED(CLUSTER:VERSION)               DISPLAY_NAME
+aml-global                               agnostic                                            {"en": "Alauda AI Essentials", "zh": "Alauda AI Essentials"}
+application-services-core                agnostic                                            {"en": "Alauda Container Platform Data Services Essentials", "zh": "Alauda Container Platform Data Services Essentials"}
+argo-rollouts                            aligned                                             {"en": "Alauda Build of Argo Rollouts", "zh": "Alauda Build of Argo Rollouts"}
+argocd                                   agnostic                                            {"en": "Alauda Container Platform GitOps", "zh": "Alauda Container Platform GitOps"}
+asm-global                               aligned                                             {"en": "Alauda Service Mesh Essentials", "zh": "Alauda Service Mesh Essentials"}
+capi-provider-aws                        agnostic   global:v4.0.10                           {"en": "Alauda Container Platform EKS Provider", "zh": "Alauda Container Platform EKS Provider"}
+capi-provider-azure                      agnostic   global:v4.0.8                            {"en": "Alauda Container Platform AKS Provider", "zh": "Alauda Container Platform AKS Provider"}
+capi-provider-cce                        agnostic   global:v4.0.10                           {"en": "Alauda Container Platform CCE Provider", "zh": "Alauda Container Platform CCE Provider"}
+capi-provider-gcp                        agnostic   global:v4.0.8                            {"en": "Alauda Container Platform GKE Provider", "zh": "Alauda Container  ...
+```
+
+**Field Descriptions**:
+- **MODULE**: Cluster plugin name
+- **LIFECYCLE**: Cluster plugin type (core, aligned, or agnostic)
+- **INSTALLED(CLUSTER:VERSION)**: Lists plugin installation status across clusters in `<cluster>:<version>` or `<cluster>:<version>, <cluster>: <version>` format
+- **DISPLAY_NAME**: Display name
+
+**Important**: This recording must be completed before clearing the registry to avoid plugin status issues due to missing images.
 
 ### Clear Registry Data
 
@@ -130,90 +209,12 @@ nerdctl images | grep ${REGISTRY}
 
 ## Part 3: Restore Cluster Plugins and Operator Images
 
-### Get Installed Operators
-
-Before re-uploading cluster plugins and Operators, you need to record all installed Operators. Execute the following command on the global cluster to list all Operators installed across clusters:
-
-```bash
-kubectl get operatorviews -A \
-  --no-headers \
-  -o custom-columns='CLUSTER:.metadata.namespace,NAME:.metadata.name,ARTIFACT:.status.operatorStatus.installation.artifactName,INSTALLED_CSV:.status.operatorStatus.installation.subscription.installedCSV' \
-| awk '
-BEGIN {
-  printf "%-20s %-40s %-30s %-40s\n", \
-         "CLUSTER", "NAME", "ARTIFACT", "INSTALLED_CSV"
-}
-$3 != "" && $3 != "<none>" && $4 != "" && $4 != "<none>" {
-  printf "%-20s %-40s %-30s %-40s\n", $1, $2, $3, $4
-}'
-```
-
-**Output Example**:
-
-```text
-CLUSTER              NAME                                     ARTIFACT                       INSTALLED_CSV                          
-global               clickhouse-operator                      clickhouse-operator            clickhouse-operator.v4.2.0             
-global               envoy-gateway-operator                   envoy-gateway-operator         envoy-gateway-operator.v1.5.0
-global               rds-operator                             rds-operator                   rds-operator.v4.2.2
-```
-
-**Field Descriptions**:
-- **CLUSTER**: Cluster name
-- **NAME**: Operator name
-- **ARTIFACT**: Artifact resource name corresponding to the Operator
-- **INSTALLED_CSV**: Installed CSV version
-
-### Get Installed Cluster Plugins
-
-Execute the following command on the global cluster to list all aligned/agnostic cluster plugins installed across clusters:
-
-```bash
-kubectl get modulepluginview -o go-template='{{-
-printf "%-20s %-10s %s\n" "MODULE" "LIFECYCLE" "INSTALLED(CLUSTER:VERSION)"
--}}{{- range .items }}
-{{- $module := index .metadata.labels "cpaas.io/module-name" -}}
-{{- $lifecycle := index .metadata.labels "cpaas.io/lifecycle-type" -}}
-{{- if or (not $lifecycle) (eq $lifecycle "") -}}
-{{- $lifecycle = "agnostic" -}}
-{{- end -}}
-{{- if or (eq $lifecycle "agnostic") (eq $lifecycle "aligned") -}}
-{{- printf "%-20s %-10s " $module $lifecycle -}}
-{{- range $i, $ins := .status.installed -}}
-{{- if $i }}, {{ end -}}
-{{ $ins.cluster }}: {{ $ins.version }}
-{{- end -}}
-{{ "\n" -}}
-{{- end -}}
-{{- end -}}'
-```
-
-**Output Example**:
-
-```text
-MODULE               LIFECYCLE  INSTALLED(CLUSTER:VERSION)
-aml-global           agnostic  
-application-services-core agnostic  
-argo-rollouts        aligned   
-argocd               agnostic  
-asm-global           aligned   
-capi-provider-aws    agnostic   global: v4.0.10
-capi-provider-azure  agnostic   global: v4.0.8
-capi-provider-cce    agnostic   global: v4.0.10
-capi-provider-gcp    agnostic   global: v4.0.8
-ceph-cosi-driver     aligned
-```
-
-**Field Descriptions**:
-- **MODULE**: Cluster plugin name
-- **LIFECYCLE**: Cluster plugin type (core, aligned, or agnostic)
-- **INSTALLED(CLUSTER:VERSION)**: Lists plugin installation status across clusters in `<cluster>:<version>` format
-
 ### Prepare Operator and Cluster Plugin Installation Packages
 
-Based on the recorded Operators and cluster plugins from the previous steps, prepare the corresponding installation packages:
+Based on the recorded Operators and cluster plugins from Part 1, prepare the corresponding installation packages:
 
-1. Ensure you have the installation packages for all recorded Operators and cluster plugins
-2. Verify the package versions match the installed versions recorded in the previous steps
+1. Ensure you have installation packages for all recorded Operators and cluster plugins
+2. Verify that package versions match the installed versions recorded in Part 1
 3. Place the installation packages in an accessible location for upload
 
 ### Re-upload Cluster Plugins and Operators
