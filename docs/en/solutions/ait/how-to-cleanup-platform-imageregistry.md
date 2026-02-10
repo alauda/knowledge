@@ -150,7 +150,7 @@ $3 != "" && $3 != "<none>" && $4 != "" && $4 != "<none>" {
 
 **Output Example**:
 
-```
+```text
 CLUSTER              NAME                                     ARTIFACT                       INSTALLED_CSV                          
 global               clickhouse-operator                      clickhouse-operator            clickhouse-operator.v4.2.0             
 global               envoy-gateway-operator                   envoy-gateway-operator         envoy-gateway-operator.v1.5.0
@@ -189,7 +189,7 @@ printf "%-20s %-10s %s\n" "MODULE" "LIFECYCLE" "INSTALLED(CLUSTER:VERSION)"
 
 **Output Example**:
 
-```
+```text
 MODULE               LIFECYCLE  INSTALLED(CLUSTER:VERSION)
 aml-global           agnostic  
 application-services-core agnostic  
@@ -231,7 +231,9 @@ plugin_dir="/cpaas/installer/plugins"
 cd $plugin_dir
 
 # Upload all plugins one by one
-for i in `ls $plugin_dir`; do
+for i in "$plugin_dir"/*; do
+  [ -e "$i" ] || continue
+  i=$(basename "$i")
   violet push $i \
     --platform-address $Platform_URL \
     --platform-username $Platform_USER \
