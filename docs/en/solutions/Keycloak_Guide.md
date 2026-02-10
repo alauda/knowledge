@@ -1,3 +1,12 @@
+---
+kind:
+  - Solution
+products:
+  - Alauda Application Services
+ProductsVersion:
+  - 4.x
+---
+
 # Keycloak Overview
 Keycloak is an open-source, enterprise-grade Identity and Access Management (IAM) solution led by Red Hat. It provides unified identity authentication, authorization and user management capabilities for applications, APIs and microservices, supporting a variety of mainstream identity authentication protocols. Its core design concept emphasizes centralized identity control, high security, scalability and cloud-native adaptation capabilities.
 
