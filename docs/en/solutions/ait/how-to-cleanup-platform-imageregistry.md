@@ -148,17 +148,16 @@ capi-provider-gcp                        agnostic   global:v4.0.8               
 
 ### Clear Registry Data
 
-Enter any control plane node of the global cluster and execute the cleanup command within the registry MinIO container:
+Enter any control plane node of the global cluster and execute the cleanup command within the MinIO container:
 
 ```bash
-# Access the registry MinIO container (method may vary depending on deployment)
-# Example using kubectl:
-kubectl exec -it -n <registry-namespace> <registry-minio-pod> -- bash
-
+# Access the MinIO container in kube-system namespace
 # Execute the cleanup command to clear the registry bucket
-source /etc/config/minio.env && \
-  mc --insecure alias set minio https://127.0.0.1:9000 $MINIO_ACCESS_KEY $MINIO_SECRET_KEY && \
-  mc --insecure rm --recursive --force minio/registry/
+kubectl exec -it -n kube-system <minio-pod> -- sh -c '
+  source /etc/config/minio.env && \
+    mc --insecure alias set minio https://127.0.0.1:9000 $MINIO_ACCESS_KEY $MINIO_SECRET_KEY && \
+    mc --insecure rm --recursive --force minio/registry/
+'
 ```
 
 **Warning**: This operation will **permanently delete** all images in the registry. Ensure that you have completed the backup step.
