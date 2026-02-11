@@ -6,14 +6,14 @@ kind:
 ProductsVersion:
   - '4.1,4.2'
 id: KB260200006
-sourceSHA: 3eb5e699721b27d0f26bc8d29ed3f5c6dc8fdbed6d09c6a05e727284bd76de1e
+sourceSHA: 1e76a42f4ecc7622e7af2eb000ce650690ff7b19ebf16b411b22c21101507829
 ---
 
 # 如何清理平台内置的镜像注册表
 
 ## 问题
 
-在使用平台内置的镜像注册表进行安装时，注册表中的镜像数量会随着每次平台升级而增加。升级后，旧版本的镜像不再需要，但仍然占用存储空间，导致存储资源的浪费。
+在使用平台内置的镜像注册表进行安装时，注册表中的镜像数量随着每次平台升级而增加。升级后，旧版本的镜像不再需要，但仍然占用存储空间，导致存储资源的浪费。
 
 ## 环境
 
@@ -25,19 +25,19 @@ sourceSHA: 3eb5e699721b27d0f26bc8d29ed3f5c6dc8fdbed6d09c6a05e727284bd76de1e
 
 当前平台不支持区分旧版和新版镜像，MinIO 的垃圾回收 (GC) 逻辑存在一定的限制。这使得无法选择性地清理未使用的镜像。因此，推荐的方法是完全删除 MinIO 中的所有镜像，然后重新上传所需的镜像。
 
-### 先决条件
+### 前提条件
 
 在执行清理操作之前，您必须：
 
 - **记录集群插件和 Operator**：记录当前安装在平台上的所有集群插件和 Operators
-- **备份自定义镜像**：如果您在注册表中存储了非平台镜像，请备份它们或单独记录以便在清理后重新上传
+- **备份自定义镜像**：如果您在注册表中存储了非平台镜像，请备份或单独记录，以便在清理后重新上传
 - **安排维护窗口**：此操作将暂时影响平台镜像的可用性，因此请在维护窗口期间进行计划
 
 ### 概述
 
 清理过程主要包括三个部分：
 
-1. **清理镜像注册表**：备份 MinIO 数据，记录已安装的插件/Operators，并清空注册表存储
+1. **清理镜像注册表**：备份 MinIO 数据，记录已安装的插件/Operators，并清除注册表存储
 2. **恢复 ACP 核心镜像**：重新上传 ACP 核心镜像并验证功能
 3. **恢复集群插件和 Operator 镜像**：准备包，重新上传并验证
 
@@ -67,11 +67,11 @@ du -sh /cpaas/minio
 
 - 在所有三个控制平面节点上执行此备份
 - 验证备份文件大小以确保数据完整性
-- 将备份文件存储在安全的位置
+- 将备份文件存储在安全位置
 
 ### 获取已安装的 Operators
 
-在清理注册表之前，记录所有已安装的 Operators。在全球集群上执行以下命令以列出跨集群安装的所有 Operators：
+在清理注册表之前，记录所有已安装的 Operators。在全球集群中执行以下命令以列出跨集群安装的所有 Operators：
 
 ```bash
 kubectl get operatorviews -A   -o custom-columns='CLUSTER:.metadata.namespace,NAME:.metadata.name,PHASE:.status.operatorStatus.phase,ARTIFACT:.status.operatorStatus.installation.artifactName,INSTALLED_CSV:.status.operatorStatus.installation.subscription.installedCSV,DISPLAY_NAME:.status.packageManifestStatus.channels[0].currentCSVDesc.displayName' | awk 'NR==1 || ($3 == "Installed")'  
@@ -97,7 +97,7 @@ global       rds-operator                     Installed   rds-operator          
 
 ### 获取已安装的集群插件
 
-在全球集群上执行以下命令以列出跨集群安装的所有对齐/无关集群插件：
+在全球集群中执行以下命令以列出跨集群安装的所有对齐/无关集群插件：
 
 ```bash
 kubectl get modulepluginview -o go-template='{{-
@@ -145,24 +145,23 @@ capi-provider-gcp                        agnostic   global:v4.0.8               
 
 - **MODULE**：集群插件名称
 - **LIFECYCLE**：集群插件类型（核心、对齐或无关）
-- **INSTALLED(CLUSTER:VERSION)**：以 `<cluster>:<version>` 或 `<cluster>:<version>, <cluster>: <version>` 格式列出插件在各集群中的安装状态
+- **INSTALLED(CLUSTER:VERSION)**：以 `<cluster>:<version>` 或 `<cluster>:<version>, <cluster>: <version>` 格式列出插件在集群中的安装状态
 - **DISPLAY_NAME**：显示名称
 
 **重要**：此记录必须在清理注册表之前完成，以避免由于缺少镜像而导致的插件状态问题。
 
 ### 清除注册表数据
 
-进入全球集群的任意控制平面节点，并在注册表 MinIO 容器内执行清理命令：
+进入全球集群的任意控制平面节点，并在 MinIO 容器内执行清理命令：
 
 ```bash
-# 访问注册表 MinIO 容器（方法可能因部署而异）
-# 示例使用 kubectl：
-kubectl exec -it -n <registry-namespace> <registry-minio-pod> -- bash
-
-# 执行清理命令以清空注册表桶
-source /etc/config/minio.env && \
-  mc --insecure alias set minio https://127.0.0.1:9000 $MINIO_ACCESS_KEY $MINIO_SECRET_KEY && \
-  mc --insecure rm --recursive --force minio/registry/
+# 访问 kube-system 命名空间中的 MinIO 容器
+# 执行清理命令以清除注册表存储桶
+kubectl exec -it -n kube-system <minio-pod> -- sh -c '
+  source /etc/config/minio.env && \
+    mc --insecure alias set minio https://127.0.0.1:9000 $MINIO_ACCESS_KEY $MINIO_SECRET_KEY && \
+    mc --insecure rm --recursive --force minio/registry/
+'
 ```
 
 **警告**：此操作将**永久删除**注册表中的所有镜像。确保您已完成备份步骤。
@@ -196,7 +195,7 @@ bash "res/upload.sh" "necessary" "${REGISTRY}" "${USERNAME}" "${PASSWORD}"
 
 - 用您的实际注册表地址和凭据替换占位符值
 - 确保注册表服务正在运行并可访问
-- 监控上传过程以查找任何错误
+- 监控上传过程以查看是否有错误
 
 ### 测试核心镜像拉取
 
@@ -250,7 +249,7 @@ done
 **重要**：
 
 - 此步骤仅使用 `violet push` 将插件包上传到平台
-- 上传完成后，必须单独安装插件
+- 插件必须在上传完成后单独安装
 - 验证每个插件是否成功上传
 
 ### 测试插件和 Operator 镜像拉取
