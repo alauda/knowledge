@@ -67,13 +67,13 @@ Applicable Versions: >=ACP 4.2.0, Milvus: >=v2.4.0
 
 | Aspect | Standalone Mode | Cluster Mode |
 |--------|----------------|--------------|
-| **PodSecurity Compatibility** | ⚠️ Requires namespace exemption for testing | ✓ Better compatibility |
+| **PodSecurity Compatibility** | ✓ Supported (set `runAsNonRoot: true`) | ✓ Supported |
 | **Production Readiness** | Development/testing only | Production-ready |
 | **Resource Requirements** | Lower (4 cores, 8GB RAM) | Higher (16+ cores, 32GB+ RAM) |
 | **Scalability** | Limited | Horizontal scaling |
 | **Complexity** | Simple to deploy | More components to manage |
 
-> **⚠️ Warning**: Milvus v2.6.7 standalone mode has known compatibility issues with ACP's PodSecurity "restricted" policy. For production deployments, use cluster mode or apply namespace exemptions (see [Troubleshooting](#milvus-standalone-pod-crashes-exit-code-134)).
+> **✓ PodSecurity Compliance**: Both standalone and cluster modes are fully compatible with ACP's PodSecurity "restricted" policy. Simply add `components.runAsNonRoot: true` to your Milvus custom resource (see deployment examples below).
 
 ## Prerequisites
 
@@ -82,12 +82,6 @@ Before implementing Milvus, ensure you have:
 - ACP v4.2.0 or later
 - Basic understanding of vector embeddings and similarity search concepts
 - Access to your cluster's container image registry (registry addresses vary by cluster)
-
-> **⚠️ PodSecurity Policy Requirement**: ACP clusters enforce PodSecurity policies by default. Milvus v2.6.7 standalone mode has known compatibility issues with PodSecurity "restricted" policy. For testing/development, you may need to exempt your namespace:
-> ```bash
-> kubectl label namespace <namespace> pod-security.kubernetes.io/enforce=privileged
-> ```
-> See [Milvus Standalone Pod Crashes](#milvus-standalone-pod-crashes-exit-code-134) for details and workarounds.
 
 - ACP v4.2.0 or later
 - Basic understanding of vector embeddings and similarity search concepts
@@ -132,11 +126,11 @@ Before deploying Milvus, complete this checklist to ensure a smooth deployment:
   kubectl create namespace milvus
   ```
 
-- [ ] **PodSecurity Policy**: Verify if your cluster enforces PodSecurity policies
+- [ ] **PodSecurity Policy**: Verify if your cluster enforces PodSecurity policies (most ACP clusters do by default)
   ```bash
   kubectl get namespace <namespace> -o jsonpath='{.metadata.labels}'
   ```
-  If `pod-security.kubernetes.io/enforce=restricted`, be ready to apply security patches.
+  If `pod-security.kubernetes.io/enforce=restricted`, the Milvus operator will automatically handle PodSecurity compliance when you set `components.runAsNonRoot: true` in your Milvus CR. No manual patching required.
 
 - [ ] **Message Queue Decision**: Decide which message queue to use for cluster mode:
   - Woodpecker (embedded, simpler) - No additional setup required
@@ -247,6 +241,8 @@ stringData:
 
 Milvus requires a message queue for cluster mode deployments. You can choose between:
 
+> **Important**: For cluster mode, set `dependencies.msgStreamType: woodpecker` to use Woodpecker as the message queue. Do **not** use `msgStreamType: rocksmq` for cluster mode - rocksmq is only for standalone mode.
+
 #### Option 1: Woodpecker
 
 Woodpecker is an embedded Write-Ahead Log (WAL) in Milvus 2.6+. It's a cloud-native WAL designed for object storage.
@@ -316,6 +312,7 @@ spec:
   mode: standalone
   components:
     image: build-harbor.alauda.cn/middleware/milvus:v2.6.7
+    runAsNonRoot: true  # Enable PodSecurity compliance
 
   dependencies:
     etcd:
@@ -349,11 +346,13 @@ spec:
         level: info
 ```
 
+> **Important**: The `components.runAsNonRoot: true` setting enables PodSecurity compliance. The operator will automatically apply all required security contexts to the Milvus containers and their dependencies (etcd, MinIO).
+
 #### Option 2: Cluster Mode (Production)
 
 For production deployments, use cluster mode. Below are common production configurations:
 
-**Option 2A: Production with In-Cluster Dependencies (Recommended)**
+**Option 2A: Production with Woodpecker (Recommended)**
 
 This configuration uses in-cluster etcd and MinIO, with Woodpecker as the embedded message queue:
 
@@ -367,8 +366,12 @@ spec:
   mode: cluster
   components:
     image: build-harbor.alauda.cn/middleware/milvus:v2.6.7
+    runAsNonRoot: true  # Enable PodSecurity compliance
 
   dependencies:
+    # Enable Woodpecker as message queue (recommended for cluster mode)
+    msgStreamType: woodpecker
+
     # Use in-cluster etcd
     etcd:
       inCluster:
@@ -420,6 +423,8 @@ spec:
       cpu: "8"
       memory: "16Gi"
 ```
+
+> **Note**: Woodpecker is set with `msgStreamType: woodpecker`. Woodpecker uses the same MinIO storage for its WAL, providing a simpler deployment without external message queue services.
 
 **Option 2B: Production with External S3-Compatible Storage**
 
@@ -659,6 +664,7 @@ Use this checklist to quickly identify and resolve common deployment issues:
 | Multi-Attach volume errors | Storage class access mode | [Multi-Attach Volume Errors](#multi-attach-volume-errors) |
 | Milvus panic: MinIO PutObjectIfNoneMatch failed | MinIO PVC corruption | [MinIO Storage Corruption Issues](#minio-storage-corruption-issues) |
 | Milvus standalone pod crashes (exit code 134) | Health check & non-root compatibility | [Milvus Standalone Pod Crashes (Exit Code 134)](#milvus-standalone-pod-crashes-exit-code-134) |
+| Milvus cluster pod panic with "mq rocksmq is only valid in standalone mode" | Incorrect message queue type | [Cluster Mode Message Queue Configuration](#cluster-mode-message-queue-configuration) |
 | Cannot connect to Milvus service | Network or service issues | [Connection Refused](#connection-refused) |
 | Slow vector search performance | Index or resource issues | [Poor Search Performance](#poor-search-performance) |
 
@@ -697,287 +703,140 @@ Use this checklist to quickly identify and resolve common deployment issues:
 
 #### PodSecurity Admission Violations
 
-**Symptoms**: All Milvus components (operator, etcd, MinIO, Milvus) fail to create with PodSecurity errors:
+**Symptoms**: Milvus pods fail to create with PodSecurity errors:
 
 ```
 Error creating: pods is forbidden: violates PodSecurity "restricted:latest":
-- unrestricted capabilities (container must set securityContext.capabilities.drop=["ALL"])
-- seccompProfile (pod or container must set securityContext.seccompProfile.type to "RuntimeDefault" or "Localhost")
-- allowPrivilegeEscalation != false (container must set securityContext.allowPrivilegeEscalation=false)
 - runAsNonRoot != true (pod or container must set securityContext.runAsNonRoot=true)
 ```
 
-**Cause**: ACP clusters enforce PodSecurity "restricted:latest" policy. All Helm charts deployed by Milvus Operator require security context patches to comply with this policy.
+**Cause**: The Milvus custom resource is missing the `components.runAsNonRoot: true` setting.
 
-**Comprehensive Solution** - Patch all components:
+**Solution**: Add `components.runAsNonRoot: true` to your Milvus custom resource:
 
-```bash
-NAMESPACE="<your-namespace>"
-
-# 1. Patch Milvus Operator
-kubectl patch deployment milvus-operator -n $NAMESPACE --type='json' -p='
-[
-  {
-    "op": "add",
-    "path": "/spec/template/spec/securityContext/seccompProfile",
-    "value": {"type": "RuntimeDefault"}
-  },
-  {
-    "op": "add",
-    "path": "/spec/template/spec/containers/0/securityContext/capabilities",
-    "value": {"drop": ["ALL"]}
-  }
-]'
-
-# 2. Patch etcd StatefulSet
-kubectl patch statefulset milvus-<name>-etcd -n $NAMESPACE --type='json' -p='
-[
-  {
-    "op": "add",
-    "path": "/spec/template/spec/securityContext",
-    "value": {"runAsNonRoot": true, "seccompProfile": {"type": "RuntimeDefault"}}
-  },
-  {
-    "op": "add",
-    "path": "/spec/template/spec/containers/0/securityContext",
-    "value": {"allowPrivilegeEscalation": false, "capabilities": {"drop": ["ALL"]}, "runAsNonRoot": true, "runAsUser": 1000}
-  },
-  {
-    "op": "add",
-    "path": "/spec/template/spec/securityContext/fsGroup",
-    "value": 1000
-  }
-]'
-
-# 3. Patch MinIO Deployment
-kubectl patch deployment milvus-<name>-minio -n $NAMESPACE --type='json' -p='
-[
-  {
-    "op": "add",
-    "path": "/spec/template/spec/securityContext",
-    "value": {"fsGroup": 1000, "runAsNonRoot": true, "seccompProfile": {"type": "RuntimeDefault"}}
-  },
-  {
-    "op": "add",
-    "path": "/spec/template/spec/containers/0/securityContext",
-    "value": {"allowPrivilegeEscalation": false, "capabilities": {"drop": ["ALL"]}, "runAsNonRoot": true, "runAsUser": 1000}
-  }
-]'
-
-# 4. Patch Milvus Standalone/Cluster Deployment
-kubectl patch deployment milvus-<name>-milvus-standalone -n $NAMESPACE --type='json' -p='
-[
-  {
-    "op": "add",
-    "path": "/spec/template/spec/securityContext",
-    "value": {"runAsNonRoot": true, "fsGroup": 1000, "seccompProfile": {"type": "RuntimeDefault"}}
-  }
-]'
-
-kubectl patch deployment milvus-<name>-milvus-standalone -n $NAMESPACE --type='json' -p='
-[
-  {
-    "op": "add",
-    "path": "/spec/template/spec/containers/0/securityContext",
-    "value": {"allowPrivilegeEscalation": false, "capabilities": {"drop": ["ALL"]}, "runAsNonRoot": true, "runAsUser": 1000}
-  }
-]'
-
-kubectl patch deployment milvus-<name>-milvus-standalone -n $NAMESPACE --type='json' -p='
-[
-  {
-    "op": "add",
-    "path": "/spec/template/spec/containers/1/securityContext",
-    "value": {"allowPrivilegeEscalation": false, "capabilities": {"drop": ["ALL"]}, "runAsNonRoot": true, "runAsUser": 1000}
-  }
-]'
-
-# 5. Patch initContainer (config) for Milvus Standalone
-kubectl patch deployment milvus-<name>-milvus-standalone -n $NAMESPACE --type='json' -p='
-[
-  {
-    "op": "add",
-    "path": "/spec/template/spec/initContainers[0]/securityContext/allowPrivilegeEscalation",
-    "value": false
-  },
-  {
-    "op": "add",
-    "path": "/spec/template/spec/initContainers[0]/securityContext/capabilities",
-    "value": {"drop": ["ALL"]}
-  }
-]'
+```yaml
+spec:
+  components:
+    runAsNonRoot: true  # Required for PodSecurity compliance
+    image: build-harbor.alauda.cn/middleware/milvus:v2.6.7
 ```
+
+The Milvus operator will automatically apply all required security contexts:
+- `runAsNonRoot: true` (pod and container level)
+- `runAsUser: 1000` (matching upstream)
+- `allowPrivilegeEscalation: false`
+- `capabilities.drop: [ALL]`
+- `seccompProfile.type: RuntimeDefault`
+
+This applies to:
+- Milvus standalone/cluster deployments
+- Init containers (config)
+- etcd StatefulSets
+- MinIO deployments
 
 **Verification**:
 ```bash
 # Check if all pods are running
-kubectl get pods -n $NAMESPACE
+kubectl get pods -n <namespace>
 
 # Verify security contexts are applied
-kubectl get pod <pod-name> -n $NAMESPACE -o jsonpath='{.spec.securityContext}'
-kubectl get pod <pod-name> -n $NAMESPACE -o jsonpath='{.spec.containers[*].securityContext}'
+kubectl get pod <pod-name> -n <namespace> -o jsonpath='{.spec.securityContext}'
+kubectl get pod <pod-name> -n <namespace> -o jsonpath='{.spec.containers[*].securityContext}'
 ```
-
-> **Important**: These patches must be applied after each deployment. For a permanent solution, the Helm charts need to be updated to include these security contexts by default.
-
-> **Known Issue**: Some containers may fail with permission errors when running as non-root (user 1000). This is a known limitation that requires chart updates to resolve properly.
-
-#### Image Pull Authentication Errors
-
-**Symptoms**: Pods fail with `ErrImagePull` or `ImagePullBackOff` status.
-
-**Error Message**:
-```
-Failed to pull image "build-harbor.alauda.cn/middleware/milvus-operator:v1.3.5":
-authorization failed: no basic auth credentials
-```
-
-**Cause**: The image registry requires authentication or the registry address is incorrect for your cluster.
-
-**Solutions**:
-
-1. **Check if the registry address is correct for your cluster**:
-   ```bash
-   # Describe the pod to see which registry it's trying to pull from
-   kubectl describe pod <pod-name> -n <namespace> | grep "Image:"
-   ```
-
-2. **If the registry address is wrong**, patch the deployment with the correct registry:
-   ```bash
-   # Replace registry.alauda.cn:60070 with your cluster's registry
-   kubectl patch deployment milvus-operator -n <namespace> --type='json' -p='
-   [
-     {
-       "op": "replace",
-       "path": "/spec/template/spec/containers/0/image",
-       "value": "registry.alauda.cn:60070/middleware/milvus-operator:v1.3.5"
-     }
-   ]'
-   ```
-
-3. **If authentication is required**, create an image pull secret:
-   ```bash
-   # Create a docker-registry secret
-   kubectl create secret docker-registry harbor-pull-secret \
-     --docker-server=<REGISTRY_ADDRESS> \
-     --docker-username=<USERNAME> \
-     --docker-password=<PASSWORD> \
-     -n <namespace>
-
-   # Patch the deployment to use the secret
-   kubectl patch deployment milvus-operator -n <namespace> --type='json' -p='
-   [
-     {
-       "op": "add",
-       "path": "/spec/template/spec/imagePullSecrets",
-       "value": [{"name": "harbor-pull-secret"}]
-     }
-   ]'
-   ```
-
-4. **For existing Milvus deployments**, update image references in the Milvus CR:
-   ```yaml
-   spec:
-     components:
-       image: registry.alauda.cn:60070/middleware/milvus:v2.6.7
-     dependencies:
-       etcd:
-         inCluster:
-           values:
-             image:
-               repository: registry.alauda.cn:60070/middleware/etcd
-       storage:
-         inCluster:
-           values:
-             image:
-               repository: registry.alauda.cn:60070/middleware/minio
-   ```
-
-> **Note**: Different ACP clusters may use different registry addresses. Common registries include:
-> - `build-harbor.alauda.cn` - Default in documentation
-> - `registry.alauda.cn:60070` - Private registry
-> - Other custom registries per cluster configuration
-
-#### etcd Invalid Image Name Error
-
-**Symptoms**: etcd pods fail to start with invalid image reference format error:
-
-```
-Error: failed to pull and unpack image "docker.io/registry.alauda.cn:60070/middleware/etcd:3.5.25-r1":
-failed to resolve reference "docker.io/registry.alauda.cn:60070/middleware/etcd:3.5.25-r1":
-"docker.io/registry.alauda.cn:60070/middleware/etcd:3.5.25-r1": invalid reference format
-```
-
-**Cause**: The etcd Helm chart automatically prepends "docker.io/" to the image repository, creating an invalid image reference when using a custom registry.
-
-**Solution**: Patch the etcd StatefulSet to use the correct image reference without the "docker.io/" prefix:
-
-```bash
-# Patch the etcd StatefulSet image
-kubectl patch statefulset milvus-<name>-etcd -n <namespace> --type='json' -p='
-[
-  {
-    "op": "replace",
-    "path": "/spec/template/spec/containers/0/image",
-    "value": "registry.alauda.cn:60070/middleware/etcd:3.5.25-r1"
-  }
-]'
-```
-
-Replace `registry.alauda.cn:60070` with your cluster's registry address.
 
 #### Milvus Standalone Pod Crashes (Exit Code 134)
 
-**Symptoms**: Milvus standalone pod repeatedly crashes with exit code 134 (SIGABRT) and logs show:
+**Symptoms**: Milvus standalone pod repeatedly crashes with exit code 134 (SIGABRT).
 
+**Cause**: This was a known compatibility issue with Milvus v2.6.7 when running under PodSecurity "restricted" policies. The issue has been fixed in updated Milvus operator images.
+
+**Solution**:
+
+1. Ensure you're using the updated Milvus operator image (v1.3.5-6e82465e or later)
+2. Add `components.runAsNonRoot: true` to your Milvus custom resource:
+
+```yaml
+spec:
+  components:
+    runAsNonRoot: true  # Required for PodSecurity compliance
+    image: build-harbor.alauda.cn/middleware/milvus:v2.6.7
 ```
-check health failed] [UnhealthyComponent="[querynode,streamingnode]"]
-Set runtime dir at /run/milvus failed, set it to /tmp/milvus directory
-```
 
-**Cause**: This is a known compatibility issue with Milvus v2.6.7 when running under PodSecurity "restricted" policies:
+3. Delete and recreate the Milvus CR if you previously deployed without this setting:
 
-1. **Health Check Issue**: The `/healthz` endpoint returns HTTP 500 because it checks for cluster-mode components (querynode, streamingnode) that don't exist in standalone mode
-2. **Non-Root Compatibility**: The container has permission issues running as non-root user (UID 1000) as required by PodSecurity policies
-3. **Operator Management**: Manual patches to the deployment are reverted by the Milvus operator
-
-**Workarounds**:
-
-**Option 1**: Use cluster mode instead of standalone mode (Recommended)
-- Cluster mode has better compatibility with ACP's PodSecurity policies
-- The health check properly detects cluster components
-
-**Option 2**: Request namespace exemption from PodSecurity policies (for testing only):
 ```bash
-# Remove PodSecurity enforcement (NOT recommended for production)
-kubectl label namespace <namespace> pod-security.kubernetes.io/enforce-
-kubectl label namespace <namespace> pod-security.kubernetes.io/enforce=privileged
+kubectl delete milvus <name> -n <namespace>
+kubectl apply -f <your-milvus-cr>.yaml
 ```
 
-Then delete and recreate the Milvus CR.
+The operator will automatically handle all PodSecurity requirements when `runAsNonRoot: true` is set.
 
-**Option 3**: Disable readiness/startup probes (temporary workaround):
+#### Cluster Mode Message Queue Configuration
+
+**Symptoms**: Milvus cluster component pods (mixcoord, datanode, proxy, querynode) panic with the following error:
+
+```
+panic: mq rocksmq is only valid in standalone mode
+```
+
+**Cause**: The Milvus custom resource is configured with `msgStreamType: rocksmq` for cluster mode. The `rocksmq` message stream type is only valid for standalone mode. For cluster mode, you must use `woodpecker` instead.
+
+**Solution**: Change `dependencies.msgStreamType` from `rocksmq` to `woodpecker`:
+
+**Incorrect (for cluster mode)**:
+```yaml
+spec:
+  dependencies:
+    msgStreamType: rocksmq  # WRONG - only for standalone mode
+```
+
+**Correct (for cluster mode)**:
+```yaml
+spec:
+  dependencies:
+    msgStreamType: woodpecker  # Use woodpecker for cluster mode
+```
+
+**Complete cluster mode example with Woodpecker**:
+```yaml
+apiVersion: milvus.io/v1beta1
+kind: Milvus
+metadata:
+  name: milvus-cluster
+  namespace: milvus
+spec:
+  mode: cluster
+  components:
+    image: build-harbor.alauda.cn/middleware/milvus:v2.6.7
+    runAsNonRoot: true
+  dependencies:
+    msgStreamType: woodpecker  # Woodpecker for cluster mode
+    etcd:
+      inCluster:
+        values:
+          image:
+            repository: build-harbor.alauda.cn/middleware/etcd
+            tag: 3.5.25-r1
+          replicaCount: 3
+    storage:
+      inCluster:
+        values:
+          image:
+            repository: build-harbor.alauda.cn/middleware/minio
+            tag: RELEASE.2024-12-18T13-15-44Z
+```
+
+After correcting the configuration, delete and recreate the Milvus instance:
+
 ```bash
-# Patch deployment to use TCP probe instead of HTTP probe
-kubectl patch deployment milvus-<name>-milvus-standalone -n <namespace> --type=json -p='
-[
-  {
-    "op": "replace",
-    "path": "/spec/template/spec/containers/0/readinessProbe",
-    "value": {
-      "tcpSocket": {"port": 9091},
-      "initialDelaySeconds": 30,
-      "periodSeconds": 15,
-      "timeoutSeconds": 3,
-      "failureThreshold": 10
-    }
-  }
-]'
+kubectl delete milvus <name> -n <namespace>
+kubectl apply -f <your-milvus-cr>.yaml
 ```
 
-> **Note**: The operator may revert this change. Monitor and re-apply if needed.
-
-> **Known Issue**: This is a documented limitation in Milvus v2.6.7. Future versions should address the non-root compatibility and health check issues. For production deployments, use cluster mode or wait for updated charts.
+**Message Queue Type Reference**:
+- **Standalone mode**: Use `msgStreamType: rocksmq` (or omit, defaults to rocksmq)
+- **Cluster mode**: Use `msgStreamType: woodpecker`
+- **External Kafka/Pulsar**: Use `dependencies.pulsar.external.endpoint` with appropriate scheme
 
 #### PVC Pending - Storage Class Binding Mode
 
@@ -1164,7 +1023,18 @@ milvus-standalone-milvus-standalone-6b8c9d    1/1     Running   0          3m
 
 # kubectl get milvus -n milvus
 NAME               MODE        STATUS    Updated
-milvus-standalone   standalone   Ready     True
+milvus-standalone   standalone   Healthy   True
+```
+
+**Verify PodSecurity Compliance**:
+
+```bash
+# Check pod security contexts (all should show PodSecurity-compliant settings)
+kubectl get pod milvus-standalone-milvus-standalone-<suffix> -n milvus -o jsonpath='{.spec.securityContext}'
+# Output should include: {"runAsNonRoot":true,"runAsUser":1000}
+
+kubectl get pod milvus-standalone-milvus-standalone-<suffix> -n milvus -o jsonpath='{.spec.containers[0].securityContext}'
+# Output should include: {"allowPrivilegeEscalation":false,"capabilities":{"drop":["ALL"]},"seccompProfile":{"type":"RuntimeDefault"}}
 ```
 
 ### Diagnostic Commands
@@ -1235,15 +1105,16 @@ kubectl exec -it <milvus-pod> -n milvus -- nc -zv <kafka-broker> 9092
 **Milvus Deployment:**
 - `mode`: Deployment mode (standalone, cluster)
 - `components.image`: Milvus container image
+- `dependencies.msgStreamType`: Message queue type - `woodpecker` (recommended, embedded), `pulsar` (external), or `kafka` (external)
 - `dependencies.etcd`: etcd configuration for metadata
 - `dependencies.storage`: Object storage configuration
-- `dependencies.pulsar`: Message queue configuration (field named `pulsar` for historical reasons, supports both Pulsar and Kafka)
+- `dependencies.pulsar`: External message queue configuration (field named `pulsar` for historical reasons, supports both Pulsar and Kafka)
 - `config.milvus`: Milvus-specific configuration
 
 **Message Queue Options:**
-- **Woodpecker**: Embedded WAL enabled by default in Milvus 2.6+, uses object storage
-- **Kafka**: External Kafka service, set `pulsar.external.endpoint` to Kafka broker with `kafka://` scheme (e.g., `kafka://kafka-broker.kafka.svc.cluster.local:9092`)
-- **Pulsar**: External Pulsar service, set `pulsar.external.endpoint` to Pulsar broker with `pulsar://` scheme (e.g., `pulsar://pulsar-broker.pulsar.svc.cluster.local:6650`)
+- **Woodpecker** (`msgStreamType: woodpecker`): Embedded WAL in Milvus 2.6+, uses object storage, supports both standalone and cluster modes
+- **Kafka** (via `pulsar.external.endpoint`): External Kafka service, set endpoint to `kafka://kafka-broker.kafka.svc.cluster.local:9092`
+- **Pulsar** (via `pulsar.external.endpoint`): External Pulsar service, set endpoint to `pulsar://pulsar-broker.pulsar.svc.cluster.local:6650`
 
 > **Important**: The CRD field is named `pulsar` for backward compatibility, but you can configure either Pulsar or Kafka by using the appropriate endpoint scheme (`pulsar://` or `kafka://`).
 
