@@ -89,8 +89,6 @@ Before implementing Milvus, ensure you have:
 
 > **Note**: ACP v4.2.0 and later supports in-cluster MinIO and etcd deployment through the Milvus Operator. External storage (S3-compatible) and external message queue (Kafka) are optional.
 
-> **Important**: Different ACP clusters may use different container registry addresses. The documentation uses `build-harbor.alauda.cn` as an example, but you may need to replace this with your cluster's registry (e.g., `registry.alauda.cn:60070`). See the [Troubleshooting section](#image-pull-authentication-errors) for details.
-
 ### Storage Requirements
 
 - **etcd**: Minimum 10GB storage per replica for metadata (in-cluster deployment)
@@ -1069,6 +1067,166 @@ kubectl exec -it <milvus-pod> -n milvus -- nc -zv <kafka-broker> 9092
 ```
 
 ## Best Practices
+
+### Collection Design
+
+### GPU Deployment Guide for ACP 4.2+
+
+#### Overview
+
+Milvus supports GPU acceleration for vector similarity search and index operations. This guide covers deploying a GPU-enabled Milvus instance on Alauda Container Platform (ACP) version 4.2.0 or later.
+
+#### Prerequisites
+
+- **GPU Nodes**: Kubernetes nodes with NVIDIA GPUs (Tesla V100, A100, etc.)
+- **Storage Class**: Use storage class with available capacity (e.g., `sc-topolvm`)
+- **Container Registry Access**: Ensure cluster can access `192.168.129.232/middleware/milvus` registry
+- **Milvus Operator**: Version 1.3.5 or later with GPU support
+
+#### GPU-Enabled Milvus Image
+
+Use GPU-enabled Milvus image from your internal registry:
+
+```yaml
+image: 192.168.129.232/middleware/milvus:v2.6.7-gpu-9b18d4ae
+```
+
+This image includes:
+- CUDA runtime for GPU acceleration
+- GPU-enabled indexing and search algorithms
+- Optimized for vector operations on Tesla V100 GPUs
+
+#### Resource Requirements
+
+| Deployment Mode | Minimum CPU | Minimum Memory | GPU | Recommended Use |
+|-----------|-------------|------------------|-----|-----------------|
+| **Standalone** | 4 cores | 8GB RAM | 1 GPU | Development, testing |
+| **Cluster** | 16+ cores | 32GB+ RAM | 1+ GPU | Production, large-scale |
+
+**Important**: GPU allocation requires:
+- `nvidia.com/gpu: 1` resource request and limit
+- `nvidia.com/gpu.product` node selector for GPU type
+
+#### Deployment Example: Standalone Mode with GPU
+
+Create a file named `milvus-gpu-standalone.yaml`:
+
+```yaml
+apiVersion: milvus.io/v1beta1
+kind: Milvus
+metadata:
+  name: milvus-gpu
+  namespace: milvus-gpu
+  labels:
+    app: milvus
+    gpu: enabled
+spec:
+  mode: standalone
+
+  components:
+    image: 192.168.129.232/middleware/milvus:v2.6.7-gpu-9b18d4ae
+    version: v2.6.7
+
+    standalone:
+      replicas: 1
+      # Schedule on GPU node
+      nodeSelector:
+        nvidia.com/gpu.product: Tesla-V100-SXM2-16GB
+      resources:
+        requests:
+          cpu: 500m
+          memory: 2Gi
+          nvidia.com/gpu: 1
+        limits:
+          cpu: 4000m
+          memory: 8Gi
+          nvidia.com/gpu: 1
+
+  # Use sc-topolvm storage class
+  dependencies:
+    etcd:
+      inCluster:
+        deletionPolicy: Delete
+        pvcDeletion: true
+        values:
+          persistence:
+            size: 2Gi
+            storageClass: sc-topolvm
+          image:
+            registry: ""
+            repository: 192.168.129.232/middleware/etcd
+            tag: 3.5.25-r1
+
+    storage:
+      inCluster:
+        deletionPolicy: Delete
+        pvcDeletion: true
+        values:
+          persistence:
+            size: 10Gi
+            storageClass: sc-topolvm
+          image:
+            repository: 192.168.129.232/middleware/minio
+            tag: RELEASE.2024-12-18T13-15-44Z
+
+  config: {}
+```
+
+#### Verifying GPU Utilization
+
+After deployment, verify that Milvus is using the GPU:
+
+**1. Check Milvus Logs**: GPU-accelerated operations will appear in logs
+
+```bash
+kubectl logs -n milvus-gpu deployment/milvus-gpu-milvus-standalone -c milvus
+```
+
+**2. Check GPU Resources**: Verify GPU is allocated to the pod
+
+```bash
+kubectl get pod -n milvus-gpu -o jsonpath='{.items[0].spec.containers[0].resources.limits}'
+```
+
+**3. Port-Forward and Test**: Access service locally for testing
+
+```bash
+kubectl port-forward -n milvus-gpu svc/milvus-gpu-milvus 19530:19530 &
+```
+
+**4. Create GPU-Accelerated Index**: Create a collection with GPU index type
+
+```python
+from pymilvus import MilvusClient
+
+client = MilvusClient(uri="http://localhost:19530")
+
+# Create collection with GPU index
+client.create_collection(
+    collection_name="gpu_collection",
+    dimension=768,
+    index_type="GPU_IVF_FLAT",
+    metric_type="L2"
+)
+```
+
+#### GPU Configuration Notes
+
+- **Index Types for GPU**:
+  - `GPU_IVF_FLAT`: Fast search, lower memory usage
+  - `GPU_IVF_PQ`: Balanced performance and accuracy
+  - `GPU_BRUTE_FORCE`: Force GPU brute-force search
+
+- **Query Node GPU Settings**: Adjust cache size based on available GPU memory
+
+#### Common GPU Deployment Issues and Solutions
+
+| Issue | Solution |
+|-------|----------|
+| **Image Pull Errors** | Use internal registry (`192.168.129.232`) instead of Docker Hub |
+| **GPU Device Not Found** | GPU is allocated to pod but not visible to container (expected for GPU Milvus image) |
+| **Pod Stuck in ContainerCreating** | Check image pull progress and storage provisioning |
+| **Slow Initialization** | GPU image is large (4GB+), allow time for image pull |
 
 ### Collection Design
 
