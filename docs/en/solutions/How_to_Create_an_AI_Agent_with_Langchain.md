@@ -15,8 +15,8 @@ Langchain is a framework for developing applications powered by language models.
 
 ## Prerequisites
 
-- Access to a Notebook environment (e.g., Jupyter Notebook, JupyterLab, or similar)
-- Python environment with Langchain dependencies installed
+- A Notebook environment (e.g., Jupyter Notebook, JupyterLab, or similar)
+- Python 3 with pip to install Langchain and other dependencies
 
 ## Quickstart
 
@@ -24,7 +24,7 @@ A simple example of creating an AI Agent with Langchain is available here: [lang
 
 The notebook demonstrates:
 - Environment setup and dependency installation
-- Tool definition using the `@tool` decorator (weather query tool example)
+- Tool definition (choose one): built-in with the `@tool` decorator, or external via MCP using `MultiServerMCPClient` from `langchain-mcp-adapters` (weather example for both)
 - LLM model initialization and configuration
 - Agent creation with tools and system prompts
 - Agent execution and result handling
