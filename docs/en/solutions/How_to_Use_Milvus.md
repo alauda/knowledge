@@ -83,10 +83,6 @@ Before implementing Milvus, ensure you have:
 - Basic understanding of vector embeddings and similarity search concepts
 - Access to your cluster's container image registry (registry addresses vary by cluster)
 
-- ACP v4.2.0 or later
-- Basic understanding of vector embeddings and similarity search concepts
-- Access to your cluster's container image registry (registry addresses vary by cluster)
-
 > **Note**: ACP v4.2.0 and later supports in-cluster MinIO and etcd deployment through the Milvus Operator. External storage (S3-compatible) and external message queue (Kafka) are optional.
 
 ### Storage Requirements
@@ -306,42 +302,59 @@ kind: Milvus
 metadata:
   name: milvus-standalone
   namespace: milvus
+  labels:
+    app: milvus
 spec:
   mode: standalone
   components:
-    image: build-harbor.alauda.cn/middleware/milvus:v2.6.7
-    runAsNonRoot: true  # Enable PodSecurity compliance
+    disableMetric: true
+    standalone:
+      ingress:
+        labels:
+          ingressLabel: value
+        annotations:
+          ingressAnnotation: value
+        hosts:
+          - milvus.milvus.io
+      serviceLabels:
+        myLabel: value
+      serviceAnnotations:
+        myAnnotation: value
 
   dependencies:
     etcd:
       inCluster:
+        deletionPolicy: Delete
+        pvcDeletion: true
         values:
-          image:
-            repository: build-harbor.alauda.cn/middleware/etcd
-            tag: 3.5.25-r1
           replicaCount: 1
-          persistence:
-            size: 5Gi
-
     storage:
-      type: MinIO
       inCluster:
+        deletionPolicy: Delete
+        pvcDeletion: true
         values:
-          image:
-            repository: build-harbor.alauda.cn/middleware/minio
-            tag: RELEASE.2024-12-18T13-15-44Z
           mode: standalone
-          persistence:
-            size: 20Gi
           resources:
             requests:
-              cpu: 100m
-              memory: 128Mi
+              memory: 100Mi
+          persistence:
+            size: 20Gi
+    rocksmq:
+      persistence:
+        enabled: true
+        persistentVolumeClaim:
+          spec:
+            resources:
+              limits:
+                storage: 20Gi
 
   config:
     milvus:
       log:
         level: info
+    component:
+      proxy:
+        timeTickInterval: 150
 ```
 
 > **Important**: The `components.runAsNonRoot: true` setting enables PodSecurity compliance. The operator will automatically apply all required security contexts to the Milvus containers and their dependencies (etcd, MinIO).
@@ -360,66 +373,50 @@ kind: Milvus
 metadata:
   name: milvus-cluster
   namespace: milvus
+  labels:
+    app: milvus
 spec:
   mode: cluster
   components:
-    image: build-harbor.alauda.cn/middleware/milvus:v2.6.7
-    runAsNonRoot: true  # Enable PodSecurity compliance
+    disableMetric: true
+    proxy:
+      serviceLabels:
+        myLabel: value
+      serviceAnnotations:
+        myAnnotation: value
+      ingress:
+        labels:
+          ingressLabel: value
+        annotations:
+          ingressAnnotation: value
+        hosts:
+          - milvus.milvus.io
 
   dependencies:
     # Enable Woodpecker as message queue (recommended for cluster mode)
     msgStreamType: woodpecker
-
-    # Use in-cluster etcd
     etcd:
       inCluster:
+        deletionPolicy: Delete
+        pvcDeletion: true
         values:
-          image:
-            repository: build-harbor.alauda.cn/middleware/etcd
-            tag: 3.5.25-r1
-          replicaCount: 3
-          persistence:
-            size: 10Gi
-          resources:
-            requests:
-              cpu: 250m
-              memory: 256Mi
-            limits:
-              cpu: 1000m
-              memory: 1Gi
-
-    # Use in-cluster MinIO for production
+          replicaCount: 1
     storage:
-      type: MinIO
       inCluster:
+        deletionPolicy: Delete
+        pvcDeletion: true
         values:
-          image:
-            repository: build-harbor.alauda.cn/middleware/minio
-            tag: RELEASE.2024-12-18T13-15-44Z
           mode: standalone
           persistence:
-            size: 100Gi
-          resources:
-            requests:
-              cpu: 250m
-              memory: 256Mi
-            limits:
-              cpu: 1000m
-              memory: 1Gi
+            size: 20Gi
 
   config:
     milvus:
       log:
         level: info
-
-  # Resource allocation for production
-  resources:
-    requests:
-      cpu: "4"
-      memory: "8Gi"
-    limits:
-      cpu: "8"
-      memory: "16Gi"
+    component:
+      proxy:
+        timeTickInterval: 150
 ```
 
 > **Note**: Woodpecker is set with `msgStreamType: woodpecker`. Woodpecker uses the same MinIO storage for its WAL, providing a simpler deployment without external message queue services.
@@ -1107,9 +1104,9 @@ This image includes:
 - `nvidia.com/gpu: 1` resource request and limit
 - `nvidia.com/gpu.product` node selector for GPU type
 
-#### Deployment Example: Standalone Mode with GPU
+#### Deployment Example: Cluster Mode with GPU
 
-Create a file named `milvus-gpu-standalone.yaml`:
+Create a file named `milvus-gpu-cluster.yaml`:
 
 ```yaml
 apiVersion: milvus.io/v1beta1
@@ -1119,58 +1116,60 @@ metadata:
   namespace: milvus-gpu
   labels:
     app: milvus
-    gpu: enabled
 spec:
-  mode: standalone
-
+  mode: cluster
   components:
-    image: 192.168.129.232/middleware/milvus:v2.6.7-gpu-9b18d4ae
-    version: v2.6.7
-
-    standalone:
+    disableMetric: true
+    indexNode:
       replicas: 1
-      # Schedule on GPU node
-      nodeSelector:
-        nvidia.com/gpu.product: Tesla-V100-SXM2-16GB
       resources:
-        requests:
-          cpu: 500m
-          memory: 2Gi
-          nvidia.com/gpu: 1
         limits:
-          cpu: 4000m
-          memory: 8Gi
-          nvidia.com/gpu: 1
+          nvidia.com/gpu: "1"
+    queryNode:
+      replicas: 1
+      resources:
+        limits:
+          nvidia.com/gpu: "1"
+    proxy:
+      serviceLabels:
+        myLabel: value
+      serviceAnnotations:
+        myAnnotation: value
+      ingress:
+        labels:
+          ingressLabel: value
+        annotations:
+          ingressAnnotation: value
+        hosts:
+          - milvus.milvus.io
 
-  # Use sc-topolvm storage class
   dependencies:
+    msgStreamType: woodpecker
     etcd:
       inCluster:
         deletionPolicy: Delete
         pvcDeletion: true
         values:
-          persistence:
-            size: 2Gi
-            storageClass: sc-topolvm
-          image:
-            registry: ""
-            repository: 192.168.129.232/middleware/etcd
-            tag: 3.5.25-r1
-
+          replicaCount: 1
     storage:
       inCluster:
         deletionPolicy: Delete
         pvcDeletion: true
         values:
+          mode: standalone
           persistence:
-            size: 10Gi
-            storageClass: sc-topolvm
-          image:
-            repository: 192.168.129.232/middleware/minio
-            tag: RELEASE.2024-12-18T13-15-44Z
+            size: 20Gi
 
-  config: {}
+  config:
+    milvus:
+      log:
+        level: info
+    component:
+      proxy:
+        timeTickInterval: 150
 ```
+
+> **Note**: This example allocates 1 GPU to both indexNode and queryNode. Adjust the `nvidia.com/gpu` resource limit based on your GPU node capacity and workload requirements.
 
 #### Verifying GPU Utilization
 
