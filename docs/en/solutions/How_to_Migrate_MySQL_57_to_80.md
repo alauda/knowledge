@@ -1546,7 +1546,7 @@ Save this script as `01-migrate-all.sh`:
 #
 #=============================================================================
 
-set -e # Exit on error
+set -eo pipefail # Exit on error, and catch pipe failures
 
 #=============================================================================
 # CONFIGURATION - EDIT THESE VALUES
@@ -1688,6 +1688,9 @@ migrate_databases() {
             kubectl exec -i ${TARGET_NAME}-0 -n ${TARGET_NAMESPACE} -c mysql -- \
                 mysql -uroot -p${TARGET_MYSQL_PASSWORD} --init-command="SET FOREIGN_KEY_CHECKS=0;" 2>&1 | grep -v "Using a password" || true
 
+        # Note: We rely on the DB_EXISTS check below to verify actual import success,
+        # as grep -v returns 1 when no match is found (not an actual error)
+
         # Verify migration succeeded by checking if database exists on target
         DB_EXISTS=$(kubectl exec ${TARGET_NAME}-0 -n ${TARGET_NAMESPACE} -c mysql -- \
             mysql -uroot -p${TARGET_MYSQL_PASSWORD} -N -e "
@@ -1739,6 +1742,9 @@ migrate_users() {
         kubectl exec -i ${TARGET_NAME}-0 -n ${TARGET_NAMESPACE} -c mysql -- \
             mysql -uroot -p${TARGET_MYSQL_PASSWORD} 2>&1 | grep -v "Using a password" || true
 
+    # Note: We rely on the USER_COUNT_AFTER check below to verify actual success,
+    # as grep -v returns 1 when no match is found (not an actual error)
+
     # Verify user creation
     USER_COUNT_AFTER=$(kubectl exec ${TARGET_NAME}-0 -n ${TARGET_NAMESPACE} -c mysql -- \
         mysql -uroot -p${TARGET_MYSQL_PASSWORD} -N -e "
@@ -1767,12 +1773,14 @@ migrate_users() {
     done |
         kubectl exec -i ${TARGET_NAME}-0 -n ${TARGET_NAMESPACE} -c mysql -- \
             mysql -uroot -p${TARGET_MYSQL_PASSWORD} 2>&1 | grep -v "Using a password" || true
+    # Note: grep -v returns 1 when no match is found (not an actual error)
 
     print_success "Privileges granted"
 
     # Flush privileges
     kubectl exec ${TARGET_NAME}-0 -n ${TARGET_NAMESPACE} -c mysql -- \
         mysql -uroot -p${TARGET_MYSQL_PASSWORD} -e "FLUSH PRIVILEGES;" 2>&1 | grep -v "Using a password" >/dev/null || true
+    # Note: grep -v returns 1 when no match is found (not an actual error)
 
     print_section "Verifying migrated users"
 
@@ -2255,7 +2263,7 @@ verify_users() {
             AND user NOT LIKE 'mysql_router%';
         " 2>/dev/null | grep -v "Warning")
 
-    check_count "${SOURCE_USERS}" "${TARGET_USERS}" "User accounts" || true
+    check_count "${SOURCE_USERS}" "${TARGET_USERS}" "User accounts"
 
     # Show migrated users
     if [ "${TARGET_USERS}" -gt 0 ]; then
@@ -2390,8 +2398,8 @@ Before using this guide in production, ensure you have:
 
 - [ ] Reviewed the [Getting Started](#getting-started) section to understand your environment
 - [ ] Tested the migration procedure in a non-production environment
-- [ ] Completed [Schema Compatibility Analysis](#schema-compatibility-analysis) and fixed all issues
-- [ ] Completed [Character Set Migration](#character-set-and-collation-analysis) if using legacy charsets
+- [ ] Completed [Schema Compatibility Analysis](#step-1-schema-compatibility-analysis) and fixed all issues
+- [ ] Completed [Character Set Migration](#step-2-character-set-and-collation-analysis) if using legacy charsets
 - [ ] Scheduled adequate maintenance window based on database size
 - [ ] Communicated with all stakeholders (application teams, DBAs, SREs)
 - [ ] Prepared rollback plan (see [Disaster Recovery](#disaster-recovery))
