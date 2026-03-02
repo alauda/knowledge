@@ -19,7 +19,7 @@ MySQL 5.7 reached End of Life (EOL) in October 2023, and organizations must upgr
 
 This guide provides comprehensive, verified instructions for migrating MySQL 5.7 to 8.0 on Alauda Container Platform (ACP). The solution employs a mysqldump-based migration strategy with comprehensive validation:
 
-- **Proven Approach**: Validated in ACP 4.2.0 using Alauda Database Service for MySQL v4.2.0.
+- **Proven Approach**: Validated on Alauda Container Platform (ACP v4.0+) using Alauda Database Service for MySQL (see [Environment Information](#environment-information) for details).
 - **Complete Object Coverage**: Migrates all standard MySQL objects (tables, views, routines, triggers, events, users, grants).
 - **Schema Compatibility**: Automated checks and fixes for MySQL 8.0 compatibility issues.
 - **Comprehensive Verification**: Verification across 9 object categories, including view execution testing.
@@ -27,7 +27,8 @@ This guide provides comprehensive, verified instructions for migrating MySQL 5.7
 
 ## Environment Information
 
-Applicable Versions: ACP >= 4.2.0, MySQL Operator >= 4.2.0
+**Applicable Versions**: ACP v4.0 or later, MySQL Operator (Alauda Database Service for MySQL) v4.0 or later
+**Tested On**: ACP v4.2.0 with MySQL Operator v4.2.0
 Source: Percona XtraDB Cluster (PXC) 5.7.44
 Target: MySQL Group Replication (MGR) 8.0.44
 
@@ -83,9 +84,11 @@ This migration solution has been **verified** in Kubernetes environments using P
 
 Before performing MySQL migration, ensure you have:
 
-- ACP v4.2.0 or later with MySQL Operator v4.2.0 or later
+- ACP v4.0 or later with MySQL Operator v4.0 or later (see [Environment Information](#environment-information) for tested versions)
 - MySQL plugin deployed following the [installation guide](https://docs.alauda.io/mysql-mgr/4.2/installation.html)
 - Review the [Alauda MySQL MGR Documentation](https://docs.alauda.io/mysql-mgr/4.2/functions/01-create.html) to understand instance creation
+
+> **Note on documentation links**: The links above point to the Alauda MySQL MGR documentation for v4.2. If you are running a newer MySQL Operator version, replace `4.2` in the URL path with your installed version (e.g., `4.3`, `5.0`).
 - **Source Cluster Requirements**:
   - A healthy MySQL 5.7.44 PXC cluster
   - GTID mode enabled (`@@gtid_mode = ON`, `@@enforce_gtid_consistency = ON`)
@@ -291,7 +294,7 @@ Create the target MySQL 8.0 instance **shortly before** the data migration phase
 
 **Using Web Console:**
 
-Refer to the [Create MySQL Instance documentation](https://docs.alauda.io/mysql-mgr/4.2/functions/01-create.html) for detailed instructions. Key configuration points:
+Refer to the [Create MySQL Instance documentation](https://docs.alauda.io/mysql-mgr/4.2/functions/01-create.html) for detailed instructions (replace `4.2` in the URL with your MySQL Operator version if needed). Key configuration points:
 
 1. Select version **8.0**
 2. Configure resources (recommend **+10-20% memory** over source cluster due to MySQL 8.0 overhead)
@@ -362,7 +365,7 @@ spec:
         level: info
   upgradeOption:
     autoUpgrade: false
-    crVersion: 4.2.0
+    crVersion: 4.2.0  # Set to your installed MySQL Operator version
   version: "8.0"
 EOF
 ```
@@ -372,6 +375,7 @@ EOF
 - `members: 1` for single-node (increase to 3 for HA)
 - `storageClassName` must match your cluster's available StorageClass
 - `strictSecurityModeEnabled: true` is required for most ACP environments
+- `upgradeOption.crVersion` must match your installed MySQL Operator version; update `4.2.0` to your actual version (check via `kubectl get mysql -A` or the ACP web console)
 
 **Verify target cluster:**
 
@@ -805,7 +809,7 @@ After migration, verify:
 
 ### Useful Links
 
-- [Alauda MySQL MGR Documentation](https://docs.alauda.io/mysql-mgr/4.2/functions/01-create.html)
+- [Alauda MySQL MGR Documentation](https://docs.alauda.io/mysql-mgr/4.2/functions/01-create.html) — replace `4.2` in the URL path with your MySQL Operator version if needed
 - [MySQL 8.0 Release Notes](https://dev.mysql.com/doc/refman/8.0/en/mysql-nutshell.html)
 - [MySQL 8.0 Upgrade Guide](https://dev.mysql.com/doc/refman/8.0/en/upgrade-prerequisites.html)
 
@@ -1177,7 +1181,7 @@ All scripts include:
 - **MySQL Guide Version**: v2.5+
 - **Source**: PXC 5.7.44
 - **Target**: MGR 8.0.44
-- **Kubernetes**: Tested on Alauda Container Platform 4.2+
+- **Kubernetes**: Tested on Alauda Container Platform v4.2.0 (compatible with v4.0+)
 - **Shell**: Bash 4.0+
 
 ### Script Source Code
