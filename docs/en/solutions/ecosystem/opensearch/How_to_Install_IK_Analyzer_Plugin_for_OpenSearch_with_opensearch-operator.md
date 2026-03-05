@@ -74,6 +74,11 @@ spec:
     - component: masters
       replicas: 3
       diskSize: "30Gi"
+      persistence:
+        pvc:
+          storageClass: "<your-storage-class>"
+          accessModes:
+            - ReadWriteOnce
       roles:
         - "cluster_manager"
         - "data"
@@ -126,6 +131,11 @@ spec:
     - component: masters
       replicas: 3
       diskSize: "30Gi"
+      persistence:
+        pvc:
+          storageClass: "<your-storage-class>"
+          accessModes:
+            - ReadWriteOnce
       roles:
         - "cluster_manager"
         - "data"
@@ -181,7 +191,7 @@ curl -k -u admin:admin -X POST "https://localhost:9200/_analyze" \
   -H "Content-Type: application/json" \
   -d '{
     "analyzer": "ik_max_word",
-    "text": "中华人民共和国"
+    "text": "自然语言处理技术在人工智能领域的应用越来越广泛"
   }'
 ```
 
@@ -190,15 +200,22 @@ Expected output:
 ```json
 {
   "tokens": [
-    { "token": "中华人民共和国", "start_offset": 0, "end_offset": 7, "type": "CN_WORD", "position": 0 },
-    { "token": "中华人民",     "start_offset": 0, "end_offset": 4, "type": "CN_WORD", "position": 1 },
-    { "token": "中华",         "start_offset": 0, "end_offset": 2, "type": "CN_WORD", "position": 2 },
-    { "token": "华人",         "start_offset": 1, "end_offset": 3, "type": "CN_WORD", "position": 3 },
-    { "token": "人民共和国",   "start_offset": 2, "end_offset": 7, "type": "CN_WORD", "position": 4 },
-    { "token": "人民",         "start_offset": 2, "end_offset": 4, "type": "CN_WORD", "position": 5 },
-    { "token": "共和国",       "start_offset": 4, "end_offset": 7, "type": "CN_WORD", "position": 6 },
-    { "token": "共和",         "start_offset": 4, "end_offset": 6, "type": "CN_WORD", "position": 7 },
-    { "token": "国",           "start_offset": 6, "end_offset": 7, "type": "CN_WORD", "position": 8 }
+    { "token": "自然语言",   "start_offset": 0,  "end_offset": 4,  "type": "CN_WORD", "position": 0 },
+    { "token": "自然",       "start_offset": 0,  "end_offset": 2,  "type": "CN_WORD", "position": 1 },
+    { "token": "语言",       "start_offset": 2,  "end_offset": 4,  "type": "CN_WORD", "position": 2 },
+    { "token": "处理",       "start_offset": 4,  "end_offset": 6,  "type": "CN_WORD", "position": 3 },
+    { "token": "技术",       "start_offset": 6,  "end_offset": 8,  "type": "CN_WORD", "position": 4 },
+    { "token": "在",         "start_offset": 8,  "end_offset": 9,  "type": "CN_CHAR", "position": 5 },
+    { "token": "人工智能",   "start_offset": 9,  "end_offset": 13, "type": "CN_WORD", "position": 6 },
+    { "token": "人工",       "start_offset": 9,  "end_offset": 11, "type": "CN_WORD", "position": 7 },
+    { "token": "智能",       "start_offset": 11, "end_offset": 13, "type": "CN_WORD", "position": 8 },
+    { "token": "领域",       "start_offset": 13, "end_offset": 15, "type": "CN_WORD", "position": 9 },
+    { "token": "的",         "start_offset": 15, "end_offset": 16, "type": "CN_CHAR", "position": 10 },
+    { "token": "应用",       "start_offset": 16, "end_offset": 18, "type": "CN_WORD", "position": 11 },
+    { "token": "越来越",     "start_offset": 18, "end_offset": 21, "type": "CN_WORD", "position": 12 },
+    { "token": "越来",       "start_offset": 18, "end_offset": 20, "type": "CN_WORD", "position": 13 },
+    { "token": "越",         "start_offset": 20, "end_offset": 21, "type": "CN_CHAR", "position": 14 },
+    { "token": "广泛",       "start_offset": 21, "end_offset": 23, "type": "CN_WORD", "position": 15 }
   ]
 }
 ```
@@ -211,7 +228,7 @@ curl -k -u admin:admin -X POST "https://localhost:9200/_analyze" \
   -H "Content-Type: application/json" \
   -d '{
     "analyzer": "ik_smart",
-    "text": "中华人民共和国"
+    "text": "自然语言处理技术在人工智能领域的应用越来越广泛"
   }'
 ```
 
@@ -220,7 +237,16 @@ Expected output:
 ```json
 {
   "tokens": [
-    { "token": "中华人民共和国", "start_offset": 0, "end_offset": 7, "type": "CN_WORD", "position": 0 }
+    { "token": "自然语言", "start_offset": 0,  "end_offset": 4,  "type": "CN_WORD", "position": 0 },
+    { "token": "处理",   "start_offset": 4,  "end_offset": 6,  "type": "CN_WORD", "position": 1 },
+    { "token": "技术",   "start_offset": 6,  "end_offset": 8,  "type": "CN_WORD", "position": 2 },
+    { "token": "在",     "start_offset": 8,  "end_offset": 9,  "type": "CN_CHAR", "position": 3 },
+    { "token": "人工智能", "start_offset": 9,  "end_offset": 13, "type": "CN_WORD", "position": 4 },
+    { "token": "领域",   "start_offset": 13, "end_offset": 15, "type": "CN_WORD", "position": 5 },
+    { "token": "的",     "start_offset": 15, "end_offset": 16, "type": "CN_CHAR", "position": 6 },
+    { "token": "应用",   "start_offset": 16, "end_offset": 18, "type": "CN_WORD", "position": 7 },
+    { "token": "越来越", "start_offset": 18, "end_offset": 21, "type": "CN_WORD", "position": 8 },
+    { "token": "广泛",   "start_offset": 21, "end_offset": 23, "type": "CN_WORD", "position": 9 }
   ]
 }
 ```
