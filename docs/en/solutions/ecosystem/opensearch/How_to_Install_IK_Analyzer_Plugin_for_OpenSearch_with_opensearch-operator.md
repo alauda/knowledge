@@ -220,7 +220,7 @@ Expected output:
 }
 ```
 
-**Test `ik_smart` tokenizer** (coarse-grained, splits into the fewest tokens):
+**Test `ik_smart` analyzer** (coarse-grained, splits into the fewest tokens):
 
 ```bash
 # The operator generates a self-signed cert; -k skips local certificate validation
