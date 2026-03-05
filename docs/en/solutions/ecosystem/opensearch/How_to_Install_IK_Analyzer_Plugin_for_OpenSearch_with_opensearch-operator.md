@@ -183,7 +183,7 @@ Port-forward the OpenSearch service and run a quick tokenization test:
 kubectl -n <namespace> port-forward svc/my-cluster 9200
 ```
 
-**Test `ik_max_word` tokenizer** (maximum granularity, splits text into all possible tokens):
+**Test `ik_max_word` analyzer** (maximum granularity, splits text into all possible tokens):
 
 ```bash
 # The operator generates a self-signed cert; -k skips local certificate validation
