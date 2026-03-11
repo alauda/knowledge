@@ -5,6 +5,7 @@ products:
   - Alauda Application Services
 ProductsVersion:
    - 4.x
+id: KB260300002
 ---
 
 # MySQL 5.7 to 8.0 Migration Guide
