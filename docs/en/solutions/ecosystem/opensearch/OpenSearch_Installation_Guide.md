@@ -3,6 +3,7 @@ products:
   - Alauda Application Services
 kind:
   - Solution
+id: KB260300008
 ---
 
 # OpenSearch Installation Guide
