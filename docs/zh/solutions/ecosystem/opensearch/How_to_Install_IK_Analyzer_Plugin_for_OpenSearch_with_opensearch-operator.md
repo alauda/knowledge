@@ -4,49 +4,50 @@ products:
 kind:
   - Solution
 id: KB260300007
+sourceSHA: 8bfec3a48d73d7884a6d20fc02b0bddcb6d518c0832190dfe4f7f490e3e9df53
 ---
 
-# How to Install the IK Analyzer Plugin for OpenSearch Using opensearch-operator
+# 如何使用 opensearch-operator 安装 IK Analyzer 插件
 
 :::info
-Applicable Version: OpenSearch Operator ~= 2.8.x, OpenSearch ~= 2.19.3 / 3.3.1
+适用版本：OpenSearch Operator \~= 2.8.x, OpenSearch \~= 2.19.3 / 3.3.1
 :::
 
-This document explains how to deploy an OpenSearch cluster with the [IK Analyzer](https://github.com/infinilabs/analysis-ik) plugin pre-installed using the opensearch-operator. The IK Analyzer is the most widely used Chinese text analysis plugin for OpenSearch/Elasticsearch, providing smart and maximum-granularity tokenization for Chinese text.
+本文档解释了如何使用 opensearch-operator 部署一个预安装 [IK Analyzer](https://github.com/infinilabs/analysis-ik) 插件的 OpenSearch 集群。IK Analyzer 是 OpenSearch/Elasticsearch 中使用最广泛的中文文本分析插件，提供智能和最大粒度的中文文本分词功能。
 
-## How Plugin Installation Works
+## 插件安装工作原理
 
-The opensearch-operator installs plugins by passing each entry in `pluginsList` to the `opensearch-plugin install` command during node startup. You need to configure `pluginsList` in two places:
+opensearch-operator 通过在节点启动时将 `pluginsList` 中的每个条目传递给 `opensearch-plugin install` 命令来安装插件。您需要在两个地方配置 `pluginsList`：
 
-| Field | Purpose |
-| :--- | :--- |
-| `spec.general.pluginsList` | Installs the plugin on all OpenSearch data/master nodes |
-| `spec.bootstrap.pluginsList` | Installs the plugin on the bootstrap pod used for initial cluster formation |
+| 字段                        | 目的                                                                     |
+| :--------------------------- | :-------------------------------------------------------------------------- |
+| `spec.general.pluginsList`   | 在所有 OpenSearch 数据/主节点上安装插件                                   |
+| `spec.bootstrap.pluginsList` | 在用于初始集群形成的引导 Pod 上安装插件                                   |
 
-Both must be configured. If the bootstrap pod is missing the plugin while `additionalConfig` references it, cluster initialization may fail.
+这两个字段都必须配置。如果引导 Pod 缺少插件，而 `additionalConfig` 引用它，则集群初始化可能会失败。
 
 :::note
-Adding or modifying `pluginsList` on a running cluster will trigger a **rolling restart** of all nodes to install the new plugin.
+在运行中的集群上添加或修改 `pluginsList` 将触发所有节点的 **滚动重启** 以安装新插件。
 :::
 
-## IK Analyzer Plugin Download URLs
+## IK Analyzer 插件下载 URL
 
-| OpenSearch Version | Plugin Download URL |
-| :--- | :--- |
-| **2.19.3** | `https://release.infinilabs.com/analysis-ik/stable/opensearch-analysis-ik-2.19.3.zip` |
-| **3.3.1** | `https://release.infinilabs.com/analysis-ik/stable/opensearch-analysis-ik-3.3.1.zip` |
+| OpenSearch 版本 | 插件下载 URL                                                                   |
+| :----------------- | :------------------------------------------------------------------------------------ |
+| **2.19.3**         | `https://release.infinilabs.com/analysis-ik/stable/opensearch-analysis-ik-2.19.3.zip` |
+| **3.3.1**          | `https://release.infinilabs.com/analysis-ik/stable/opensearch-analysis-ik-3.3.1.zip`  |
 
 :::note
-Before applying, verify that the plugin URL for your OpenSearch version is available. Check the [Infinilabs releases page](https://github.com/infinilabs/analysis-ik/releases) to confirm the file exists. If the URL returns a 404, the cluster will fail to start.
+在应用之前，请验证您的 OpenSearch 版本的插件 URL 是否可用。请检查 [Infinilabs 发布页面](https://github.com/infinilabs/analysis-ik/releases) 确认文件存在。如果 URL 返回 404，集群将无法启动。
 :::
 
 :::warning Air-Gapped Environments
-If your Kubernetes cluster does not have external network access, download the plugin zip files first and host them on an internal HTTP server (e.g., Nexus, Artifactory, or Nginx). Then replace the download URLs in the configurations below with your internal accessible URLs.
+如果您的 Kubernetes 集群没有外部网络访问，请先下载插件 zip 文件并将其托管在内部 HTTP 服务器上（例如 Nexus、Artifactory 或 Nginx）。然后用您内部可访问的 URL 替换下面配置中的下载 URL。
 :::
 
-## Deploy OpenSearch with IK Analyzer
+## 使用 IK Analyzer 部署 OpenSearch
 
-### For OpenSearch 2.19.3
+### 对于 OpenSearch 2.19.3
 
 ```yaml
 apiVersion: opensearch.opster.io/v1
@@ -103,7 +104,7 @@ spec:
         cpu: "200m"
 ```
 
-### For OpenSearch 3.3.1
+### 对于 OpenSearch 3.3.1
 
 ```yaml
 apiVersion: opensearch.opster.io/v1
@@ -149,7 +150,7 @@ spec:
           cpu: "500m"
   dashboards:
     enable: true
-    version: 3.3.0  # Dashboards 3.3.0 is the latest release compatible with OpenSearch 3.3.1
+    version: 3.3.0  # Dashboards 3.3.0 是与 OpenSearch 3.3.1 兼容的最新版本
     replicas: 1
     resources:
       requests:
@@ -160,34 +161,34 @@ spec:
         cpu: "200m"
 ```
 
-Apply the configuration:
+应用配置：
 
 ```bash
 kubectl apply -f cluster.yaml
 ```
 
-## Verify the Plugin is Installed
+## 验证插件是否已安装
 
-After the cluster is running, verify the IK plugin is installed on a node:
+集群运行后，验证 IK 插件是否已安装在节点上：
 
 ```bash
 kubectl -n <namespace> exec my-cluster-masters-0 -- bin/opensearch-plugin list
 ```
 
-The output should include `analysis-ik`.
+输出应包括 `analysis-ik`。
 
-## Test IK Analyzer
+## 测试 IK Analyzer
 
-Port-forward the OpenSearch service and run a quick tokenization test:
+端口转发 OpenSearch 服务并运行快速分词测试：
 
 ```bash
 kubectl -n <namespace> port-forward svc/my-cluster 9200
 ```
 
-**Test `ik_max_word` analyzer** (maximum granularity, splits text into all possible tokens):
+**测试 `ik_max_word` 分析器**（最大粒度，将文本拆分为所有可能的令牌）：
 
 ```bash
-# The operator generates a self-signed cert; -k skips local certificate validation
+# 操作符生成自签名证书； -k 跳过本地证书验证
 curl -k -u admin:admin -X POST "https://localhost:9200/_analyze" \
   -H "Content-Type: application/json" \
   -d '{
@@ -196,7 +197,7 @@ curl -k -u admin:admin -X POST "https://localhost:9200/_analyze" \
   }'
 ```
 
-Expected output:
+预期输出：
 
 ```json
 {
@@ -221,10 +222,10 @@ Expected output:
 }
 ```
 
-**Test `ik_smart` analyzer** (coarse-grained, splits into the fewest tokens):
+**测试 `ik_smart` 分析器**（粗粒度，将文本拆分为最少的令牌）：
 
 ```bash
-# The operator generates a self-signed cert; -k skips local certificate validation
+# 操作符生成自签名证书； -k 跳过本地证书验证
 curl -k -u admin:admin -X POST "https://localhost:9200/_analyze" \
   -H "Content-Type: application/json" \
   -d '{
@@ -233,7 +234,7 @@ curl -k -u admin:admin -X POST "https://localhost:9200/_analyze" \
   }'
 ```
 
-Expected output:
+预期输出：
 
 ```json
 {
@@ -252,9 +253,9 @@ Expected output:
 }
 ```
 
-## Use IK Analyzer in an Index Mapping
+## 在索引映射中使用 IK Analyzer
 
-When creating an index, specify `ik_max_word` or `ik_smart` as the analyzer for Chinese text fields:
+创建索引时，为中文文本字段指定 `ik_max_word` 或 `ik_smart` 作为分析器：
 
 ```bash
 curl -k -u admin:admin -X PUT "https://localhost:9200/my-index" \
@@ -290,34 +291,34 @@ curl -k -u admin:admin -X PUT "https://localhost:9200/my-index" \
 ```
 
 :::note
-Using `ik_max_word` for indexing and `ik_smart` for search is a common pattern: it maximizes recall at index time while keeping search queries precise.
+使用 `ik_max_word` 进行索引，使用 `ik_smart` 进行搜索是一种常见模式：它在索引时最大化召回，同时保持搜索查询的精确性。
 :::
 
-## (Optional) Mount a Custom Dictionary
+## （可选）挂载自定义词典
 
-The IK Analyzer supports custom word dictionaries and stop-word lists via `IKAnalyzer.cfg.xml`. To mount a custom dictionary into the cluster, use `additionalVolumes` with a ConfigMap.
+IK Analyzer 支持通过 `IKAnalyzer.cfg.xml` 自定义词典和停用词列表。要将自定义词典挂载到集群中，请使用 `additionalVolumes` 和 ConfigMap。
 
-### Step 1: Create the ConfigMap
+### 第 1 步：创建 ConfigMap
 
-Prepare your custom dictionary files and create a ConfigMap. The following example adds a custom word list:
+准备您的自定义词典文件并创建 ConfigMap。以下示例添加了一个自定义词表：
 
 ```bash
-# custom_dict.dic — one word per line
+# custom_dict.dic — 每行一个词
 cat > custom_dict.dic << 'EOF'
 云原生
 容器编排
 服务网格
 EOF
 
-# IKAnalyzer.cfg.xml — reference the custom dictionary
+# IKAnalyzer.cfg.xml — 引用自定义词典
 cat > IKAnalyzer.cfg.xml << 'EOF'
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE properties SYSTEM "http://java.sun.com/dtd/properties.dtd">
 <properties>
-  <comment>IK Analyzer Extended Configuration</comment>
-  <!-- Custom extended dictionary; separate multiple files with ; -->
+  <comment>IK Analyzer 扩展配置</comment>
+  <!-- 自定义扩展词典；多个文件用 ; 分隔 -->
   <entry key="ext_dict">custom_dict.dic</entry>
-  <!-- Custom stop-word dictionary; separate multiple files with ; -->
+  <!-- 自定义停用词词典；多个文件用 ; 分隔 -->
   <entry key="ext_stopwords"></entry>
 </properties>
 EOF
@@ -327,9 +328,9 @@ kubectl -n <namespace> create configmap ik-custom-dict \
   --from-file=IKAnalyzer.cfg.xml
 ```
 
-### Step 2: Mount the ConfigMap via additionalVolumes
+### 第 2 步：通过 additionalVolumes 挂载 ConfigMap
 
-Add the `additionalVolumes` section to `spec.general` in your `OpenSearchCluster` CR:
+在您的 `OpenSearchCluster` CR 的 `spec.general` 中添加 `additionalVolumes` 部分：
 
 ```yaml
 spec:
@@ -339,15 +340,15 @@ spec:
     additionalVolumes:
       - name: ik-custom-dict
         path: /usr/share/opensearch/plugins/analysis-ik/config
-        restartPods: true  # Restart pods when ConfigMap content changes
+        restartPods: true  # 当 ConfigMap 内容更改时重启 Pods
         configMap:
           name: ik-custom-dict
 ```
 
-After applying, pods will restart and pick up the new dictionary. Verify by running an `_analyze` request with your custom terms.
+应用后，Pods 将重启并获取新词典。通过使用您的自定义术语运行 `_analyze` 请求来验证。
 
-## References
+## 参考
 
-- [opensearch-operator: Adding Plugins](https://github.com/opensearch-project/opensearch-k8s-operator/blob/v2.8.0/docs/userguide/main.md#adding-plugins)
-- [opensearch-operator: Additional Volumes](https://github.com/opensearch-project/opensearch-k8s-operator/blob/v2.8.0/docs/userguide/main.md#additional-volumes)
+- [opensearch-operator: 添加插件](https://github.com/opensearch-project/opensearch-k8s-operator/blob/v2.8.0/docs/userguide/main.md#adding-plugins)
+- [opensearch-operator: 附加卷](https://github.com/opensearch-project/opensearch-k8s-operator/blob/v2.8.0/docs/userguide/main.md#additional-volumes)
 - [IK Analyzer for OpenSearch (Infinilabs)](https://github.com/infinilabs/analysis-ik)
