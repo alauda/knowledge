@@ -69,7 +69,7 @@ export USERNAME=''
 export PASSWORD=''
 export CLUSTER_NAME=''
 
-violet push cilium-v4.2.17.tgz --platform-address "$PLATFORM_URL" --platform-username "$USERNAME" --platform-password "$PASSWORD" --clusters "CLUSTER_NAME"
+violet push cilium-v4.2.17.tgz --platform-address "$PLATFORM_URL" --platform-username "$USERNAME" --platform-password "$PASSWORD" --clusters "$CLUSTER_NAME"
 ```
 
 3. 在安装 Cilium 的业务集群临时配置 RBAC（因为集群部署成功前这个 RBAC 权限还没配置，所以需要临时配置）：
@@ -258,7 +258,7 @@ kubectl get svc -A
 
 预期输出示例：
 
-```
+```text
 NAMESPACE      NAME                      TYPE           CLUSTER-IP     EXTERNAL-IP       PORT(S)                     AGE
 cilium-123-1   test                      LoadBalancer   10.4.98.81     192.168.132.192   80:31447/TCP                35s
 ```
@@ -271,7 +271,7 @@ kubectl get leases -A | grep cilium
 
 预期输出示例：
 
-```
+```text
 cpaas-system      cilium-l2announce-cilium-123-1-test       192.168.141.196                                                                 24s
 ```
 

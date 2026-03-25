@@ -70,7 +70,7 @@ export USERNAME=''
 export PASSWORD=''
 export CLUSTER_NAME=''
 
-violet push cilium-v4.2.17.tgz --platform-address "$PLATFORM_URL" --platform-username "$USERNAME" --platform-password "$PASSWORD" --clusters "CLUSTER_NAME"
+violet push cilium-v4.2.17.tgz --platform-address "$PLATFORM_URL" --platform-username "$USERNAME" --platform-password "$PASSWORD" --clusters "$CLUSTER_NAME"
 ```
 
 3. Create temporary RBAC configuration on the business cluster where Cilium will be installed (this RBAC permission is not configured before the cluster is successfully deployed):
@@ -205,7 +205,6 @@ spec:
         hostPath:
           path: /run/xtables.lock
           type: FileOrCreate
-EOF
 ```
 
 Save as `kube-proxy-cleanup.yaml` and apply:
@@ -260,7 +259,7 @@ kubectl get svc -A
 
 Expected output example:
 
-```
+```text
 NAMESPACE      NAME                      TYPE           CLUSTER-IP     EXTERNAL-IP       PORT(S)                     AGE
 cilium-123-1   test                      LoadBalancer   10.4.98.81     192.168.132.192   80:31447/TCP                35s
 ```
@@ -273,7 +272,7 @@ kubectl get leases -A | grep cilium
 
 Expected output example:
 
-```
+```text
 cpaas-system      cilium-l2announce-cilium-123-1-test       192.168.141.196                                                                 24s
 ```
 
