@@ -26,7 +26,6 @@ This document describes how to deploy Cilium CNI in a ACP 4.2+ cluster and lever
 > Supported operating systems:
 > - Ubuntu 22.04
 > - RHEL 8.x
-> - Kylin V10-SP3
 > - openEuler 22.03
 
 ### Node Port Requirements
@@ -171,7 +170,7 @@ spec:
       - operator: Exists
       containers:
       - name: kube-proxy-cleanup
-        image: registry.alauda.cn:60070/tkestack/kube-proxy:v1.33.5      ## Replace with the kube-proxy image from Step 1
+        image: registry.alauda.cn:60070/tkestack/kube-proxy:<KUBERNETES_VERSION>      ## Replace with the kube-proxy image obtained from Step 1
         imagePullPolicy: IfNotPresent
         command:
         - /bin/sh
