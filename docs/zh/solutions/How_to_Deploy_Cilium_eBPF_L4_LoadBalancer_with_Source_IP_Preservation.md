@@ -26,7 +26,6 @@ sourceSHA: pending
 > 支持的操作系统：
 > - Ubuntu 22.04
 > - RHEL 8.x
-> - 麒麟 V10-SP3
 > - openEuler 22.03
 
 ### 节点端口要求
@@ -170,7 +169,7 @@ spec:
       - operator: Exists
       containers:
       - name: kube-proxy-cleanup
-        image: registry.alauda.cn:60070/tkestack/kube-proxy:v1.33.5      ## 替换成当前环境的 kube-proxy 镜像
+        image: registry.alauda.cn:60070/tkestack/kube-proxy:<KUBERNETES_VERSION>      ## 替换为 Step 1 中获取的 kube-proxy 镜像版本
         imagePullPolicy: IfNotPresent
         command:
         - /bin/sh
