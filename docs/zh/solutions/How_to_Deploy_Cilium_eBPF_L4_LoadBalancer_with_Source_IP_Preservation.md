@@ -63,10 +63,10 @@ sourceSHA: pending
 2. 使用 violet 上传到环境：
 
 ```bash
-export PLATFORM_URL=""
-export USERNAME=''
-export PASSWORD=''
-export CLUSTER_NAME=''
+export PLATFORM_URL="<平台地址>"        # 例如: https://console.alauda.cn
+export USERNAME='<用户名>'              # 平台登录用户名
+export PASSWORD='<密码>'                # 平台登录密码
+export CLUSTER_NAME='<集群名称>'        # 目标集群名称
 
 violet push cilium-v4.2.17.tgz --platform-address "$PLATFORM_URL" --platform-username "$USERNAME" --platform-password "$PASSWORD" --clusters "$CLUSTER_NAME"
 ```
@@ -171,6 +171,13 @@ spec:
       - name: kube-proxy-cleanup
         image: registry.alauda.cn:60070/tkestack/kube-proxy:<KUBERNETES_VERSION>      ## 替换为 Step 1 中获取的 kube-proxy 镜像版本
         imagePullPolicy: IfNotPresent
+        resources:
+          limits:
+            cpu: "500m"
+            memory: "256Mi"
+          requests:
+            cpu: "100m"
+            memory: "64Mi"
         command:
         - /bin/sh
         - -c
