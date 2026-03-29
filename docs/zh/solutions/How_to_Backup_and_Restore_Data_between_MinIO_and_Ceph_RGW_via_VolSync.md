@@ -1,10 +1,11 @@
 ---
 kind:
    - How To
+id: ""
 products: 
    - Alauda Container Platform
 ProductsVersion:
-   - 4.1.0,4.2.x
+   - 4.1.x, 4.2.x, 4.3.x
 ---
 <!-- Document is a solutions by explaining how to perform a specific task or achieve a goal -->
 # [How to] 基于 VolSync 实现 MinIO 到 Ceph RGW 的数据备份与恢复
