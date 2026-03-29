@@ -27,6 +27,7 @@ The solution utilizes the `rclone` tool integrated in the VolSync Operator image
 
 ### 3. Prerequisites
 - VolSync Operator installed in the cluster.
+- Ensure the VolSync Operator and the VolSync Job image versions are aligned (the Job image version must match the deployed Operator version).
 - `kubectl` access and network connectivity from Job Pods to both MinIO and Ceph RGW endpoints.
 - MinIO and Ceph RGW credentials (Access Key / Secret Key).
 - **The target Ceph RGW must be dedicated for this migration and should be empty before the first full synchronization.**
@@ -86,6 +87,7 @@ stringData:
     access_key_id = ${MINIO_ACCESS_KEY}
     secret_access_key = ${MINIO_SECRET_KEY}
     endpoint = ${MINIO_ENDPOINT}
+    # Insecure: only use in internal environments with self-signed certs.
     no_check_certificate = true
 
     [dest-ceph]
@@ -131,12 +133,13 @@ EOF
 
 ### 7. Restore Operation
 The restore process is the reverse of the backup process.
-1. Create a Secret with `rclone.conf` containing `source-ceph` and `dest-minio`.
+1. Create a Secret with `rclone.conf` containing `source-ceph` and `dest-minio`. Note: Apply the same SSL security warnings as the backup configuration if using `no_check_certificate = true`.
 2. Run a Job with `rclone sync source-ceph: dest-minio:`.
 
 ### 8. Important Notes
 - **Sync Risk**: `rclone sync` deletes files in the destination that are not present in the source.
-- **Silence Writing**: Stop business writes before the final cutover.
+- **Stop writes**: Stop all business writes before the final cutover.
+- **Security**: Disabling TLS verification (`no_check_certificate = true`) exposes the connection to MITM attacks. This is acceptable only for internal/test environments with self-signed certs. For production, supply a valid CA bundle using the `ca_cert` option instead.
 
 ## Related Information
 - [VolSync Documentation](https://volsync.readthedocs.io/)

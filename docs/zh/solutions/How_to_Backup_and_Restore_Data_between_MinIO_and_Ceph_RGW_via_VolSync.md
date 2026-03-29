@@ -86,6 +86,7 @@ stringData:
     access_key_id = ${MINIO_ACCESS_KEY}
     secret_access_key = ${MINIO_SECRET_KEY}
     endpoint = ${MINIO_ENDPOINT}
+    # 仅在内网受控、使用自签名证书时启用；生产环境建议配置受信任证书并关闭该选项
     no_check_certificate = true
 
     [dest-ceph]
@@ -131,12 +132,13 @@ EOF
 
 ### 7. 数据恢复操作
 恢复过程即备份过程的逆向操作，只需交换源和目标。
-1. 创建包含 `source-ceph` 和 `dest-minio` 的 `rclone.conf` Secret。
+1. 创建包含 `source-ceph` 和 `dest-minio` 的 `rclone.conf` Secret。注意：如果使用 `no_check_certificate = true`，请参考备份配置中的安全提示。
 2. 执行 `rclone sync source-ceph: dest-minio:` 任务。
 
 ### 8. 注意事项
 - **Sync 风险**：`rclone sync` 会删除目标端中源端不存在的文件。
 - **写入静默**：迁移切换前请停止业务写入。
+- **证书校验风险**：若启用 `no_check_certificate = true`，将跳过 TLS 证书校验，存在中间人攻击风险；生产环境请优先使用可信 CA 证书并关闭该选项。
 
 ## Related Information
 - [VolSync 官方文档](https://volsync.readthedocs.io/)
