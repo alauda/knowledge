@@ -221,7 +221,9 @@ Grant only the permissions required by your selected execution mode:
 - For **confirmed pruning**, both `get` and `delete` are required.
 - For **registry GC**, `pods/exec` permission is additionally required.
 
-## Fully Runnable Example (Dry Run Recommended)
+## Fully Runnable Example (Recommended Starting Point)
+
+Start with the following example if you want a complete, end-to-end dry-run setup that can be applied and validated immediately. It is intended to be the primary reference configuration before you tune schedules or pruning policies for production.
 
 First, create the ServiceAccount and ClusterRole required by the CronJob.
 
@@ -339,182 +341,29 @@ Check the execution result:
 ac get job -n cpaas-system ac-prune-images-cronjob-manual
 ```
 
-## Scenario-Based Demos
+## Important Considerations and Best Practices
 
-### Scenario 1: Daily inspection (dry-run only)
+Use the following guidance when adapting the runnable example to a production environment:
 
-```yaml
-apiVersion: batch/v1
-kind: CronJob
-metadata:
-  name: ac-prune-images-daily
-  namespace: cpaas-system
-  labels:
-    cpaas.io/cleanup: ac-images-pruner
-spec:
-  schedule: "0 2 * * *"
-  concurrencyPolicy: Forbid
-  successfulJobsHistoryLimit: 3
-  failedJobsHistoryLimit: 3
-  jobTemplate:
-    metadata:
-      labels:
-        cpaas.io/cleanup: ac-images-pruner
-    spec:
-      template:
-        metadata:
-          labels:
-            cpaas.io/cleanup: ac-images-pruner
-        spec:
-          serviceAccountName: ac-images-pruner-sa
-          restartPolicy: Never
-          containers:
-            - name: ac
-              image: <platform-registry-url>/alauda/ac:<tag>
-              args:
-                - adm
-                - prune
-                - images
-                - --keep-younger-than=168h
-                - --keep-tag-revisions=5
-                - --whitelist=^cpaas-system/.*
-              securityContext:
-                allowPrivilegeEscalation: false
-                runAsNonRoot: true
-                runAsUser: 65532
-```
+- Always start with dry-run mode before enabling `--confirm`.
+- Validate whitelist rules carefully before using `--all` or aggressive retention settings.
+- Use a dedicated ServiceAccount with only the permissions required by the selected execution mode.
+- Schedule confirmed cleanup and registry GC during off-peak periods.
+- Keep at least a small retention window and revision count in production unless a fully validated aggressive policy is required.
+- Manually trigger and validate one Job before relying on CronJob-based recurring cleanup.
+- Review logs regularly to confirm that prune candidates match expectations and that no protected repositories are affected.
+- Prefer a single operational CLI in the document and in daily operations. If ACP environments standardize on `ac`, use `ac` consistently for deployment, verification, and cleanup tasks.
 
-### Scenario 2: Weekly steady cleanup (recommended for production)
+## Recommended Policy Patterns
 
-```yaml
-apiVersion: batch/v1
-kind: CronJob
-metadata:
-  name: ac-prune-images-weekly
-  namespace: cpaas-system
-  labels:
-    cpaas.io/cleanup: ac-images-pruner
-spec:
-  schedule: "30 3 * * 0"
-  concurrencyPolicy: Forbid
-  successfulJobsHistoryLimit: 3
-  failedJobsHistoryLimit: 3
-  jobTemplate:
-    metadata:
-      labels:
-        cpaas.io/cleanup: ac-images-pruner
-    spec:
-      template:
-        metadata:
-          labels:
-            cpaas.io/cleanup: ac-images-pruner
-        spec:
-          serviceAccountName: ac-images-pruner-sa
-          restartPolicy: Never
-          containers:
-            - name: ac
-              image: <platform-registry-url>/alauda/ac:<tag>
-              args:
-                - adm
-                - prune
-                - images
-                - --keep-younger-than=336h
-                - --keep-tag-revisions=10
-                - --whitelist=^cpaas-system/.*
-                - --confirm
-              securityContext:
-                allowPrivilegeEscalation: false
-                runAsNonRoot: true
-                runAsUser: 65532
-```
+The following policy patterns can be used as a reference when tuning schedule and pruning behavior for different operational goals.
 
-### Scenario 3: Monthly aggressive cleanup (with whitelist protection)
-
-```yaml
-apiVersion: batch/v1
-kind: CronJob
-metadata:
-  name: ac-prune-images-monthly-aggressive
-  namespace: cpaas-system
-  labels:
-    cpaas.io/cleanup: ac-images-pruner
-spec:
-  schedule: "0 4 1 * *"
-  concurrencyPolicy: Forbid
-  successfulJobsHistoryLimit: 2
-  failedJobsHistoryLimit: 5
-  jobTemplate:
-    metadata:
-      labels:
-        cpaas.io/cleanup: ac-images-pruner
-    spec:
-      template:
-        metadata:
-          labels:
-            cpaas.io/cleanup: ac-images-pruner
-        spec:
-          serviceAccountName: ac-images-pruner-sa
-          restartPolicy: Never
-          containers:
-            - name: ac
-              image: <platform-registry-url>/alauda/ac:<tag>
-              args:
-                - adm
-                - prune
-                - images
-                - --all
-                - --whitelist=^cpaas-system/.*
-                - --whitelist=^pro-ns1/base/.*
-                - --confirm
-              securityContext:
-                allowPrivilegeEscalation: false
-                runAsNonRoot: true
-                runAsUser: 65532
-```
-
-### Scenario 4: Weekly cleanup with GC (off-peak window)
-
-```yaml
-apiVersion: batch/v1
-kind: CronJob
-metadata:
-  name: ac-prune-images-with-gc
-  namespace: cpaas-system
-  labels:
-    cpaas.io/cleanup: ac-images-pruner
-spec:
-  schedule: "0 1 * * 6"
-  concurrencyPolicy: Forbid
-  successfulJobsHistoryLimit: 2
-  failedJobsHistoryLimit: 5
-  jobTemplate:
-    metadata:
-      labels:
-        cpaas.io/cleanup: ac-images-pruner
-    spec:
-      template:
-        metadata:
-          labels:
-            cpaas.io/cleanup: ac-images-pruner
-        spec:
-          serviceAccountName: ac-images-pruner-sa
-          restartPolicy: Never
-          containers:
-            - name: ac
-              image: <platform-registry-url>/alauda/ac:<tag>
-              args:
-                - adm
-                - prune
-                - images
-                - --keep-younger-than=720h
-                - --keep-tag-revisions=5
-                - --prune-registry
-                - --confirm
-              securityContext:
-                allowPrivilegeEscalation: false
-                runAsNonRoot: true
-                runAsUser: 65532
-```
+| Scenario | Recommended schedule | Suggested flags | Notes |
+|----------|----------------------|-----------------|-------|
+| Daily inspection | `0 2 * * *` | `--keep-younger-than=168h --keep-tag-revisions=5 --whitelist=^cpaas-system/.*` | Dry-run only; suitable for daily visibility into prune candidates |
+| Weekly production cleanup | `30 3 * * 0` | `--keep-younger-than=336h --keep-tag-revisions=10 --whitelist=^cpaas-system/.* --confirm` | Recommended baseline policy for production |
+| Monthly aggressive cleanup | `0 4 1 * *` | `--all --whitelist=^cpaas-system/.* --whitelist=^pro-ns1/base/.* --confirm` | Use only after thorough whitelist validation |
+| Weekly cleanup with GC | `0 1 * * 6` | `--keep-younger-than=720h --keep-tag-revisions=5 --prune-registry --confirm` | Schedule during an off-peak window |
 
 ## Verification
 
@@ -658,11 +507,14 @@ When a scheduled prune task fails, use the following sequence:
 ## Cleanup Demo Resources
 
 ```bash
-# Delete namespace-scoped resources (such as CronJob, Job, Pod, ServiceAccount, etc.)
-kubectl -n cpaas-system delete cronjob,job,pod,serviceaccount \
-  -l cpaas.io/cleanup=ac-images-pruner --ignore-not-found
+# Delete namespace-scoped resources (such as CronJob, Job, Pod, and ServiceAccount)
+ac delete cronjob,job,pod,serviceaccount \
+  -n cpaas-system \
+  -l cpaas.io/cleanup=ac-images-pruner \
+  --ignore-not-found
 
-# Delete cluster-scoped resources (such as ClusterRole, ClusterRoleBinding, etc.)
-kubectl delete clusterrole,clusterrolebinding \
-  -l cpaas.io/cleanup=ac-images-pruner --ignore-not-found
+# Delete cluster-scoped resources (such as ClusterRole and ClusterRoleBinding)
+ac delete clusterrole,clusterrolebinding \
+  -l cpaas.io/cleanup=ac-images-pruner \
+  --ignore-not-found
 ```
