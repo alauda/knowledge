@@ -6,29 +6,39 @@ kind:
 ProductsVersion:
    - 4.x
 ---
-
-# Administrator Guide to Cluster Image Registry Cleanup and Scheduled Task Configuration
+# Cluster Image Registry Cleanup: Administrator Guide for Manual and Scheduled Tasks
 
 ## Introduction
 
-This document provides a practical and production-ready approach for cleaning images in ACP's internal cluster image registry and automating the cleanup process with `CronJob`.
+This document describes the administrative procedures for pruning images from the **internal registry** of a target ACP cluster. It covers both immediate manual execution and recurring automated execution through a Kubernetes `CronJob`.
 
-Goals of this solution:
+The goals of this solution are:
 
 - Safely remove images that are no longer used by the cluster.
 - Control cleanup behavior with retention time, revision count, and whitelist rules.
-- Start with Dry Run, then execute confirmed cleanup.
-- Trigger registry garbage collection (GC) when needed.
-- Configure scheduled tasks for automatic recurring cleanup.
+- Start with a dry run, then perform confirmed cleanup only after validation.
+- Trigger registry garbage collection (GC) when required.
+- Configure scheduled tasks for recurring automatic cleanup.
+
+## Terminology
+
+This document uses the following terms consistently:
+
+- **Internal registry**: the image registry deployed and managed as part of the target ACP cluster.
+- **Registry endpoint**: the HTTP(S) endpoint that `ac adm prune images` uses to communicate with the registry.
+- **External registry endpoint**: a manually specified registry endpoint provided through `--registry-url` when automatic detection of the internal registry endpoint is unavailable or unsuitable.
+
+Unless otherwise stated, image pruning in this document targets the **internal registry** of the current cluster.
 
 ## Prerequisites
 
 - ACP CLI (`ac`) is installed.
+- You have administrative privileges on the target ACP cluster.
 - You can access the target cluster.
-- You can access the registry.
-- If running in Pod/CronJob:
+- You can access the internal registry of the target cluster.
+- If running inside a Pod or CronJob:
   - `serviceAccountName` must be configured.
-  - The ServiceAccount must have permissions to list workloads, access registry APIs, and (if GC is enabled) access the `image-registry` Pod exec endpoint.
+  - The ServiceAccount must have permissions to inspect workloads, access registry APIs, and, if GC is enabled, access the `image-registry` Pod exec endpoint.
 
 ## Architecture Overview
 
@@ -60,24 +70,48 @@ Goals of this solution:
 └────────────────────┘
 ```
 
-## Parameter Reference
+## Default Behavior
 
-All parameters are optional. If you run the command without any parameters, it only outputs candidate images and does not delete anything.
+All parameters are optional. By default, `ac adm prune images` runs in **dry-run mode**. In this mode, the command evaluates cluster image usage, queries registry metadata, and prints prune candidates, but it does **not** delete any image manifests.
+
+Actual deletion is performed only when `--confirm` is explicitly specified.
+
+## Parameter Reference
 
 | Parameter | Purpose | Typical example |
 |-----------|---------|-----------------|
 | `--keep-younger-than=<duration>` | Keep recently created images | `168h` |
-| `--keep-tag-revisions=<N>` | Keep latest N versions per repository | `5` |
-| `--all` | Ignore retention time and revision count, prune all unused images | `--all` |
-| `--whitelist=<regex>` | Exclude matching repositories from pruning (repeatable) | `^cpaas-system/.*` |
-| `--dry-run` | Show candidates only, no deletion (default) | `--dry-run` |
-| `--confirm` | Execute actual deletion | `--confirm` |
-| `--prune-registry` | Trigger registry GC in non-dry-run mode, even if no manifests were deleted | `--prune-registry` |
-| `--registry-url=<url>` | Set registry endpoint | `http://image-registry.cpaas-system` |
+| `--keep-tag-revisions=<N>` | Keep the latest N revisions per repository | `5` |
+| `--all` | Ignore retention-based filters and prune all unused images. Whitelist rules still apply. | `--all` |
+| `--whitelist=<regex>` | Exclude repositories matching the regular expression from pruning. Repeatable; any match protects the repository. | `^cpaas-system/.*` |
+| `--dry-run` | Run in inspection mode and print prune candidates without deleting anything. This is the default behavior. | `--dry-run` |
+| `--confirm` | Perform actual deletion of eligible image manifests. Without this flag, no deletion is performed. | `--confirm` |
+| `--prune-registry` | Trigger registry garbage collection after pruning in non-dry-run mode. This flag has no effect in dry-run mode. | `--prune-registry` |
+| `--registry-url=<url>` | Override automatic registry endpoint detection with a manually specified endpoint. | `http://image-registry.cpaas-system` |
+
+## Parameter Rules and Constraints
+
+The following rules apply when combining pruning parameters:
+
+- `--confirm` is required for actual deletion. Without `--confirm`, the command only reports prune candidates.
+- `--dry-run` and `--confirm` represent mutually exclusive execution intent. In practice, use dry-run for inspection and `--confirm` for deletion.
+- `--all` instructs the command to ignore retention-based filters such as `--keep-younger-than` and `--keep-tag-revisions`, and to prune all images that are not currently in use, subject to whitelist rules.
+- `--whitelist=<regex>` protects matching repositories from pruning. It can be specified multiple times. If a repository matches any whitelist rule, it is excluded from deletion.
+- `--prune-registry` is meaningful only in non-dry-run execution. It triggers registry garbage collection after the prune workflow, even when no manifests were deleted during that run.
+- `--registry-url=<url>` overrides automatic registry endpoint detection. Use it only when automatic discovery does not produce the correct endpoint or when an externally reachable endpoint must be used.
+
+## Recommended Usage Order
+
+For production environments, use the following rollout order:
+
+1. Run a dry run with the intended retention and whitelist rules.
+2. Review the reported prune candidates.
+3. Re-run the same command with `--confirm` only after the candidate set is validated.
+4. Enable `--prune-registry` only during a planned maintenance window or off-peak period if registry garbage collection is required.
 
 ## Implementation Steps
 
-### Step 1: Log in and select target cluster
+### Step 1: Log in and select the target cluster
 
 ```bash
 ac login <acp-url>
@@ -85,21 +119,23 @@ ac config get-clusters
 ac config use-cluster <cluster-name>
 ```
 
-### Step 2: Run Dry Run first
+### Step 2: Run a dry run to review prune candidates
+
+Before performing any deletion, run the command in its default dry-run mode to review prune candidates and validate retention rules.
 
 ```bash
 ac adm prune images
 ```
 
-If `ac` is not able to detect the internal registry endpoint automatically, you can specify the external registry endpoint with the `--registry-url` parameter.
+If `ac` cannot automatically detect the correct registry endpoint, specify the external registry endpoint with `--registry-url`.
 
 ```bash
 ac adm prune images --registry-url=<external-registry-url>
 ```
 
-### Step 3: Run confirmed cleanup with policy
+### Step 3: Run confirmed cleanup with a retention policy
 
-Keep younger than 7 days, keep latest 5 revisions per repository, and exclude images in `cpaas-system` namespace, confirm the cleanup operation.
+The following example keeps images younger than 7 days, keeps the latest 5 revisions per repository, excludes repositories in the `cpaas-system` namespace, and performs confirmed cleanup.
 
 ```bash
 ac adm prune images \
@@ -111,7 +147,7 @@ ac adm prune images \
 
 ### Step 4: Trigger GC when required
 
-Keep younger than 3 days, keep latest 3 revisions per repository, and trigger registry GC in non-dry-run mode, confirm the cleanup operation.
+The following example keeps images younger than 3 days, keeps the latest 3 revisions per repository, and triggers registry GC during a confirmed cleanup run.
 
 ```bash
 ac adm prune images \
@@ -125,7 +161,7 @@ ac adm prune images \
 
 ### Base CronJob Template
 
-Run image-prune inspection against `image-registry.cpaas-system` once per day at 2:00 AM using a CronJob (dry-run by default).
+The following CronJob runs image prune inspection against the internal registry once per day at 2:00 AM. Because `--confirm` is not specified, it runs in dry-run mode by default.
 
 ```yaml
 apiVersion: batch/v1
@@ -154,13 +190,40 @@ spec:
 ```
 
 Notes:
-- `<platform-registry-url>`: registry endpoint of your target ACP platform.
-- `<tag>`: AC image tag from your target ACP platform.
-- `serviceAccountName: ac-images-pruner-sa`: ServiceAccount must have permissions to list workloads, access the `image-registry` Pod (for GC), and access `registry.alauda.io/images` (`get` for dry-run, `delete` for confirmed cleanup). 
 
-### Fully Runnable Example (Dry Run Recommended)
+- `<platform-registry-url>`: the registry endpoint of your target ACP platform.
+- `<tag>`: the AC image tag provided by your target ACP platform.
+- `serviceAccountName: ac-images-pruner-sa`: the ServiceAccount must be able to inspect workload resources to identify in-use images, read `registry.alauda.io/images` for dry-run analysis, delete `registry.alauda.io/images` for confirmed cleanup, and execute into the registry Pod when registry garbage collection is enabled.
 
-Firstly, create the ServiceAccount and ClusterRole to grant permissions to the CronJob.
+## Why These Permissions Are Required
+
+The prune workflow needs to inspect both cluster workloads and registry-side image metadata before it can safely determine which images are unused.
+
+The example RBAC grants permissions for the following purposes:
+
+- **Workload discovery**:  
+  `get`, `list`, and `watch` permissions on resources such as Pods, Deployments, StatefulSets, DaemonSets, ReplicaSets, Jobs, CronJobs, and ReplicationControllers are required so the command can discover image references currently in use by the cluster.
+
+- **Registry image inspection**:  
+  `get` access to `registry.alauda.io/images` is required so the command can retrieve image metadata during dry-run analysis.
+
+- **Image deletion**:  
+  `delete` access to `registry.alauda.io/images` is required only when `--confirm` is used, because confirmed pruning removes eligible image manifests.
+
+- **Registry garbage collection support**:  
+  `create` access to `pods/exec` is required only when registry garbage collection is enabled, because the workflow may need to execute GC-related operations through the registry Pod.
+
+## RBAC Scope Recommendation
+
+Grant only the permissions required by your selected execution mode:
+
+- For **dry-run only**, `get` access to `registry.alauda.io/images` is sufficient; `delete` is not required.
+- For **confirmed pruning**, both `get` and `delete` are required.
+- For **registry GC**, `pods/exec` permission is additionally required.
+
+## Fully Runnable Example (Dry Run Recommended)
+
+First, create the ServiceAccount and ClusterRole required by the CronJob.
 
 ```yaml
 ---
@@ -211,9 +274,9 @@ roleRef:
   name: ac-images-pruner-role
 ```
 
-Then, create the `CronJob`.
+Then create the `CronJob`.
 
-(Dry-run template) This CronJob runs image pruning every 6 hours, keeps images created within the last 7 days and the latest 5 revisions per repository, and excludes repositories under `cpaas-system` namespace from cleanup.
+This example runs image pruning every 6 hours, keeps images created within the last 7 days, keeps the latest 5 revisions per repository, and excludes repositories under the `cpaas-system` namespace. Because `--confirm` is not included, it is a dry-run configuration.
 
 ```yaml
 ---
@@ -257,7 +320,7 @@ spec:
                 runAsUser: 65532
 ```
 
-Apply resources:
+Apply the resources:
 
 ```bash
 ac apply -f ac-prune-images-cronjob.yaml
@@ -270,7 +333,7 @@ ac create job --from=cronjob/ac-prune-images-cronjob \
   ac-prune-images-cronjob-manual -n cpaas-system
 ```
 
-Check execution result:
+Check the execution result:
 
 ```bash
 ac get job -n cpaas-system ac-prune-images-cronjob-manual
@@ -278,7 +341,7 @@ ac get job -n cpaas-system ac-prune-images-cronjob-manual
 
 ## Scenario-Based Demos
 
-### Scenario 1: Daily inspection (Dry Run only)
+### Scenario 1: Daily inspection (dry-run only)
 
 ```yaml
 apiVersion: batch/v1
@@ -455,7 +518,11 @@ spec:
 
 ## Verification
 
-Run these commands after deployment:
+After deploying the CronJob, verify the configuration, one-time execution result, and prune behavior in the following order.
+
+### 1. Verify resource creation
+
+Confirm that the scheduled task and its related resources were created successfully.
 
 ```bash
 ac get cronjob -n cpaas-system -l cpaas.io/cleanup=ac-images-pruner
@@ -463,19 +530,88 @@ ac get job -n cpaas-system -l cpaas.io/cleanup=ac-images-pruner
 ac get pod -n cpaas-system -l cpaas.io/cleanup=ac-images-pruner
 ```
 
-Expected result:
+Check for:
 
-- Pod status is `Completed`.
-- `exitCode` is `0`.
-- No restart loop under `restartPolicy: Never`.
+- the expected CronJob name and schedule
+- a Job created by the CronJob or by manual trigger
+- a Pod in `Completed` state after execution
 
-Check logs for details:
+### 2. Verify job completion status
+
+Inspect the Job and Pod status in detail.
 
 ```bash
-ac logs job/ac-prune-images-daily -n cpaas-system
+ac describe job -n cpaas-system <job-name>
+ac describe pod -n cpaas-system <pod-name>
 ```
 
-Typical successful `Pod` logs (example):
+Expected result:
+
+- Job reaches `Complete`
+- Pod phase is `Succeeded`
+- container `exitCode` is `0`
+- `restartCount` remains `0`
+
+### 3. Verify command output in logs
+
+Review the Job logs to confirm what the prune command actually did.
+
+```bash
+ac logs job/<job-name> -n cpaas-system
+```
+
+For a dry run, confirm that the logs show:
+
+- cluster image scanning completed successfully
+- registry metadata was fetched successfully
+- candidate images were listed
+- no actual deletion was performed
+
+For a confirmed run, additionally confirm that the logs show:
+
+- eligible manifests were deleted
+- whitelist rules were honored
+- registry GC was triggered only when `--prune-registry` was specified
+
+### 4. Verify policy behavior before enabling confirmed cleanup
+
+Before enabling `--confirm` in production, manually validate that the reported candidates match the intended policy.
+
+Specifically verify:
+
+- recently created images are retained according to `--keep-younger-than`
+- the most recent revisions are retained according to `--keep-tag-revisions`
+- repositories matching any `--whitelist` rule are excluded
+- active workloads are not referencing any image reported as a prune candidate
+
+### 5. Verify registry endpoint selection
+
+If `--registry-url` is used, confirm that the endpoint is reachable from the Job Pod and matches the intended registry.
+
+Suggested checks:
+
+```bash
+ac describe pod -n cpaas-system <pod-name>
+ac logs job/<job-name> -n cpaas-system
+```
+
+Confirm that:
+
+- the Job used the expected endpoint
+- there are no authentication or connectivity errors
+- the endpoint corresponds to the target cluster registry
+
+### 6. Verify registry GC separately when enabled
+
+If `--prune-registry` is enabled, review the logs carefully to confirm that garbage collection was started successfully.
+
+Recommended checks:
+
+- GC is executed only in a maintenance or off-peak window
+- no permission error occurs for `pods/exec`
+- no registry availability issue is observed during or after GC
+
+Typical successful Pod logs (example):
 
 ```text
 [1/5] Scanning cluster for used images...
@@ -489,25 +625,44 @@ Typical successful `Pod` logs (example):
 [5/5] Skipping registry garbage collection because --prune-registry is not set.
 ```
 
-## Cleanup resources of the demo
+## Troubleshooting
+
+Use the following table to identify common problems and the fastest checks to perform.
+
+| Symptom | Possible cause | What to check first | Suggested action |
+|---------|----------------|---------------------|------------------|
+| `no current context set` | No usable in-cluster fallback and no valid CLI context in the container | Check the AC version and whether the Pod is expected to run with in-cluster credentials | Upgrade to a compatible AC version and verify ServiceAccount token mounting and in-cluster auth behavior |
+| `forbidden` / `cannot list ...` | Missing RBAC permissions for workload discovery | Run `ac auth can-i list pods --as system:serviceaccount:cpaas-system:ac-images-pruner-sa` and similar checks for required resources | Grant missing `get/list/watch` permissions for workload resources and required permissions on `registry.alauda.io/images` |
+| `forbidden` when deleting images | ServiceAccount has read access but not delete access | Check whether the run uses `--confirm` and whether `delete` is granted on `registry.alauda.io/images` | Add `delete` permission for confirmed cleanup |
+| `401` / `403` when fetching registry tags or manifests | Registry endpoint is reachable but authentication or authorization fails | Check logs for the exact registry endpoint in use and verify the ServiceAccount authorization path | Verify registry proxy authn/authz configuration, token handling, and whether `--registry-url` points to the correct endpoint |
+| `failed to list registry pods` | Missing access to the registry Pod namespace or missing permissions | Check whether the registry Pod exists in `cpaas-system` and whether the ServiceAccount can access related resources | Verify namespace, resource names, and RBAC for GC-related Pod access |
+| `pods/exec is forbidden` | GC is enabled but exec permission is missing | Confirm whether `--prune-registry` is enabled and whether `pods/exec` has `create` permission | Add `create` permission on `pods/exec` |
+| No prune candidates found | Retention policy is too conservative, whitelist is too broad, or the cluster is actively using most images | Review logs and compare the reported candidate set with the configured `--keep-*` and `--whitelist` values | Start with dry-run, then relax retention or narrow whitelist rules gradually |
+| Unexpected images appear as candidates | Registry endpoint mismatch, policy misconfiguration, or workload scan does not reflect actual usage | Verify the selected registry endpoint, whitelist patterns, and workload visibility | Re-run in dry-run mode with explicit `--registry-url` if needed and review RBAC coverage |
+| CronJob does not create Jobs | Invalid schedule, suspended CronJob, or controller issue | Run `ac describe cronjob -n cpaas-system <cronjob-name>` | Verify the schedule expression, ensure the CronJob is not suspended, and check cluster controller health |
+| Job exists but Pod does not start | Image pull failure, admission rejection, or security policy mismatch | Run `ac describe job` and `ac describe pod` | Verify AC image availability, image pull access, and Pod security settings |
+| Pod restarts or fails repeatedly | Container runtime error or command failure | Check `restartCount`, Pod events, and logs | Fix command arguments, image version, or cluster policy issues before retrying |
+
+## Quick Diagnostic Workflow
+
+When a scheduled prune task fails, use the following sequence:
+
+1. Confirm the CronJob exists and the schedule is valid.
+2. Confirm a Job was created successfully.
+3. Confirm the Pod was created and inspect Pod events.
+4. Review container logs for the prune workflow stage and exact error text.
+5. Verify ServiceAccount RBAC with `ac auth can-i`.
+6. If `--registry-url` is set, verify endpoint reachability and authorization.
+7. If `--prune-registry` is enabled, verify `pods/exec` permission and registry Pod availability.
+
+## Cleanup Demo Resources
 
 ```bash
-# Delete namespace-scoped resources (such as CronJob, Job, Pod, ServiceAccount, etc)
+# Delete namespace-scoped resources (such as CronJob, Job, Pod, ServiceAccount, etc.)
 kubectl -n cpaas-system delete cronjob,job,pod,serviceaccount \
   -l cpaas.io/cleanup=ac-images-pruner --ignore-not-found
 
-# Delete cluster-scoped resources (such as ClusterRole, ClusterRoleBinding, etc)
+# Delete cluster-scoped resources (such as ClusterRole, ClusterRoleBinding, etc.)
 kubectl delete clusterrole,clusterrolebinding \
   -l cpaas.io/cleanup=ac-images-pruner --ignore-not-found
 ```
-
-## Troubleshooting
-
-| Symptom | Possible cause | Suggested action |
-|---------|----------------|------------------|
-| `no current context set` | Image does not include in-cluster fallback and no `ac login` session exists in container | Upgrade to a compatible AC version and verify SA token mount |
-| `forbidden` / `cannot list ...` | ServiceAccount lacks RBAC for scan resources or registry image resource | Add required list/get/watch scan permissions and `registry.alauda.io/images` permissions (`get`, and `delete` if using `--confirm`) |
-| `401` / `403` when fetching registry tags/manifests in Pod | In-cluster ServiceAccount token is not authorized by registry proxy | Verify proxy authn/authz config and grant required RBAC to the calling ServiceAccount |
-| `failed to list registry pods` | No access to registry Pod in `cpaas-system` | Verify RBAC and namespace settings |
-| Registry auth-related errors | Registry auth policy does not match current token mode | Verify `--registry-url` and registry token/anonymous policy |
-| No prune candidates | Retention settings are too strict or whitelist is too broad | Run Dry Run and tune `--keep-*` and `--whitelist` |
