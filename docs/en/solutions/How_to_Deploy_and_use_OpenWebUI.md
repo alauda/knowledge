@@ -19,7 +19,7 @@ OpenWebUI is an open-source AI Web interface that supports docking with multiple
 - **Data & Security**: Sessions and configurations can be persisted; can integrate with authentication, rate limiting, logging/monitoring.
 
 ## Backend Integration
-- **Protocol Compatibility**: Support OpenAI API style backends (such as vLLM, MLServer, XInference, TGI, etc.).
+- **Protocol Compatibility**: Support OpenAI API-compatible backends (such as vLLM, MLServer, XInference, TGI, etc.).
 - **Connection Parameters**: Base URL (e.g., `http(s)://{backend}/v1`), API Key, model name, and default inference parameters.
 - **Multiple Backends**: configured in the UI, allowing switching between different inference service backends.
 
@@ -85,6 +85,14 @@ Relative environment values should be configured.
 * Set to true to enable external connections.
 * Purpose: Allows adding additional external inference service backends within OpenWebUI.
 
+### Security Considerations
+**ENABLE_DIRECT_CONNECTIONS**: When set to `true`, users can configure OpenWebUI to connect to external inference services. Consider the following:
+- Only enable this in trusted environments or when users are authenticated and authorized
+- External connections may expose sensitive data or credentials
+- Monitor outbound connections to prevent data exfiltration
+- Consider using network policies to restrict egress traffic
+- For production environments, consider setting this to `false` and pre-configuring allowed backends
+
 ### OPENAI_API_BASE_URL
 * Specifies the default inference service endpoint.
 * If OpenWebUI and the inference service are deployed in the same cluster, use the service’s internal cluster address.
@@ -129,7 +137,7 @@ When accessing OpenWebUI for the first time, you need to register. Choose a stro
 Go to **Settings -> Connections -> Add Connection**.
 Here you will be required to add the inference service address.
 You can obtain the cluster external access methods via **AML Business View / Inference Service / Inference Service Details / Access Method**.
-Fill it in afterwards. Please use the cluster **external** access method.
+Fill it in afterward. Please use the cluster **external** access method.
 In the **Add Connection** popup, fill in:
 `{{Cluster External URL}}/v1`
 
