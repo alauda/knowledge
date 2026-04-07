@@ -28,12 +28,12 @@ sourceSHA: pending
 ## 配置步骤
 
 > **警告**：一旦对某个目标 CIDR 跳过 conntrack，以下 OVN 功能对该 CIDR 的流量将**不再生效**：
-> - **NetworkPolicy** — 依赖 conntrack 状态的 OVN ACL 规则将无法匹配
-> - **Service 负载均衡** — ClusterIP/NodePort 服务的 OVN LB 规则将被绕过
+> - **NetworkPolicy** — 即使配置了 NetworkPolicy，也无法控制该 CIDR 的 Pod 流量
+> - **Service 访问** — 无法通过 ClusterIP、NodePort 或 LoadBalancer 访问该 CIDR 内的 Service
 >
 > 请确保目标 CIDR 是**直接 Pod 到 Pod 的通信**，不依赖 NetworkPolicy 或 Service 路由。
 
-### Step 1: 配置 Kube-OVN Controller
+### 步骤 1: 配置 Kube-OVN Controller
 
 在 kube-ovn-controller 的 Deployment 中添加 `--skip-conntrack-dst-cidrs` 启动参数：
 

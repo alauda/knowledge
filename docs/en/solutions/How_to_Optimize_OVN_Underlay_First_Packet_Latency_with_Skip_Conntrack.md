@@ -28,8 +28,8 @@ The `skip-conntrack-dst-cidrs` feature allows administrators to specify destinat
 ## Configuration Steps
 
 > **Warning**: Once conntrack is skipped for a destination CIDR, the following OVN features will **no longer take effect** for traffic to that CIDR:
-> - **NetworkPolicy** — OVN ACL rules that depend on conntrack state will not match
-> - **Service Load Balancing** — OVN LB rules for ClusterIP/NodePort services will be bypassed
+> - **NetworkPolicy** — NetworkPolicy rules will not be able to control Pod traffic for the CIDR
+> - **Service Access** — Services within the CIDR cannot be accessed via ClusterIP, NodePort, or LoadBalancer
 >
 > Ensure that the target CIDRs are **directly accessed Pod-to-Pod traffic** that does not rely on NetworkPolicy or Service routing.
 
