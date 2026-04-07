@@ -9,7 +9,7 @@ sourceSHA: pending
 
 # OVN Underlay 网络首包延迟优化 - 跳过 Conntrack 方案（S2 方案）
 
-本文档介绍如何在 Kube-OVN 中配置 `skip-conntrack-dst-cidrs` 参数，使指定目标 IP CIDR 的流量跳过 conntrack 处理，从而降低 OVN Underlay 网络的首包延迟和 conntrack 表压力。
+本文档介绍如何在 Kube-OVN 中配置 `skip-conntrack-dst-cidrs` 参数，使指定目标 IP CIDR 的流量跳过 conntrack 处理，从而降低 OVN Underlay 网络的首包延迟。
 
 ## 概述
 
@@ -44,6 +44,8 @@ kubectl edit deploy kube-ovn-controller -n kube-system
 找到容器启动参数部分，添加该参数：
 
 ```yaml
+containers:
+  - name: kube-ovn-controller
     args:
       # ... 已有参数 ...
       - --skip-conntrack-dst-cidrs=10.0.0.0/24,192.168.1.0/24    # 替换为实际的目标 CIDR
