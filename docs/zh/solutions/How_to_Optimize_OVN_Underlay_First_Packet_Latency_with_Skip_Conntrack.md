@@ -29,7 +29,7 @@ sourceSHA: pending
 
 > **警告**：一旦对某个目标 CIDR 跳过 conntrack，以下 OVN 功能对该 CIDR 的流量将**不再生效**：
 > - **NetworkPolicy** — 即使配置了 NetworkPolicy，也无法控制该 CIDR 的 Pod 流量
-> - **Service 访问** — 无法通过 ClusterIP、NodePort 或 LoadBalancer 访问该 CIDR 内的 Service
+> - **Service 访问** — 当 Service 的后端 Pod 位于该 CIDR 时，无法通过 ClusterIP、NodePort 或 LoadBalancer 访问该 Service
 >
 > 请确保目标 CIDR 是**直接 Pod 到 Pod 的通信**，不依赖 NetworkPolicy 或 Service 路由。
 
