@@ -20,8 +20,8 @@ jobs:
     runs-on: ubuntu-latest
     environment: translate
     env:
-      ALAUDA_OPENAI_API_KEY: ${{ secrets.AZURE_OPENAI_API_KEY }}
-      ALAUDA_OPENAI_BASE_URL: ${{ secrets.AZURE_OPENAI_ENDPOINT }}
+      ALAUDA_OPENAI_API_KEY: ${{ secrets.ALAUDA_OPENAI_API_KEY }}
+      ALAUDA_OPENAI_BASE_URL: ${{ secrets.ALAUDA_OPENAI_BASE_URL }}
       XSY_CLIENT_ID: ${{ secrets.XSY_CLIENT_ID }}
       XSY_CLIENT_SECRET: ${{ secrets.XSY_CLIENT_SECRET }}
       XSY_PASSWORD: ${{ secrets.XSY_PASSWORD }}
