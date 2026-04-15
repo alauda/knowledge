@@ -27,7 +27,6 @@ jobs:
       XSY_PASSWORD: ${{ secrets.XSY_PASSWORD }}
       XSY_USERNAME: ${{ secrets.XSY_USERNAME }}
       RAW_TERMS_URL: https://gist.github.com/JounQin/8f323563651794ec371588c0d5c3bf1b/raw/71f1eae4f5744e4a78b95244c1d1fa9305d8c471/terms.yaml
-      ALAUDA_OPENAI_MODEL: gpt-4o-mini
     permissions:
       contents: write  # 必需：允许 push 到 PR
       pull-requests: write 
