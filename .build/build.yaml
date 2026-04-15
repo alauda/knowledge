@@ -78,17 +78,17 @@ spec:
             script: >
               # set -x
 
-              export COREPACK_NPM_REGISTRY=https://edge-nexus.alauda.cn/repository/cnpm
+              export COREPACK_NPM_REGISTRY=https://edge-nexus1.alauda.cn/repository/cnpm
 
               export YARN_GLOBAL_FOLDER=/workspace/yarn_cache/global
 
-              export YARN_NPM_REGISTRY_SERVER=https://edge-nexus.alauda.cn/repository/cnpm
+              yarn config set npmRegistryServer https://edge-nexus1.alauda.cn/repository/cnpm
 
-              node .yarn/releases/yarn-4.13.0.cjs --version
+              yarn set version stable
 
-              node .yarn/releases/yarn-4.13.0.cjs --immutable
+              yarn --immutable
 
-              node .yarn/releases/yarn-4.13.0.cjs build
+              yarn build
             workingDir: $(workspaces.source.path)
     - name: build-image
       timeout: 30m
