@@ -5,6 +5,7 @@ products:
   - Alauda Application Services
 ProductsVersion:
    - 4.x
+id: KB260400005
 ---
 
 # Milvus Vector Database Solution Guide

@@ -5,6 +5,7 @@ kind:
    - Solution
 ProductsVersion:
    - 4.x
+id: KB260400002
 ---
 # Cluster Image Registry Cleanup: Administrator Guide for Manual and Scheduled Tasks
 

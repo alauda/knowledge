@@ -4,45 +4,47 @@ products:
   - Alauda Container Platform
 kind:
   - Solution
-sourceSHA: pending
+sourceSHA: f08bed9e8e3925b9d23738b44dac6e99b0d27fbf6802f8976076f756383d70d6
 ---
 
-# 基于 eBPF 的高性能容器网络 Cilium CNI 和 eBPF 实现的高性能四层负载均衡（支持源 IP 可见的 S2 方案）
+# 使用 Cilium CNI 和基于 eBPF 的 L4 负载均衡器实现高性能容器网络（源 IP 保留）
 
-本文档介绍如何在 ACP 4.2 以上版本集群中部署 Cilium CNI，并利用 eBPF 实现高性能四层负载均衡，支持源 IP 透传。
+本文档描述了如何在 ACP 4.2+ 集群中部署 Cilium CNI，并利用 eBPF 实现高性能的第四层负载均衡，同时保留源 IP。
 
 ## 先决条件
 
-| 项目 | 要求 |
-|------|------|
-| ACP 版本 | 4.2+ |
-| 网络模式 | Custom（自定义）模式 |
-| 架构 | x86_64 / amd64 |
+| 项目         | 要求             |
+| ------------ | ---------------- |
+| ACP 版本     | 4.2+             |
+| 网络模式     | 自定义模式       |
+| 架构         | x86_64 / amd64   |
 
-> **注意**：由于 Cilium/eBPF 需要 Linux 内核 4.19+（推荐 5.10+），以下操作系统**不支持**：
+> **注意**：Cilium/eBPF 需要 Linux 内核 4.19+（推荐 5.10+）。以下操作系统 **不支持**：
+>
 > - CentOS 7.x（内核版本 3.10.x）
 > - RHEL 7.x（内核版本 3.10.x - 4.18.x）
 >
 > 支持的操作系统：
+>
 > - Ubuntu 22.04
 > - RHEL 8.x
 > - openEuler 22.03
 
 ### 节点端口要求
 
-| 端口 | 组件 | 说明 |
-|------|------|------|
-| 4240 | cilium-agent | Health API |
-| 9962 | cilium-agent | Prometheus Metrics |
-| 9879 | cilium-agent | Envoy Metrics |
-| 9890 | cilium-agent | Agent Metrics |
-| 9963 | cilium-operator | Prometheus Metrics |
-| 9891 | cilium-operator | Operator Metrics |
-| 9234 | cilium-operator | Metrics |
+| 端口 | 组件            | 描述               |
+| ---- | --------------- | ------------------ |
+| 4240 | cilium-agent    | 健康 API          |
+| 9962 | cilium-agent    | Prometheus 指标   |
+| 9879 | cilium-agent    | Envoy 指标        |
+| 9890 | cilium-agent    | 智能体指标        |
+| 9963 | cilium-operator | Prometheus 指标   |
+| 9891 | cilium-operator | Operator 指标     |
+| 9234 | cilium-operator | 指标              |
 
 ### 内核配置要求
 
-确保节点内核已启用以下配置（可通过 `grep` 检查 `/boot/config-$(uname -r)`）：
+确保节点上启用了以下内核配置（可以通过 `grep` 在 `/boot/config-$(uname -r)` 中检查）：
 
 - `CONFIG_BPF=y` 或 `=m`
 - `CONFIG_BPF_SYSCALL=y` 或 `=m`
@@ -53,25 +55,26 @@ sourceSHA: pending
 
 ## ACP 4.x Cilium 部署步骤
 
-### Step 1: 创建集群
+### 步骤 1：创建集群
 
-在创建集群页面，**Network Mode（网络模式）** 使用 **Custom** 模式。等到集群到达 `EnsureWaitClusterModuleReady` 状态时，再去部署 Cilium。
+在集群创建页面，将 **网络模式** 设置为 **自定义** 模式。在集群达到 `EnsureWaitClusterModuleReady` 状态后再部署 Cilium。
 
-### Step 2: 安装 Cilium
+### 步骤 2：安装 Cilium
 
-1. 从 ACP 应用市场下载最新的 Cilium 镜像包（v4.2.x 版本）
-2. 使用 violet 上传到环境：
+1. 从 ACP 市场下载最新的 Cilium 镜像包（v4.2.x）
+
+2. 使用 violet 上传到平台：
 
 ```bash
-export PLATFORM_URL="<平台地址>"        # 例如: https://console.alauda.cn
-export USERNAME='<用户名>'              # 平台登录用户名
-export PASSWORD='<密码>'                # 平台登录密码
-export CLUSTER_NAME='<集群名称>'        # 目标集群名称
+export PLATFORM_URL=""
+export USERNAME=''
+export PASSWORD=''
+export CLUSTER_NAME=''
 
 violet push cilium-v4.2.17.tgz --platform-address "$PLATFORM_URL" --platform-username "$USERNAME" --platform-password "$PASSWORD" --clusters "$CLUSTER_NAME"
 ```
 
-3. 在安装 Cilium 的业务集群临时配置 RBAC（因为集群部署成功前这个 RBAC 权限还没配置，所以需要临时配置）：
+3. 在将要安装 Cilium 的业务集群上创建临时 RBAC 配置（此 RBAC 权限在集群成功部署之前未配置）：
 
 创建临时 RBAC 配置文件：
 
@@ -111,7 +114,7 @@ EOF
 kubectl apply -f tmp.yaml
 ```
 
-4. 进入 **平台管理 → 应用市场 → 集群插件**，找到并安装 Cilium
+4. 导航到 **管理员 → 市场 → 集群插件** 并安装 Cilium
 
 5. Cilium 安装成功后，删除临时 RBAC 配置：
 
@@ -120,19 +123,19 @@ kubectl delete -f tmp.yaml
 rm tmp.yaml
 ```
 
-## 创建透传的 L4 负载均衡
+## 创建具有源 IP 保留的 L4 负载均衡器
 
-进入后台 master 节点执行以下操作。
+在主节点后端执行以下操作。
 
-### Step 1: 删除 kube-proxy 并清理规则
+### 步骤 1：移除 kube-proxy 并清理规则
 
-1. 获取 kube-proxy 当前的镜像：
+1. 获取当前 kube-proxy 镜像：
 
 ```bash
 kubectl get -n kube-system kube-proxy -oyaml | grep image
 ```
 
-2. 备份并删除 kube-proxy 的 DaemonSet：
+2. 备份并删除 kube-proxy DaemonSet：
 
 ```bash
 kubectl -n kube-system get ds kube-proxy -oyaml > kube-proxy-backup.yaml
@@ -140,7 +143,7 @@ kubectl -n kube-system get ds kube-proxy -oyaml > kube-proxy-backup.yaml
 kubectl -n kube-system delete ds kube-proxy
 ```
 
-3. 创建清理的 BroadcastJob：
+3. 创建一个 BroadcastJob 来清理 kube-proxy 规则：
 
 ```yaml
 apiVersion: operator.alauda.io/v1alpha1
@@ -169,15 +172,8 @@ spec:
       - operator: Exists
       containers:
       - name: kube-proxy-cleanup
-        image: registry.alauda.cn:60070/tkestack/kube-proxy:<KUBERNETES_VERSION>      ## 替换为 Step 1 中获取的 kube-proxy 镜像版本
+        image: registry.alauda.cn:60070/tkestack/kube-proxy:<KUBERNETES_VERSION>      ## 用步骤 1 中获取的 kube-proxy 镜像替换
         imagePullPolicy: IfNotPresent
-        resources:
-          limits:
-            cpu: "500m"
-            memory: "256Mi"
-          requests:
-            cpu: "100m"
-            memory: "64Mi"
         command:
         - /bin/sh
         - -c
@@ -218,11 +214,11 @@ spec:
 kubectl apply -f kube-proxy-cleanup.yaml
 ```
 
-BroadcastJob 配置了 `ttlSecondsAfterFinished: 300`，执行完成后会在 5 分钟内自动清理。
+BroadcastJob 配置了 `ttlSecondsAfterFinished: 300`，将在完成后 5 分钟内自动清理。
 
-### Step 2: 创建地址池
+### 步骤 2：创建地址池
 
-> **VIP 地址要求**：Cilium L2 Announcement 通过 ARP 广播实现 IP 漂移，因此 VIP 必须与集群节点在**同一个二层网络**中，确保 ARP 请求能够正常广播和响应。
+> **VIP 地址要求**：Cilium L2 通告通过 ARP 广播实现 IP 故障转移。因此，VIP 必须在与集群节点 **相同的第二层网络** 中，以确保 ARP 请求能够正确广播并响应。
 
 保存为 `lb-resources.yaml`：
 
@@ -233,7 +229,7 @@ metadata:
   name: lb-pool
 spec:
   blocks:
-    - cidr: "192.168.132.192/32"    # 替换为实际分配的 VIP 段
+    - cidr: "192.168.132.192/32"    # 用实际的 VIP 段替换
 ---
 apiVersion: cilium.io/v2alpha1
 kind: CiliumL2AnnouncementPolicy
@@ -241,7 +237,7 @@ metadata:
   name: l2-policy
 spec:
   interfaces:
-    - eth0                          # 替换为实际网卡名
+    - eth0                          # 用实际的网络接口名称替换
   externalIPs: true
   loadBalancerIPs: true
 ```
@@ -252,11 +248,11 @@ spec:
 kubectl apply -f lb-resources.yaml
 ```
 
-### Step 3: 验证
+### 步骤 3：验证
 
-创建 LB Service，验证是否分配到 IP，并测试连通性。
+创建一个 LoadBalancer 服务以验证 IP 分配并测试连接性。
 
-**验证 1：查看 LB Service 是否分配了 IP**
+**验证 1：检查 LB 服务是否已分配 IP**
 
 ```bash
 kubectl get svc -A
@@ -269,7 +265,7 @@ NAMESPACE      NAME                      TYPE           CLUSTER-IP     EXTERNAL-
 cilium-123-1   test                      LoadBalancer   10.4.98.81     192.168.132.192   80:31447/TCP                35s
 ```
 
-**验证 2：查看发起 ARP 请求的 Leader 节点**
+**验证 2：检查领导节点发送的 ARP 请求**
 
 ```bash
 kubectl get leases -A | grep cilium
@@ -283,4 +279,4 @@ cpaas-system      cilium-l2announce-cilium-123-1-test       192.168.141.196     
 
 **验证 3：测试外部访问**
 
-从外部能访问通这个 LoadBalancer Service，并且在 Pod 内抓包可以看到源 IP 是 Client 端的，即透传成功。
+从外部客户端访问 LoadBalancer 服务。在 Pod 内捕获的数据包应显示源 IP 为客户端的 IP，表明源 IP 保留成功。
