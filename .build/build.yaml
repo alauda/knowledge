@@ -82,13 +82,13 @@ spec:
 
               export YARN_GLOBAL_FOLDER=/workspace/yarn_cache/global
 
-              yarn config set npmRegistryServer https://edge-nexus.alauda.cn/repository/cnpm
+              export YARN_NPM_REGISTRY_SERVER=https://edge-nexus.alauda.cn/repository/cnpm
 
-              yarn set version stable
+              node .yarn/releases/yarn-4.13.0.cjs --version
 
-              yarn --immutable
+              node .yarn/releases/yarn-4.13.0.cjs --immutable
 
-              yarn build
+              node .yarn/releases/yarn-4.13.0.cjs build
             workingDir: $(workspaces.source.path)
     - name: build-image
       timeout: 30m
