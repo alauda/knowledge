@@ -3,6 +3,7 @@ products:
    - Alauda Container Platform
 kind:
    - Solution
+id: KB260400007
 ---
 
 # Cross-Cluster Application Disaster Recovery for Stateful Applications

@@ -5,6 +5,7 @@ kind:
    - Solution
 ProductsVersion:
    - 4.x
+id: KB260400006
 ---
 
 # How To Create AI Agent with Langchain
