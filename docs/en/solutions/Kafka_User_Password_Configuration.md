@@ -12,11 +12,11 @@ id: KB1776670415-KAFU
 
 By default the Alauda middleware operator (`rds-operator`) delegates SCRAM-SHA-512 credential generation to the Strimzi User Operator, which produces a random password when a `KafkaUser` is created. Some use cases — migrations from an existing Kafka cluster, integrations with external systems that already have a fixed password, or centrally managed credential rotation — require setting a known password on the user and rotating it on demand.
 
-Starting with ACP 3.15, `RdsKafkaUser` exposes `spec.authentication.password.valueFrom.secretKeyRef` so a user's SCRAM-SHA-512 password can be sourced from a user-managed `Secret`. Updating the `Secret` together with a `changePasswordTimestamp` annotation on the `RdsKafkaUser` triggers an in-place rotation.
+`RdsKafkaUser` exposes `spec.authentication.password.valueFrom.secretKeyRef` so a user's SCRAM-SHA-512 password can be sourced from a user-managed `Secret`. Updating the `Secret` together with a `changePasswordTimestamp` annotation on the `RdsKafkaUser` triggers an in-place rotation.
 
 ## Applicable Version
 
-Verified on ACP 4.2.x (rds-operator `v4.2.0`, Kafka `4.1.1`). The `password.valueFrom.secretKeyRef` field was introduced in rds-operator 3.15, so earlier ACP releases that bundle a rds-operator >= 3.15 support the same flow.
+Verified on ACP 4.2.x (rds-operator `v4.2.0`, Kafka `4.1.1`). The `password.valueFrom.secretKeyRef` field was introduced in rds-operator `v3.16.0`; any ACP release bundling rds-operator `v3.16.0` or later supports this flow. The `v3.15.x` series does not contain the field.
 
 ## Prerequisites
 
