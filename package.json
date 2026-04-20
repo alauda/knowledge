@@ -1,5 +1,6 @@
 {
   "name": "doomslayer",
+  "type": "module",
   "packageManager": "yarn@4.13.0",
   "devDependencies": {
     "@alauda/doom": "^1.20.0",

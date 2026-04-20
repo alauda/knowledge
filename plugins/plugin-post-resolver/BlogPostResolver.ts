@@ -1,6 +1,6 @@
 import path from "node:path";
 import fs, { PathLike } from "node:fs";
-import { RspressPlugin } from "@rspress/shared";
+import type { RspressPlugin } from "@rspress/shared";
 import {
   addPost,
   getPostInfo,
@@ -9,9 +9,9 @@ import {
   postProducts,
   resetPostInfo,
   sortPostInfos,
-} from "./PostData";
-import { PluginOptions } from "./types";
-import { deDuplicate } from "./utils";
+} from "./PostData.js";
+import type { PluginOptions } from "./types.js";
+import { deDuplicate } from "./utils.js";
 
 function traverseFolder(
   folderPath: PathLike,

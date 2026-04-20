@@ -8,7 +8,7 @@ import {
 } from '@rspress/core/theme-original';
 import clsx from 'clsx';
 import React from 'react';
-import { useSidebarMenu } from '../../components/SidebarMenu';
+import { useSidebarMenu } from '../../components/SidebarMenu/index.js';
 
 export interface DocLayoutProps {
   beforeSidebar?: React.ReactNode;

@@ -1,2 +1,2 @@
-export { useSidebarMenu } from './useSidebarMenu';
+export { useSidebarMenu } from "./useSidebarMenu.js";
 

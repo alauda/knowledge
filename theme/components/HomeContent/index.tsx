@@ -12,12 +12,12 @@ import {
   PRODUCTS_SESSION_KEY,
   usePersistSearchParams,
   useSessionStorage,
-} from "../../hooks/SessionStorage";
-import { Card } from "../Card";
-import Checkbox from "../Checkbox";
-import Pagination from "../Pagination";
-import { PostList } from "../PostList";
-import Search from "../Search";
+} from "../../hooks/SessionStorage.js";
+import { Card } from "../Card/index.js";
+import Checkbox from "../Checkbox/index.js";
+import Pagination from "../Pagination/index.js";
+import { PostList } from "../PostList/index.js";
+import Search from "../Search/index.js";
 import React from "react";
 
 const SEARCHED_LIMIT = 1000;
