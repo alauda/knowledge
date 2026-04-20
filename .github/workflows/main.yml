@@ -45,9 +45,7 @@ jobs:
           node-version: '20' # 可根据项目调整
 
       - name: Setup Yarn
-        run: |
-          corepack enable
-          yarn set version stable
+        run: corepack enable
 
       # - name: Upgrade dependencies
       #   run: |
