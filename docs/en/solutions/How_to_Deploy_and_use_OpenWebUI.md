@@ -5,6 +5,7 @@ kind:
 - Solution
 ProductsVersion:
 - 4.x
+id: KB260400008
 ---
 
 # OpenWebUI
