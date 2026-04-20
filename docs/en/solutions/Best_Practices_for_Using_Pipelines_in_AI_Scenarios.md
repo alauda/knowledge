@@ -6,6 +6,7 @@ kind:
   - Solution
 ProductsVersion:
   - 4.x
+id: KB260400009
 ---
 # Best Practices for Using Pipelines in AI Scenarios
 
