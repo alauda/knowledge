@@ -38,6 +38,8 @@ spec:
   # ... other fields omitted
 ```
 
+The example uses the `plain` listener. SCRAM-SHA-512 authentication works identically on the `tls` and `external` listeners — set `authentication.type: scram-sha-512` on whichever listener the client will connect to. At least one listener must have the SCRAM auth type configured for the credentials provisioned by this flow to be usable.
+
 Note: `kafka.authorization.type: simple` is required for per-user ACLs to take effect. Without it, a `KafkaUser`'s ACL rules are accepted but not enforced by the brokers.
 
 ## Steps
@@ -108,6 +110,8 @@ kubectl -n <ns> get kafkauser my-user -o jsonpath='{.status.conditions[?(@.type=
 # True
 ```
 
+`RdsKafkaUser` reports readiness via `status.phase`; the downstream Strimzi `KafkaUser` uses the standard condition-based `status.conditions[type=Ready]`. Both must be green before clients can authenticate.
+
 The Strimzi User Operator publishes a same-named `Secret` that contains the SASL/JAAS config with the configured password:
 
 ```shell
@@ -132,11 +136,19 @@ kubectl -n <ns> annotate rdskafkauser my-user \
 
 After rotation, clients using the old password fail with `SaslAuthenticationException: Authentication failed during authentication due to invalid credentials with SASL mechanism SCRAM-SHA-512`. Clients using the new password authenticate successfully.
 
+### 5. Remove the user
+
+```shell
+kubectl -n <ns> delete rdskafkauser my-user
+```
+
+Deleting the `RdsKafkaUser` removes the downstream Strimzi `KafkaUser`, revokes the SCRAM credentials in the broker, and (because the operator has tagged it with an `OwnerReference`) garbage-collects the password `Secret`. The auto-published SASL `Secret` created by the Strimzi User Operator is deleted as part of the `KafkaUser` teardown.
+
 ## Notes
 
 - The password `Secret` is automatically tagged with an `OwnerReference` to the `RdsKafkaUser`. Deleting the `RdsKafkaUser` garbage-collects the password `Secret` along with it.
-- `spec.authentication.type` accepts only `tls` or `scram-sha-512`. TLS authentication (mutual TLS) uses a different credential flow and does not consume the `password` field.
-- When the Strimzi User Operator processes the downstream `KafkaUser`, it may emit `DeprecatedFields` or `UnknownFields` status conditions regarding the ACL schema (`operation` vs `operations`, and `resource.name`/`resource.patternType`). These are warnings and do not prevent the user from becoming `Ready`.
+- `spec.authentication.type` on `RdsKafkaUser` accepts only `tls` or `scram-sha-512`. TLS authentication (mutual TLS) uses a different credential flow and does not consume the `password` field. Upstream Strimzi `KafkaUser` additionally supports `tls-external`; an OCP user of that type cannot be migrated 1:1 and must be rewritten as `tls` with operator-managed certificates.
+- When the Strimzi User Operator processes the downstream `KafkaUser`, it may emit `DeprecatedFields` or `UnknownFields` status conditions regarding the ACL schema (the operator propagates the singular `operation` field; upstream Strimzi now prefers the plural `operations` array). These are warnings and do not prevent the user from becoming `Ready`.
 
 ## OCP Parity
 
@@ -175,8 +187,9 @@ Key differences when migrating between platforms:
 | API group / kind | `middleware.alauda.io/v1` `RdsKafkaUser` | `kafka.strimzi.io/v1beta2` `KafkaUser` |
 | Cluster binding label | `middleware.alauda.io/cluster` | `strimzi.io/cluster` |
 | Password `secretKeyRef` field | Identical (`spec.authentication.password.valueFrom.secretKeyRef`) | Identical |
-| Rotation trigger | `changePasswordTimestamp` annotation on `RdsKafkaUser` | Update the password `Secret`; the User Operator re-syncs automatically. A no-op annotation change on the `KafkaUser` can force an immediate reconcile. |
-| ACL schema | Single `operation` + `resource.{name,patternType,type}` (translated to Strimzi) | `operations` array + `resource.{type,name,patternType}` |
-| Ownership of password `Secret` | Operator sets `OwnerReference` to `RdsKafkaUser` | No default owner reference; application-managed lifecycle |
+| Supported `authentication.type` | `tls`, `scram-sha-512` | `tls`, `tls-external`, `scram-sha-512` |
+| Rotation trigger | Update the password `Secret` and bump the `changePasswordTimestamp` annotation on the `RdsKafkaUser` to force a reconcile of the downstream `KafkaUser`. | Update the password `Secret` — the User Operator watches the referenced source `Secret` and republishes credentials automatically. |
+| ACL shape | Same `resource` sub-fields (`type`, `name`, `patternType`). `acls[*].operation` (singular) is propagated unchanged to Strimzi and triggers a `DeprecatedFields` warning. | Prefers `acls[*].operations` (plural array); `acls[*].operation` (singular) still accepted but deprecated. |
+| Ownership of password `Secret` | Operator sets `OwnerReference` to `RdsKafkaUser` — deleting the user garbage-collects the `Secret`. | User Operator reads but does not own the source `Secret`; lifecycle is application-managed. |
 
 The credential flow on the broker side is unchanged: the User Operator writes the SCRAM credentials into Kafka and publishes a `Secret` containing `sasl.jaas.config` for clients to consume. Moving an existing `KafkaUser` manifest from OCP to ACP is a mechanical rewrite of the `kind`, `apiVersion`, cluster label, and ACL shape — no behavioral differences in authentication or rotation.
