@@ -38,7 +38,7 @@ During the upgrade, application pods must be restarted to obtain dual-stack IP a
 
 `kube-apiserver` runs as a static pod. The configuration file path is:
 
-```
+```text
 /etc/kubernetes/manifests/kube-apiserver.yaml
 ```
 
@@ -52,7 +52,7 @@ Update `--service-cluster-ip-range` to dual-stack format:
 
 The configuration file path is:
 
-```
+```text
 /etc/kubernetes/manifests/kube-controller-manager.yaml
 ```
 
