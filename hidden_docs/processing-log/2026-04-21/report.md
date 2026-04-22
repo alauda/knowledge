@@ -1,6 +1,6 @@
 # 处理审计 — 2026-04-21
 
-> 生成时间：2026-04-22 01:55 UTC　｜　rules hash：`bfc0a4519e8f0941…`
+> 生成时间：2026-04-22 02:11 UTC　｜　rules hash：`bfc0a4519e8f0941…`
 >
 > 本页记录 ocp2acp 针对一批 OCP KB 文章的处理决策，包括决定**不**发布
 > 的条目（signal / defer / reject）。欢迎同事在 PR 里就任意条目留言——
@@ -12,8 +12,9 @@
 | 分类 | 数量 |
 |---|---|
 | convert（通用 k8s） | 6 |
+| convert_adapted（有 ACP 对应能力） | 2 |
 | defer（待规则/信息完善后再判） | 3 |
-| reject（无适用价值） | 21 |
+| reject（无适用价值） | 19 |
 | **合计** | **30** |
 
 ## 逐篇决策
@@ -38,7 +39,7 @@
 | 6984536 | convert | PrometheusRule CRD + etcd 通用指标 | [Create_PrometheusRule_Alerts_for_etcd_Defragmentation.md](../../../docs/en/solutions/Create_PrometheusRule_Alerts_for_etcd_Defragmentation.md) |
 | 7024725 | reject | OCP Compliance Operator 专有 | — |
 | 7037820 | reject | Route 是 OCP 专有资源 | — |
-| 7046476 | reject | OpenShift Virtualization 专有 | — |
+| 7046476 | convert_adapted | ACP Virtualization (KubeVirt) 对应 OCP-V；改写为 Virtualization Operator 升级对 VM 的影响说明 | [Virtualization_Operator_Upgrade_Impact_on_Running_Virtual_Machines.md](../../../docs/en/solutions/Virtualization_Operator_Upgrade_Impact_on_Running_Virtual_Machines.md) |
 | 7047778 | convert | kubelet cpu manager 通用行为 | [cpuset_Changes_After_Restarting_the_Kubelet_Service.md](../../../docs/en/solutions/cpuset_Changes_After_Restarting_the_Kubelet_Service.md) |
 | 7062880 | defer | 初判 convert 但重写阶段发现依赖 OCP 特有 oc debug node + control plane 架构，待确认能否脱离 | — |
 | 7072015 | defer | NVMe 配置概念但依赖 MachineConfig | — |
@@ -46,7 +47,7 @@
 | 7077825 | reject | OCP Console Operator 专有 | — |
 | 7083311 | reject | OCP mirror registry 专有 | — |
 | 7105585 | reject | OCP revision pruner 专有 | — |
-| 7130642 | reject | OpenShift Virtualization 专有 | — |
+| 7130642 | convert_adapted | ACP Virtualization 通用 KubeVirt 问题：node-labeller CPU model 漂移导致 live migration 失败 | [VM_Live_Migration_Fails_After_Virtualization_Upgrade_on_Emerald_Rapids_Hosts.md](../../../docs/en/solutions/VM_Live_Migration_Fails_After_Virtualization_Upgrade_on_Emerald_Rapids_Hosts.md) |
 | 7138358 | convert | 通用 k8s CSR + 证书过期排障 | [Expired_Node_Certificates_Cause_CSR_Backlog_and_CNI_Pod_Crashes.md](../../../docs/en/solutions/Expired_Node_Certificates_Cause_CSR_Backlog_and_CNI_Pod_Crashes.md) |
 | 7138727 | reject | OCP Compliance Operator 专有 | — |
 | 7138824 | reject | OCP Web Console + NMState Operator 专有 | — |
