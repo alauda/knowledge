@@ -20,6 +20,8 @@ This behavior occurs when the `cpuManagerPolicy` is set to `static` and the kube
 
 Upgrade the kubelet to a version that preserves the CPU manager state across restarts. The fix ensures the state file survives the kubelet stop/start cycle, maintaining consistent CPU pinning for existing pods.
 
+Modern upstream kubelet (verified on v1.28 and later, including the v1.34 release series) already preserves `/var/lib/kubelet/cpu_manager_state` across `systemctl restart kubelet` by default — no workaround is required. The workaround below is only relevant when running an older, unpatched kubelet that cannot be upgraded immediately.
+
 ### Workaround: Preserve State File Manually
 
 If an immediate upgrade is not feasible, protect the state file by adjusting the kubelet service configuration:
