@@ -165,8 +165,11 @@ ip -6 r
 You should see an IPv6 route similar to:
 
 ```text
+fd00:10:3::/112 dev ovn0 proto static src 2004::192:168:134:191 metric 1024 pref medium
 fd00:100:64::/112 dev ovn0 proto kernel metric 256 pref medium
 ```
+
+One route is for the Pod CIDR, and the other is for the Join CIDR.
 
 ### Step 8: Restart all pods that use container networking
 

@@ -166,8 +166,11 @@ ip -6 r
 预期可以看到类似以下 IPv6 路由：
 
 ```text
+fd00:10:3::/112 dev ovn0 proto static src 2004::192:168:134:191 metric 1024 pref medium
 fd00:100:64::/112 dev ovn0 proto kernel metric 256 pref medium
 ```
+
+其中，一条是 Pod CIDR 路由，另一条是 Join CIDR 路由。
 
 ### 步骤 8：重启所有使用容器网络的 Pod
 
