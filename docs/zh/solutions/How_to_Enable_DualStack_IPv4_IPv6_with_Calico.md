@@ -32,7 +32,7 @@ ProductsVersion:
 ## 解决方案
 
 :::warning
-升级过程中，业务 Pod 需要重启才能重新获取双栈 IP 地址。请提前规划操作窗口，并通知相关业务团队。
+升级过程中，所有使用容器网络的 Pod 需要重启，才能重新获取双栈 IP 地址。请提前规划操作窗口，并通知相关业务团队。
 :::
 
 ### 步骤 1：修改所有 Master 节点的 kube-apiserver 配置
@@ -74,6 +74,14 @@ ProductsVersion:
 kubectl get moduleInfo -A | grep {集群名} | grep calico
 ```
 
+示例输出：
+
+```text
+calico-ccc75e628c532d4f3ecd341c27ee1ae4       region1      calico                 calico                 Running      v4.2.17   v4.2.17   v4.2.17
+```
+
+其中，第一列 `NAME` 对应 `{moduleInfo名称}`。
+
 #### 3.2 编辑 moduleInfo，修改双栈相关参数
 
 ```bash
@@ -102,7 +110,7 @@ spec:
 
 ### 步骤 5：验证双栈功能
 
-全部组件 Running 后，重启所有容器网络 Pod 使其重新获取双栈 IP，然后执行以下命令验证：
+全部组件 Running 后，重启所有使用容器网络的 Pod，使其重新获取双栈 IP，然后执行以下命令验证：
 
 ```bash
 # 查看 Pod 是否已分配双栈 IP
