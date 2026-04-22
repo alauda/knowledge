@@ -32,53 +32,110 @@ The kube-controller-manager's certificate signing controller stops issuing certi
 
 ## Resolution
 
-Recover each affected node by removing the stale kubelet PKI and forcing certificate reissuance.
+Recover each affected node by restoring a bootstrap path so kubelet can request a fresh client certificate, then approving the CSR it emits.
 
-### Step 1: Delete Stale Kubelet PKI
+> **Important on modern kubeadm clusters:** `/etc/kubernetes/kubelet.conf` references `/var/lib/kubelet/pki/kubelet-client-current.pem` as a **file** — not an inline-embedded cert. When that file is missing and `/etc/kubernetes/bootstrap-kubelet.conf` has already been removed (the standard post-join state), kubelet has no valid identity, cannot submit a CSR, and will crash-loop with `failed to run Kubelet: unable to load bootstrap kubeconfig`. Simply `rm`-ing the PKI dir and restarting kubelet is **not enough** — you must also hand kubelet a fresh bootstrap kubeconfig first.
 
-SSH into the affected node and remove the PKI directory:
+### Step 1: Create a Bootstrap Token
+
+On a control-plane node (or anywhere with cluster-admin kubectl), mint a bootstrap token the affected node can use to authenticate:
+
+```bash
+kubeadm token create --print-join-command
+```
+
+If `kubeadm` is not on the workstation, create the token Secret directly:
+
+```bash
+TOKEN_ID=$(head -c 3 /dev/urandom | xxd -p)
+TOKEN_SECRET=$(head -c 8 /dev/urandom | xxd -p)
+EXP=$(date -u -d '+1 hour' +%Y-%m-%dT%H:%M:%SZ)
+cat <<EOF | kubectl apply -f -
+apiVersion: v1
+kind: Secret
+metadata:
+  name: bootstrap-token-${TOKEN_ID}
+  namespace: kube-system
+type: bootstrap.kubernetes.io/token
+stringData:
+  token-id: ${TOKEN_ID}
+  token-secret: ${TOKEN_SECRET}
+  usage-bootstrap-authentication: "true"
+  usage-bootstrap-signing: "true"
+  auth-extra-groups: system:bootstrappers:kubeadm:default-node-token
+  expiration: "${EXP}"
+EOF
+echo "token: ${TOKEN_ID}.${TOKEN_SECRET}"
+```
+
+### Step 2: Write Bootstrap Kubeconfig on the Node
+
+On the affected node, rebuild `/etc/kubernetes/bootstrap-kubelet.conf`. Reuse the CA data that's already embedded in `/etc/kubernetes/kubelet.conf`:
 
 ```bash
 ssh <node-address>
-sudo rm -rf /var/lib/kubelet/pki
+CA_DATA=$(sudo grep certificate-authority-data /etc/kubernetes/kubelet.conf | awk '{print $2}')
+API_SERVER=$(sudo grep "server:" /etc/kubernetes/kubelet.conf | awk '{print $2}')
+sudo tee /etc/kubernetes/bootstrap-kubelet.conf >/dev/null <<EOF
+apiVersion: v1
+clusters:
+- cluster:
+    certificate-authority-data: ${CA_DATA}
+    server: ${API_SERVER}
+  name: default-cluster
+contexts:
+- context:
+    cluster: default-cluster
+    user: kubelet-bootstrap
+  name: default-context
+current-context: default-context
+kind: Config
+users:
+- name: kubelet-bootstrap
+  user:
+    token: <TOKEN_FROM_STEP_1>
+EOF
+sudo chmod 600 /etc/kubernetes/bootstrap-kubelet.conf
 ```
 
-### Step 2: Restart the Kubelet
+### Step 3: Remove Stale PKI and Restart Kubelet
+
+With the bootstrap kubeconfig in place, kubelet has a way to authenticate when the file-backed client cert is missing:
 
 ```bash
+sudo rm -rf /var/lib/kubelet/pki
 sudo systemctl restart kubelet
 ```
 
-The kubelet generates a new private key and submits a fresh CSR to the API server upon startup.
+Kubelet now boots in bootstrap mode, generates a fresh private key, and submits a CSR signed with the bootstrap token.
 
-### Step 3: Approve Pending CSRs
+### Step 4: Approve the Pending CSR
 
-From a control-plane node or workstation with cluster admin access, approve the new CSR:
+From the workstation with cluster-admin access:
 
 ```bash
 kubectl get csr
 kubectl certificate approve <csr-name>
 ```
 
-If multiple nodes are affected, approve all pending CSRs at once:
+For multiple affected nodes at once:
 
 ```bash
 kubectl get csr -o name | xargs -I{} kubectl certificate approve {}
 ```
 
-### Step 4: Verify Recovery
+The built-in CSR approver may also approve it automatically (via group `system:bootstrappers:kubeadm:default-node-token`), so this step is sometimes a no-op.
 
-Confirm the node returns to `Ready` status:
+### Step 5: Verify Recovery
+
+Confirm the node returns to `Ready` and the CNI pods there are running:
 
 ```bash
 kubectl get nodes
-```
-
-Check that CNI pods on the recovered node are running:
-
-```bash
 kubectl get pods -n kube-system --field-selector spec.nodeName=<node-name>
 ```
+
+After the node stabilizes, `/etc/kubernetes/bootstrap-kubelet.conf` is no longer needed — you can delete it to prevent a stale token from lingering on disk.
 
 ## Diagnostic Steps
 
