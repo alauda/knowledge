@@ -39,7 +39,7 @@ ProductsVersion:
 
 `kube-apiserver` 以静态 Pod 方式运行，配置文件路径：
 
-```
+```text
 /etc/kubernetes/manifests/kube-apiserver.yaml
 ```
 
@@ -53,7 +53,7 @@ ProductsVersion:
 
 配置文件路径：
 
-```
+```text
 /etc/kubernetes/manifests/kube-controller-manager.yaml
 ```
 
