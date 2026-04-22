@@ -107,7 +107,7 @@ systemctl restart kubelet
 :::warning
 对于自建集群，升级 kubelet 时通常不会覆盖 `/var/lib/kubelet/kubeadm-flags.env` 中已有的 `--node-ip` 配置。
 
-对于 MicroOS 集群，集群升级后此配置会丢失，因此不建议将其作为持久化修改方式。
+对于 MicroOS 集群，集群升级后此配置会丢失，因此不建议将其作为持久化修改方式。不要依赖 `/var/lib/kubelet/kubeadm-flags.env` 在升级后保持不变。升级完成后，建议重新检查 kubelet 的 `--node-ip=<IPv4>,<IPv6>` 配置以及 `Node.status.addresses` 是否仍为双栈；如配置丢失，需重新设置并重启 kubelet。
 :::
 
 ### 步骤 4：修改 `kube-system/kube-ovn-controller` 的参数
