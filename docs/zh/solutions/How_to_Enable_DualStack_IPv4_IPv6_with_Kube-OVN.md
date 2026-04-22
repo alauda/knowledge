@@ -32,7 +32,7 @@ ProductsVersion:
 ## 解决方案
 
 :::warning
-升级过程中，所有容器网络 Pod 需要重启才能重新获取双栈 IP 地址。请提前规划操作窗口，并通知相关业务团队。
+升级过程中，所有使用容器网络的 Pod 需要重启，才能重新获取双栈 IP 地址。请提前规划操作窗口，并通知相关业务团队。
 :::
 
 ### 步骤 1：修改所有 Master 节点的 kube-apiserver 配置
@@ -121,9 +121,11 @@ kubectl get moduleInfo -A | grep {集群名} | grep kube-ovn
 
 示例输出：
 
+```text
+kube-ovn-2bcc878187dd9f0bb1c2b144032eae99   region1   kube-ovn   kube-ovn   Processing   v4.2.17   v4.2.17   v4.2.17
 ```
-business-1-2bcc878187dd9f0bb1c2b144032eae99   business-1   kube-ovn   kube-ovn   Processing   v4.2.28   ...
-```
+
+其中，第一列 `NAME` 对应 `{moduleInfo名称}`。
 
 #### 4.2 编辑 moduleInfo，修改双栈相关参数
 
@@ -162,7 +164,7 @@ spec:
 
 ### 步骤 6：验证双栈功能
 
-以上组件 Running 后，重启所有容器网络 Pod 使其重新获取双栈 IP，然后执行以下命令验证：
+以上组件 Running 后，重启所有使用容器网络的 Pod，使其重新获取双栈 IP，然后执行以下命令验证：
 
 ```bash
 # 查看节点是否已同时上报 IPv4/IPv6 InternalIP
@@ -171,6 +173,8 @@ kubectl get node <node-name> -o yaml
 # 查看 Pod 是否已分配双栈 IP
 kubectl get pod <pod-name> -o jsonpath='{.status.podIPs}'
 ```
+
+确认 `status.addresses` 中同时存在 IPv4 和 IPv6 的 `InternalIP`。
 
 预期输出示例：
 

@@ -31,7 +31,7 @@ This document describes how to upgrade a Kubernetes cluster that uses Kube-OVN a
 ## Resolution
 
 :::warning
-During the upgrade, all container network pods must be restarted to obtain dual-stack IP addresses again. Plan a maintenance window in advance and notify the relevant application teams.
+During the upgrade, all pods that use container networking must be restarted to obtain dual-stack IP addresses again. Plan a maintenance window in advance and notify the relevant application teams.
 :::
 
 ### Step 1: Update the kube-apiserver configuration on all master nodes
@@ -120,9 +120,11 @@ kubectl get moduleInfo -A | grep {cluster-name} | grep kube-ovn
 
 Example output:
 
+```text
+kube-ovn-2bcc878187dd9f0bb1c2b144032eae99   region1   kube-ovn   kube-ovn   Processing   v4.2.17   v4.2.17   v4.2.17
 ```
-business-1-2bcc878187dd9f0bb1c2b144032eae99   business-1   kube-ovn   kube-ovn   Processing   v4.2.28   ...
-```
+
+In this output, the first `NAME` column is the value to use for `{moduleInfo-name}`.
 
 #### 4.2 Edit moduleInfo and update the dual-stack parameters
 
@@ -160,7 +162,7 @@ Wait until all Kube-OVN core components in the member cluster restart successful
 
 ### Step 6: Verify dual-stack functionality
 
-After the components are in `Running` state, restart all container network pods so that they can obtain dual-stack IP addresses again, and then run the following commands:
+After the components are in `Running` state, restart all pods that use container networking so that they can obtain dual-stack IP addresses again, and then run the following commands:
 
 ```bash
 # Check whether the node reports both IPv4 and IPv6 InternalIP addresses
@@ -169,6 +171,8 @@ kubectl get node <node-name> -o yaml
 # Check whether the pod has dual-stack IPs assigned
 kubectl get pod <pod-name> -o jsonpath='{.status.podIPs}'
 ```
+
+Confirm that both IPv4 and IPv6 `InternalIP` entries are present in `status.addresses`.
 
 Expected output example:
 
