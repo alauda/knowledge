@@ -92,14 +92,6 @@ spec:
         v6PodCIDR: fd00:10:3::/112
 ```
 
-:::tip
-Calico dual-stack parameters differ from Kube-OVN:
-
-- `NET_STACK` must be set to `dual` instead of `dual_stack`
-- Pod CIDR is configured with separate `v4PodCIDR` and `v6PodCIDR` fields
-- `JOIN_CIDR` and `SVC_CIDR` do not need to be configured separately
-:::
-
 ### Step 4: Wait for the Calico core components to restart
 
 Wait until all Calico core components restart successfully:
