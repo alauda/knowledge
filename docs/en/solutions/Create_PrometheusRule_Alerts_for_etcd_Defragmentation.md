@@ -103,16 +103,25 @@ Process one member at a time to maintain quorum throughout the operation.
 
 ## Diagnostic Steps
 
-Check current etcd database size and usage:
+Check current etcd database size and usage. The etcd container image typically ships without an HTTP client, so `kubectl exec … -- wget/curl` does not work; port-forward the metrics port to your workstation instead:
 
 ```bash
-kubectl exec -n kube-system etcd-<node-name> -- wget -qO- http://127.0.0.1:2381/metrics 2>/dev/null \
-  | grep -E "etcd_mvcc_db_total_size_in_bytes|etcd_mvcc_db_total_size_in_use_in_bytes|etcd_db_total_size_in_bytes"
+# Terminal 1
+kubectl port-forward -n kube-system pod/etcd-<node-name> 12381:2381
+
+# Terminal 2
+curl -s http://127.0.0.1:12381/metrics \
+  | grep -E "^etcd_(mvcc_db_total_size_in_bytes|mvcc_db_total_size_in_use_in_bytes|db_total_size_in_bytes) "
 ```
 
-Verify the PrometheusRule is being evaluated:
+Verify the PrometheusRule is being evaluated. The Prometheus namespace and Service vary by deployment — locate them first, then forward to the pod's raw port (many clusters front the Prometheus Service with an auth proxy that rejects unauthenticated `/api/v1/rules` requests):
 
 ```bash
-kubectl port-forward -n monitoring svc/prometheus-operated 9090:9090 &
-curl -s 'http://localhost:9090/api/v1/rules' | python3 -m json.tool | grep -A5 "defrag"
+# Namespace + pod name for the running Prometheus
+ns=$(kubectl get prometheus -A -o jsonpath='{.items[0].metadata.namespace}')
+pod=$(kubectl get pod -n "$ns" -l app.kubernetes.io/name=prometheus -o jsonpath='{.items[0].metadata.name}')
+
+kubectl port-forward -n "$ns" "pod/$pod" 9090:9090 &
+curl -s http://127.0.0.1:9090/api/v1/rules \
+  | python3 -m json.tool | grep -iE "defrag"
 ```
