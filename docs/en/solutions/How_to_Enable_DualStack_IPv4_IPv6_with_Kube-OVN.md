@@ -5,6 +5,7 @@ products:
   - Alauda Container Platform
 ProductsVersion:
   - '4.2,4.3'
+id: KB260400013
 ---
 
 # Upgrade a Kube-OVN Cluster from IPv4 to Dual Stack (IPv4/IPv6)
