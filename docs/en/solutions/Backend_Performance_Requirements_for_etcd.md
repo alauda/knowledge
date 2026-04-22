@@ -79,9 +79,15 @@ Check etcd logs for latency warnings:
 kubectl logs -n kube-system etcd-<node-name> --tail=100 | grep -E "took too long|heartbeat|overloaded"
 ```
 
-Query etcd metrics directly via the Prometheus endpoint:
+Query etcd metrics directly via the Prometheus endpoint. The etcd container image ships without an HTTP client on most distributions, so exec'ing `wget`/`curl` inside it is not reliable. Use `kubectl port-forward` against the pod and query from the workstation:
 
 ```bash
-kubectl exec -n kube-system etcd-<node-name> -- wget -qO- http://127.0.0.1:2381/metrics 2>/dev/null \
-  | grep -E "etcd_disk_wal_fsync|etcd_disk_backend_commit|etcd_mvcc_db_total_size"
+# Terminal 1: forward the metrics port to a local port.
+kubectl port-forward -n kube-system pod/etcd-<node-name> 12381:2381
+
+# Terminal 2: query and filter the metrics of interest.
+curl -s http://127.0.0.1:12381/metrics \
+  | grep -E "^(etcd_disk_wal_fsync|etcd_disk_backend_commit|etcd_mvcc_db_total_size)"
 ```
+
+If the cluster has Prometheus scraping etcd, the same metrics are also available via PromQL — typically the cleanest path in a production environment.
