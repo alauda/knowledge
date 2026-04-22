@@ -106,7 +106,7 @@ systemctl restart kubelet
 :::warning
 For self-managed clusters, upgrading kubelet usually does not overwrite the existing `--node-ip` configuration in `/var/lib/kubelet/kubeadm-flags.env`.
 
-For MicroOS clusters, this configuration is lost after a cluster upgrade. Do not treat this file change as a persistent configuration method.
+For MicroOS clusters, this configuration is lost after a cluster upgrade, so do not treat this file change as a persistent configuration method. Do not rely on `/var/lib/kubelet/kubeadm-flags.env` remaining unchanged after upgrades. After the upgrade, re-check whether kubelet still uses `--node-ip=<IPv4>,<IPv6>` and whether `Node.status.addresses` is still dual-stack. If the configuration is missing, re-apply it and restart kubelet.
 :::
 
 ### Step 4: Update the `kube-system/kube-ovn-controller` arguments
