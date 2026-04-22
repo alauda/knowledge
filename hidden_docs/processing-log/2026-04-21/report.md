@@ -1,6 +1,6 @@
 # 处理审计 — 2026-04-21
 
-> 生成时间：2026-04-22 02:59 UTC　｜　rules hash：`451340a37b47820d…`
+> 生成时间：2026-04-22 03:12 UTC　｜　rules hash：`6760d733e72af233…`
 >
 > 本页记录 ocp2acp 针对一批 OCP KB 文章的处理决策，包括决定**不**发布
 > 的条目（signal / defer / reject）。ID 列是指向 Red Hat Customer Portal
