@@ -4,7 +4,7 @@ kind:
 products:
   - Alauda Container Platform
 ProductsVersion:
-  - '4.2.5,4.3.1,4.4.0'
+  - '4.2,4.3'
 ---
 
 # 如何将 Calico 集群从 IPv4 升级为双栈（IPv4/IPv6）
@@ -16,13 +16,12 @@ ProductsVersion:
 ## 环境
 
 - 使用 Calico 作为 CNI 插件的 Alauda Container Platform 集群。
-- **Calico 双栈的特殊要求**：与 Kube-OVN 不同，Calico 要求节点网卡本身已配置 IPv6 地址，且节点间 IPv6 路由互通，才能正常建立双栈网络。
 
 ## 前置条件
 
 | 项目 | 要求 |
 |------|------|
-| ACP 版本 | ≥ 4.2.5，或 ≥ 4.3.1，或 ≥ 4.4.0 |
+| ACP 版本 | 4.2, 4.3 |
 | CNI 插件 | Calico |
 | 节点内核 | 已启用 IPv6（`net.ipv6.conf.all.disable_ipv6 = 0`）且已开启转发（`net.ipv6.conf.all.forwarding = 1`） |
 | 节点网卡 | 已配置真实 IPv6 地址（GUA，如 `2004::/64` 段） |
@@ -33,6 +32,7 @@ ProductsVersion:
 
 :::warning
 升级过程中，所有使用容器网络的 Pod 需要重启，才能重新获取双栈 IP 地址。请提前规划操作窗口，并通知相关业务团队。
+同时，本文中对 `calico-node` 等组件参数的修改会生成 `resourcePatch`。集群升级时这些 `resourcePatch` 可能会被删除，导致这里配置的双栈参数丢失。升级时请重点关注这一点，并在升级后重新检查相关参数，必要时重新设置。
 :::
 
 ### 步骤 1：修改所有 Master 节点的 kube-apiserver 配置
@@ -64,64 +64,94 @@ ProductsVersion:
 - --service-cluster-ip-range=10.4.0.0/16,fd00:10:4::/112
 ```
 
-### 步骤 3：修改 Calico 的 moduleInfo 配置
+### 步骤 3：修改 `calico-config` ConfigMap
 
-#### 3.1 查找目标集群的 moduleInfo
-
-在 Global 集群节点上执行，找到对应集群的 Calico moduleInfo：
+执行以下命令：
 
 ```bash
-kubectl get moduleInfo -A | grep {集群名} | grep calico
+kubectl edit configmap calico-config -n kube-system
 ```
 
-示例输出：
+将 `assign_ipv6` 参数设置为 `true`。
 
-```text
-calico-ccc75e628c532d4f3ecd341c27ee1ae4       region1      calico                 calico                 Running      v4.2.17   v4.2.17   v4.2.17
-```
+### 步骤 4：修改 `calico-node` DaemonSet 配置
 
-其中，第一列 `NAME` 对应 `{moduleInfo名称}`。
-
-#### 3.2 编辑 moduleInfo，修改双栈相关参数
+执行以下命令：
 
 ```bash
-kubectl edit moduleInfo {moduleInfo名称} -n {namespace}
+kubectl edit daemonset calico-node -n kube-system
 ```
 
-将以下参数修改为双栈配置：
+在 `env` 中增加以下环境变量：
 
 ```yaml
-spec:
-  config:
-    components:
-      networking:
-        NET_STACK: dual
-      dual_stack:
-        v4PodCIDR: 10.3.0.0/16
-        v6PodCIDR: fd00:10:3::/112
+- name: IP6
+  value: "autodetect"
+- name: CALICO_IPV6POOL_CIDR
+  value: "fd00:10:3::/112"
+- name: IP6_AUTODETECTION_METHOD
+  value: "first-found"
+- name: "FELIX_IPV6SUPPORT"
+  value: "true"
 ```
 
-### 步骤 4：等待 Calico 核心组件重启
+其中，`CALICO_IPV6POOL_CIDR` 的取值表示期望分配 IPv6 地址的 CIDR 范围。
 
-等待以下 Calico 核心组件全部重启完成：
+### 步骤 5：确认 Calico 已自动创建默认 IPv6 IPPool
 
-- `calico-node`
-- `calico-kube-controllers`
+以上修改完成后，Calico 会自动生成一个默认的 IPv6 IPPool，其地址范围为 `CALICO_IPV6POOL_CIDR` 所设置的 CIDR 范围。
 
-### 步骤 5：验证双栈功能
-
-全部组件 Running 后，重启所有使用容器网络的 Pod，使其重新获取双栈 IP，然后执行以下命令验证：
+执行以下命令：
 
 ```bash
-# 查看 Pod 是否已分配双栈 IP
-kubectl get pod <pod-name> -o jsonpath='{.status.podIPs}'
+kubectl get ippool -A
 ```
 
-预期输出示例：
+预期输出类似：
 
-```json
-[{"ip":"10.3.x.x"},{"ip":"fd00:10:3::x"}]
+```text
+NAME                  AGE
+default-ipv4-ippool   5d4h
+default-ipv6-ippool   2m34s
 ```
+
+确认 `default-ipv6-ippool` 已创建。
+
+### 步骤 6：修改默认子网为双栈子网
+
+升级成双栈后，原有默认子网 `default-ipv4-ippool` 仍为单栈类型，尚未建立与双栈 IPPool 的对应关系。这不会影响新生成 IPv6 IPPool 的使用，但会影响自定义资源 `Subnet` 和 `IPs` 的正确查询。
+
+如需修改默认子网，可执行以下命令：
+
+```bash
+kubectl edit subnet default-ipv4-ippool
+```
+
+将子网配置修改为双栈格式，例如：
+
+```yaml
+cidrBlock: 10.3.0.0/16,fd00:10:3::/112
+protocol: Dual
+```
+
+### 步骤 7：删除需要 CNI 分配地址的 Pod
+
+执行以下脚本，删除所有使用容器网络且 `restartPolicy=Always` 的 Pod：
+
+```bash
+#!/usr/bin/env bash
+for ns in $(kubectl get ns --no-headers -o custom-columns=NAME:.metadata.name); do
+  for pod in $(kubectl get pod --no-headers -n "$ns" --field-selector spec.restartPolicy=Always -o custom-columns=NAME:.metadata.name,HOST:spec.hostNetwork | awk '{if ($2!="true") print $1}'); do
+    kubectl delete pod "$pod" -n "$ns" --ignore-not-found --wait=false
+  done
+done
+```
+
+Pod 重启后会重新分配 IPv4 和 IPv6 两个地址。
+
+执行 `kubectl get ips -A`，确认新创建的 IP 已同时包含 IPv4 和 IPv6 地址。
+
+如需进一步验证 IPv6 连通性，可从 `kubectl get ips -A` 的输出中选择同一集群内两个使用容器网络的 Pod IPv6 地址，互相执行 `ping6` 测试。
 
 ## 相关信息
 

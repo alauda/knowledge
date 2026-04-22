@@ -4,7 +4,7 @@ kind:
 products:
   - Alauda Container Platform
 ProductsVersion:
-  - '4.2.5,4.3.1,4.4.0'
+  - '4.2,4.3'
 ---
 
 # Upgrade a Calico Cluster from IPv4 to Dual Stack (IPv4/IPv6)
@@ -22,7 +22,7 @@ This document describes how to upgrade a Kubernetes cluster that uses Calico as 
 
 | Item | Requirement |
 |------|------|
-| ACP version | ≥ 4.2.5, or ≥ 4.3.1, or ≥ 4.4.0 |
+| ACP version | 4.2, 4.3 |
 | CNI plugin | Calico |
 | Node kernel | IPv6 is enabled (`net.ipv6.conf.all.disable_ipv6 = 0`) and forwarding is enabled (`net.ipv6.conf.all.forwarding = 1`) |
 | Node NIC | A real IPv6 address is configured (GUA, for example `2004::/64`) |
@@ -32,6 +32,7 @@ This document describes how to upgrade a Kubernetes cluster that uses Calico as 
 
 :::warning
 During the upgrade, all pods that use container networking must be restarted to obtain dual-stack IP addresses again. Plan a maintenance window in advance and notify the relevant application teams.
+At the same time, the parameter changes to components such as `calico-node` in this document create `resourcePatch` entries. These `resourcePatch` entries may be removed during a cluster upgrade, which can cause the dual-stack arguments configured here to be lost. Pay special attention to this during upgrades, and re-check and re-apply the relevant arguments after the upgrade if needed.
 :::
 
 ### Step 1: Update the kube-apiserver configuration on all master nodes
@@ -63,64 +64,94 @@ Update the following two parameters to dual-stack format:
 - --service-cluster-ip-range=10.4.0.0/16,fd00:10:4::/112
 ```
 
-### Step 3: Update the Calico moduleInfo configuration
+### Step 3: Update the `calico-config` ConfigMap
 
-#### 3.1 Find the target cluster moduleInfo
-
-Run the following command on the Global cluster node to find the Calico moduleInfo for the target cluster:
+Run:
 
 ```bash
-kubectl get moduleInfo -A | grep {cluster-name} | grep calico
+kubectl edit configmap calico-config -n kube-system
 ```
 
-Example output:
+Set the `assign_ipv6` parameter to `true`.
 
-```text
-calico-ccc75e628c532d4f3ecd341c27ee1ae4       region1      calico                 calico                 Running      v4.2.17   v4.2.17   v4.2.17
-```
+### Step 4: Update the `calico-node` DaemonSet configuration
 
-In this output, the first `NAME` column is the value to use for `{moduleInfo-name}`.
-
-#### 3.2 Edit moduleInfo and update the dual-stack parameters
+Run:
 
 ```bash
-kubectl edit moduleInfo {moduleInfo-name} -n {namespace}
+kubectl edit daemonset calico-node -n kube-system
 ```
 
-Update the following parameters for dual-stack:
+Add the following environment variables under `env`:
 
 ```yaml
-spec:
-  config:
-    components:
-      networking:
-        NET_STACK: dual
-      dual_stack:
-        v4PodCIDR: 10.3.0.0/16
-        v6PodCIDR: fd00:10:3::/112
+- name: IP6
+  value: "autodetect"
+- name: CALICO_IPV6POOL_CIDR
+  value: "fd00:10:3::/112"
+- name: IP6_AUTODETECTION_METHOD
+  value: "first-found"
+- name: FELIX_IPV6SUPPORT
+  value: "true"
 ```
 
-### Step 4: Wait for the Calico core components to restart
+The value of `CALICO_IPV6POOL_CIDR` defines the CIDR range from which IPv6 addresses are allocated.
 
-Wait until all Calico core components restart successfully:
+### Step 5: Confirm that Calico automatically creates the default IPv6 IPPool
 
-- `calico-node`
-- `calico-kube-controllers`
+After the above changes are applied, Calico automatically creates a default IPv6 IPPool using the CIDR range configured in `CALICO_IPV6POOL_CIDR`.
 
-### Step 5: Verify dual-stack functionality
-
-After the components are in `Running` state, restart all pods that use container networking so that they can obtain dual-stack IP addresses again, and then run the following command:
+Run:
 
 ```bash
-# Check whether the pod has dual-stack IPs assigned
-kubectl get pod <pod-name> -o jsonpath='{.status.podIPs}'
+kubectl get ippool -A
 ```
 
-Expected output example:
+Expected output is similar to:
 
-```json
-[{"ip":"10.3.x.x"},{"ip":"fd00:10:3::x"}]
+```text
+NAME                  AGE
+default-ipv4-ippool   5d4h
+default-ipv6-ippool   2m34s
 ```
+
+Confirm that `default-ipv6-ippool` has been created.
+
+### Step 6: Update the default subnet to a dual-stack subnet
+
+After the cluster is upgraded to dual stack, the existing default subnet `default-ipv4-ippool` remains single stack and does not yet map to the dual-stack IPPool. This does not affect the new IPv6 IPPool itself, but it affects correct querying of the custom resources `Subnet` and `IPs`.
+
+If you want to update the default subnet, run:
+
+```bash
+kubectl edit subnet default-ipv4-ippool
+```
+
+Update the subnet configuration to dual-stack format, for example:
+
+```yaml
+cidrBlock: 10.3.0.0/16,fd00:10:3::/112
+protocol: Dual
+```
+
+### Step 7: Delete the pods that require CNI-assigned addresses
+
+Run the following script to delete all pods that use container networking and have `restartPolicy=Always`:
+
+```bash
+#!/usr/bin/env bash
+for ns in $(kubectl get ns --no-headers -o custom-columns=NAME:.metadata.name); do
+  for pod in $(kubectl get pod --no-headers -n "$ns" --field-selector spec.restartPolicy=Always -o custom-columns=NAME:.metadata.name,HOST:spec.hostNetwork | awk '{if ($2!="true") print $1}'); do
+    kubectl delete pod "$pod" -n "$ns" --ignore-not-found --wait=false
+  done
+done
+```
+
+After the pods restart, they will be assigned both IPv4 and IPv6 addresses.
+
+Run `kubectl get ips -A` and confirm that the newly created IP entries contain both IPv4 and IPv6 addresses.
+
+To further verify IPv6 connectivity, select two IPv6 addresses of pods that use container networking in the same cluster from the `kubectl get ips -A` output, and run `ping6` between them.
 
 ## Additional Information
 

@@ -4,7 +4,7 @@ kind:
 products:
   - Alauda Container Platform
 ProductsVersion:
-  - '4.2.5,4.3.1,4.4.0'
+  - '4.2,4.3'
 ---
 
 # Upgrade a Kube-OVN Cluster from IPv4 to Dual Stack (IPv4/IPv6)
@@ -23,7 +23,7 @@ This document describes how to upgrade a Kubernetes cluster that uses Kube-OVN a
 
 | Item | Requirement |
 |------|------|
-| ACP version | ≥ 4.2.5, or ≥ 4.3.1, or ≥ 4.4.0 |
+| ACP version | 4.2, 4.3 |
 | CNI plugin | Kube-OVN |
 | Node kernel | IPv6 is enabled (`net.ipv6.conf.all.disable_ipv6 = 0`) and forwarding is enabled (`net.ipv6.conf.all.forwarding = 1`) |
 | Node NIC | A real IPv6 address is configured (GUA, for example `2004::/64`) and a default route is configured |
@@ -32,6 +32,7 @@ This document describes how to upgrade a Kubernetes cluster that uses Kube-OVN a
 
 :::warning
 During the upgrade, all pods that use container networking must be restarted to obtain dual-stack IP addresses again. Plan a maintenance window in advance and notify the relevant application teams.
+At the same time, the parameter changes to components such as `kube-ovn-controller` and `kube-ovn-cni` in this document create `resourcePatch` entries. These `resourcePatch` entries may be removed during a cluster upgrade, which can cause the dual-stack arguments configured here to be lost. Pay special attention to this during upgrades, and re-check and re-apply the relevant arguments after the upgrade if needed.
 :::
 
 ### Step 1: Update the kube-apiserver configuration on all master nodes
@@ -108,76 +109,104 @@ For self-managed clusters, upgrading kubelet usually does not overwrite the exis
 For MicroOS clusters, this configuration is lost after a cluster upgrade. Do not treat this file change as a persistent configuration method.
 :::
 
-### Step 4: Update the Kube-OVN moduleInfo configuration
+### Step 4: Update the `kube-system/kube-ovn-controller` arguments
 
-#### 4.1 Find the target cluster moduleInfo
-
-Run the following command on the Global cluster node to find the Kube-OVN moduleInfo for the target cluster:
+Edit the Deployment:
 
 ```bash
-kubectl get moduleInfo -A | grep {cluster-name} | grep kube-ovn
+kubectl edit deploy kube-ovn-controller -n kube-system
 ```
 
-Example output:
-
-```text
-kube-ovn-2bcc878187dd9f0bb1c2b144032eae99   region1   kube-ovn   kube-ovn   Processing   v4.2.17   v4.2.17   v4.2.17
-```
-
-In this output, the first `NAME` column is the value to use for `{moduleInfo-name}`.
-
-#### 4.2 Edit moduleInfo and update the dual-stack parameters
-
-```bash
-kubectl edit moduleInfo {moduleInfo-name}
-```
-
-Update the following five parameters for dual-stack:
+Update the following arguments to dual-stack format:
 
 ```yaml
-spec:
-  config:
-    components:
-      dual_stack:
-        JOIN_CIDR: 100.64.0.0/16,fd00:100:64::/112
-        POD_CIDR: 10.3.0.0/16,fd00:10:3::/112
-        POD_GATEWAY: ""
-        SVC_CIDR: 10.4.0.0/16,fd00:10:4::/112
-      networking:
-        NET_STACK: dual_stack
+- --node-switch-cidr=100.64.0.0/16,fd00:100:64::/112
+- --service-cluster-ip-range=10.4.0.0/16,fd00:10:4::/112
+- --default-cidr=10.3.0.0/16,fd00:10:3::/112
 ```
 
-:::tip
-Set `POD_GATEWAY` to an empty string in dual-stack mode. Kube-OVN allocates the gateway automatically.
-:::
+### Step 5: Verify that the node annotations have been updated to dual stack
 
-### Step 5: Wait for the Kube-OVN core components to restart
-
-Wait until all Kube-OVN core components in the member cluster restart successfully:
-
-- `kube-ovn-controller`
-- `kube-ovn-cni`
-- `ovn-central`
-- `ovs-ovn`
-
-### Step 6: Verify dual-stack functionality
-
-After the components are in `Running` state, restart all pods that use container networking so that they can obtain dual-stack IP addresses again, and then run the following commands:
+Run:
 
 ```bash
-# Check whether the node reports both IPv4 and IPv6 InternalIP addresses
 kubectl get node <node-name> -o yaml
-
-# Check whether the pod has dual-stack IPs assigned
-kubectl get pod <pod-name> -o jsonpath='{.status.podIPs}'
 ```
 
-Confirm that both IPv4 and IPv6 `InternalIP` entries are present in `status.addresses`.
+Confirm that the following annotations are updated to dual-stack format:
 
-Expected output example:
+```yaml
+ovn.kubernetes.io/cidr: 100.64.0.0/16,fd00:100:64::/112
+ovn.kubernetes.io/gateway: 100.64.0.1,fd00:100:64::1
+```
 
-```json
-[{"ip":"10.3.x.x"},{"ip":"fd00:10:3::x"}]
+### Step 6: Update the `kube-system/kube-ovn-cni` arguments
+
+Edit the DaemonSet:
+
+```bash
+kubectl edit ds kube-ovn-cni -n kube-system
+```
+
+Update the following argument to dual-stack format:
+
+```yaml
+- --service-cluster-ip-range=10.4.0.0/16,fd00:10:4::/112
+```
+
+### Step 7: Verify the node IPv6 route
+
+Run the following command on the node:
+
+```bash
+ip -6 r
+```
+
+You should see an IPv6 route similar to:
+
+```text
+fd00:100:64::/112 dev ovn0 proto kernel metric 256 pref medium
+```
+
+### Step 8: Restart all pods that use container networking
+
+Run the following script to delete all pods that use container networking and have `restartPolicy=Always`:
+
+```bash
+#!/usr/bin/env bash
+for ns in $(kubectl get ns --no-headers -o custom-columns=NAME:.metadata.name); do
+  for pod in $(kubectl get pod --no-headers -n "$ns" --field-selector spec.restartPolicy=Always -o custom-columns=NAME:.metadata.name,HOST:spec.hostNetwork | awk '{if ($2!="true") print $1}'); do
+    kubectl delete pod "$pod" -n "$ns" --ignore-not-found --wait=false
+  done
+done
+```
+
+### Step 9: Verify that dual-stack IPs have been allocated
+
+Run:
+
+```bash
+kubectl get ips
+```
+
+You should see both IPv4 and IPv6 addresses allocated to the pod, for example:
+
+```text
+kube-ovn-pinger-vq896.kube-system   10.3.0.16   fd00:10:3::10   9a:3f:b1:71:58:5f   192.168.141.125   ovn-default
+```
+
+To further verify IPv6 connectivity, you can use `kube-ovn-pinger` to run `ping6` to the IPv6 address of a pod that uses container networking in the same cluster, for example:
+
+```bash
+kubectl exec -it -n kube-system kube-ovn-pinger-6fbx6 -- ping6 fd00:10:3::17
+```
+
+Expected output is similar to:
+
+```text
+Defaulted container "pinger" out of: pinger, hostpath-init (init)
+PING fd00:10:3::17 (fd00:10:3::17): 56 data bytes
+64 bytes from fd00:10:3::17: icmp_seq=0 ttl=64 time=2.989 ms
 ```
 
 ## Additional Information
