@@ -26,9 +26,9 @@ The kubelet supports configurable log verbosity levels ranging from `0` (least v
 | 5–8 | Trace-level output, verbose internal state dumps |
 | 9–10 | Maximum verbosity, rarely needed |
 
-### Persistent Configuration (All Nodes)
+### Persistent Configuration (Mutable Host OS)
 
-To set the kubelet log level persistently, add or modify the `--v` flag in the kubelet configuration. On nodes managed by systemd, create a drop-in file:
+On mutable host OSes (standard Linux distributions with a writable `/etc`), set the kubelet log level persistently by adding or modifying the `--v` flag via a systemd drop-in file:
 
 ```bash
 sudo mkdir -p /etc/systemd/system/kubelet.service.d/
@@ -42,9 +42,21 @@ sudo systemctl daemon-reload
 sudo systemctl restart kubelet
 ```
 
+### Persistent Configuration (Immutable OS Nodes)
+
+On immutable-OS nodes — MicroOS, or any setup where `/etc` is backed by a read-mostly overlay that is reset on node upgrades or rollbacks — direct file edits under `/etc/systemd/system/kubelet.service.d/` **will not survive the next node update**. You may see the desired verbosity right after the change, then lose it silently when the node image is replaced.
+
+Persist the change through ACP's Immutable Infrastructure mechanism instead:
+
+- Define the drop-in file as part of the node configuration managed by ACP (under `configure/clusters/nodes`). The platform renders and re-applies it every time a node boots, so the override survives OS upgrades and rollbacks.
+- Trigger a rolling apply on the target node pool. ACP will cordon/drain, restart the kubelet with the new verbosity, and resume scheduling.
+- Revert the same way — update the node configuration to remove the override; do not `rm` the file directly on the node, because the mutation will be lost at the next reconcile.
+
+If the cluster spans both mutable and immutable nodes, scope the change to a node group / pool so that only the intended nodes carry the higher verbosity.
+
 ### One-Time Change (Single Node)
 
-For temporary debugging without a reboot, override the kubelet arguments directly:
+For temporary debugging on a single mutable-OS node without touching the persistent configuration, override the kubelet arguments directly on that node:
 
 ```bash
 sudo systemctl edit kubelet
@@ -63,6 +75,8 @@ Then reload and restart:
 sudo systemctl daemon-reload
 sudo systemctl restart kubelet
 ```
+
+On immutable-OS nodes, prefer the Immutable Infrastructure flow above even for short investigations: running `systemctl edit` on a single node works until that node is re-imaged, at which point the change is gone without warning.
 
 > **Important:** Revert the log level back to the default (`2`) after collecting the necessary logs. Extended operation at high verbosity places significant load on node resources.
 

@@ -1,6 +1,6 @@
 # 处理审计 — 2026-04-21
 
-> 生成时间：2026-04-22 02:49 UTC　｜　rules hash：`451340a37b47820d…`
+> 生成时间：2026-04-22 02:59 UTC　｜　rules hash：`451340a37b47820d…`
 >
 > 本页记录 ocp2acp 针对一批 OCP KB 文章的处理决策，包括决定**不**发布
 > 的条目（signal / defer / reject）。ID 列是指向 Red Hat Customer Portal
@@ -26,7 +26,7 @@
 |---|---|---|---|
 | [3524691](https://access.redhat.com/solutions/3524691) | reject | oc adm prune 是 OCP 专有操作，引用 OCP 3.x | — |
 | [4105151](https://access.redhat.com/solutions/4105151) | reject | OCP 安装/部署，Lifecycle domain 不可转 | — |
-| [4619431](https://access.redhat.com/solutions/4619431) | convert | kubelet 通用配置 | [Configure_Kubelet_Log_Level_Verbosity.md](../../../docs/en/solutions/Configure_Kubelet_Log_Level_Verbosity.md) |
+| [4619431](https://access.redhat.com/solutions/4619431) | convert | kubelet 通用配置 + 不可变 OS (MicroOS) 持久化说明 (feedback from @fanzy618) | [Configure_Kubelet_Log_Level_Verbosity.md](../../../docs/en/solutions/Configure_Kubelet_Log_Level_Verbosity.md) |
 | [4770281](https://access.redhat.com/solutions/4770281) | convert | etcd 通用排障 | [Backend_Performance_Requirements_for_etcd.md](../../../docs/en/solutions/Backend_Performance_Requirements_for_etcd.md) |
 | [5136961](https://access.redhat.com/solutions/5136961) | reject | OCP Router + Authentication Operator 专有 | — |
 | [5227051](https://access.redhat.com/solutions/5227051) | reject | oc adm must-gather 是 OCP 专有诊断工具 | — |
