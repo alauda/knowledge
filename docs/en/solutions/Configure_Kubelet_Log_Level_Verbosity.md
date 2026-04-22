@@ -26,21 +26,34 @@ The kubelet supports configurable log verbosity levels ranging from `0` (least v
 | 5–8 | Trace-level output, verbose internal state dumps |
 | 9–10 | Maximum verbosity, rarely needed |
 
-### Persistent Configuration (Mutable Host OS)
+### Persistent Configuration — KubeletConfiguration (preferred on kubeadm clusters)
 
-On mutable host OSes (standard Linux distributions with a writable `/etc`), set the kubelet log level persistently by adding or modifying the `--v` flag via a systemd drop-in file:
+On kubeadm-provisioned clusters the kubelet is configured through `/var/lib/kubelet/config.yaml`. Set the `verbosity` field there and restart kubelet:
+
+```bash
+# On the target node
+sudo sed -i 's/^\s*verbosity:.*/verbosity: 4/; t; $a\verbosity: 4' /var/lib/kubelet/config.yaml
+sudo systemctl restart kubelet
+```
+
+This works regardless of how the systemd unit passes arguments to kubelet, and kubeadm-based automation will preserve it across upgrades.
+
+### Persistent Configuration — systemd drop-in (fallback)
+
+If you cannot edit `config.yaml` (some operator-managed setups lock the file), override the kubelet `ExecStart` via a drop-in that **inlines the `--v` flag directly**. Setting a bare environment variable like `KUBELET_LOG_LEVEL=4` does **not** raise verbosity — the stock kubeadm systemd unit only expands the three specific variables `$KUBELET_KUBECONFIG_ARGS`, `$KUBELET_CONFIG_ARGS`, and `$KUBELET_KUBEADM_ARGS`; any other name (including `KUBELET_LOG_LEVEL` or `KUBELET_EXTRA_ARGS`) is silently ignored.
 
 ```bash
 sudo mkdir -p /etc/systemd/system/kubelet.service.d/
-sudo tee /etc/systemd/system/kubelet.service.d/10-log-level.conf <<EOF
+sudo tee /etc/systemd/system/kubelet.service.d/10-log-level.conf <<'EOF'
 [Service]
-Environment="KUBELET_LOG_LEVEL=4"
 ExecStart=
-ExecStart=/usr/bin/kubelet \$KUBELET_KUBECONFIG_ARGS \$KUBELET_CONFIG_ARGS \$KUBELET_LOG_LEVEL
+ExecStart=/usr/bin/kubelet $KUBELET_KUBECONFIG_ARGS $KUBELET_CONFIG_ARGS $KUBELET_KUBEADM_ARGS --v=4
 EOF
 sudo systemctl daemon-reload
 sudo systemctl restart kubelet
 ```
+
+The `ExecStart=` (empty) line clears the parent unit's ExecStart; the second line rebuilds it with `--v=4` appended.
 
 ### Persistent Configuration (Immutable OS Nodes)
 
@@ -56,17 +69,18 @@ If the cluster spans both mutable and immutable nodes, scope the change to a nod
 
 ### One-Time Change (Single Node)
 
-For temporary debugging on a single mutable-OS node without touching the persistent configuration, override the kubelet arguments directly on that node:
+For temporary debugging on a single mutable-OS node, use the same drop-in pattern shown above via `systemctl edit`:
 
 ```bash
 sudo systemctl edit kubelet
 ```
 
-Add the following to raise verbosity to level 4:
+Enter the override block — again, the flag must be inlined into `ExecStart`, not placed into a bare environment variable:
 
 ```ini
 [Service]
-Environment="KUBELET_EXTRA_ARGS=--v=4"
+ExecStart=
+ExecStart=/usr/bin/kubelet $KUBELET_KUBECONFIG_ARGS $KUBELET_CONFIG_ARGS $KUBELET_KUBEADM_ARGS --v=4
 ```
 
 Then reload and restart:
@@ -82,10 +96,14 @@ On immutable-OS nodes, prefer the Immutable Infrastructure flow above even for s
 
 ## Diagnostic Steps
 
-Verify the current kubelet log level by inspecting the running process:
+Verify the current kubelet log level. On kubeadm-provisioned clusters kubelet typically does **not** carry `--v` on its command line — verbosity comes from `config.yaml` — so `ps` on its own reports nothing even when verbosity is set. Check both locations:
 
 ```bash
-ps aux | grep kubelet | grep -o '\-\-v=[0-9]*'
+# The KubeletConfiguration path (primary on kubeadm clusters)
+sudo grep -E '^\s*verbosity:' /var/lib/kubelet/config.yaml || echo "verbosity: (default 2)"
+
+# The command-line path (only populated if you added --v via a drop-in)
+ps aux | grep kubelet | grep -oE '\-\-v=[0-9]+' || echo "(no --v on cmdline)"
 ```
 
 Gather kubelet logs from a specific node:
