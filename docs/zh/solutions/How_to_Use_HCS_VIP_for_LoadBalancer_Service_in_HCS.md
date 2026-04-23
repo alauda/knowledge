@@ -64,7 +64,15 @@ HCS 虚拟机层网络（负责 VIP 的对外路由）
 
 部分环境默认已经启用了 `ipvs` 模式。建议先检查当前 kube-proxy 模式。
 
-1. 如果当前模式不是 `ipvs`，编辑 kube-proxy ConfigMap：
+1. 先检查当前 kube-proxy 模式：
+
+```bash
+kubectl get configmap kube-proxy -n kube-system -o yaml | grep mode
+```
+
+如果输出已经是 `mode: ipvs`，则本步骤中的配置修改和重启操作可以跳过。
+
+2. 如果当前模式不是 `ipvs`，编辑 kube-proxy ConfigMap：
 
 ```bash
 kubectl edit configmap kube-proxy -n kube-system
@@ -73,19 +81,35 @@ kubectl edit configmap kube-proxy -n kube-system
 mode: "ipvs"
 ```
 
-2. 如果上一步修改了 ConfigMap，再重启 kube-proxy 使配置生效：
+3. 如果上一步修改了 ConfigMap，再重启 kube-proxy 使配置生效：
 
 ```bash
 kubectl rollout restart daemonset/kube-proxy -n kube-system
 ```
 
-3. 确认 kube-proxy 已切换到 IPVS 模式：
+4. 确认 kube-proxy 已切换到 IPVS 模式：
 
 ```bash
 kubectl get configmap kube-proxy -n kube-system -o yaml | grep mode
 ```
 
 输出应显示 `mode: ipvs`。
+
+5. 在节点上检查是否已经生成 IPVS 规则：
+
+```bash
+ipvsadm -Ln
+```
+
+输出中应能看到类似如下的 IPVS 虚拟服务规则：
+
+```text
+IP Virtual Server version 1.2.1 (size=4096)
+Prot LocalAddress:Port Scheduler Flags
+  -> RemoteAddress:Port           Forward Weight ActiveConn InActConn
+TCP  10.0.0.100:443 rr
+  -> 192.0.2.10:6443              Masq    1      1          0
+```
 
 ### 步骤二：创建地址池
 

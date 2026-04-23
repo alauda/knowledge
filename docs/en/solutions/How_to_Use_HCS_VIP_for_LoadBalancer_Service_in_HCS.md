@@ -64,7 +64,15 @@ HCS VM layer network (routes external VIP traffic)
 
 Some environments already use `ipvs` mode by default. Check the current kube-proxy mode first.
 
-1. Edit the kube-proxy ConfigMap if the current mode is not `ipvs`:
+1. Check the current kube-proxy mode:
+
+```bash
+kubectl get configmap kube-proxy -n kube-system -o yaml | grep mode
+```
+
+If the output is already `mode: ipvs`, you can skip the configuration change and restart in this step.
+
+2. Edit the kube-proxy ConfigMap if the current mode is not `ipvs`:
 
 ```bash
 kubectl edit configmap kube-proxy -n kube-system
@@ -74,19 +82,35 @@ kubectl edit configmap kube-proxy -n kube-system
 mode: "ipvs"
 ```
 
-2. Restart kube-proxy for the change to take effect if you updated the ConfigMap:
+3. Restart kube-proxy for the change to take effect if you updated the ConfigMap:
 
 ```bash
 kubectl rollout restart daemonset/kube-proxy -n kube-system
 ```
 
-3. Confirm that kube-proxy has switched to IPVS mode:
+4. Confirm that kube-proxy has switched to IPVS mode:
 
 ```bash
 kubectl get configmap kube-proxy -n kube-system -o yaml | grep mode
 ```
 
 The output should show `mode: ipvs`.
+
+5. Verify that IPVS rules have been generated on the node:
+
+```bash
+ipvsadm -Ln
+```
+
+The output should include IPVS virtual server entries similar to the following:
+
+```text
+IP Virtual Server version 1.2.1 (size=4096)
+Prot LocalAddress:Port Scheduler Flags
+  -> RemoteAddress:Port           Forward Weight ActiveConn InActConn
+TCP  10.0.0.100:443 rr
+  -> 192.0.2.10:6443              Masq    1      6          0
+```
 
 ### Step 2: Create an address pool
 
