@@ -178,7 +178,8 @@ Download the bundle you chose, rewrite the operator image to your private regist
 
 ```bash
 PRIVATE_REGISTRY="<your-private-registry>"
-BUNDLE="bundle.yaml"   # or cw-bundle.yaml if you chose cluster-wide above
+OPERATOR_NS="<NS>"               # the namespace you will install the operator into
+BUNDLE="bundle.yaml"              # or cw-bundle.yaml if you chose cluster-wide above
 
 curl -sL -o "$BUNDLE" \
   "https://raw.githubusercontent.com/percona/percona-server-mongodb-operator/v1.22.0/deploy/$BUNDLE"
@@ -187,22 +188,31 @@ curl -sL -o "$BUNDLE" \
 sed "s|image: percona/|image: $PRIVATE_REGISTRY/percona/|g" "$BUNDLE" > "$BUNDLE.patched" \
   && mv "$BUNDLE.patched" "$BUNDLE"
 
-kubectl -n <NS> apply -f "$BUNDLE" --server-side
+# If you chose cw-bundle.yaml, rewrite the hardcoded subject namespace in the
+# ClusterRoleBinding to your operator namespace. Upstream hardcodes
+# namespace: "psmdb-operator", which means the operator's ServiceAccount has
+# no cluster-wide RBAC when you install into any other namespace and the
+# operator crash-loops with "forbidden ... at the cluster scope" errors.
+# This sed is a no-op on bundle.yaml (which has no such hardcoded subject).
+sed "s|namespace: \"psmdb-operator\"|namespace: \"$OPERATOR_NS\"|g" "$BUNDLE" > "$BUNDLE.patched" \
+  && mv "$BUNDLE.patched" "$BUNDLE"
+
+kubectl -n "$OPERATOR_NS" apply -f "$BUNDLE" --server-side
 ```
 
-For `bundle.yaml`, `<NS>` must be the same namespace where you will create the cluster CR in Step 5. For `cw-bundle.yaml`, `<NS>` is the operator's own namespace; the cluster CR can live anywhere.
+For `bundle.yaml`, `OPERATOR_NS` must be the same namespace where you will create the cluster CR in Step 5. For `cw-bundle.yaml`, `OPERATOR_NS` is the operator's own namespace; the cluster CR can live anywhere.
 
 If you created an image pull Secret in Step 2, attach it to the operator Deployment before waiting for rollout:
 
 ```bash
-kubectl -n <NS> patch deployment percona-server-mongodb-operator --type=strategic -p \
+kubectl -n "$OPERATOR_NS" patch deployment percona-server-mongodb-operator --type=strategic -p \
   '{"spec":{"template":{"spec":{"imagePullSecrets":[{"name":"acp-registry-pull"}]}}}}'
 ```
 
 Wait for the operator to come up:
 
 ```bash
-kubectl -n <NS> rollout status deploy/percona-server-mongodb-operator --timeout=120s
+kubectl -n "$OPERATOR_NS" rollout status deploy/percona-server-mongodb-operator --timeout=120s
 ```
 
 Verify:
@@ -423,6 +433,7 @@ This guide deploys the **upstream community release** of the Percona Server for 
 | Pod admission error mentioning `securityContext`, `seccompProfile`, or `capabilities` | Namespace PSA still set to `restricted` | Re-apply the labels from Step 3 |
 | Operator emits `replset size below safe minimum` | `unsafeFlags.replsetSize: true` missing for `size: 1` | Add `unsafeFlags` as in the sample, or scale to 3 |
 | Cluster CR sits at empty `STATUS`/`ENDPOINT`, no pods, no events | Operator installed with `bundle.yaml` (namespace-scoped) into a different namespace than the CR | Either reinstall the operator into the CR's namespace, or switch to `cw-bundle.yaml` (cluster-wide). See Step 4. |
+| `cw-bundle.yaml` deployed but operator crash-loops with `perconaservermongodbrestores.psmdb.percona.com is forbidden ... at the cluster scope` | Upstream's `cw-bundle.yaml` hardcodes `namespace: "psmdb-operator"` in the ClusterRoleBinding subject; installing into any other namespace leaves the operator's ServiceAccount without cluster RBAC | Re-run the `sed` rewrite in Step 4 that substitutes `"psmdb-operator"` with your `$OPERATOR_NS`, then re-apply the bundle. |
 
 ## References
 
