@@ -60,9 +60,9 @@ HCS VM layer network (routes external VIP traffic)
 
 ### Step 1: Configure kube-proxy to use IPVS mode
 
-> This step is required. IPVS mode is a hard requirement for this solution.
+> `ipvs` mode is mandatory for this solution; only perform the configuration change and restart in this step if the current kube-proxy mode is not `ipvs`.
 
-Some environments already use `ipvs` mode by default. Check the current kube-proxy mode first. If it is already `ipvs`, you can skip the configuration change and restart in this step.
+Some environments already use `ipvs` mode by default. Check the current kube-proxy mode first.
 
 1. Edit the kube-proxy ConfigMap if the current mode is not `ipvs`:
 
