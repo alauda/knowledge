@@ -5,6 +5,7 @@ products:
   - Alauda Container Platform
 ProductsVersion:
   - 4.x
+id: KB260400014
 ---
 
 # How to Deploy MongoDB Using the Community Percona Operator
