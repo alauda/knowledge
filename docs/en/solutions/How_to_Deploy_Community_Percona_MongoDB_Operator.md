@@ -124,7 +124,18 @@ If your private registry requires authentication (the ACP-integrated Harbor does
 
 `--docker-server` must be just the registry **host** (no project path). For ACP Harbor that is the value you assigned to `REGISTRY_SERVER` in Step 1 — for example `acp.example.com:45443`, NOT `acp.example.com:45443/middleware`.
 
+Set the three variables for your registry, then create the Secret. If you came from the ACP-Harbor section in Step 1 you already have these set; otherwise define them now:
+
 ```bash
+REGISTRY_SERVER="<your-registry-host>"     # e.g. registry.example.com:443 (host only — no project path)
+REG_USER="<registry-username>"
+REG_PASS="<registry-password>"
+
+# For ACP-integrated Harbor specifically, populate REG_USER / REG_PASS from the
+# registry-admin Secret on the management cluster (see Step 1's Harbor section):
+#   REG_USER=$(kubectl -n cpaas-system get secret registry-admin -o jsonpath='{.data.username}' | base64 -d)
+#   REG_PASS=$(kubectl -n cpaas-system get secret registry-admin -o jsonpath='{.data.password}' | base64 -d)
+
 kubectl -n <NS> create secret docker-registry acp-registry-pull \
   --docker-server="$REGISTRY_SERVER" \
   --docker-username="$REG_USER" \
@@ -156,7 +167,9 @@ PRIVATE_REGISTRY="<your-private-registry>"
 curl -sL -o bundle.yaml \
   https://raw.githubusercontent.com/percona/percona-server-mongodb-operator/v1.22.0/deploy/bundle.yaml
 
-sed -i "s|image: percona/|image: $PRIVATE_REGISTRY/percona/|g" bundle.yaml
+# Portable image rewrite (works on both GNU sed and BSD sed / macOS)
+sed "s|image: percona/|image: $PRIVATE_REGISTRY/percona/|g" bundle.yaml > bundle.patched.yaml \
+  && mv bundle.patched.yaml bundle.yaml
 
 kubectl -n <NS> apply -f bundle.yaml --server-side
 ```
@@ -349,7 +362,7 @@ Independent validation by the customer is recommended before production use of a
 | HashiCorp Vault for at-rest encryption keys | [Data at rest encryption with Vault](https://docs.percona.com/percona-operator-for-mongodb/encryption.html) |
 | PMM (Percona Monitoring and Management) | [Monitor with PMM](https://docs.percona.com/percona-operator-for-mongodb/monitoring.html) |
 | Multi-cluster / cross-site sharded clusters | [Multi-cluster deployments](https://docs.percona.com/percona-operator-for-mongodb/replication.html) — requires multiple federated Kubernetes clusters |
-| Smart upgrade of a sharded cluster (config server + mongos roll-out) | [Upgrade MongoDB version](https://docs.percona.com/percona-operator-for-mongodb/update.html) — only the plain replica-set upgrade has been verified |
+| Smart upgrade of a sharded cluster (config server + mongos rollout) | [Upgrade MongoDB version](https://docs.percona.com/percona-operator-for-mongodb/update.html) — only the plain replica-set upgrade has been verified |
 | Chained major-version upgrades (e.g. 6.0 → 7.0 → 8.0) | Same upstream guide — only the 7.0 → 8.0 single-hop upgrade has been verified; perform one major hop at a time and re-validate after each |
 | Chaos / network-partition self-healing | Beyond simple primary-pod failover; not exercised |
 
