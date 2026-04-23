@@ -62,7 +62,9 @@ HCS 虚拟机层网络（负责 VIP 的对外路由）
 
 > 此步骤不可跳过。IPVS 模式是本方案的强依赖前提。
 
-1. 编辑 kube-proxy ConfigMap：
+部分环境默认已经启用了 `ipvs` 模式。建议先检查当前 kube-proxy 模式；如果已经是 `ipvs`，则本步骤中的配置修改和重启操作都可以跳过。
+
+1. 如果当前模式不是 `ipvs`，编辑 kube-proxy ConfigMap：
 
 ```bash
 kubectl edit configmap kube-proxy -n kube-system
@@ -71,7 +73,7 @@ kubectl edit configmap kube-proxy -n kube-system
 mode: "ipvs"
 ```
 
-2. 重启 kube-proxy 使配置生效：
+2. 如果上一步修改了 ConfigMap，再重启 kube-proxy 使配置生效：
 
 ```bash
 kubectl rollout restart daemonset/kube-proxy -n kube-system
@@ -89,14 +91,15 @@ kubectl get configmap kube-proxy -n kube-system -o yaml | grep mode
 
 在 ACP 控制台中进入目标集群，打开 `Networking` -> `External IP Pools`，创建可供 LoadBalancer Service 使用的外部地址池。
 
-华为侧已经预先提供可用的 VIP 网段。创建地址池时，只需要填写以下关键字段：
+华为侧已经预先提供可用的 VIP 网段。创建地址池时，填写以下关键字段：
 
 1. `Name`：填写地址池名称。
-2. `IP Resources` -> `IP Address`：填写华为侧分配的 VIP 地址段。
+2. `Type`：选择 `BGP`。
+3. `IP Resources` -> `IP Address`：填写华为侧分配的 VIP 地址段。
 
 后续创建 `LoadBalancer Service` 时，注解中的地址池名称需要与这里填写的 `Name` 保持一致。
 
-平台地址池仅用于管理和分配 VIP，VIP 的对外路由仍由 HCS 虚拟机层网络负责，因此不需要额外创建 `BGP Peer`，也不依赖 MetalLB 的 BGP 发布能力。
+虽然地址池类型选择为 `BGP`，但在本方案中，平台地址池仅用于管理和分配 VIP，VIP 的对外路由仍由 HCS 虚拟机层网络负责，因此不需要额外创建 `BGP Peer`，也不依赖 MetalLB 的 BGP 发布能力。
 
 ### 步骤三：创建 LoadBalancer Service
 

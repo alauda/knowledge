@@ -62,7 +62,9 @@ HCS VM layer network (routes external VIP traffic)
 
 > This step is required. IPVS mode is a hard requirement for this solution.
 
-1. Edit the kube-proxy ConfigMap:
+Some environments already use `ipvs` mode by default. Check the current kube-proxy mode first. If it is already `ipvs`, you can skip the configuration change and restart in this step.
+
+1. Edit the kube-proxy ConfigMap if the current mode is not `ipvs`:
 
 ```bash
 kubectl edit configmap kube-proxy -n kube-system
@@ -72,7 +74,7 @@ kubectl edit configmap kube-proxy -n kube-system
 mode: "ipvs"
 ```
 
-2. Restart kube-proxy for the change to take effect:
+2. Restart kube-proxy for the change to take effect if you updated the ConfigMap:
 
 ```bash
 kubectl rollout restart daemonset/kube-proxy -n kube-system
@@ -90,14 +92,15 @@ The output should show `mode: ipvs`.
 
 In the ACP console, go to the target cluster and open `Networking` -> `External IP Pools`. Create an external address pool for `LoadBalancer` Services.
 
-Huawei has already provided the available VIP range. When creating the address pool, you only need to fill in these key fields:
+Huawei has already provided the available VIP range. When creating the address pool, fill in these key fields:
 
 1. `Name`: Enter the address pool name.
-2. `IP Resources` -> `IP Address`: Enter the VIP range assigned by Huawei.
+2. `Type`: Select `BGP`.
+3. `IP Resources` -> `IP Address`: Enter the VIP range assigned by Huawei.
 
 When you create the `LoadBalancer` Service later, the address pool name in the annotation must match the `Name` used here.
 
-The platform address pool is used only to manage and allocate VIPs. External VIP routing is still handled by the HCS VM layer, so you do not need to create an extra `BGP Peer`, and this solution does not depend on MetalLB BGP advertisement.
+Although the pool type is set to `BGP`, in this solution the platform address pool is used only to manage and allocate VIPs. External VIP routing is still handled by the HCS VM layer, so you do not need to create an extra `BGP Peer`, and this solution does not depend on MetalLB BGP advertisement.
 
 ### Step 3: Create a LoadBalancer Service
 
