@@ -147,16 +147,24 @@ If your registry allows anonymous pulls, skip this step and omit the `imagePullS
 
 ## Step 3: Configure Namespace Pod Security
 
-The default Percona operator and `mongod` pod specs do not satisfy the Kubernetes Pod Security Admission `restricted` profile. Relabel the target namespace to `baseline` (or looser) before installing:
+The default `mongod`, `cfg`, and `mongos` pods created by the operator do not satisfy the Kubernetes Pod Security Admission `restricted` profile. Relabel the namespace where the **cluster CR** will live (the namespace where the database pods run) to `baseline` (or looser) before creating the CR:
 
 ```bash
-kubectl label ns <NS> \
+CLUSTER_NS="<NS>"   # the namespace where your PerconaServerMongoDB CR will be created
+kubectl label ns "$CLUSTER_NS" \
   pod-security.kubernetes.io/enforce=baseline \
   pod-security.kubernetes.io/audit=baseline \
   pod-security.kubernetes.io/warn=baseline --overwrite
 ```
 
-This is the single most common installation failure point. Skipping it produces admission errors mentioning `seccompProfile` or `capabilities`.
+> **Important**
+> If you installed the operator cluster-wide via `cw-bundle.yaml` (Step 4), the operator's own namespace and the cluster CR's namespace are different. **This step must be applied to the CR's namespace**, not the operator's. The operator pod itself is PSA-compliant and does not need a relabel. The mongod/cfg/mongos pods are what need `baseline`.
+>
+> If you run clusters in multiple namespaces (cluster-wide operator), repeat this labeling for each CR namespace.
+
+This is the single most common installation failure point. Skipping it produces one of two symptoms:
+- StatefulSet exists with `spec.replicas: 3` but `status.readyReplicas: 0` and no mongod pods ever appear. `kubectl describe sts ...` shows events about admission denials.
+- Pods show events mentioning `seccompProfile`, `allowPrivilegeEscalation`, or `capabilities`.
 
 ## Step 4: Install the Operator
 
@@ -431,6 +439,7 @@ This guide deploys the **upstream community release** of the Percona Server for 
 | `ImagePullBackOff`, `connection reset by peer` to `registry-1.docker.io` | The operator or CR image still references `docker.io` | Re-run the `sed` rewrite in Step 4 or fix the `image:` field in your CR |
 | `ImagePullBackOff` with `unauthorized` or `insufficient_scope: authorization failed` | Missing image pull Secret or it is not attached | Complete Step 2 and confirm `spec.template.spec.imagePullSecrets` is set on the operator Deployment and `spec.imagePullSecrets` is set on the CR |
 | Pod admission error mentioning `securityContext`, `seccompProfile`, or `capabilities` | Namespace PSA still set to `restricted` | Re-apply the labels from Step 3 |
+| Operator log repeats `Waiting for the pods` with `"size":3,"pods":0`; StatefulSet exists but `readyReplicas: 0` and no mongod pods | Step 3 PSA relabel applied to the operator namespace, not the CR namespace — admission rejects the mongod pods silently (StatefulSet events carry the denial) | Relabel the CR namespace per Step 3. Confirm with `kubectl -n <CR_NS> describe sts <cluster>-rs0` — look for admission denial events. |
 | Operator emits `replset size below safe minimum` | `unsafeFlags.replsetSize: true` missing for `size: 1` | Add `unsafeFlags` as in the sample, or scale to 3 |
 | Cluster CR sits at empty `STATUS`/`ENDPOINT`, no pods, no events | Operator installed with `bundle.yaml` (namespace-scoped) into a different namespace than the CR | Either reinstall the operator into the CR's namespace, or switch to `cw-bundle.yaml` (cluster-wide). See Step 4. |
 | `cw-bundle.yaml` deployed but operator crash-loops with `perconaservermongodbrestores.psmdb.percona.com is forbidden ... at the cluster scope` | Upstream's `cw-bundle.yaml` hardcodes `namespace: "psmdb-operator"` in the ClusterRoleBinding subject; installing into any other namespace leaves the operator's ServiceAccount without cluster RBAC | Re-run the `sed` rewrite in Step 4 that substitutes `"psmdb-operator"` with your `$OPERATOR_NS`, then re-apply the bundle. |
