@@ -1628,7 +1628,28 @@ Scale-Set 插件接受两个镜像 key：
 实例**；这意味着插件化安装路径不适合在单集群里直接起多组彼此独立的
 runner。若有团队 / 项目级隔离诉求，请按下面三种方式之一：
 
-### Method 1: GitHub 侧用 runner groups / Selected repositories / Selected workflows 做访问控制（推荐）
+### 如何快速选择
+
+先问自己一个问题：**所有团队 / 项目能否共享同一份 runner 运行身份**
+（同一个 ServiceAccount、同一个节点池、同一份 GitHub 凭证）？
+
+- **能** → 选 **Method 1**：单装一套 ARC，去 GitHub 网页上用 runner
+  group 收紧访问范围；ACP 侧不动。
+- **不能、且各团队本来就在不同集群** → 选 **Method 2**：每个集群各装
+  一套，资源 / 网络 / 节点天然隔离。
+- **不能、且只能用一套集群** → 选 **Method 3**：通过 ACP
+  **Catalog → Helm Chart** 把上游 chart 装多套实例。
+- **仓库会接收 fork PR / 外部贡献** → 不论上面选哪种，**额外**为这些
+  仓库单独起一池 runner，避免和主线 runner 共享 secrets / SA（详见
+  本章末「安全注意事项」第 4 条）。
+
+| 隔离诉求 | 谁来配置 | 推荐 Method | 隔离粒度 |
+|---|---|---|---|
+| 「只让这几个 repo / workflow 调度到这组 runner」，所有 workflow 共享同一份 SA / 凭证 / 节点池没问题 | GitHub 管理员（org → Settings → Actions → Runner groups；enterprise → Policies → Actions → Runner groups） | **Method 1** | 仅 GitHub 侧的访问授权；运行时仍共享 |
+| 团队 A、B 本来就用不同 ACP 集群 | ACP 管理员（每个集群分别装控制器插件 + Scale-Set 插件） | **Method 2** | 集群级（资源、网络、节点全独立） |
+| 单集群但要多套独立 runner（不同 GitHub URL / 凭证 / SA / 节点池） | ACP 管理员（Catalog → Helm Chart 多次安装上游 chart） | **Method 3** | 单集群内多实例 |
+
+### Method 1: 单一 ARC 实例 + 在 GitHub 侧用 runner group 收紧访问范围（推荐）
 
 让单个 scale-set 实例对应一个 org 级或 enterprise 级 `githubConfigUrl`，
 再在 GitHub 侧用 **runner group** 的访问策略限定"谁能用这组 runner"。

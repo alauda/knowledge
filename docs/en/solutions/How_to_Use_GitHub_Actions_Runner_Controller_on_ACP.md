@@ -1771,7 +1771,31 @@ default instance per cluster**. That means the plugin-install path is not the
 right fit when you want multiple isolated runner pools on one cluster. For
 team / project isolation, choose one of the following:
 
-### Method 1: GitHub-side access control with runner groups / selected repositories / selected workflows (recommended)
+### Quick decision guide
+
+Start with one question: **can all teams / projects share the same runner
+runtime identity** (same ServiceAccount, same node pool, same GitHub
+credential)?
+
+- **Yes** → pick **Method 1**: install a single ARC and use GitHub
+  runner-group policies to narrow access. Nothing changes on the ACP side.
+- **No, and teams already use separate clusters** → pick **Method 2**:
+  install one set of plugins per cluster; resources / network / nodes are
+  isolated by construction.
+- **No, but only one cluster is available** → pick **Method 3**: install
+  the upstream chart multiple times via ACP **Catalog → Helm Chart**.
+- **Repositories accept fork PRs / external contributions** → regardless
+  of the choice above, run a **separate** runner pool for those repositories
+  so they do not share secrets / SA with the main pool (see item 4 of the
+  security checklist later in this chapter).
+
+| Isolation goal | Who configures it | Recommended | Isolation granularity |
+|---|---|---|---|
+| "Only these repos / workflows may dispatch to this pool"; all workflows can share one SA / credential / node pool | GitHub admin (org → Settings → Actions → Runner groups; enterprise → Policies → Actions → Runner groups) | **Method 1** | GitHub-side authorization only; runtime still shared |
+| Team A and team B already use different ACP clusters | ACP admin (install controller + scale-set plugin in each cluster) | **Method 2** | Cluster-level (resource / network / node fully independent) |
+| Single cluster but need multiple independent runner pools (different GitHub URL / credential / SA / node pool) | ACP admin (install upstream chart multiple times via Catalog → Helm Chart) | **Method 3** | Multi-instance within one cluster |
+
+### Method 1: One ARC instance, narrow access with GitHub runner groups (recommended)
 
 Bind a single scale-set instance to an org-level or enterprise-level
 `githubConfigUrl`, then use GitHub **runner group** policies to define
