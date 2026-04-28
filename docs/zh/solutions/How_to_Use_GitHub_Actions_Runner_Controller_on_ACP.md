@@ -515,18 +515,137 @@ Scale-Set 插件里设置的 `runnerScaleSetName`：
 runs-on: my-runners
 ```
 
-> **Note —— 数组 + label 路由上游已支持，但本文未把它纳入验证范围。**
-> 上游 chart 提供 `scaleSetLabels` 字段，GitHub 官方文档也说明可通过
-> labels 数组形式的 `runs-on:` 做更灵活的 job 路由
-> （[GitHub.com](https://docs.github.com/en/actions/how-tos/manage-runners/use-actions-runner-controller/use-arc-in-a-workflow)
-> 与 [GHES 3.17+](https://docs.github.com/en/enterprise-server@3.17/actions/tutorials/use-actions-runner-controller/use-arc-in-a-workflow)
-> 均已支持）。由于 Alauda 当前未验证这条路径，本文**不提供具体 YAML
-> 模板**；如需使用，请按官方文档与现网行为自行验证。
+> **Note —— 想让一个 scale-set 同时承接多组 label？** 上游 chart 的
+> `scaleSetLabels` 字段配合数组形式 `runs-on:` 即可做到，**但有一条
+> install-time-only 的关键约束**：装完 scale-set 之后再改 labels 不会
+> 通告给 GitHub。完整链路、注入方式与"已装完想改 labels 怎么办"见
+> [Workflow 侧：runs-on 数组形式与 scaleSetLabels](#workflow-侧runs-on-数组形式与-scalesetlabels)。
 
 **最常见错误**是直接写 `runs-on: [self-hosted, label]`（legacy ARC
 语法）而没有在 scale-set 上配套设 `scaleSetLabels`，结果 GitHub 端
-永远匹配不上。诊断路径见
+永远匹配不上 —— 注意这跟新 scale-set 模式下的数组形式（首项是
+`runnerScaleSetName`，不是 `self-hosted`）是两件事。诊断路径见
 [Issue 3](#issue-3-workflow-stays-queued---runner-永远不来)。
+
+### Workflow 侧：`runs-on:` 数组形式与 `scaleSetLabels`
+
+让一个 scale-set 同时承接多种 job（例如同一组 runner pod 既要跑通用
+job、又要跑 GPU 限定 job），又不想拆出多个独立 scale-set 时，可以用
+**数组形式** `runs-on:` 配合 chart 的 `scaleSetLabels` 字段。本节给出
+完整的注入与匹配规则，并明确一条**容易踩坑的关键约束**：在 chart
+0.14.1 上 `scaleSetLabels` **只在 scale-set 首次创建时生效**，安装后
+再改不会通告给 GitHub。
+
+> **⚠️ 关键约束 —— `scaleSetLabels` 是 install-time-only**
+>
+> 这是上游 ARC 在 chart 0.14.1 的设计：scale-set 在 GitHub 端首次注册
+> 时把 labels 一次性通告过去；之后即使本地 chart values 改了
+> `scaleSetLabels`，ARC 也**不会**再把新 labels 推送给 GitHub。
+>
+> 后果：装好 scale-set 之后再改 `scaleSetLabels`（无论是改 ECV、改
+> moduleinfo、还是 helm upgrade），本地 ARS spec 会更新，但 GitHub 端
+> 通告的 label 集合不变 —— workflow 的数组形式 `runs-on:` 会与 GitHub
+> 端的旧 label 集合比对，永远卡 `Queued`。本节后面的"安装后想改 labels
+> 怎么办"给出绕过该约束的两条路径。
+
+**完整链路（首次安装时）：**
+
+1. chart values 顶层字段 `scaleSetLabels: [...]`（默认 `[]`）。
+2. chart 模板把它原样写进 `AutoscalingRunnerSet.spec.runnerScaleSetLabels`。
+3. **首次** reconcile：controller 调 `CreateRunnerScaleSet` 把
+   `runnerScaleSetName` + `runnerScaleSetLabels` 一起注册到 GitHub。
+4. workflow `runs-on: [<scale-set-name>, A, B]`：第一项必须等于
+   `runnerScaleSetName`（Scale-Set 插件表单里的 **Runner Scale-Set Name**）；
+   后续每一项都必须出现在 GitHub 端通告的 label 集合里
+   （subset-of-advertised，AND 关系）。
+
+**注入方式 —— 安装前在 ECV 写好（ACP form 不暴露此字段）：**
+
+最稳的做法是**装 scale-set 插件之前**就把 labels 写进 ECV，让首次
+reconcile 直接带着这些 labels 注册到 GitHub：
+
+1. 在 Marketplace → Cluster Plugins 找到 ARC Scale-Set 插件，但**先别
+   点 Install**。
+2. 在表单的 **Extra Custom Values** 字段（即 ECV）里填入：
+
+   ```yaml
+   scaleSetLabels:
+     - linux
+     - gpu
+   ```
+
+3. 提交安装。
+4. 等 ARS reconcile 成功，核对：
+
+   ```shell
+   $ kubectl -n arc-runners get autoscalingrunnerset <scale-set-name> \
+       -o jsonpath='{.spec.runnerScaleSetLabels}'
+   # 期望：列出 ECV 里写的所有 label
+   ```
+
+如果**已经装完**才想加 labels，参见下一节"安装后想改 labels 怎么办"。
+
+**workflow 写法：**
+
+```yaml
+# 数组形式 —— 第一项必须等于 runnerScaleSetName，
+# 后续每项都必须在创建时已通告给 GitHub。
+jobs:
+  build:
+    runs-on: [my-runners, linux, gpu]
+```
+
+**安装后想改 labels 怎么办：**
+
+由于上游约束，**唯一可靠的换 label 方法**是让 GitHub 端先"忘记"这个
+scale-set，再让 controller 重新注册：
+
+- **方式 A（推荐，干净）**：先卸载 Scale-Set 插件（参见
+  [Chapter 7](#chapter-7-卸载)），写好新的 ECV `scaleSetLabels:` 后
+  重新安装。期间正在跑的 workflow 会失败，需要在维护窗口操作。
+- **方式 B（仅在 GitHub 端有权限时）**：用 PAT 调 GitHub API 删除该
+  scale-set 注册条目；下一次 controller reconcile 会把它当作"不存在"
+  重新注册，自动带上当前 ARS spec 里的 labels。**这条路径上游不保证
+  全程 idempotent**，删除后短时间内 listener 可能 CrashLoop，等
+  controller 重新创建即可。
+
+**chart 校验上限：**
+
+- 每个 label 必须**非空**且**长度 < 256 字符**；违反时 chart 渲染会
+  失败，moduleinfo status 会回报错误。
+
+**workflow runs-on 数组形式的常见错觉：**
+
+- 数组形式是 **AND**：每一项都必须在通告集合里；只要有一项缺失，
+  GitHub 端永远找不到匹配，workflow 一直 `Queued`，listener 也不会主动
+  报错。
+- **不要**把第一项写成 `self-hosted`：那是 legacy ARC
+  （`RunnerDeployment`）的语法，scale-set 模式不识别。
+- "我改了 ECV，labels 也确实在 ARS spec 里出现了，为什么 workflow 还是
+  卡 Queued？" —— 看上面的 ⚠️ 关键约束块，几乎一定是因为安装后改
+  labels 没有传给 GitHub。
+
+**排错：workflow 卡在 Queued？**
+
+1. 检查 ARS 是否真的通告了那些 label：
+
+   ```shell
+   $ kubectl -n arc-runners get autoscalingrunnerset <scale-set-name> \
+       -o jsonpath='{.spec.runnerScaleSetLabels}'
+   ```
+
+2. 比对 workflow 里 `runs-on:` 数组的每一项 —— 第一项要等于
+   `runnerScaleSetName`，其余每项都要在上一步输出里。
+3. **如果第 1 步看到 labels 都在但 workflow 还是 Queued**，几乎可以
+   肯定是 install-time-only 限制（您是先装的 scale-set 后改的 ECV
+   labels）。回到上面"安装后想改 labels 怎么办"按方式 A/B 处理。
+4. listener 日志可以确认 GitHub 端有没有把 job 发过来：
+
+   ```shell
+   $ kubectl -n arc-systems logs -l app.kubernetes.io/component=runner-scale-set-listener --tail=50
+   # 真的收到时会出现 "Acquired job ..." 字样；持续没有则是 GitHub
+   # 端没有匹配，回到第 3 步排查
+   ```
 
 ---
 
@@ -832,7 +951,10 @@ ECV 写顶层 chart 字段；EGV 写 `global:` 下的子键。经验法则：
 - 用 **ECV** 写 runner pod 模板字段：`template.spec.*` 下的
   serviceAccount / nodeSelector / tolerations / containers / volumes，
   以及 `containerMode:`（条件式 —— 仅在表单 Container Mode 留空时才写到
-  ECV，详见下文禁忌列表）、`listenerTemplate.spec.*` 等。
+  ECV，详见下文禁忌列表）、`listenerTemplate.spec.*`，以及
+  `scaleSetLabels:`（数组，每个元素非空且 < 256 字符；**install-time-only**
+  ——必须在 scale-set 首次安装的 ECV 里就写好，详见
+  [Workflow 侧：runs-on 数组形式与 scaleSetLabels](#workflow-侧runs-on-数组形式与-scalesetlabels)）等。
 - 用 **EGV** 写镜像覆盖：`images.*`（controller / runnerExtension /
   dind）。
 
@@ -923,7 +1045,8 @@ ECV 写顶层 chart 字段；EGV 写 `global:` 下的子键。经验法则：
 ### Recipe 1: Runner pod 用自定义 ServiceAccount（跑 in-cluster 任务）
 
 **何时用：** workflow 里要 `kubectl apply -f manifest.yaml`、调集群
-API。default SA 是没权限的。
+API。默认 SA 只有 runner container hooks 所需的基础权限，不等于业务
+workflow 真正需要的 RBAC。
 
 先在 install ns 建 SA + 绑权限（下面 `my-runner-sa` 是示例名称，请按
 业务命名规范替换为您实际想用的名字）：
@@ -990,6 +1113,21 @@ template:
 > PipelineRun、访问其他 namespace 资源，都要看当前环境里额外绑定了什么
 > RBAC。最稳妥的做法仍然是按业务场景显式准备一个自定义 SA，并用
 > `kubectl auth can-i` 做一次权限验收。
+>
+> **Known issue（当前版本已知问题）：** 在 `kubernetes` /
+> `kubernetes-novolume` 模式下，如果您**临时**把
+> `template.spec.serviceAccountName` 改成自定义 SA，后续又把这个字段清空
+> 或改回默认路径，平台/上游 cleanup 流程有概率把自动生成的默认
+> `<scaleset>-gha-rs-kube-mode` `ServiceAccount` / `Role` /
+> `RoleBinding` 留在 `Terminating` 状态（`metadata.deletionTimestamp`
+> 挂住，且 finalizer 仍是 `actions.github.com/cleanup-protection`）。
+> 一旦发生，后续依赖默认 SA 的 workflow 可能表现为：
+> `container:` job 在 "Initialize containers" 阶段失败并报
+> `HTTP-Code: 401 Unauthorized`，或 runner 容器内 `kubectl auth can-i`
+> 直接返回 `error`。如果您需要长期跑 in-cluster 任务，建议**持续使用**
+> 明确的自定义 SA，不要在默认 SA 与自定义 SA 之间频繁来回切换；如确实切
+> 回默认 SA，请先看本章后文的"已知问题：切回默认 runner SA 后，默认
+> kube-mode RBAC 资源卡在 `Terminating`"并做一次验收。
 
 #### 关于权限模型
 
@@ -1539,12 +1677,13 @@ Catalog 中对应实例的操作完成。
 
 > **Note —— labels 路由不能替代真正的多实例。** 上游 chart 支持
 > `scaleSetLabels` + 数组形式 `runs-on:`，可以让一个 scale-set 同时
-> 响应多组 label 名 —— 但所有匹配到的 workflow 仍然跑在**同一个**
+> 响应多组 label 名（用法与 install-time-only 约束见
+> [Workflow 侧：runs-on 数组形式与 scaleSetLabels](#workflow-侧runs-on-数组形式与-scalesetlabels)）—— 但所有匹配到的 workflow 仍然跑在**同一个**
 > scale-set 实例下，共享同一份 controller、同一份 SA 与 RBAC、同一份
 > GitHub 凭证。如果您追求的是"团队 A 的 workflow 不能动到团队 B 的
 > 资源"这种**运行时真正隔离**，labels 路由不解决问题，通常需要上面的
 > Method 2 / 3；Method 1 只解决"谁可以使用 runner 池"的 GitHub 侧访问
-> 控制。本文未把 `scaleSetLabels` 纳入验证范围，使用前请自行验证。
+> 控制。
 
 ### 安全注意事项（短 checklist）
 
@@ -2038,11 +2177,9 @@ runs-on: my-runners       # 等于 Scale-Set 插件 Runner Scale-Set Name 字段
 ```
 
 > **Note：** 上游 chart 支持 `scaleSetLabels` + 数组形式 `runs-on:`，
-> 但本文（Alauda 当前已验证路径）未把这条路径纳入验证范围 —— 具体规则
-> 请以 [GitHub 官方 ARC workflow 文档](https://docs.github.com/en/actions/how-tos/manage-runners/use-actions-runner-controller/use-arc-in-a-workflow)
-> 为准（也可看
-> [Workflow 侧：`runs-on:` 要求](#workflow-侧runs-on-要求) 段已经给出的
-> 引用）。使用前请自行验证。
+> 想让一个 scale-set 同时承接多组 label 时使用；用法、注入方式、
+> install-time-only 约束以及"装完想改 labels 怎么办"见
+> [Workflow 侧：runs-on 数组形式与 scaleSetLabels](#workflow-侧runs-on-数组形式与-scalesetlabels)。
 
 **排查步骤：**
 
@@ -2130,6 +2267,67 @@ global:
     ECV 再写 `containerMode:`；只有当表单刻意**留空**、需要在 ECV 里
     完整接管该块时，才应该写 `containerMode:`。详见
     [Container Mode 怎么选](#container-mode-怎么选)。
+
+#### 已知问题：切回默认 runner SA 后，默认 kube-mode RBAC 资源卡在 `Terminating`
+
+**适用范围：** 当前基线版本，在 `kubernetes` / `kubernetes-novolume`
+模式下，**先**按 [Recipe 1](#recipe-1-runner-pod-用自定义-serviceaccount跑-in-cluster-任务)
+把 `template.spec.serviceAccountName` 指到自定义 SA，**后**又把这个字段清空
+或切回默认路径。
+
+**症状：**
+
+- 后续走默认 SA 的 workflow 异常：GitHub job 卡在
+  "Initialize containers"，日志里有 `HTTP-Code: 401 Unauthorized`；
+- 或 runner pod 里明明带了 `kubectl`，但 `kubectl auth can-i ...`
+  直接返回 `error`；
+- `kubectl get sa,role,rolebinding -n arc-runners` 能看到默认的
+  `<scaleset>-gha-rs-kube-mode` 资源，但其中一个或多个对象带
+  `metadata.deletionTimestamp`，一直不消失。
+
+**确认命令：**
+
+```shell
+$ kubectl -n arc-runners get sa,role,rolebinding \
+    <runner-scale-set-name>-gha-rs-kube-mode -o yaml
+```
+
+如果输出里仍能看到：
+
+```yaml
+metadata:
+  deletionTimestamp: "..."
+  finalizers:
+    - actions.github.com/cleanup-protection
+```
+
+说明您已经命中这个已知问题。
+
+**Workaround：**
+
+1. **优先规避：** 如果这组 runner 长期需要访问集群 API，建议固定使用一份
+   自定义 runner SA，不要在默认 SA 与自定义 SA 之间频繁来回切换。
+2. **切回默认 SA 后做一次验收：** 在 ACP UI 里
+   **Marketplace → Cluster Plugins → 该 Scale-Set 插件 → Update**，
+   保存一次无害变更触发 reconcile（例如临时把 `Maximum Runners` `+1`
+   保存，再改回原值保存一次），然后重新检查上面 3 个默认 kube-mode
+   资源是否都已重建且**不带** `deletionTimestamp`。
+3. **如果已经卡住：** 先手工清掉 3 个默认 kube-mode 资源上的
+   `actions.github.com/cleanup-protection` finalizer，再按上一步做一次
+   Update / reconcile，让平台重建默认 SA / Role / RoleBinding。例如：
+
+```shell
+$ kubectl -n arc-runners patch sa <runner-scale-set-name>-gha-rs-kube-mode \
+    --type=merge -p '{"metadata":{"finalizers":[]}}'
+$ kubectl -n arc-runners patch role <runner-scale-set-name>-gha-rs-kube-mode \
+    --type=merge -p '{"metadata":{"finalizers":[]}}'
+$ kubectl -n arc-runners patch rolebinding <runner-scale-set-name>-gha-rs-kube-mode \
+    --type=merge -p '{"metadata":{"finalizers":[]}}'
+```
+
+这是当前版本与上游 cleanup/finalizer 问题同类的已知限制，不代表
+`template.spec.serviceAccountName` 这条能力本身不支持；它的主效果
+（runner pod 改用自定义 SA 并按该 SA 的 RBAC 鉴权）仍然是生效的。
 
 ---
 
@@ -3076,4 +3274,5 @@ namespaceOverride: ""
   [Method 2：PAT](#method-2pat-personal-access-token-方式) 段引用）。
 - [Managing access to self-hosted runners using groups](https://docs.github.com/en/enterprise-cloud@latest/actions/how-tos/manage-runners/self-hosted-runners/manage-access) —— GitHub 官方对 runner groups、`Selected repositories`、`Selected workflows`、enterprise `Selected organizations` 的说明（[Chapter 4](#chapter-4-多团队--多项目隔离策略) 段引用）。
 - [Use ARC in a workflow](https://docs.github.com/en/actions/how-tos/manage-runners/use-actions-runner-controller/use-arc-in-a-workflow) —— GitHub 官方对 `runs-on:` 字符串与数组形式、`scaleSetLabels` 的说明（[Workflow 侧：runs-on 要求](#workflow-侧runs-on-要求)、
+  [Workflow 侧：runs-on 数组形式与 scaleSetLabels](#workflow-侧runs-on-数组形式与-scalesetlabels)、
   [Issue 3](#issue-3-workflow-stays-queued---runner-永远不来) 段引用）。

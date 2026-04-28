@@ -573,22 +573,162 @@ configured on the scale-set plugin form:
 runs-on: my-runners
 ```
 
-> **Note — array + label routing is supported upstream but not covered by
-> this document.** The upstream chart exposes a `scaleSetLabels` field,
-> and GitHub's official docs describe using label arrays in `runs-on:` for
-> more flexible job routing
-> ([GitHub.com](https://docs.github.com/en/actions/how-tos/manage-runners/use-actions-runner-controller/use-arc-in-a-workflow)
-> and [GHES 3.17+](https://docs.github.com/en/enterprise-server@3.17/actions/tutorials/use-actions-runner-controller/use-arc-in-a-workflow)
-> both support it). Because Alauda has not validated this route yet, this
-> document intentionally **does not provide a concrete YAML template**.
-> If you want to use it, verify the exact shape against the official docs
-> and your live environment before relying on it.
+> **Note — want one scale-set to cover multiple label sets?** The
+> upstream chart's `scaleSetLabels` field combined with the array form
+> of `runs-on:` does exactly this, **but with a critical
+> install-time-only constraint**: changing labels after the scale-set
+> is already installed does not propagate to GitHub. Full path,
+> injection method, and "what to do if I already installed it" are in
+> [Workflow side: runs-on array form with scaleSetLabels](#workflow-side-runs-on-array-form-with-scalesetlabels).
 
 **The most common mistake** is writing `runs-on: [self-hosted, label]`
 (legacy ARC syntax) without configuring `scaleSetLabels` on the
-scale-set, leaving GitHub with nothing to match. See
+scale-set, leaving GitHub with nothing to match. Note that this is
+distinct from the new scale-set-mode array form (where the first
+element is `runnerScaleSetName`, not `self-hosted`). See
 [Issue 3](#issue-3-workflow-stays-queued-runner-never-arrives) for the
 diagnostic path.
+
+### Workflow side: `runs-on:` array form with `scaleSetLabels`
+
+When you want one scale-set to handle multiple kinds of jobs (for
+example, the same runner pool serving both general jobs and GPU-only
+jobs) without splitting it into separate scale-sets, you can use the
+**array form** of `runs-on:` together with the chart's `scaleSetLabels`
+field. This section gives the full injection and matching rules and
+makes one **easy-to-miss constraint** explicit: on chart 0.14.1
+`scaleSetLabels` is **only honoured at scale-set creation time**;
+changing it after install does not propagate to GitHub.
+
+> **⚠️ Critical constraint — `scaleSetLabels` is install-time-only**
+>
+> This is the upstream ARC design on chart 0.14.1: the labels are
+> registered with GitHub once, when the scale-set is first created.
+> Changing `scaleSetLabels` later in the local chart values does
+> **not** push the new labels to GitHub.
+>
+> Consequence: changing `scaleSetLabels` after install (whether via
+> ECV, moduleinfo, or `helm upgrade`) updates the local ARS spec, but
+> GitHub's advertised label set for this scale-set stays the same —
+> array-form `runs-on:` matches against GitHub's stale set and stays
+> `Queued` forever. The "What if I want to change labels after
+> install" section below covers the two paths around this constraint.
+
+**End-to-end path (at first install):**
+
+1. Chart values top-level field `scaleSetLabels: [...]` (default `[]`).
+2. The chart template writes the array verbatim into
+   `AutoscalingRunnerSet.spec.runnerScaleSetLabels`.
+3. **First** reconcile: the controller calls `CreateRunnerScaleSet`
+   to register `runnerScaleSetName` plus `runnerScaleSetLabels` with
+   GitHub.
+4. A workflow with `runs-on: [<scale-set-name>, A, B]`: the first
+   element MUST equal `runnerScaleSetName` (the **Runner Scale-Set
+   Name** field on the Scale-Set plugin form); every subsequent
+   element MUST be present in the advertised set on GitHub
+   (subset-of-advertised, AND semantics).
+
+**Injection — write it into ECV before installing (the ACP form does not surface this field):**
+
+The reliable approach is to put the labels into ECV **before** clicking
+Install on the Scale-Set plugin, so the first reconcile registers them
+with GitHub:
+
+1. In Marketplace → Cluster Plugins, find the ARC Scale-Set plugin,
+   but **do not click Install yet**.
+2. In the form's **Extra Custom Values** field (i.e. ECV), enter:
+
+   ```yaml
+   scaleSetLabels:
+     - linux
+     - gpu
+   ```
+
+3. Submit the install.
+4. After ARS reconcile completes, verify:
+
+   ```shell
+   $ kubectl -n arc-runners get autoscalingrunnerset <scale-set-name> \
+       -o jsonpath='{.spec.runnerScaleSetLabels}'
+   # Expect: every label you wrote into the ECV
+   ```
+
+If the scale-set is **already installed** and you only now want to add
+labels, see "What if I want to change labels after install?" below.
+
+**Workflow YAML:**
+
+```yaml
+# Array form — first element MUST equal runnerScaleSetName,
+# every remaining element MUST have been advertised to GitHub at
+# CreateRunnerScaleSet time.
+jobs:
+  build:
+    runs-on: [my-runners, linux, gpu]
+```
+
+**What if I want to change labels after install:**
+
+Because of the upstream constraint, the **only reliable way** is to
+make GitHub forget this scale-set and let the controller register it
+again:
+
+- **Option A (recommended, clean):** uninstall the Scale-Set plugin
+  (see [Chapter 7](#chapter-7-uninstall)), edit the ECV
+  `scaleSetLabels:`, and reinstall. In-flight workflows fail during
+  the gap, so do this in a maintenance window.
+- **Option B (only when you have GitHub-side permissions):** use a
+  PAT to delete the scale-set's GitHub registration directly; the
+  controller's next reconcile will treat it as missing and re-register
+  with the current ARS spec labels. **The upstream code path is not
+  fully idempotent** — the listener may CrashLoop briefly until the
+  controller recreates the registration.
+
+**Chart-side validation upper bound:**
+
+- Each label MUST be **non-empty** and **less than 256 characters**;
+  violations fail chart rendering and surface as an error in the
+  moduleinfo status.
+
+**Common misconceptions about the workflow array form:**
+
+- The array form is **AND**: every element must be in the advertised
+  set; if any element is missing, GitHub never finds a match and the
+  workflow stays `Queued` forever, with no proactive error from the
+  listener.
+- **Do not** make the first element `self-hosted`: that is the legacy
+  ARC (`RunnerDeployment`) syntax; scale-set mode does not recognise
+  it.
+- "I changed the ECV, the labels show up in the ARS spec, why is my
+  workflow still stuck in Queued?" — see the ⚠️ critical constraint
+  above; almost certainly because labels changed after install never
+  reached GitHub.
+
+**Troubleshooting: workflow stuck in Queued?**
+
+1. Check what labels the ARS actually carries:
+
+   ```shell
+   $ kubectl -n arc-runners get autoscalingrunnerset <scale-set-name> \
+       -o jsonpath='{.spec.runnerScaleSetLabels}'
+   ```
+
+2. Compare against every entry in the workflow's `runs-on:` array —
+   the first element must equal `runnerScaleSetName`; every other
+   element must appear in step 1's output.
+3. **If step 1 already shows your labels and the workflow is still
+   Queued**, this is almost certainly the install-time-only constraint
+   (you installed the scale-set first, then added labels). Go back to
+   "What if I want to change labels after install" and follow Option
+   A or B.
+4. The listener log shows whether GitHub is dispatching the job at
+   all:
+
+   ```shell
+   $ kubectl -n arc-systems logs -l app.kubernetes.io/component=runner-scale-set-listener --tail=50
+   # On a successful match: "Acquired job ..."
+   # If nothing: GitHub side is not matching — go back to step 3.
+   ```
 
 ---
 
@@ -913,7 +1053,10 @@ a rule of thumb:
   serviceAccount / nodeSelector / tolerations / containers / volumes; also
   `containerMode:` (conditional — only write this in ECV when the form's
   Container Mode field is left empty; see the forbidden-key list below for
-  details), `listenerTemplate.spec.*` etc.
+  details), `listenerTemplate.spec.*`, and `scaleSetLabels:` (an array;
+  each element must be non-empty and shorter than 256 characters; this
+  field is **install-time-only** — see
+  [Workflow side: runs-on array form with scaleSetLabels](#workflow-side-runs-on-array-form-with-scalesetlabels)) etc.
 - Use **EGV** for image overrides: `images.*` (controller / runnerExtension
   / dind).
 
@@ -1014,7 +1157,9 @@ appropriate field as needed.
 ### Recipe 1: Custom ServiceAccount for in-cluster jobs
 
 **When to use:** the workflow runs `kubectl apply -f manifest.yaml` or calls
-the cluster API. The default SA has no permissions.
+the cluster API. The default SA only carries the baseline permissions needed
+by runner container hooks; it is not the same thing as the business RBAC your
+workflow actually needs.
 
 First create an SA in the install namespace and bind permissions
 (`my-runner-sa` is the example name; rename per your conventions):
@@ -1087,6 +1232,23 @@ workflow authorize against `my-runner-sa`'s RBAC.
 > environment. The safest approach remains preparing an explicit custom
 > SA for the workflow scenario and validating it once with
 > `kubectl auth can-i`.
+>
+> **Known issue (current baseline):** in `kubernetes` /
+> `kubernetes-novolume` mode, if you **temporarily** switch
+> `template.spec.serviceAccountName` to a custom SA and later clear the
+> field or switch back to the default path, the platform / upstream cleanup
+> flow can leave the generated default
+> `<scaleset>-gha-rs-kube-mode` `ServiceAccount` / `Role` / `RoleBinding`
+> stuck in `Terminating` (`metadata.deletionTimestamp` remains set and the
+> finalizer is still `actions.github.com/cleanup-protection`). When this
+> happens, later workflows that depend on the default SA may fail with
+> `HTTP-Code: 401 Unauthorized` during `container:` job initialization, or
+> `kubectl auth can-i` from inside the runner container may return `error`
+> directly. If this runner pool needs long-lived in-cluster access, prefer
+> keeping an explicit custom SA in place instead of switching back and
+> forth between the default SA and a custom one. If you do switch back to
+> the default SA, review the known issue note later in this chapter and
+> validate that the default kube-mode resources were recreated cleanly.
 
 #### Permission model notes
 
@@ -1667,14 +1829,15 @@ the Catalog.
 
 > **Note — label routing is not a substitute for real multi-instance.**
 > The upstream chart supports `scaleSetLabels` + array-form `runs-on:`,
-> letting one scale-set respond to multiple label names — but every
-> matched workflow still runs on the **same** scale-set instance,
-> sharing one controller, one SA / RBAC, and one GitHub credential. If
-> you actually want "team A's workflow cannot touch team B's resources"
-> **runtime isolation**, label routing does not solve it; you normally
-> need Method 2 / 3 above. Method 1 only controls who may use the runner
-> pool on the GitHub side. `scaleSetLabels` is outside this document's
-> validated scope; verify on your own before relying on it.
+> letting one scale-set respond to multiple label names (usage and the
+> install-time-only constraint covered in
+> [Workflow side: runs-on array form with scaleSetLabels](#workflow-side-runs-on-array-form-with-scalesetlabels))
+> — but every matched workflow still runs on the **same** scale-set
+> instance, sharing one controller, one SA / RBAC, and one GitHub
+> credential. If you actually want "team A's workflow cannot touch team
+> B's resources" **runtime isolation**, label routing does not solve it;
+> you normally need Method 2 / 3 above. Method 1 only controls who may
+> use the runner pool on the GitHub side.
 
 ### Security checklist
 
@@ -2208,12 +2371,10 @@ runs-on: my-runners       # equal to scale-set plugin's Runner Scale-Set Name fi
 ```
 
 > **Note:** The upstream chart supports `scaleSetLabels` + array-form
-> `runs-on:`, but this document (Alauda's currently validated path) does
-> not cover that route. For the canonical rules, refer to
-> [GitHub's ARC workflow guide](https://docs.github.com/en/actions/how-tos/manage-runners/use-actions-runner-controller/use-arc-in-a-workflow)
-> (also referenced from
-> [Workflow side: `runs-on:` requirements](#workflow-side-runs-on-requirements)).
-> Verify on your own before relying on it.
+> `runs-on:` for serving multiple label sets from a single scale-set;
+> the full usage, injection method, install-time-only constraint, and
+> "what to do if I already installed" are in
+> [Workflow side: runs-on array form with scaleSetLabels](#workflow-side-runs-on-array-form-with-scalesetlabels).
 
 **Diagnostic steps:**
 
@@ -2309,6 +2470,74 @@ global:
     `containerMode:` only when you intentionally leave the form field
     **empty** and fully take over that block in ECV. See
     [Container Mode selection](#container-mode-selection).
+
+#### Known issue: after switching back to the default runner SA, the default kube-mode RBAC objects remain stuck in `Terminating`
+
+**Applies to:** the current baseline version, in `kubernetes` /
+`kubernetes-novolume` mode, when you first point
+`template.spec.serviceAccountName` at a custom SA per
+[Recipe 1](#recipe-1-custom-serviceaccount-for-in-cluster-jobs), then later
+clear the field or switch back to the default path.
+
+**Symptoms:**
+
+- later workflows that use the default SA fail during
+  `container:` job initialization with `HTTP-Code: 401 Unauthorized`;
+- or the runner pod still contains `kubectl`, but
+  `kubectl auth can-i ...` returns `error` directly;
+- or `kubectl get sa,role,rolebinding -n arc-runners` still shows the
+  default `<scaleset>-gha-rs-kube-mode` objects, but one or more of them
+  remain with `metadata.deletionTimestamp`.
+
+**How to confirm:**
+
+```shell
+$ kubectl -n arc-runners get sa,role,rolebinding \
+    <runner-scale-set-name>-gha-rs-kube-mode -o yaml
+```
+
+If the output still contains:
+
+```yaml
+metadata:
+  deletionTimestamp: "..."
+  finalizers:
+    - actions.github.com/cleanup-protection
+```
+
+you have hit this known issue.
+
+**Workaround:**
+
+1. **Prefer to avoid the state transition:** if this runner pool needs
+   long-lived in-cluster access, keep a dedicated custom runner SA in place
+   rather than switching back and forth between the default SA and a custom
+   one.
+2. **Validate once after switching back to the default SA:** in ACP UI,
+   **Marketplace → Cluster Plugins → this scale-set plugin → Update**,
+   save a harmless change to trigger a reconcile (for example temporarily
+   increase `Maximum Runners` by 1, save, then change it back and save
+   again), then verify that the three default kube-mode resources were
+   recreated and no longer carry `deletionTimestamp`.
+3. **If they are already stuck:** first clear the
+   `actions.github.com/cleanup-protection` finalizer from the three default
+   kube-mode resources, then trigger the reconcile above so the platform
+   recreates the default SA / Role / RoleBinding. For example:
+
+```shell
+$ kubectl -n arc-runners patch sa <runner-scale-set-name>-gha-rs-kube-mode \
+    --type=merge -p '{"metadata":{"finalizers":[]}}'
+$ kubectl -n arc-runners patch role <runner-scale-set-name>-gha-rs-kube-mode \
+    --type=merge -p '{"metadata":{"finalizers":[]}}'
+$ kubectl -n arc-runners patch rolebinding <runner-scale-set-name>-gha-rs-kube-mode \
+    --type=merge -p '{"metadata":{"finalizers":[]}}'
+```
+
+This is a known limitation in the same family as the current
+cleanup/finalizer issues upstream. It does **not** mean
+`template.spec.serviceAccountName` itself is unsupported; the primary
+behavior still works as expected: runner pods switch to the custom SA and
+authorize against that SA's RBAC.
 
 ---
 
@@ -3284,4 +3513,4 @@ namespaceOverride: ""
 - [Communicating with self-hosted runners](https://docs.github.com/en/enterprise-cloud@latest/actions/reference/runners/self-hosted-runners) — GitHub's official network communication requirements for self-hosted runners, including `github.com`, `api.github.com`, and `*.actions.githubusercontent.com` ([System Requirements](#system-requirements) cites it).
 - [Authenticate to the GitHub API (ARC)](https://docs.github.com/en/enterprise-cloud@latest/actions/how-tos/manage-runners/use-actions-runner-controller/authenticate-to-the-api) — canonical source for PAT scopes and fine-grained permission matrix; cited by [Permission Requirements](#permission-requirements) and [Method 2: PAT](#method-2-personal-access-token).
 - [Managing access to self-hosted runners using groups](https://docs.github.com/en/enterprise-cloud@latest/actions/how-tos/manage-runners/self-hosted-runners/manage-access) — GitHub's official guidance for runner groups, `Selected repositories`, `Selected workflows`, and enterprise `Selected organizations` ([Chapter 4](#chapter-4-multi-team--multi-project-isolation) cites it).
-- [Use ARC in a workflow](https://docs.github.com/en/actions/how-tos/manage-runners/use-actions-runner-controller/use-arc-in-a-workflow) — official guidance on `runs-on:` string vs. array form and `scaleSetLabels`; cited by [Workflow side: runs-on requirements](#workflow-side-runs-on-requirements) and [Issue 3](#issue-3-workflow-stays-queued-runner-never-arrives).
+- [Use ARC in a workflow](https://docs.github.com/en/actions/how-tos/manage-runners/use-actions-runner-controller/use-arc-in-a-workflow) — official guidance on `runs-on:` string vs. array form and `scaleSetLabels`; cited by [Workflow side: runs-on requirements](#workflow-side-runs-on-requirements), [Workflow side: runs-on array form with scaleSetLabels](#workflow-side-runs-on-array-form-with-scalesetlabels), and [Issue 3](#issue-3-workflow-stays-queued-runner-never-arrives).
