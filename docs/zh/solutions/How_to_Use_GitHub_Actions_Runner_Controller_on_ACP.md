@@ -552,8 +552,8 @@ job、又要跑 GPU 限定 job），又不想拆出多个独立 scale-set 时，
 
 1. chart values 顶层字段 `scaleSetLabels: [...]`（默认 `[]`）。
 2. chart 模板把它原样写进 `AutoscalingRunnerSet.spec.runnerScaleSetLabels`。
-3. **首次** reconcile：controller 调 `CreateRunnerScaleSet` 把
-   `runnerScaleSetName` + `runnerScaleSetLabels` 一起注册到 GitHub。
+3. **首次** reconcile：controller 把 `runnerScaleSetName` 与
+   `runnerScaleSetLabels` 一并注册到 GitHub 端。
 4. workflow `runs-on: [<scale-set-name>, A, B]`：第一项必须等于
    `runnerScaleSetName`（Scale-Set 插件表单里的 **Runner Scale-Set Name**）；
    后续每一项都必须出现在 GitHub 端通告的 label 集合里
@@ -566,7 +566,7 @@ reconcile 直接带着这些 labels 注册到 GitHub：
 
 1. 在 Marketplace → Cluster Plugins 找到 ARC Scale-Set 插件，但**先别
    点 Install**。
-2. 在表单的 **Extra Custom Values** 字段（即 ECV）里填入：
+2. 在表单的 **Extra Chart Values** 字段（即 ECV）里填入：
 
    ```yaml
    scaleSetLabels:

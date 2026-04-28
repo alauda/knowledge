@@ -619,9 +619,9 @@ changing it after install does not propagate to GitHub.
 1. Chart values top-level field `scaleSetLabels: [...]` (default `[]`).
 2. The chart template writes the array verbatim into
    `AutoscalingRunnerSet.spec.runnerScaleSetLabels`.
-3. **First** reconcile: the controller calls `CreateRunnerScaleSet`
-   to register `runnerScaleSetName` plus `runnerScaleSetLabels` with
-   GitHub.
+3. **First** reconcile: the controller registers
+   `runnerScaleSetName` together with `runnerScaleSetLabels` on the
+   GitHub side.
 4. A workflow with `runs-on: [<scale-set-name>, A, B]`: the first
    element MUST equal `runnerScaleSetName` (the **Runner Scale-Set
    Name** field on the Scale-Set plugin form); every subsequent
@@ -636,7 +636,7 @@ with GitHub:
 
 1. In Marketplace → Cluster Plugins, find the ARC Scale-Set plugin,
    but **do not click Install yet**.
-2. In the form's **Extra Custom Values** field (i.e. ECV), enter:
+2. In the form's **Extra Chart Values** field (i.e. ECV), enter:
 
    ```yaml
    scaleSetLabels:
@@ -661,7 +661,7 @@ labels, see "What if I want to change labels after install?" below.
 ```yaml
 # Array form — first element MUST equal runnerScaleSetName,
 # every remaining element MUST have been advertised to GitHub at
-# CreateRunnerScaleSet time.
+# scale-set registration time.
 jobs:
   build:
     runs-on: [my-runners, linux, gpu]
