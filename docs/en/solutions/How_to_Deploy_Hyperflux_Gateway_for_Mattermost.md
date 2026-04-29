@@ -3,6 +3,7 @@ products:
   - Alauda AI
 kind:
   - Solution
+id: KB260400015
 ---
 
 # How to Deploy Hyperflux Gateway for Mattermost
