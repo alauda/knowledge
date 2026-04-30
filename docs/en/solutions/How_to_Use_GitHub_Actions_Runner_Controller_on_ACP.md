@@ -3,6 +3,7 @@ products:
    - Alauda Container Platform
 kind:
    - Solution
+id: KB260400016
 ---
 
 # Deploying GitHub Actions Self-Hosted Runners on Alauda Container Platform with ARC

@@ -1,276 +1,170 @@
 ---
 products:
-   - Alauda Container Platform
+  - Alauda Container Platform
 kind:
-   - Solution
+  - Solution
+id: KB260400016
+sourceSHA: 8b0894866c53075448b4c5265c58154344c05054a69b0e001bf168bec623c5b3
 ---
 
-# 在 Alauda 容器平台上使用 GitHub Actions Runner Controller 部署 self-hosted runner
+# 在 Alauda Container Platform 上使用 ARC 部署 GitHub Actions 自托管运行器
 
 ## 概述
 
-GitHub Actions 默认在 GitHub 托管的 runner 上跑 workflow，那些 runner
-跑在公网，访问不到您的内网服务。**self-hosted runner** 让您把 runner
-放进自己的集群里，从而能用集群算力、访问内网资源、在 air-gap 环境里
-跑 CI 任务。每次 workflow 触发都会在集群里运行一个临时 runner pod，跑完
-自动销毁；启用 workflow 的 `container:` 字段时，ARC 会通过
-runner-container-hooks 在 runner 所在 namespace 里动态起额外的 job pod /
-k8s job 来承载该 job；启用 DinD 模式时，runner pod 内则会再带上 DinD
-sidecar / init container。
+默认情况下，GitHub Actions 在 GitHub 托管的运行器上运行工作流。这些运行器位于公共互联网中，无法访问您的内部服务。**自托管运行器** 允许您在自己的集群内运行工作流，因此作业可以使用集群计算、访问内部资源，并在隔离环境中执行。每个工作流触发都会在集群中生成一个临时运行器 Pod，当作业完成时该 Pod 会被销毁。当工作流使用 `container:` 字段时，ARC 使用运行器容器挂钩来启动相应的作业 Pod / Kubernetes 作业在运行器命名空间中；当启用 DinD 模式时，运行器 Pod 本身携带 DinD 边车 / 初始化容器。
 
-本文档介绍如何在 Alauda 容器平台 (ACP) 上部署并使用 GitHub Actions
-self-hosted runner。底层是 GitHub 官方的 Actions Runner Controller (ARC)
-项目，Alauda 将其重新打包为两个 ACP 集群插件：
+本文档描述了如何在 Alauda Container Platform (ACP) 上部署和使用 GitHub Actions 自托管运行器。该实现基于 GitHub 的上游 Actions Runner Controller (ARC) 项目，Alauda 将其重新打包为两个 ACP 集群插件：
 
-- **Alauda Support for GitHub Actions Runner Controller**（下文简称
-  "**控制器插件**"）—— ARC 控制平面，每个 ACP 集群装一次。
-- **Alauda Support for GitHub Actions Runner Scale Set**（下文简称
-  "**Scale-Set 插件**"）—— 提供一组与 GitHub 组织 / 仓库绑定的 self-hosted
-  runner。**ACP 集群插件入口只支持一个默认实例**；如需在同一集群上跑多组
-  互相隔离的 runner，可改走 ACP 平台的 **Catalog → Helm Chart** 入口
-  （仍在 ACP UI 内完成，**不需要 `helm` 命令行**）多装几份上游
-  `gha-runner-scale-set` chart 实例，详见
-  [Chapter 4. 多团队 / 多项目隔离策略](#chapter-4-多团队--多项目隔离策略) 的 Method 3。
+- **Alauda 对 GitHub Actions Runner Controller 的支持**（以下称为 **controller plugin**）—— ARC 控制平面。每个 ACP 集群安装一次。
+- **Alauda 对 GitHub Actions Runner Scale Set 的支持**（以下称为 **scale-set plugin**）—— 提供一组绑定到 GitHub 组织或存储库的自托管运行器。**ACP 集群插件条目仅支持每个集群一个默认实例**；对于同一集群上的多个隔离运行器池，请通过平台的 **Catalog → Helm Chart** 条目安装额外的上游 `gha-runner-scale-set` 图表副本（仍在 ACP UI 内；**不需要 `helm` CLI**）。请参见 [第 4 章 多团队 / 多项目隔离](#chapter-4-multi-team--multi-project-isolation)，方法 3。
 
-两个插件均只支持 ARC 的 **scale-set 模式**（不支持 legacy / runner-deployment
-模式）。背景见 [为什么是 scale-set 模式（不是 legacy）](#为什么是-scale-set-模式不是-legacy)。
+这两个插件仅提供 ARC 的 **scale-set 模式**（不支持传统的运行器部署模式）。原因详见 [为什么选择 scale-set 模式（而不是传统模式）](#why-scale-set-mode-not-legacy)。
 
-### 本文覆盖的内容
+### 本文档涵盖的内容
 
-- 两个插件的安装与首个 workflow 验证（[Chapter 1](#chapter-1-安装控制器插件)
-  至 [Chapter 2](#chapter-2-安装-scale-set-插件)）—— 新用户阅读这部分即可
-  完成 self-hosted runner 的首次部署。
-- Runner 镜像：内置 CLI 工具、运行身份、第三方 action 的处理。见
-  [Runner 镜像](#runner-镜像)。
-- 通过 Extra Values 做高级配置 —— ServiceAccount、资源限制、PVC 缓存、
-  DinD 模式、自定义镜像等。见 [Chapter 3](#chapter-3-通过-extra-values-自定义-runner)。
-- 多团队 / 多项目隔离策略。见 [Chapter 4](#chapter-4-多团队--多项目隔离策略)。
-- workflow 写法实战：在自定义 container 里跑 job、触发集群里的 Tekton
-  Pipeline、用 Buildah 以无 Docker daemon 的方式构建镜像（仍需
-  privileged）。见
-  [Chapter 5](#chapter-5-workflow-示例)。
-- 故障排查与卸载。见 [Chapter 6](#chapter-6-故障排查) 与
-  [Chapter 7](#chapter-7-卸载)。
+- 安装两个插件并验证第一个工作流（[第 1 章](#chapter-1-installing-the-controller-plugin) 到 [第 2 章](#chapter-2-installing-the-scale-set-plugin)）—— 新用户可以仅通过阅读本节完成第一次部署。
+- 运行器镜像：预安装的 CLI 工具、运行时身份、第三方操作处理。请参见 [运行器镜像](#the-runner-image)。
+- 通过额外值进行高级自定义—— ServiceAccount、资源限制、PVC 缓存、DinD 模式、自定义镜像等。请参见 [第 3 章](#chapter-3-customizing-runners-via-extra-values)。
+- 多团队 / 多项目隔离策略。请参见 [第 4 章](#chapter-4-multi-team--multi-project-isolation)。
+- 工作流示例：在自定义容器中运行作业、触发集群内的 Tekton Pipeline，以及在无守护进程模式下使用 Buildah 构建镜像（仍然是特权模式）。请参见 [第 5 章](#chapter-5-workflow-examples)。
+- 故障排除和卸载。请参见 [第 6 章](#chapter-6-troubleshooting) 和 [第 7 章](#chapter-7-uninstall)。
 
 ### 两个插件一览
 
-| 插件 | 作用 | 默认安装 namespace | 每集群多实例 |
-|---|---|---|---|
-| 控制器插件 | 承载 ARC 控制平面（控制器 Deployment、CRD） | `arc-systems` | 否 |
-| Scale-Set 插件 | 定义一组绑定到 GitHub org / repo 的 runner scale-set | `arc-runners` | 通过集群插件入口装：否；通过 ACP **Catalog → Helm Chart** 装上游 chart：可以（见 Chapter 4 Method 3） |
+| 插件              | 目的                                                   | 默认安装命名空间 | 每个集群多个实例                                                                                     |
+| ----------------- | ----------------------------------------------------- | ---------------- | ------------------------------------------------------------------------------------------------------------------ |
+| Controller plugin | 托管 ARC 控制平面（控制器部署、CRDs）                 | `arc-systems`    | 否                                                                                                                 |
+| Scale-set plugin  | 定义一组绑定到 GitHub 组织 / 存储库的运行器           | `arc-runners`    | 否，通过集群插件条目；是，通过 **Catalog → Helm Chart** 使用上游图表（请参见第 4 章方法 3） |
 
-### 适用范围
+### 适用性
 
-| 项 | 当前对应 |
-|---|---|
-| 上游 ARC 版本 | `gha-runner-scale-set-0.14.1`（chart values 参考章节链接均 pin 到该 tag） |
-| Alauda 集群插件版本 | 与上游 0.14.1 对齐的 Alauda 打包版；具体版本号见 ACP Marketplace 上的插件详情页 |
-| 验证的 GitHub 形态 | 实际验证：仅 GitHub.com（公网 `github.com`）。GitHub Enterprise Cloud 与 `github.com` 共用同一注册端点，**理论上支持**但本文未单独验证；GHES 同样**不在本文验证范围**，请把这两类形态的细节差异以现网真实状态为准 |
-| 安装路径 | 通过 ACP Marketplace 装两个集群插件；通过 ACP **Catalog → Helm Chart** 装上游 chart 的路径不在本文主线（见 Chapter 4 Method 3） |
+| 项目                          | 当前基线                                                                                                                                                                                                                                                                                                               |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 上游 ARC 版本                 | `gha-runner-scale-set-0.14.1`（图表值引用链接固定在此标签）                                                                                                                                                                                                                                            |
+| Alauda 集群插件版本          | Alauda 打包跟踪上游 0.14.1；确切的版本号在 ACP Marketplace 的插件详细信息页面上显示                                                                                                                                                                                              |
+| 验证的 GitHub 形式因素       | 仅针对公共 `github.com` 进行验证。GitHub Enterprise Cloud 共享相同的注册端点，**理论上支持**，但在本文档中未单独验证；GHES 同样**不在**本文档的验证范围内。请根据您的实时集群验证任何特定形式因素的详细信息 |
+| 安装路径                      | 通过 ACP Marketplace 集群插件条目；**Catalog → Helm Chart** 路径不是本文档的主要主题（请参见第 4 章方法 3）                                                                                                                                                                              |
 
-> **Note：** 本文里的实现细节（表单字段、镜像内置工具、UID/GID、chart
-> values default、错误信息字面量等）都以上述基线为准。**插件版本或
-> 上游 ARC 升级后部分细节可能变**；如遇与本文不一致的现象，请以现网
-> 真实状态（`kubectl get autoscalingrunnerset -o yaml`、对应版本的上游
-> `values.yaml`）为准。
+> **注意：** 本文档中的具体细节（表单字段、预安装工具、UID/GID、图表值默认值、错误消息文本等）均与上述基线相关。**某些细节在插件或上游 ARC 升级后可能会发生变化**；当现实与文档不符时，请信任实时集群（`kubectl get autoscalingrunnerset -o yaml`，匹配的上游 `values.yaml`）而不是这里写的内容。
 
-### 术语表
+### 术语
 
-| 缩写 | 全称 | 说明 |
-|---|---|---|
-| ARC | Actions Runner Controller | GitHub 官方的 self-hosted runner Kubernetes 控制器 |
-| ACP | Alauda Container Platform | 本平台 |
-| ARS | AutoscalingRunnerSet | ARC 核心 CRD，描述一组可伸缩的 runner |
-| ER / ERS | EphemeralRunner / EphemeralRunnerSet | runner pod 与所属集合的 CRD |
-| SA | ServiceAccount | Kubernetes ServiceAccount |
-| GHES | GitHub Enterprise Server | GitHub 自部署版 |
-| PAT | Personal Access Token | GitHub 个人访问令牌 |
-| ECV | Extra Chart Values | 插件表单顶层 textarea，用于高级覆盖 |
-| EGV | Extra Global Values | 同上但内容嵌入 chart 的 `global:` 块 |
+| 缩写        | 全名                                | 本文档中的含义                                                  |
+| ----------- | ----------------------------------- | --------------------------------------------------------------- |
+| ARC         | Actions Runner Controller           | GitHub 的上游 Kubernetes 控制器，用于自托管运行器               |
+| ACP         | Alauda Container Platform           | 本平台                                                         |
+| ARS         | AutoscalingRunnerSet                | 描述一组可扩展运行器的核心 ARC CRD                             |
+| ER / ERS    | EphemeralRunner / EphemeralRunnerSet | 个别运行器 Pod 及其拥有集的 CRD                                |
+| SA          | ServiceAccount                      | Kubernetes ServiceAccount                                       |
+| GHES        | GitHub Enterprise Server            | GitHub 的自托管发行版                                         |
+| PAT         | Personal Access Token               | GitHub 访问令牌                                               |
+| ECV         | Extra Chart Values                  | 插件表单中用于高级覆盖的顶级 YAML 文本区域                    |
+| EGV         | Extra Global Values                 | 与 ECV 相同，但内容嵌入在图表的 `global:` 块下               |
 
 ---
 
-## 架构理解
+## 理解架构
 
-### 为什么是 scale-set 模式（不是 legacy）
+### 为什么选择 scale-set 模式（而不是传统模式）
 
-ARC 上游有两种部署形态：**scale-set** 与 **legacy**（runner-deployment
-模式）。Alauda 提供的两个集群插件**只**以 scale-set 模式打包，背景如下：
+ARC 有两种上游部署模式：**scale-set** 和 **legacy**（运行器部署模式）。这两个 Alauda 插件仅打包 scale-set 模式，原因如下：
 
-- **GitHub 官方推荐方向。** scale-set 是 GitHub 自 2023 年起力推的
-  ARC 新模式；legacy 模式已进入维护态、不再加新特性。新部署一律走
-  scale-set。
-- **更安全的认证模型。** scale-set 推荐用 GitHub App 安装级凭证（也
-  兼容 PAT），颗粒度比 PAT 细，可按仓库 / 组织授权，旋转更容易。
-- **更原生的弹性伸缩。** scale-set 直接对接 GitHub 的 Actions Service
-  （基于 job-acquisition 协议长轮询），任务来了拉起 ephemeral pod、
-  跑完销毁，scale-from-zero 是默认行为，不需要常驻空闲 runner。
-- **架构更简单。** legacy 模式靠 webhook 触发，需要 GitHub 能反向访问
-  集群；scale-set 完全 outbound（集群 → GitHub），不需要给集群暴露
-  公网入口。
+- **GitHub 推荐的方向。** Scale-set 是 GitHub 自 2023 年以来一直推动的新 ARC 模式；传统模式处于维护状态，不再接收新功能。新的部署应使用 scale-set。
+- **更好的身份验证模型。** Scale-set 推荐使用 GitHub 应用安装级别的凭证（也支持 PAT），其粒度比 PAT 更细，易于按存储库 / 组织进行范围限制，并且更易于轮换。
+- **原生自动扩展。** Scale-set 通过长轮询作业获取协议直接与 GitHub 的 Actions 服务进行通信。当作业到达时，会创建一个临时 Pod，并在作业结束时销毁；默认情况下为零扩展——不需要空闲运行器。
+- **更简单的架构。** 传统模式需要 GitHub 到集群的 webhook 交付，这意味着需要将集群暴露到互联网。Scale-set 完全是出站的（集群 → GitHub），不需要任何入站暴露。
 
-### 组件如何协同
+### 组件如何协同工作
 
-两个插件装好之后，集群上有四个逻辑组件分布在两个 namespace：
+当安装了两个插件时，集群在两个命名空间中运行四个逻辑组件：
 
-| 组件 | 所在 namespace | Pod 类型 | 归属 |
-|---|---|---|---|
-| 控制器 | `arc-systems` | Deployment | 控制器插件 |
-| Listener（每个 scale-set 一个） | `arc-systems` | Pod（由控制器管理） | 控制器（代表 scale-set 起的） |
-| AutoscalingRunnerSet (ARS) | `arc-runners` | CRD 资源 | Scale-Set 插件 |
-| EphemeralRunner pod | `arc-runners` | Pod（按 workflow job 生命周期） | 控制器 |
+| 组件                          | 运行位置       | Pod 类型                          | 所有者                             |
+| ----------------------------- | -------------- | --------------------------------- | ---------------------------------- |
+| Controller                    | `arc-systems`  | Deployment                        | Controller plugin                  |
+| Listener (每个 scale-set 一个) | `arc-systems`  | Pod（由控制器管理）               | Controller（代表 scale-set）      |
+| AutoscalingRunnerSet (ARS)    | `arc-runners`  | CRD 对象                          | Scale-set plugin                   |
+| EphemeralRunner pod           | `arc-runners`  | Pod（生命周期：每个工作流作业）  | Controller                         |
 
-新用户经常踩的几个不直观点：
+一些新用户经常遇到的非显而易见的要点：
 
-- **Listener pod 跑在控制器命名空间**（`arc-systems`），不在 Scale-Set
-  自己的 `arc-runners`。原因是 listener 由控制器创建并复用控制器的
-  ServiceAccount / RBAC。
-- 当 `minRunners=0` 时，没有 workflow 触发，`arc-runners` 里没有任何
-  runner pod，是正常的。
-- CRD（`AutoscalingRunnerSet`、`AutoscalingListener`、`EphemeralRunnerSet`、
-  `EphemeralRunner`）由控制器插件创建，是 cluster 级。
+- **监听器 Pod 在控制器命名空间中运行**（`arc-systems`），而不是在 scale-set 自己的 `arc-runners` 中。这是因为监听器是由控制器创建的，并重用控制器的 ServiceAccount / RBAC。
+- 使用 `minRunners=0` 时，`arc-runners` 中不存在运行器 Pod，直到工作流触发——这是正常的。
+- CRDs（`AutoscalingRunnerSet`、`AutoscalingListener`、`EphemeralRunnerSet`、`EphemeralRunner`）由控制器插件创建，并且是集群范围的。
 
-### 安装包内置镜像清单
+### 安装包中捆绑的镜像
 
-下表列出 ARC 各组件镜像在 Alauda 应用市场分发的安装包内是否预置，以及
-air-gap 环境需要做什么：
+下表澄清了哪些 ARC 组件镜像在 Alauda Marketplace 安装包中预捆绑，哪些需要手动同步：
 
-| 组件 | 镜像 | 内置 | air-gap 处理 |
-|---|---|---|---|
-| 控制器 | `gha-runner-scale-set-controller` | ✅ 控制器插件内置 | 无需处理 |
-| Listener | 由控制器 fork 同一镜像 | ✅ | 无需处理 |
-| Runner 主容器 | `gha-runner-scale-set-runner-extension` | ✅ Scale-Set 插件内置 | 无需处理 |
-| DinD sidecar | `docker:<tag>-dind` | ❌ | 需将上游镜像同步到平台镜像仓库；见 [Recipe 8](#recipe-8-dind-模式在-runner-里跑-docker-build) 与 [Recipe 9](#recipe-9-覆盖-arc-镜像自定义版本--替换镜像源) |
+| 组件        | 镜像                                            | 捆绑                  | 空隙操作                                                                                                                                                                              |
+| ----------- | ----------------------------------------------- | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Controller   | `gha-runner-scale-set-controller`                | ✅ 在控制器插件中     | 无                                                                                                                                                                                  |
+| Listener     | 使用控制器镜像（由控制器分叉）                 | ✅                     | 无                                                                                                                                                                                  |
+| Runner main  | `gha-runner-scale-set-runner-extension`          | ✅ 在 scale-set 插件中 | 无                                                                                                                                                                                  |
+| DinD 边车   | `docker:<tag>-dind`                              | ❌                     | 将上游镜像同步到平台注册表；请参见 [食谱 8](#recipe-8-dind-mode-run-docker-build-inside-runner) 和 [食谱 9](#recipe-9-override-arc-images-custom-version--private-registry) |
 
-**结论：** 不启用 DinD 模式时，安装包在 air-gap 集群里能端到端跑通；
-启用 DinD 需要额外同步一个镜像。
+**结论：** 在没有 DinD 模式的情况下，安装包在隔离集群内端到端运行。DinD 模式需要将一个额外的镜像同步到平台注册表。
 
-> **关于 air-gap 中的第三方 action：** 形如
-> `uses: actions/checkout@v4` 这类 step 在 runtime 需要从 `github.com`
-> 拉 action 源码。runner 镜像不预绑定 action 源码，平台插件也不提供
-> action mirror。air-gap 处理方案见
-> [使用第三方 action（`uses:`）](#使用第三方-actionuses)。
+> **关于空隙中的第三方操作的注意事项：** 使用 `uses: actions/checkout@v4` 和其他社区操作的工作流需要网络访问，以便在运行时从 `github.com` 获取操作源。运行器镜像不捆绑操作源，平台插件也不提供操作镜像。请参见 [使用第三方操作（`uses:`）](#using-third-party-actions-uses) 以获取空隙的解决方法。
 
-### 平台默认运行时配置
+### 平台注入的运行时默认值
 
-通过 ACP 应用市场安装时，插件 chart 自动接收以下值，您**无需**手工配置：
+通过 ACP Marketplace 安装时，插件图表会自动接收以下值。您**不需要**手动配置它们：
 
-- `global.registry.address` —— 平台镜像仓库地址前缀；ARC 各组件镜像
-  自动加上此前缀拉取。
-- `global.registry.imagePullSecrets` —— 拉取平台仓库的凭证，由平台
-  控制器自动维护。
-- `global.images.<component>.repository` —— 默认指向平台仓库内 ARC 镜像
-  的路径。
+- `global.registry.address` — 平台镜像注册表前缀；ARC 组件镜像会自动从该前缀拉取。
+- `global.registry.imagePullSecrets` — 平台注册表的凭证，由平台控制器管理。
+- `global.images.<component>.repository` — 默认指向平台注册表内捆绑的镜像路径。
 
-仅当您需要覆盖镜像源（自定义上游版本 / 私有仓库 sub-path / DinD 镜像）
-时，才需要在 **Extra Global Values** 里写 `images:`。详见
-[Recipe 9](#recipe-9-覆盖-arc-镜像自定义版本--替换镜像源)。
+您只需在 **Extra Global Values** 字段中设置 `images:`，当您想要覆盖镜像源时——例如，自定义上游版本、私有注册表子路径或 DinD 镜像。请参见 [食谱 9](#recipe-9-override-arc-images-custom-version--private-registry)。
 
-> **Warning：** 不要在 EGV 里写 `registry:` 子键。平台已渲染过
-> `global.registry`；如果您写 `  registry:`（EGV 内部 2 空格缩进），
-> 会被静默丢弃 —— 配置无效但不会报错。
+> **警告：** 请勿在 EGV 下编写 `registry:` 子键。平台已经呈现了 `global.registry`；如果您写 `  registry:`（在 EGV 内的 2 空格缩进），它会被静默丢弃。覆盖无效且不会报告错误。
 
-### Runner 镜像
+### 运行器镜像
 
-两个插件装好之后，您可能想知道 runner 镜像里有什么、以什么身份运行。
+安装两个插件后，您可能想知道运行器镜像中可用的内容以及它是如何执行的。
 
-#### 预装的 CLI 工具
+#### 预安装的 CLI 工具
 
-Runner 镜像内置了 CI / CD 场景常用的命令行工具，您可以在 workflow
-`run:` step 里直接调用：
+运行器镜像捆绑了常见的 CI/CD 命令行工具。您可以直接在工作流的 `run:` 步骤中调用它们：
 
-| 类别 | 工具 |
-|---|---|
-| Kubernetes | `kubectl`、`helm` |
-| Tekton | `tkn` |
-| 通用 CLI | `git`（含 git-lfs）、`curl`、`jq`、`yq` |
-| Shell / 解压 | `bash`、`tar`、`unzip`、`zip`、`gzip`、`zstd` |
-| Node.js 运行时 | Node 20 / Node 24（仅 runtime —— 见下方说明） |
-| OpenSSH | `ssh` |
+| 类别            | 工具                                             |
+| --------------- | ------------------------------------------------- |
+| Kubernetes      | `kubectl`、`helm`                                 |
+| Tekton          | `tkn`                                             |
+| 通用 CLI        | `git`（带有 git-lfs）、`curl`、`jq`、`yq`          |
+| Shell / 压缩    | `bash`、`tar`、`unzip`、`zip`、`gzip`、`zstd`     |
+| Node.js 运行时  | Node 20 / Node 24（仅运行时——见下文说明）        |
+| OpenSSH         | `ssh`                                             |
 
-补充说明：
+注意：
 
-- **Docker 不在预装清单内。** Alauda runner 镜像基于
-  `almalinux:9-minimal`，刻意**不**装 `docker` / `docker-compose` /
-  `dockerd` / `containerd` / `buildx` / `runc`，以保持镜像精简、CVE
-  暴露面小。Container Mode = `dind` 模式会由上游 chart 起一个独立的
-  `docker:dind` sidecar 提供 docker daemon，但 sidecar 里的 docker CLI
-  **不会自动**出现在 runner pod。如果 step 真的要调 `docker` /
-  `docker-compose`，标准做法是按
-  [Recipe 9](#recipe-9-覆盖-arc-镜像自定义版本--替换镜像源) 自定义一个
-  **内置 docker CLI** 的 runner 镜像，再通过 `images.runnerExtension`
-  替换默认镜像。
-  - **不建议在 step 里用 `microdnf install -y docker-ce-cli` 临时装。**
-    默认 runner 以非 root `runner` 用户（UID/GID 1001）运行，普通 step
-    里先天就不适合做系统包安装；而且 Alauda runner 镜像默认只启用
-    AlmaLinux BaseOS / AppStream 仓库，`docker-ce-cli` 也不在其中。
-    临时安装既要解决 root 权限，又要额外配置 docker.io 仓库，脆弱且每个
-    step 都要重做。
-  - **也不要切到 `jobs.<id>.container.image:`。** DinD 模式与 GHA
-    `container:` 字段不兼容（详见 [Example 1](#example-1-让单个-job-跑在自定义-container-里)
-    的 Warning）。
-- **Node.js (20 / 24) 只是 embedded runtime** —— 镜像里的 Node 是上游
-  剥过的（**不带 `npm` / 不带 `corepack` / 不带 Alpine 变体**），仅满足
-  JavaScript action 自身运行所需。如果 step 要用完整 Node 开发环境，调
-  `actions/setup-node@v5`，它会按需现场装一份完整工具链。
-- **`kubectl` / `tkn` 默认只有一小部分基础权限，不等于业务 RBAC。**
-  这些工具被装在 runner 镜像里，但 runner pod 默认使用的
-  ServiceAccount 主要只带 runner container hooks 所需的 namespace
-  级基础权限（如 `pods`、`pods/log`、`pods/exec`、`secrets`；具体还会受
-  当前 container mode 影响），并不天然等于“可以随意查 / 改集群资源”。
-  如果 workflow 需要访问 Tekton、Deployment、CRD 或业务 namespace
-  资源，仍应按
-  [Recipe 1](#recipe-1-runner-pod-用自定义-serviceaccount跑-in-cluster-任务)
-  给 runner 配一个有明确 RBAC 的 ServiceAccount。
-  实际生效权限还可能被平台上额外的 RoleBinding / ClusterRoleBinding
-  放大，因此不要靠“文档印象”判断，建议用
-  `kubectl auth can-i --list --as system:serviceaccount:<runner-ns>:<runner-sa> -n <runner-ns>`
-  现场确认。
+- **Docker 未预安装。** Alauda 运行器镜像基于 `almalinux:9-minimal` 构建，故意排除了 `docker` / `docker-compose` / `dockerd` / `containerd` / `buildx` / `runc`，以保持镜像小巧并减少 CVE 面。DinD 模式（容器模式 = `dind`）启动一个由上游图表提供的单独 `docker:dind` 边车，但其 docker CLI 不会自动在运行器 Pod 内可用。如果工作流步骤需要调用 `docker` / `docker-compose`，标准路径是构建一个自定义运行器镜像，将 docker CLI 捆绑在内，并通过 [食谱 9](#recipe-9-override-arc-images-custom-version--private-registry) 将 `images.runnerExtension` 指向它。
+  - **请勿尝试在步骤时间使用 `microdnf install -y docker-ce-cli` 进行安装。** 默认运行器以非根用户 `runner`（UID/GID 1001）身份运行，因此普通工作流步骤已经不是系统软件包安装的正确位置；此外，运行器镜像默认仅启用 AlmaLinux BaseOS / AppStream，而 `docker-ce-cli` 不在任何存储库中。步骤时间安装必须解决根权限问题和额外的 docker.io 存储库设置——脆弱且每个步骤重复。
+  - **请勿切换到 `jobs.<id>.container.image:`** 以在 DinD 下引入 docker CLI——DinD 与 GHA 的 `container:` 字段不兼容（请参见 [示例 1](#example-1-run-a-job-in-a-custom-container) 下的警告）。
+- **Node.js（20 / 24）仅为嵌入式运行时**——捆绑的 Node 被精简（无 `npm` / 无 `corepack` / 无 Alpine 变体）。这是运行 JavaScript 操作所需的最小配置；要在步骤内获得完整的 Node 开发环境，请调用 `actions/setup-node@v5`，该操作按需安装相应的完整工具链。
+- **`kubectl` / `tkn` 默认仅具有小的基线权限集，这与业务 RBAC 不同。** 二进制文件安装在运行器镜像中，但运行器 Pod 使用的默认 ServiceAccount 主要携带运行器容器挂钩所需的命名空间范围基线权限（例如 `pods`、`pods/log`、`pods/exec`、`secrets`；确切的权限集仍取决于当前的容器模式）。这并不自动意味着工作流可以自由检查或修改集群资源。如果工作流需要 Tekton、Deployment、CRD 或业务命名空间访问，仍需配置具有所需 RBAC 的显式 ServiceAccount——请参见 [食谱 1](#recipe-1-custom-serviceaccount-for-in-cluster-jobs)。还请注意，有效权限集可能会因环境中的额外 RoleBindings / ClusterRoleBindings 而扩大，因此请不要仅依赖文档印象；请在集群中使用 `kubectl auth can-i --list --as system:serviceaccount:<runner-ns>:<runner-sa> -n <runner-ns>` 验证。
 
-#### 如果缺少您需要的工具
+#### 如果您需要的工具缺失怎么办
 
-如果工作流需要的工具不在上表内，按下面三种方式之一处理：
+如果工作流需要的工具不在上表中，请采取以下方法之一：
 
-1. **优先用 step 级工具安装 action**：如 `actions/setup-node@v5`、
-   `actions/setup-go@v5`、`actions/setup-java@v4` 等。只有当您明确切到
-   了一个允许 root 装包的自定义 job container 时，才考虑在 `run:` 里调
-   包管理器。Alauda 默认 runner 镜像虽然基于 `almalinux:9-minimal`、
-   **自带 `microdnf`，不是 `dnf`**，但 runner 本身以 UID/GID 1001
-   非 root 运行，普通 workflow step 里直接
-   `microdnf install -y <包名>`（例如 `make`）通常会因权限失败。
-2. **用 workflow `container:` 切到自定义镜像**：在 job 上加
-   `jobs.<id>.container.image:` 指向一个内置该工具的镜像。**仅适用于**
-   `kubernetes-novolume`（默认）或 `kubernetes` 模式；`dind` 模式不支持
-   GHA 的 `container:` 字段。参考
-   [Example 1](#example-1-让单个-job-跑在自定义-container-里)。
-3. **替换默认 runner 镜像**：定制一个包含您需要工具的 runner 镜像，
-   通过 [Recipe 9](#recipe-9-覆盖-arc-镜像自定义版本--替换镜像源)
-   把 `images.runnerExtension` 指过去。
+1. **优先使用步骤级设置操作**，例如 `actions/setup-node@v5`、`actions/setup-go@v5` 或 `actions/setup-java@v4`。只有在您故意切换到允许根软件包安装的自定义作业容器时，才应考虑在 `run:` 中调用包管理器。默认的 Alauda 运行器镜像基于 `almalinux:9-minimal` 构建，捆绑了 **`microdnf`，而不是 `dnf`**，但运行器本身以非根 UID/GID 1001 用户身份执行，因此在正常工作流步骤中，普通的 `microdnf install -y <pkg>` 通常因权限问题而失败。
+2. **使用工作流 `container:` 切换到自定义镜像**——将 `jobs.<id>.container.image` 设置为包含该工具的镜像。**这仅适用于** `kubernetes-novolume`（默认）或 `kubernetes` 容器模式；`dind` 不支持 GHA 的 `container:` 字段。请参见 [示例 1](#example-1-run-a-job-in-a-custom-container)。
+3. **替换默认运行器镜像**——构建一个自定义运行器镜像，并通过 [食谱 9](#recipe-9-override-arc-images-custom-version--private-registry) 将 `images.runnerExtension` 指向它。
 
-#### 运行身份
+#### 运行时身份
 
-- **UID / GID：** 1001 / 1001（非 root `runner` 用户）。
+- **UID / GID：** 1001 / 1001（非根 `runner` 用户）。
 - **`HOME`：** `/home/runner`。
-- **当前启动链路：** chart / overlay 会显式执行
-  `command: ["/home/runner/run.sh"]`，再由 `run.sh` 启动 runner 进程。
-  `entrypoint.sh` / `startup.sh` 属于上游 runner 镜像的传统启动链路，不是
-  当前 Alauda runner-extension 镜像的主执行入口。
-- **资源限制场景：** 在 [Recipe 4](#recipe-4-限制-runner-的-cpu--memory)
-  给 runner 容器加 `resources` 时，**必须保留**
-  `command: ["/home/runner/run.sh"]`（chart 默认就是这个）。漏写时 pod
-  会起来但 runner 进程不会执行 `run.sh`（退回到基础镜像默认启动行为），
-  导致 workflow 一直 Queued。
+- **当前启动路径：** 图表 / 覆盖明确运行 `command: ["/home/runner/run.sh"]`，然后 `run.sh` 启动运行器进程。`entrypoint.sh` / `startup.sh` 属于传统的上游运行器镜像启动路径，但它们不是当前 Alauda 运行器扩展镜像的主要执行入口点。
+- **资源限制：** 在 [食谱 4](#recipe-4-limit-cpu--memory-of-runners) 中向运行器容器添加 `resources` 时，您**必须保持** `command: ["/home/runner/run.sh"]`（图表默认）。省略它会使 Pod 启动，但运行器进程永远不会运行 `run.sh`（它回退到基础镜像的默认启动行为），导致工作流保持排队状态。
 
-#### 使用第三方 action（`uses:`）
+#### 使用第三方操作（`uses:`）
 
-GitHub Actions 的 `uses: actions/checkout@v4` 这类 step 让 workflow
-调用社区维护的可复用 action。runner 在 step 执行前会从 GitHub 拉
-action 源码到 pod 的 `/home/runner/_work/_actions/`，再交给 Node.js
-运行。**这是 runtime 行为，不是镜像里预装的**。
+GitHub Actions 步骤如 `uses: actions/checkout@v4` 使工作流调用社区维护的可重用操作。在执行步骤之前，运行器会从 GitHub 下载操作源到 Pod 内的 `/home/runner/_work/_actions/`，然后将其交给 Node.js 执行。**这是运行时行为，不是运行器镜像的一部分。**
 
-##### Method 1：直连 / HTTPS 代理
+##### 方法 1：直接连接 / HTTPS 代理
 
-集群有出站直连 `github.com` 的网络时，workflow YAML 里照常写：
+当集群可以直接访问 `github.com` 时，工作流就可以正常工作：
 
 ```yaml
 steps:
@@ -281,58 +175,42 @@ steps:
   - run: npm ci
 ```
 
-如果集群没有直连但有出站 HTTPS 代理（企业网关常见），需要给 runner
-pod 注入 `HTTPS_PROXY`，按 [Recipe 2](#recipe-2-在-runner-容器内注入-secret--自定义-env)
-把下面这段贴进 Scale-Set 插件的 **Extra Chart Values** 字段（YAML 中
-的 `image:` 与 `ACTIONS_RUNNER_REQUIRE_JOB_CONTAINER` 是 helm 数组替
-换语义下必填的兜底字段，参见 [Chapter 3 Step 1](#step-1-理解-ecv-vs-egv)
-安全骨架）：
+如果集群没有直接访问，但有 HTTPS 出口代理（在企业网络中很常见），请通过 [食谱 2](#recipe-2-inject-secrets--custom-env-into-runner) 将 `HTTPS_PROXY` 注入到运行器 Pod 中。在 scale-set 插件表单的额外图表值中粘贴以下内容（`image:` 和 `ACTIONS_RUNNER_REQUIRE_JOB_CONTAINER` 条目是 helm 数组替换语义下的必需回退——请参见 [第 3 章，第 1 步](#step-1-understanding-ecv-vs-egv) 中的安全骨架警告）：
 
 ```yaml
 template:
   spec:
     containers:
     - name: runner
-      image: <runner-extension-image>          # 必填；见 Recipe 9 获取现网镜像路径
+      image: <runner-extension-image>          # required; see Recipe 9 to discover the live path
       command: ["/home/runner/run.sh"]
       env:
       - name: ACTIONS_RUNNER_REQUIRE_JOB_CONTAINER
-        value: "false"                         # kubernetes-novolume / dind 模式必填
+        value: "false"                         # required for kubernetes-novolume / dind modes
       - name: HTTPS_PROXY
         value: "http://proxy.example.com:3128"
       - name: NO_PROXY
-        value: "<内网域名>,localhost,127.0.0.1"
+        value: "<internal-domain>,localhost,127.0.0.1"
 ```
 
-##### Method 2：air-gap —— 把 action 同步到内网 GHES
+##### 方法 2：空隙——将操作镜像到内部 GHES
 
-集群完全没有出站到 `github.com` 时，ARC **没有**内建 action mirror 能力
-—— runner 镜像不预绑定任何 action 源码，平台插件也没有 "action 源 URL
-转发" 配置项。
+当集群完全无法访问 `github.com` 时，ARC 没有内置的操作镜像——运行器镜像不捆绑任何操作源，平台插件也不提供“操作源 URL 转发”选项。
 
-第一种思路是把 `actions/checkout` 等需要的 action 仓库 fork（或 mirror）
-到**您注册 runner 用的那个 GitHub 实例**（即 `githubConfigUrl` 指向
-的 host —— 一般是内网 GHES），然后在 workflow 里把 `uses:` 改成内网
-路径：
+第一种选择是将 `actions/checkout` 和其他所需的操作库分叉（或镜像）到**与运行器注册的同一 GitHub 实例**（即由 `githubConfigUrl` 引用的主机——通常是您的内部 GHES），然后将 `uses:` 更改为内部路径：
 
 ```yaml
 steps:
-  - uses: my-org/checkout@v4   # 假设已经把 actions/checkout 镜像到同一个 GHES 实例
+  - uses: my-org/checkout@v4   # mirrored to the same GHES instance
 ```
 
-runner 解析 `uses:` 时会按 `githubConfigUrl` 推断的 base URL 去拉 action
-源 —— 所以 `my-org/checkout` 必须在**同一个 GitHub 实例**（github.com
-或 GHES）上才可达。
+运行器根据从 `githubConfigUrl` 派生的基本 URL 解析 `uses:`，因此 `my-org/checkout` 必须位于**同一 GitHub 实例**（github.com 或 GHES）上——并且该主机必须可以从集群访问。
 
-> **Note —— 内网 git 是 GitLab / Gitea / Gitee 的情况。** GitHub Actions
-> 的 `uses: owner/repo@ref` 协议只解析到 GitHub 实例，无法直接从
-> GitLab / Gitea / Gitee 拉取。这种环境里 Method 2 不可用，请改走下面
-> 的 Method 3（在 `run:` 里自己写 `git clone`）。
+> **注意——内部 git 是 GitLab / Gitea / Gitee。** GitHub Actions `uses: owner/repo@ref` 协议仅在 GitHub 实例上解析；无法从 GitLab / Gitea / Gitee 获取。在这些环境中，方法 2 不适用——请切换到下面的方法 3（在 `run:` 中编写 `git clone`）。
 
-##### Method 3：air-gap —— 完全不用 `uses:`，用 `run:` 自己写脚本
+##### 方法 3：空隙——用 `run:` shell 脚本替换 `uses:`
 
-最朴素的兜底，完全不依赖任何 action 仓库 mirror。`actions/checkout@v4`
-的功能用一行 `git clone` 就能替代：
+完全跳过 `uses:`，自己编写等效的 shell。`actions/checkout@v4` 的功能可以用一个 `git clone` 替代：
 
 ```yaml
 steps:
@@ -344,104 +222,72 @@ steps:
         "https://oauth2:${GIT_TOKEN}@my-internal-git.example.com/${GITHUB_REPOSITORY}" .
 ```
 
-workflow 写起来长一点，但**完全不依赖 GitHub.com、也不依赖 action 仓库
-镜像**，最稳。
+工作流稍微长一些，但**不依赖于 github.com 或任何操作镜像**——这是最稳健的空隙路径。
 
-> **Warning —— runner 注册到 github.com 但集群无出站时：** Method 2
-> 的前提是 `githubConfigUrl` 指向的实例集群里能访问到。如果 runner
-> 注册到 github.com 但 runner pod 又出不了网，**`uses:` 没有可行路径**，
-> 只能改用 Method 3，或给集群开通到 github.com 的代理。
+> **警告——运行器注册到 github.com，但集群没有出站：** 方法 2 仅在 `githubConfigUrl` 引用的主机可以从集群访问时有效。如果运行器注册到 github.com，但运行器 Pod 没有出站，**`uses:` 无法直接工作**——您必须使用方法 3 或授予集群访问 github.com 的代理。
 
 ---
 
-## 公共基础配置
+## 常见基本配置
 
 ### 环境准备
 
 #### 系统要求
 
-- 一个 ACP 集群（global 集群或业务集群均可）。
-- 集群有出站网络能访问 GitHub Actions runner 所需的 GitHub 域名。对
-  GitHub.com，至少包括 `github.com:443`、`api.github.com:443`、
-  `*.actions.githubusercontent.com:443`；更多域名以及 GHES 场景的要求
-  请以 GitHub 官方 self-hosted runner communication requirements 为准，
-  不要简单理解成“只替换两个域名”。
-- air-gap 集群参见 [安装包内置镜像清单](#安装包内置镜像清单) 了解需要
-  预先同步哪些镜像；workflow 中 `uses:` 的处理方案见
-  [使用第三方 action（`uses:`）](#使用第三方-actionuses)。
+- ACP 集群（global 集群或业务集群，任意均可）。
+- 集群可以访问自托管运行器所需的 GitHub 域。对于 GitHub.com，这至少包括 `github.com:443`、`api.github.com:443` 和 `*.actions.githubusercontent.com:443`。有关更广泛的域列表和 GHES 特定要求，请遵循 GitHub 的官方自托管运行器通信要求，而不是假设您只需替换两个主机名。
+- 对于空隙集群，请参见 [安装包中捆绑的镜像](#images-bundled-in-the-install-package) 以了解哪些镜像需要预同步，以及 [使用第三方操作（`uses:`）](#using-third-party-actions-uses) 以获取工作流 `uses:` 的解决方法。
 
-#### 必需组件
+#### 所需组件
 
-- 控制器插件（Alauda Support for GitHub Actions Runner Controller）。
-- Scale-Set 插件（Alauda Support for GitHub Actions Runner Scale Set）。
-- 一种 GitHub 凭证 —— GitHub App 或 PAT。
+- 控制器插件（Alauda 对 GitHub Actions Runner Controller 的支持）。
+- Scale-set 插件（Alauda 对 GitHub Actions Runner Scale Set 的支持）。
+- 一个 GitHub 凭证——可以是 GitHub 应用或 PAT。
 
 #### 权限要求
 
-- 安装两个集群插件需要集群管理员权限。
-- 创建 namespace 的权限（默认 `arc-systems` 与 `arc-runners`）。
-- 一个 GitHub 身份（App 或 PAT），按 `githubConfigUrl` 的范围选择认证方式：
+- 集群管理员权限以安装两个插件。
+- 创建命名空间的权限（默认为 `arc-systems` 和 `arc-runners`）。
+- GitHub 身份（应用或 PAT）。根据 `githubConfigUrl` 范围选择身份验证方法：
 
-| `githubConfigUrl` 范围 | GitHub App | PAT |
-|---|---|---|
-| 仓库级（`https://github.com/<org>/<repo>`） | 支持 | 支持 |
-| 组织级（`https://github.com/<org>`） | 支持 | 支持 |
-| 企业级（`https://github.com/enterprises/<enterprise>`） | **不支持**（GitHub 平台限制） | 支持（**唯一选择**） |
+| `githubConfigUrl` 范围                                    | GitHub 应用                                | PAT                         |
+| ---------------------------------------------------------- | ----------------------------------------- | --------------------------- |
+| 存储库 (`https://github.com/<org>/<repo>`)                | 支持                                     | 支持                         |
+| 组织 (`https://github.com/<org>`)                         | 支持                                     | 支持                         |
+| 企业 (`https://github.com/enterprises/<enterprise>`)     | **不支持**（GitHub 平台限制）            | 支持（**唯一选择**）        |
 
-> **Note —— 企业级 ARC 只能用 PAT。** GitHub 在 enterprise 级 runner 注册
-> 场景下不接受 GitHub App 认证（[GitHub 官方文档](https://docs.github.com/en/enterprise-cloud@latest/actions/how-tos/manage-runners/use-actions-runner-controller/authenticate-to-the-api)
-> 明确说明）。如果您要装的 scale-set `githubConfigUrl` 是企业级，准备
-> Secret 时跳过下面 Method 1（GitHub App），直接走 Method 2（PAT）。
+> **注意——企业级 ARC 需要 PAT。** GitHub 不接受 GitHub 应用身份验证用于企业级的运行器注册（[上游文档](https://docs.github.com/en/enterprise-cloud@latest/actions/how-tos/manage-runners/use-actions-runner-controller/authenticate-to-the-api) 明确指出）。如果您的 scale-set 的 `githubConfigUrl` 是企业范围的，请跳过下面的方法 1（GitHub 应用），直接转到方法 2（PAT）。
 
-按选定的认证方式给 GitHub 身份配置最小权限：
+使用所选的身份验证方法，授予最低权限：
 
-- **GitHub App，仓库级 scale-set** ——
-  - Repository：`Administration: Read & Write`、`Metadata: Read`
-- **GitHub App，组织级 scale-set** ——
-  - Repository：`Metadata: Read`
-  - Organization：`Self-hosted runners: Read & Write`
-- **PAT (Classic)** —— 按 `githubConfigUrl` 范围选 scope：仓库级勾选
-  `repo`；组织级勾选 `admin:org`（已含 self-hosted runners 写权限）；
-  企业级勾选 `manage_runners:enterprise`（**这是企业级 ARC 唯一可行
-  的 PAT 类型** —— Fine-grained PAT 不支持企业级）。
-- **PAT (Fine-grained)** —— **仓库级**：Repository permissions
-  `Administration: Read and write`。**组织级**：Repository permissions
-  `Administration: Read` + Organization permissions
-  `Self-hosted runners: Read and write`。**企业级不支持**。
+- **GitHub 应用，存储库级别的 scale-set** —
+  - 存储库：`Administration: Read & Write`、`Metadata: Read`
+- **GitHub 应用，组织级别的 scale-set** —
+  - 存储库：`Metadata: Read`
+  - 组织：`Self-hosted runners: Read & Write`
+- **PAT（经典）** — 根据 `githubConfigUrl` 范围选择：存储库使用 `repo`，组织使用 `admin:org`（已涵盖自托管运行器写入），企业使用 `manage_runners:enterprise`（**企业级 ARC 需要经典 PAT**——不支持细粒度令牌）。
+- **PAT（细粒度）** — **存储库级别**：存储库权限 `Administration: Read and write`。**组织级别**：存储库权限 `Administration: Read` + 组织权限 `Self-hosted runners: Read and write`。**企业级：不支持。**
 
-> **来源：** scope 名称与组合方式以
-> [GitHub 官方 ARC 鉴权文档](https://docs.github.com/en/enterprise-cloud@latest/actions/how-tos/manage-runners/use-actions-runner-controller/authenticate-to-the-api)
-> 为准。
+> **来源：** 规范的范围名称和组合记录在 [GitHub 的 ARC 身份验证指南](https://docs.github.com/en/enterprise-cloud@latest/actions/how-tos/manage-runners/use-actions-runner-controller/authenticate-to-the-api) 中。
 >
-> GitHub 官方还有一条容易忽略的注释：`Administration: Read & Write`
-> **只在仓库级注册时需要**；组织级注册不需要这一项。
+> GitHub 自己的说明容易被忽视：`Administration: Read & Write` 仅在存储库范围的注册时**是必需的**；组织范围的注册不需要它。
 
-### GitHub 凭证准备
+### GitHub 凭证设置
 
-下面两种方式选一种，创建一个让 runner 认证到 GitHub 的 Secret。本步骤
-可以在 Scale-Set 插件**之前或之后**做：先创建 Secret 不会被插件覆盖。
-如果是**首次安装后才补建**这个 Secret，相关 pod 通常会在 Secret 出现后
-自动恢复；若几分钟后仍未恢复，再手动删一次 listener pod 触发重建。
-如果是**轮换一个已经存在的 Secret 内容**，listener pod **不会自动感知**
-这次变化（controller 没有 watch Secret 资源），需要手动触发一次重建：
+选择以下两种方法之一创建一个 Secret，以便运行器可以通过它进行身份验证。此 Secret 可以在安装 scale-set 插件**之前或之后**创建：插件不会覆盖已存在的 Secret。如果这是**安装后创建的初始 Secret**，相关 Pod 通常会在 Secret 出现后自动恢复；如果几分钟后仍未恢复，请删除监听器 Pod 一次以强制重建。如果您正在**轮换现有 Secret 的内容**，监听器 Pod **不会自动获取更改**——控制器不会监视 Secret 资源。通过删除监听器 Pod 强制重启，例如：
 
 ```shell
 $ kubectl -n arc-systems delete pod \
     -l actions.github.com/scale-set-name=<scale-set-name>
 ```
 
-controller 会用新凭据重建 listener pod 并重新连接 GitHub。
+控制器将重新创建监听器 Pod，并使用新凭证重新连接。
 
-默认 Secret 名 `gha-runner-scale-set-github-config`。如要换名，在
-[Chapter 2 Step 2](#step-2-在应用市场安装-1) 的 **GitHub Credentials Secret Name**
-字段填新名即可。
+默认 Secret 名称为 `gha-runner-scale-set-github-config`。要使用不同的名称，请在 scale-set 插件表单上设置 **GitHub Credentials Secret Name** 字段（[第 2 章 第 2 步](#step-2-install-via-marketplace-1)）。
 
-> **Note：** 如果您计划把 Scale-Set 插件安装到自定义 namespace，下面
-> Method 1 / Method 2 命令里的 `arc-runners` 都要同步替换成那个
-> namespace。**GitHub 凭证 Secret 必须与 Scale-Set 的 Install Namespace
-> 完全一致。**
+> **注意：** 如果您计划将 scale-set 插件安装到自定义命名空间，请在方法 1 和方法 2 中将 `arc-runners` 替换为该命名空间。**GitHub 凭证 Secret 必须位于 scale-set 的安装命名空间中。**
 
-#### Method 1：GitHub App 方式（推荐）
+#### 方法 1：GitHub 应用（推荐）
 
 ```shell
 $ kubectl create namespace arc-runners --dry-run=client -o yaml | kubectl apply -f -
@@ -452,121 +298,73 @@ $ kubectl -n arc-runners create secret generic gha-runner-scale-set-github-confi
     --from-file=github_app_private_key=/path/to/your-app.private-key.pem
 ```
 
-三个字段的获取方式（前两项来自同一个 GitHub App 设置页，第三项来自把
-App 装到目标 org / repo 之后的安装 URL）：
+如何获取这三个值（前两个来自同一 GitHub 应用设置页面，第三个来自安装后在目标组织 / 存储库上的应用安装 URL）：
 
-- **`github_app_id`**：在 GitHub UI **Settings → Developer settings →
-  GitHub Apps → 您的 App** 页面，"About" 区块里的 `App ID` 字段，是
-  一串数字。如果改用 YAML manifest（而不是
-  `kubectl create secret --from-literal`）创建 Secret，**这个值必须加
-  引号写成字符串**（如 `github_app_id: "123456"`），否则 ARC 会报
-  `failed to get app id: strconv.ParseInt`。
-- **`github_app_private_key`**：在同一个 App 设置页底部 "Private keys"
-  区点击 "Generate a private key" 下载 `.pem` 文件，把路径填到
-  `--from-file=github_app_private_key=...` 即可。**必须用 `--from-file`，
-  不要用 `--from-literal`** —— PEM 文件每行必须保留换行；用
-  `--from-literal` 会把多行内容塌成一行，导致 listener 日志报
-  `failed to parse private key`。
-- **`github_app_installation_id`**：先把 App 装到目标 org / repo ——
-  到 **GitHub Apps → 您的 App → "Install App" 标签页**，选择目标
-  organization / repository 安装。装完后回到 "Install App"，点对应
-  org / repo 那一行的 "Configure"，浏览器跳转后的 URL 形如
-  `https://github.com/organizations/<org>/settings/installations/12345678`，
-  **末尾的 `12345678` 就是 `installation_id`**。如果填错，listener
-  日志会出现 `Could not find any installation` 报错。
+- **`github_app_id`** — 在 GitHub UI **设置 → 开发者设置 → GitHub 应用 → 您的应用**中，“关于”块中的 `App ID` 字段。它是一个数字。如果您使用 YAML 清单而不是 `kubectl create secret --from-literal` 创建 Secret，**请将值用引号括起来**（例如，`github_app_id: "123456"`）；否则 ARC 报告 `failed to get app id: strconv.ParseInt`。
+- **`github_app_private_key`** — 在同一应用设置页面底部，点击“生成私钥”以下载 `.pem` 文件。使用 `--from-file=github_app_private_key=...` 传递路径。**使用 `--from-file`，而不是 `--from-literal`**——PEM 文件需要换行；`--from-literal` 会将多行合并为一行，监听器日志报告 `failed to parse private key`。
+- **`github_app_installation_id`** — 首先将应用安装到目标组织 / 存储库。转到 **GitHub 应用 → 您的应用 → 安装应用** 选项卡，选择要安装的组织 / 存储库。安装后，单击该行上的“配置”；浏览器将导航到类似于 `https://github.com/organizations/<org>/settings/installations/12345678` 的 URL，尾部的 `12345678` 即为 `installation_id`。错误的值会导致监听器日志中的 `Could not find any installation` 错误。
 
-#### Method 2：PAT（Personal Access Token）方式
+#### 方法 2：个人访问令牌
 
-**生成 PAT**：在 GitHub UI **Settings → Developer settings → Personal
-access tokens** 创建。两种 token 可选；权限按 `githubConfigUrl` 范围
-配置（详细 scope 列表与权威解释见
-[GitHub 官方 ARC 鉴权文档](https://docs.github.com/en/enterprise-cloud@latest/actions/how-tos/manage-runners/use-actions-runner-controller/authenticate-to-the-api)）：
+**在 GitHub UI 中生成 PAT** **设置 → 开发者设置 → 个人访问令牌**。有两种类型可用；根据 `githubConfigUrl` 范围选择权限（规范列表和理由见 [GitHub 的 ARC 身份验证指南](https://docs.github.com/en/enterprise-cloud@latest/actions/how-tos/manage-runners/use-actions-runner-controller/authenticate-to-the-api)）：
 
-- **Fine-grained（细粒度，推荐）**：按单个仓库 / 组织授权。创建时选择
-  Resource owner（个人或组织）与目标仓库（All / Only select repositories）。
-  **Fine-grained PAT 不支持企业级 ARC。**
-  - **仓库级 `githubConfigUrl`** —— Repository permissions：
-    `Administration: Read and write`。
-  - **组织级 `githubConfigUrl`** ——
-    - Repository permissions：`Administration: Read`
-    - Organization permissions：`Self-hosted runners: Read and write`
-- **Classic（旧版）**：scope 较粗，**企业级 ARC 唯一选择**。
-  - **仓库级**：勾选 `repo`。
-  - **组织级**：勾选 `admin:org`。
-  - **企业级**：勾选 `manage_runners:enterprise`。
+- **细粒度（推荐）** — 作用于特定存储库或组织。创建时选择资源所有者（用户或组织）和目标存储库（所有 / 仅选择的存储库）。
+  **细粒度令牌不支持企业级 ARC。**
+  - **存储库级 `githubConfigUrl`** — 存储库权限：`Administration: Read and write`。
+  - **组织级 `githubConfigUrl`** —
+    - 存储库权限：`Administration: Read`
+    - 组织权限：`Self-hosted runners: Read and write`
+- **经典** — 范围较粗；**企业级 ARC 的唯一选项**。
+  - **存储库级** — `repo`。
+  - **组织级** — `admin:org`。
+  - **企业级** — `manage_runners:enterprise`。
 
-详细步骤参见 GitHub 官方文档
-[Managing your personal access tokens](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens)。
+有关详细信息，请参见 GitHub 的官方文档 [管理您的个人访问令牌](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens)。
 
-拿到 token 后，把它写进 Secret：
+获取令牌后，将其写入 Secret：
 
 ```shell
 $ kubectl -n arc-runners create secret generic gha-runner-scale-set-github-config \
     --from-literal=github_token=ghp_xxxxxxxxxxxxxxxxxxxxx
 ```
 
-### Workflow 侧：`runs-on:` 要求
+### 工作流侧：`runs-on:` 要求
 
-本文（Alauda 当前已验证路径）只覆盖**单字符串**用法 —— 值等于您在
-Scale-Set 插件里设置的 `runnerScaleSetName`：
+本文档（Alauda 当前验证路径）仅涵盖 **单字符串** 形式——`runs-on:` 设置为在 scale-set 插件表单中配置的 `runnerScaleSetName`：
 
 ```yaml
-# Alauda 已验证：单字符串
+# Alauda 验证的：单字符串
 runs-on: my-runners
 ```
 
-> **Note —— 想让一个 scale-set 同时承接多组 label？** 上游 chart 的
-> `scaleSetLabels` 字段配合数组形式 `runs-on:` 即可做到，**但有一条
-> install-time-only 的关键约束**：装完 scale-set 之后再改 labels 不会
-> 通告给 GitHub。完整链路、注入方式与"已装完想改 labels 怎么办"见
-> [Workflow 侧：runs-on 数组形式与 scaleSetLabels](#workflow-侧runs-on-数组形式与-scalesetlabels)。
+> **注意——想要一个 scale-set 覆盖多个标签集？** 上游图表的 `scaleSetLabels` 字段与 `runs-on:` 的数组形式结合，正好可以实现这一点，**但有一个关键的仅限安装时的约束**：安装后更改标签不会传播到 GitHub。完整路径、注入方法和“如果我已经安装它该怎么办”在 [工作流侧：带有 scaleSetLabels 的 runs-on 数组形式](#workflow-side-runs-on-array-form-with-scalesetlabels) 中。
 
-**最常见错误**是直接写 `runs-on: [self-hosted, label]`（legacy ARC
-语法）而没有在 scale-set 上配套设 `scaleSetLabels`，结果 GitHub 端
-永远匹配不上 —— 注意这跟新 scale-set 模式下的数组形式（首项是
-`runnerScaleSetName`，不是 `self-hosted`）是两件事。诊断路径见
-[Issue 3](#issue-3-workflow-stays-queued---runner-永远不来)。
+**最常见的错误**是写 `runs-on: [self-hosted, label]`（传统 ARC 语法），而没有在 scale-set 上配置 `scaleSetLabels`，导致 GitHub 没有匹配的内容。请注意，这与新的 scale-set 模式数组形式不同（其中第一个元素是 `runnerScaleSetName`，而不是 `self-hosted`）。请参见 [问题 3](#issue-3-workflow-stays-queued-runner-never-arrives) 以获取诊断路径。
 
-### Workflow 侧：`runs-on:` 数组形式与 `scaleSetLabels`
+### 工作流侧：带有 `scaleSetLabels` 的 `runs-on:` 数组形式
 
-让一个 scale-set 同时承接多种 job（例如同一组 runner pod 既要跑通用
-job、又要跑 GPU 限定 job），又不想拆出多个独立 scale-set 时，可以用
-**数组形式** `runs-on:` 配合 chart 的 `scaleSetLabels` 字段。本节给出
-完整的注入与匹配规则，并明确一条**容易踩坑的关键约束**：在 chart
-0.14.1 上 `scaleSetLabels` **只在 scale-set 首次创建时生效**，安装后
-再改不会通告给 GitHub。
+当您希望一个 scale-set 处理多种类型的作业（例如，同一运行器池同时服务于一般作业和仅 GPU 作业）而不将其拆分为单独的 scale-set 时，可以使用 **数组形式** 的 `runs-on:` 以及图表的 `scaleSetLabels` 字段。本节提供完整的注入和匹配规则，并明确一个 **容易错过的约束**：在图表 0.14.1 中，`scaleSetLabels` **仅在创建 scale-set 时生效**；安装后更改不会传播到 GitHub。
 
-> **⚠️ 关键约束 —— `scaleSetLabels` 是 install-time-only**
+> **⚠️ 关键约束——`scaleSetLabels` 仅限安装时**
 >
-> 这是上游 ARC 在 chart 0.14.1 的设计：scale-set 在 GitHub 端首次注册
-> 时把 labels 一次性通告过去；之后即使本地 chart values 改了
-> `scaleSetLabels`，ARC 也**不会**再把新 labels 推送给 GitHub。
+> 这是图表 0.14.1 中上游 ARC 的设计：标签在首次创建 scale-set 时与 GitHub 注册。稍后在本地图表值中更改 `scaleSetLabels` **不会**将新标签推送到 GitHub。
 >
-> 后果：装好 scale-set 之后再改 `scaleSetLabels`（无论是改 ECV、改
-> moduleinfo、还是 helm upgrade），本地 ARS spec 会更新，但 GitHub 端
-> 通告的 label 集合不变 —— workflow 的数组形式 `runs-on:` 会与 GitHub
-> 端的旧 label 集合比对，永远卡 `Queued`。本节后面的"安装后想改 labels
-> 怎么办"给出绕过该约束的两条路径。
+> 后果：安装后更改 `scaleSetLabels`（无论是通过 ECV、moduleinfo 还是 `helm upgrade`）会更新本地 ARS 规范，但 GitHub 为此 scale-set 广告的标签集保持不变——数组形式的 `runs-on:` 与 GitHub 的过时集匹配并保持 `Queued` 状态。下面的“如果我想在安装后更改标签”部分涵盖了绕过此约束的两条路径。
 
-**完整链路（首次安装时）：**
+**端到端路径（首次安装时）：**
 
-1. chart values 顶层字段 `scaleSetLabels: [...]`（默认 `[]`）。
-2. chart 模板把它原样写进 `AutoscalingRunnerSet.spec.runnerScaleSetLabels`。
-3. **首次** reconcile：controller 把 `runnerScaleSetName` 与
-   `runnerScaleSetLabels` 一并注册到 GitHub 端。
-4. workflow `runs-on: [<scale-set-name>, A, B]`：第一项必须等于
-   `runnerScaleSetName`（Scale-Set 插件表单里的 **Runner Scale-Set Name**）；
-   后续每一项都必须出现在 GitHub 端通告的 label 集合里
-   （subset-of-advertised，AND 关系）。
+1. 图表值顶级字段 `scaleSetLabels: [...]`（默认 `[]`）。
+2. 图表模板将数组逐字写入 `AutoscalingRunnerSet.spec.runnerScaleSetLabels`。
+3. **第一次** 调和：控制器在 GitHub 端注册 `runnerScaleSetName` 以及 `runnerScaleSetLabels`。
+4. 工作流使用 `runs-on: [<scale-set-name>, A, B]`：第一个元素必须等于 `runnerScaleSetName`（在 Scale-Set 插件表单中的 **Runner Scale-Set Name** 字段）；每个后续元素必须出现在 GitHub 广告的集合中（子集-广告，并且语义）。
 
-**注入方式 —— 安装前在 ECV 写好（ACP form 不暴露此字段）：**
+**注入——在安装之前将其写入 ECV（ACP 表单未显示此字段）：**
 
-最稳的做法是**装 scale-set 插件之前**就把 labels 写进 ECV，让首次
-reconcile 直接带着这些 labels 注册到 GitHub：
+可靠的方法是在单击 Scale-Set 插件上的安装之前将标签放入 ECV，以便第一次调和将它们注册到 GitHub：
 
-1. 在 Marketplace → Cluster Plugins 找到 ARC Scale-Set 插件，但**先别
-   点 Install**。
-2. 在表单的 **Extra Chart Values** 字段（即 ECV）里填入：
+1. 在 Marketplace → Cluster Plugins 中找到 ARC Scale-Set 插件，但**不要立即单击安装**。
+
+2. 在表单的 **Extra Chart Values** 字段（即 ECV）中输入：
 
    ```yaml
    scaleSetLabels:
@@ -575,263 +373,214 @@ reconcile 直接带着这些 labels 注册到 GitHub：
    ```
 
 3. 提交安装。
-4. 等 ARS reconcile 成功，核对：
+
+4. 在 ARS 调和完成后，验证：
 
    ```shell
    $ kubectl -n arc-runners get autoscalingrunnerset <scale-set-name> \
        -o jsonpath='{.spec.runnerScaleSetLabels}'
-   # 期望：列出 ECV 里写的所有 label
+   # 期望：您写入 ECV 的每个标签
    ```
 
-如果**已经装完**才想加 labels，参见下一节"安装后想改 labels 怎么办"。
+如果 scale-set **已经安装**，而您现在只想添加标签，请参见下面的“如果我想在安装后更改标签？”部分。
 
-**workflow 写法：**
+**工作流 YAML：**
 
 ```yaml
-# 数组形式 —— 第一项必须等于 runnerScaleSetName，
-# 后续每项都必须在创建时已通告给 GitHub。
+# 数组形式——第一个元素必须等于 runnerScaleSetName，
+# 每个剩余元素必须在 scale-set 注册时已向 GitHub 广告。
 jobs:
   build:
     runs-on: [my-runners, linux, gpu]
 ```
 
-**安装后想改 labels 怎么办：**
+**如果我想在安装后更改标签：**
 
-由于上游约束，**唯一可靠的换 label 方法**是让 GitHub 端先"忘记"这个
-scale-set，再让 controller 重新注册：
+由于上游约束，**唯一可靠的方法**是让 GitHub 忘记此 scale-set，并让控制器重新注册它：
 
-- **方式 A（推荐，干净）**：先卸载 Scale-Set 插件（参见
-  [Chapter 7](#chapter-7-卸载)），写好新的 ECV `scaleSetLabels:` 后
-  重新安装。期间正在跑的 workflow 会失败，需要在维护窗口操作。
-- **方式 B（仅在 GitHub 端有权限时）**：用 PAT 调 GitHub API 删除该
-  scale-set 注册条目；下一次 controller reconcile 会把它当作"不存在"
-  重新注册，自动带上当前 ARS spec 里的 labels。**这条路径上游不保证
-  全程 idempotent**，删除后短时间内 listener 可能 CrashLoop，等
-  controller 重新创建即可。
+- **选项 A（推荐，干净）：** 卸载 Scale-Set 插件（请参见 [第 7 章](#chapter-7-uninstall)），编辑 ECV `scaleSetLabels:`，然后重新安装。在此期间，正在进行的工作流会失败，因此请在维护窗口中执行此操作。
+- **选项 B（仅在您具有 GitHub 侧权限时）：** 使用 PAT 直接删除 scale-set 的 GitHub 注册；控制器的下一个调和将将其视为缺失并使用当前 ARS 规范标签重新注册。**上游代码路径并非完全幂等**——监听器可能会短暂 CrashLoop，直到控制器重新创建注册。
 
-**chart 校验上限：**
+**图表侧验证上限：**
 
-- 每个 label 必须**非空**且**长度 < 256 字符**；违反时 chart 渲染会
-  失败，moduleinfo status 会回报错误。
+- 每个标签必须是 **非空** 且 **少于 256 个字符**；违反将导致图表渲染失败，并在 moduleinfo 状态中显示为错误。
 
-**workflow runs-on 数组形式的常见错觉：**
+**关于工作流数组形式的常见误解：**
 
-- 数组形式是 **AND**：每一项都必须在通告集合里；只要有一项缺失，
-  GitHub 端永远找不到匹配，workflow 一直 `Queued`，listener 也不会主动
-  报错。
-- **不要**把第一项写成 `self-hosted`：那是 legacy ARC
-  （`RunnerDeployment`）的语法，scale-set 模式不识别。
-- "我改了 ECV，labels 也确实在 ARS spec 里出现了，为什么 workflow 还是
-  卡 Queued？" —— 看上面的 ⚠️ 关键约束块，几乎一定是因为安装后改
-  labels 没有传给 GitHub。
+- 数组形式是 **AND**：每个元素必须在广告集中；如果任何元素缺失，GitHub 将永远找不到匹配项，工作流将保持 `Queued` 状态，监听器不会主动报告错误。
+- **不要** 将第一个元素设置为 `self-hosted`：那是传统 ARC（`RunnerDeployment`）语法；scale-set 模式不识别它。
+- “我更改了 ECV，标签显示在 ARS 规范中，为什么我的工作流仍然停留在 Queued？”——请参见上面的 ⚠️ 关键约束；几乎可以肯定是因为安装后更改的标签未能到达 GitHub。
 
-**排错：workflow 卡在 Queued？**
+**故障排除：工作流停留在 Queued？**
 
-1. 检查 ARS 是否真的通告了那些 label：
+1. 检查 ARS 实际携带的标签：
 
    ```shell
    $ kubectl -n arc-runners get autoscalingrunnerset <scale-set-name> \
        -o jsonpath='{.spec.runnerScaleSetLabels}'
    ```
 
-2. 比对 workflow 里 `runs-on:` 数组的每一项 —— 第一项要等于
-   `runnerScaleSetName`，其余每项都要在上一步输出里。
-3. **如果第 1 步看到 labels 都在但 workflow 还是 Queued**，几乎可以
-   肯定是 install-time-only 限制（您是先装的 scale-set 后改的 ECV
-   labels）。回到上面"安装后想改 labels 怎么办"按方式 A/B 处理。
-4. listener 日志可以确认 GitHub 端有没有把 job 发过来：
+2. 与工作流的 `runs-on:` 数组中的每个条目进行比较——第一个元素必须等于 `runnerScaleSetName`；每个其他元素必须出现在步骤 1 的输出中。
+
+3. **如果步骤 1 已经显示您的标签，而工作流仍然是 Queued**，这几乎可以肯定是安装时的唯一约束（您首先安装了 scale-set，然后添加了标签）。请返回“如果我想在安装后更改标签”并遵循选项 A 或 B。
+
+4. 监听器日志显示 GitHub 是否正在调度作业：
 
    ```shell
    $ kubectl -n arc-systems logs -l app.kubernetes.io/component=runner-scale-set-listener --tail=50
-   # 真的收到时会出现 "Acquired job ..." 字样；持续没有则是 GitHub
-   # 端没有匹配，回到第 3 步排查
+   # 在成功匹配时：“获取作业...”
+   # 如果没有任何内容：GitHub 端没有匹配——请返回步骤 3。
    ```
 
 ---
 
-## Chapter 1. 安装控制器插件
+## 第 1 章 安装控制器插件
 
-### Step 1: 先决条件
+### 第 1 步：先决条件
 
-安装前确认：
+在安装之前，请确认以下内容：
 
-- 目标集群上已创建 `arc-systems` namespace（安装器不会替您创建）：
+- 目标集群上已创建 `arc-systems` 命名空间（安装程序不会为您创建它）：
   ```shell
   $ kubectl create namespace arc-systems --dry-run=client -o yaml | kubectl apply -f -
   ```
-- 您具备集群管理员权限，能安装集群插件。
+- 您具有集群管理员权限，可以安装集群插件。
 
-### Step 2: 在应用市场安装
+### 第 2 步：通过市场安装
 
-在 ACP UI 上：**Administrator → Marketplace → Cluster Plugins**，找到
-**Alauda Support for GitHub Actions Runner Controller**，点开后选目标
-集群 → 安装。
+在 ACP UI 中，转到 **管理员 → 市场 → 集群插件**，找到 **Alauda 对 GitHub Actions Runner Controller 的支持**，点击插件并选择目标集群，然后安装。
 
 表单字段：
 
-| 字段 | 默认 | 安装后可改 | 备注 |
-|---|---|---|---|
-| Install Namespace | `arc-systems` | 否 | 极少自定义；如填的 namespace 在集群上不存在，**安装会失败**，请先创建。改名后 Scale-Set 插件的 Controller Namespace 必须同步改 |
-| Log Level | `info` | 是 | 排错时改 `debug` |
-| Log Format | `json` | 是 | 默认 JSON 便于平台日志聚合；排错时改 `text` 更易读 |
-| Enable Metrics | `false` | 是 | 接 Prometheus 时改 `true`，会在 controller 与 listener pod 暴露 8080 端口 |
-| Runner Max Concurrent Reconciles（高级） | `2` | 是 | EphemeralRunner 数 > 50 时调高 |
-| Update Strategy（高级） | `immediate` | 是 | 升级时立即重建（默认）/ 等 runner 跑完（`eventual`） |
-| Extra Chart Values (YAML)（高级） | 空 | 是 | 见 [Chapter 3](#chapter-3-通过-extra-values-自定义-runner) |
-| Extra Global Values (YAML)（高级） | 空 | 是 | 见 [Recipe 9 控制器插件部分（A）](#a--控制器插件) |
+| 字段                                       | 默认       | 安装后可编辑 | 备注                                                                                                                                                                                        |
+| ------------------------------------------- | ----------- | ------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 安装命名空间                               | `arc-systems` | 否           | 必须在集群上存在；否则安装将失败，显示 `namespaces "<name>" not found`。如果您更改此名称，scale-set 插件的控制器命名空间必须匹配。 |
+| 日志级别                                   | `info`      | 是           | 设置为 `debug` 以进行故障排除。                                                                                                                                                          |
+| 日志格式                                   | `json`      | 是           | JSON 与平台日志聚合对齐；在故障排除时切换为 `text` 以提高可读性。                                                                                                                    |
+| 启用指标                                   | `false`     | 是           | 设置为 `true` 以在控制器和监听器 Pod 上公开 8080 端口以供 Prometheus 使用。                                                                                                            |
+| 运行器最大并发调和（高级）                  | `2`         | 是           | 当 EphemeralRunner 数量超过 50 时增加。                                                                                                                                                    |
+| 更新策略（高级）                           | `immediate`  | 是           | `immediate` 在升级时重建运行器；`eventual` 等待当前作业完成。                                                                                                                         |
+| 额外图表值（YAML）（高级）                  | 空          | 是           | 请参见 [第 3 章](#chapter-3-customizing-runners-via-extra-values)。                                                                                                                        |
+| 额外全局值（YAML）（高级）                  | 空          | 是           | 请参见 [食谱 9 — 控制器插件部分（A）](#a--controller-plugin)。                                                                                                                       |
 
-### Step 3: 验证控制器已运行
+### 第 3 步：验证控制器是否正在运行
 
-控制器插件状态转 `Installed` 时，目标集群上会出现：
+当控制器插件达到 `Installed` 时，集群应具有：
 
 - `arc-systems` 命名空间。
 - `Deployment/arc-gha-rs-controller`。
 - `ServiceAccount/arc-gha-rs-controller`。
-- 一组 ARC CRD：`AutoscalingRunnerSet`、`AutoscalingListener`、
-  `EphemeralRunnerSet`、`EphemeralRunner`。
+- 一组 ARC CRDs：`AutoscalingRunnerSet`、`AutoscalingListener`、`EphemeralRunnerSet`、`EphemeralRunner`。
 
-> **Note：** 下面命令按默认控制器 namespace `arc-systems` 展示；如果您
-> 安装时用了自定义控制器 namespace，请把命令里的 `arc-systems` 替换成
-> 实际值。
+> **注意：** 下面的命令使用默认控制器命名空间 `arc-systems`。如果您将控制器安装到自定义命名空间，请在运行它们之前将 `arc-systems` 替换为实际值。
 
-验证命令：
+验证：
 
 ```shell
 $ kubectl -n arc-systems get pod
-# 期望：arc-gha-rs-controller-...   1/1   Running
+# 期望：arc-gha-rs-controller-...   1/1   运行中
 
 $ kubectl get crd | grep actions.github.com
 # 期望：列出 4 个 CRD
 ```
 
-> **Note：** 控制器装完后什么 runner 也不会起 —— 接下来要装 Scale-Set
-> 插件，它才真正定义 runner 池。
+> **注意：** 单独安装控制器不会启动任何运行器。下一章安装 scale-set 插件，实际上会创建一个运行器池。
 
 ---
 
-## Chapter 2. 安装 Scale-Set 插件
+## 第 2 章 安装 Scale-Set 插件
 
-> **Note —— 安装前先规划好 namespace。** 表单的 **Install Namespace**
-> 字段（默认 `arc-runners`）在插件安装后会锁定，不允许修改；如果需要
-> 换 ns，必须先卸载再重新安装。**典型场景下用默认 `arc-runners` 即可**；
-> 如果按团队 / 业务线拆分 runner（例如 `team-a-runners`、
-> `team-b-runners`），请在安装前就规划好命名空间，本章后续命令也都换
-> 成同一个 ns。
+> **注意——在开始之前规划安装命名空间。** 表单的 **安装命名空间** 字段（默认 `arc-runners`）在插件安装后被锁定；稍后更改需要卸载并重新安装。默认的 `arc-runners` 对于大多数集群来说是合适的；如果您按团队或业务线拆分运行器，请提前选择一个稳定的名称（例如 `team-a-runners`、`team-b-runners`），并在本章的其余部分使用它。
 >
-> 同时注意：**GitHub 凭证 Secret 必须创建在与 Scale-Set 插件相同
-> 的 namespace 里** —— 也就是说，下面的 `kubectl create namespace ...`
-> 和 `kubectl -n <ns> create secret ...` 这两步的 `<ns>` 必须一致。
-> 如果您计划装到 `team-a-runners`，请把两条命令中的 `arc-runners`
-> 都换成 `team-a-runners`。
+> **GitHub 凭证 Secret 必须位于与 Scale-Set 插件相同的命名空间**——即下面的 `kubectl create namespace ...` 和 `kubectl -n <ns> create secret ...` 命令必须使用相同的 `<ns>`。如果您决定安装到 `team-a-runners`，请在两个命令中将 `arc-runners` 替换为 `team-a-runners`。
 
-### Step 1: 先决条件
+### 第 1 步：先决条件
 
-- 控制器插件已经安装并 `Running`（[Chapter 1](#chapter-1-安装控制器插件)）。
-- 目标集群上已创建 `arc-runners` namespace：
+- 控制器插件已安装并处于 `运行中` 状态（[第 1 章](#chapter-1-installing-the-controller-plugin)）。
+- 目标集群上存在 `arc-runners` 命名空间：
   ```shell
   $ kubectl create namespace arc-runners --dry-run=client -o yaml | kubectl apply -f -
   ```
-- GitHub 凭证 Secret 已经在 `arc-runners` 创建。见
-  [GitHub 凭证准备](#github-凭证准备)。
+- 在 `arc-runners` 中创建了 GitHub 凭证 Secret。请参见 [GitHub 凭证设置](#github-credential-setup)。
 
-### Step 2: 在应用市场安装
+### 第 2 步：通过市场安装
 
-回到 **Cluster Plugins** 列表，找到 **Alauda Support for GitHub Actions
-Runner Scale Set**，点开后选**同一个集群**（必须与控制器插件同集群）→
-安装。
+返回 **集群插件**，找到 **Alauda 对 GitHub Actions Runner Scale Set 的支持**，点击插件，选择与控制器相同的 **集群**，然后安装。
 
 表单字段：
 
-| 字段 | 默认 | 必填 | 安装后可改 | 备注 |
-|---|---|---|---|---|
-| Install Namespace | `arc-runners` | 是 | 否 | runner pod 跑在这。如填的 namespace 在集群上不存在，**安装会失败**；请先创建 |
-| GitHub URL | 无 | 是 | 否 | 见下面 [GitHub URL 三种格式](#github-url-三种格式)。**安装后为只读，不支持在线修改。** 如需切换目标 repo / org / enterprise，请按新实例重建或卸载后重装，并到 GitHub **Settings → Actions → Runners** 核对并清理旧的 scale-set 注册条目。 |
-| GitHub Credentials Secret Name | `gha-runner-scale-set-github-config` | 是 | 否 | 必须与 [GitHub 凭证准备](#github-凭证准备) 创建的 Secret 名一致；**安装后为只读，不支持在线修改** |
-| Controller Namespace | `arc-systems` | 是 | 否 | **必须与控制器插件 Install Namespace 一致**，否则 Scale-Set 侧对 controller 的引用与授权绑定会指错对象，listener / runner 相关资源无法被正常创建或更新。注意 listener pod 实际起在这个 namespace 里（不是 Scale-Set 自己的 `arc-runners`），验证时用 `kubectl -n arc-systems get pod` 查它 |
-| Controller ServiceAccount Name（高级） | `arc-gha-rs-controller` | 是 | 否 | 控制器插件创建的 SA 名；通过插件装的不要改 |
-| Runner Scale-Set Name | 空 | 否 | 否 | **GitHub 端识别这组 runner 的名字，workflow 的 `runs-on:` 要写这个值。** 留空时 chart 会用 Helm release name（默认 `arc-runner-set`）作为 fallback；如果 release name 后续发生变化，GitHub 端会注册新的 scale-set，旧条目仍占用 GitHub Actions 的注册名额，需要手动到 GitHub UI **Settings → Actions → Runners** 删除。建议填写一个与业务场景对应的固定名称 |
-| Min Runners | `0` | 否 | 是 | 常驻最少 runner pod 数。0 = 纯按需 |
-| Max Runners | `5` | 否 | 是 | 同时存在的最多 runner pod 数 |
-| Container Mode（高级） | `kubernetes-novolume` | 否 | 是 | 见下面 [Container Mode 怎么选](#container-mode-怎么选)。**留空** 用于完全自定义（必须在 ECV 完整接管 `containerMode:` 块） |
-| Extra Chart Values (YAML)（高级） | 空 | 否 | 是 | 见 [Chapter 3](#chapter-3-通过-extra-values-自定义-runner) |
-| Extra Global Values (YAML)（高级） | 空 | 否 | 是 | 见 [Recipe 9 Scale-Set 插件部分（B）](#b--scale-set-插件) |
+| 字段                                     | 默认                              | 必需 | 安装后可编辑 | 备注                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| ----------------------------------------- | ---------------------------------- | ---- | ------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 安装命名空间                             | `arc-runners`                      | 是   | 否           | 运行运行器 Pod 的地方。必须存在；否则安装失败。                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| GitHub URL                                | （无）                             | 是   | 否           | 请参见 [GitHub URL 格式](#github-url-formats) 下文。**此字段在安装后为只读，不支持就地更新。** 如果您需要切换目标存储库 / 组织 / 企业，请重新创建 scale-set（或卸载并重新安装），并手动验证 / 删除旧的 GitHub 侧 scale-set 注册，位于 **设置 → 操作 → 运行器**。                                                                                                       |
+| GitHub 凭证 Secret 名称                  | `gha-runner-scale-set-github-config` | 是   | 否           | 必须与在 [GitHub 凭证设置](#github-credential-setup) 中创建的 Secret 名称匹配；**安装后为只读**。                                                                                                                                                                                                                                                                                                                                                       |
+| 控制器命名空间                           | `arc-systems`                      | 是   | 否           | **必须与控制器插件的安装命名空间匹配**，否则 scale-set 将其控制器面向的引用 / RBAC 指向错误的主题，导致监听器 / 运行器调和失败。监听器 Pod 实际上在此命名空间中运行，而不是在 `arc-runners` 中；使用 `kubectl -n arc-systems get pod` 验证。                                                                                                                                                        |
+| 控制器 ServiceAccount 名称（高级）      | `arc-gha-rs-controller`            | 是   | 否           | 由控制器插件创建的 SA；通过插件安装时请勿更改。                                                                                                                                                                                                                                                                                                                                                                                         |
+| 运行器 Scale-Set 名称                    | 空                                  | 否   | 否           | **GitHub 用于识别此运行器池的名称；工作流的 `runs-on:` 字段必须与此值匹配。** 当为空时，图表会回退到 Helm 发布名称（默认 `arc-runner-set`）。如果发布名称稍后更改，GitHub 会注册一个新的 scale-set，旧的仍占用注册槽——必须手动从 GitHub UI **设置 → 操作 → 运行器** 中删除。建议设置与您的业务场景一致的显式名称。 |
+| 最小运行器                               | `0`                                | 否   | 是           | 常驻运行器 Pod 的最小数量。`0` 表示纯按需。                                                                                                                                                                                                                                                                                                                                                                                                             |
+| 最大运行器                               | `5`                                | 否   | 是           | 并发运行器 Pod 的最大数量。                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| 容器模式（高级）                         | `kubernetes-novolume`              | 否   | 是           | 请参见 [容器模式选择](#container-mode-selection) 下文。**留空** 以完全通过额外图表值接管 `containerMode:`。                                                                                                                                                                                                                                                                                                                                 |
+| 额外图表值（YAML）（高级）                | 空                                  | 否   | 是           | 请参见 [第 3 章](#chapter-3-customizing-runners-via-extra-values)。                                                                                                                                                                                                                                                                                                                                                                                                             |
+| 额外全局值（YAML）（高级）                | 空                                  | 否   | 是           | 请参见 [食谱 9 — scale-set 插件部分（B）](#b--scale-set-plugin)。                                                                                                                                                                                                                                                                                                                                                                                                          |
 
-#### GitHub URL 三种格式
+#### GitHub URL 格式
 
-| 范围 | URL 格式 | 用例 |
-|---|---|---|
-| 单仓库 | `https://github.com/<org>/<repo>` | 项目级 self-hosted |
-| 组织级 | `https://github.com/<org>` | 组织内所有仓库共用 |
-| 企业级 | `https://github.com/enterprises/<enterprise>` | GHEC enterprise |
+| 范围        | URL 格式                                    | 用例                             |
+| ------------ | ------------------------------------------- | -------------------------------- |
+| 单个存储库  | `https://github.com/<org>/<repo>`           | 项目级自托管运行器               |
+| 组织        | `https://github.com/<org>`                  | 在组织中所有存储库共享           |
+| 企业        | `https://github.com/enterprises/<enterprise>` | GHEC 企业                        |
 
-GitHub Enterprise Server (GHES) 自部署：把 `https://github.com` 换成
-您 GHES 的 URL 即可。
+对于自托管的 GitHub Enterprise Server (GHES)，将 `https://github.com` 替换为您的 GHES URL。
 
-#### Container Mode 怎么选
+#### 容器模式选择
 
-新用户从下面三个表单选项里挑一个即可：
+在表单上选择以下三种选项之一：
 
-| 表单选项 | 适用 |
-|---|---|
-| `kubernetes-novolume`（默认） | 适用于大多数 workflow（不需要在 runner 内启 docker、不需要 PVC 持久工作目录）；无特殊需求时可作为默认选项 |
-| `dind` | workflow 里要跑 `docker build` / `docker push` |
-| **（留空）** | 高级用法，需要在 Extra Chart Values 完整接管 `containerMode:` 块（如 kubernetes 模式 + PVC、自定义 containerMode 字段等） |
+| 表单选项                     | 用例                                                                                                                                                       |
+| ----------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `kubernetes-novolume`（默认） | 大多数工作流不需要在运行器内部使用 Docker，并且不需要持久工作目录。除非您有特定需求，否则将其作为默认值使用。 |
+| `dind`                        | 当工作流运行 `docker build` / `docker push` 时。                                                                                                         |
+| **（空）**                    | 高级——通过额外图表值完全接管 `containerMode:`（例如，具有 PVC 的 kubernetes 模式，或自定义 containerMode 字段）。                           |
 
-> **Warning —— 不要直接在表单选 `kubernetes`。** 表单虽然有
-> `kubernetes` 选项，但直接选会让 chart 渲染出缺少
-> `kubernetesModeWorkVolumeClaim` 字段的 ARS，被 CRD 校验拒绝。如需
-> kubernetes 模式（持久工作目录、container-job、`actions/cache@v4`
-> 等 PVC 能力），请把表单 **留空**，并在 Extra Chart Values 里完整写
-> `containerMode:` 块 —— 详见
-> [Recipe 7](#recipe-7-kubernetes-模式--持久工作目录)。
+> **警告——请勿直接选择 `kubernetes`。** 尽管表单中有 `kubernetes` 选项，但选择它会生成没有所需 `kubernetesModeWorkVolumeClaim` 字段的 ARS，CRD 会拒绝它。如果您需要 kubernetes 模式（持久工作目录、容器作业、`actions/cache@v4` 和其他依赖 PVC 的功能），**请保持表单为空**，并在额外图表值下编写完整的 `containerMode:` 块——请参见 [食谱 7](#recipe-7-kubernetes-mode-with-persistent-work-volume)。
 
-#### Min / Max Runners 怎么定
+#### 最小 / 最大运行器大小
 
-- `minRunners=0`：纯按需，没 workflow 就 0 pod。第一次触发 workflow
-  会有约 10s 启动延迟（pod 启动 + GitHub 注册）。
-- `minRunners=1`：始终常驻 1 个 idle runner，第一次触发延迟 < 1s，但
-  占资源。
-- `maxRunners`：上限。按集群资源 + 同时跑的 workflow 数估算（建议在
-  [Recipe 4](#recipe-4-限制-runner-的-cpu--memory) 里给 runner 加
-  resources 限制）。
+- `minRunners=0` — 纯按需；空闲时没有 Pod。第一次工作流触发有大约 10 秒的延迟（Pod 启动 + GitHub 注册）。
+- `minRunners=1` — 保持一个空闲运行器；第一次触发延迟小于 1 秒，但占用资源。
+- `maxRunners` — 上限。根据集群资源和并发工作流数量进行调整（建议与 [食谱 4](#recipe-4-limit-cpu--memory-of-runners) 配对，为运行器添加 `resources`）。
 
-### Step 3: 验证 listener 与 AutoscalingRunnerSet
+### 第 3 步：验证监听器和 AutoscalingRunnerSet
 
-等插件实例转为 `Installed`，再依次检查下列资源：
+等待插件实例达到 `Installed`，然后检查以下资源：
 
-> **Note：** 下面命令默认假设控制器在 `arc-systems`、Scale-Set 在
-> `arc-runners`。如果您自定义了 namespace，请同步替换。
+> **注意：** 下面的命令假设控制器位于 `arc-systems`，scale set 位于 `arc-runners`。如果您自定义了任一命名空间，请一致地替换它们。
 
 ```shell
-# 控制器在 arc-systems
+# 控制器在 arc-systems 中
 $ kubectl -n arc-systems get pod
-# 期望：arc-gha-rs-controller-...     1/1     Running
+# 期望：arc-gha-rs-controller-...     1/1     运行中
 
-# listener 也在 arc-systems（不是 arc-runners！）
+# 监听器 Pod 也在 arc-systems 中（而不是在 arc-runners 中）
 $ kubectl -n arc-systems get pod -l app.kubernetes.io/component=runner-scale-set-listener
-# 期望：<scaleset>-...-listener     1/1     Running
+# 期望：<scaleset>-...-listener     1/1     运行中
 ```
 
-> **Note：** **listener pod 在控制器命名空间（默认 `arc-systems`）**，
-> 不在 Scale-Set 自己的 `arc-runners`。这是 ARC 架构使然 —— listener
-> 是控制器代理 scale-set 起的，必须用控制器的 SA / RBAC。如果您
-> minRunners=0，`arc-runners` 里这时什么 pod 都没有，是正常的。
+> **注意：** 监听器 Pod 在 **控制器命名空间**（默认 `arc-systems`）中运行，而不是在 scale-set 自己的 `arc-runners` 中。这是 ARC 设计的结果——监听器由控制器分叉并重用控制器的 SA/RBAC。使用 `minRunners=0` 时，`arc-runners` 此时没有 Pod，这是正常的。
 
 验证 AutoscalingRunnerSet 状态：
 
 ```shell
 $ kubectl -n arc-runners get autoscalingrunnerset
-# 列：MAXIMUM RUNNERS / CURRENT RUNNERS / STATE
+# 列：最大运行器 / 当前运行器 / 状态
 ```
 
-到 GitHub 端确认 runner 已注册：打开您的 GitHub 仓库（或 org /
-enterprise）的 **Settings → Actions → Runners**，应当看到一个名字与
-`runnerScaleSetName` 一致的 runner，状态显示为 `Online`（已连接、
-空闲，对应上游文档里所说的 idle 状态）或 `Active`（正在执行任务）。
+在 GitHub 侧验证运行器是否已注册：打开您的 GitHub 存储库（或组织 / 企业）**设置 → 操作 → 运行器**。名为您的 `runnerScaleSetName` 的运行器应出现，状态为 `Online`（已连接且空闲——在上游文档中称为“空闲”状态）或 `Active`（当前正在执行作业）。
 
-### Step 4: 触发一个最小 workflow
+### 第 4 步：触发烟雾工作流
 
-在您的 GitHub 仓库放一个 `.github/workflows/smoke.yaml`：
+将以下最小工作流放置在您的 GitHub 存储库中的 `.github/workflows/smoke.yaml`：
 
 ```yaml
 name: ARC Smoke
@@ -842,12 +591,12 @@ on:
 
 jobs:
   smoke:
-    runs-on: my-runners      # 本文当前已验证的最稳妥写法：直接写 runnerScaleSetName 单字符串
+    runs-on: my-runners      # 本文档中当前安全验证的形式：runnerScaleSetName 作为单个字符串
     steps:
       - name: runner identity
-        # 优先使用 GitHub 提供的环境变量与 shell 内置变量，避免依赖
-        # 某个基础镜像是否恰好带了 `hostname` 之类的 OS 命令；这里直接
-        # 用 ${HOSTNAME} 更稳。
+        # 优先使用 GitHub 提供的上下文和 shell 内置，而不是
+        # 特定于镜像的操作系统实用程序；这避免了依赖于给定基础镜像是否
+        # 恰好捆绑了 `hostname`。直接使用 ${HOSTNAME}。
         run: |
           echo "runner_name: ${RUNNER_NAME:-unknown}"
           echo "hostname:    ${HOSTNAME:-unknown}"
@@ -858,205 +607,145 @@ jobs:
           echo "pwd:         $(pwd)"
 ```
 
-提交后到 GitHub Actions 页面手工触发或 push 一次。观察 runner pod
-跑起来又消失：
+提交，然后通过推送或 `workflow_dispatch` 触发。观察运行器 Pod 出现、运行并消失：
 
 ```shell
 $ kubectl -n arc-runners get pod -w
-# 期望：一个 EphemeralRunner pod 经历 Pending → Running → 完成 → 销毁
+# 期望：一个 EphemeralRunner Pod 状态从 Pending → Running → completed → deleted
 ```
 
-如果 workflow 一直 `Queued`，见
-[Issue 3](#issue-3-workflow-stays-queued---runner-永远不来)。
+如果工作流保持 `Queued`，请参见 [问题 3](#issue-3-workflow-stays-queued-runner-never-arrives)。
 
 ---
 
-## Chapter 3. 通过 Extra Values 自定义 runner
+## 第 3 章 通过额外值自定义运行器
 
-平台 UI 把上游 ARC chart 里**最常用的几十个字段**做成了表单，但 chart
-里实际可配置的项远不止这些（嵌套 pod / container spec 字段后会更多）。
-剩下的通过两个**转义口**配置：
+平台 UI 将最常用的图表字段作为表单输入，但图表还有许多其他可配置字段（尤其是嵌套的 Pod / 容器规格字段）。其余部分通过两个 **逃生口** 达到：
 
-- **Extra Chart Values（ECV）** —— 顶层 textarea。内容追加到表单生成的
-  values 文档**末尾**，新增顶层 key。**不能覆盖** 表单已渲染的顶层 key
-  （同名冲突会让插件无法变成 `Installed`，停在错误状态）。
-- **Extra Global Values（EGV）** —— 同样是 textarea，但内容嵌入
-  `global:` 块下面，作为 `global.*` 子键。
+- **额外图表值（ECV）** — 表单上的顶级文本区域。内容附加到表单呈现的值文档末尾，添加新的顶级键。**它不能覆盖** 表单已经呈现的键；同键冲突会导致安装失败，插件实例永远不会达到 `Installed`。
+- **额外全局值（EGV）** — 也是一个文本区域，但其内容嵌入在 `global:` 块下作为 `global.*` 子键。
 
-> **Warning —— Extra Global Values 的"缩进契约"。** 该字段没有 indent
-> 模板辅助，您写的内容会被原样插入到一个 2 空格缩进的上下文里 ——
-> **每一行都必须以 2 个空格起始**，否则装包会直接失败。column 0 起的
-> 内容会变成新的顶层 key，把整段 YAML 弄坏。复制粘贴本文片段时，
-> 请逐行检查行首是否有 2 个空格再保存。
+> **警告——额外全局值的缩进约定。** EGV 中的每一行 YAML **必须以 2 个空格开头**——此字段没有缩进模板助手，您的内容逐字插入到 2 空格缩进的上下文中。以列 0 开头的行变成新的顶级键并破坏 YAML；安装失败。粘贴来自本文档的 EGV 片段时，请逐行验证前导 2 个空格，然后再保存。
 
-> **Warning —— Helm 数组字段必须整段提供。** `tolerations`、
-> `containers`、`volumes`、`volumeMounts`、`env`、
-> `topologySpreadConstraints` 这类**数组**字段在 Helm 合并时是
-> **整体替换**而非逐元素 merge —— 这是 Helm 的限制。如果您只写自己
-> 关心的元素，chart 默认那部分元素会**全部丢失**。
+> **警告——Helm 数组字段必须完整提供。** 像 `tolerations`、`containers`、`volumes`、`volumeMounts`、`env` 和 `topologySpreadConstraints` 这样的字段是数组。Helm 通过 **整体替换** 而不是逐元素合并数组。如果您仅提供自定义元素，则图表的默认元素将 **全部丢失**。
 >
-> 下面每个 Recipe 给出的 YAML 都已经是"该数组字段的完整形态"，直接
-> 照抄即可。如果您要在我们给的基础上**加**新元素，把新元素**追加**到
-> 既有列表里，不要新写一份只含新元素的小片段。
+> 每个食谱中的 YAML 已经是数组字段的完整形式——按原样复制。要在我们提供的基础上添加新元素，请将您的新元素附加到现有列表中，而不是编写仅包含新元素的单独片段。
 >
-> 受影响的 Recipe 与对应数组字段：
+> 受影响的食谱及其涉及的数组字段：
 >
-> - [Recipe 2](#recipe-2-在-runner-容器内注入-secret--自定义-env) —— `containers` / `containers.env`
-> - [Recipe 3](#recipe-3-把-runner-pin-到专用节点) —— `tolerations`
-> - [Recipe 4](#recipe-4-限制-runner-的-cpu--memory) —— `containers` / `containers.resources`
-> - [Recipe 5](#recipe-5-多节点集群把-runner-散布到不同节点) —— `topologySpreadConstraints`
-> - [Recipe 6](#recipe-6-runner-pod-挂-maven-缓存--额外-configmap--ca-bundle) —— `volumes` / `volumeMounts`
+> - [食谱 2](#recipe-2-inject-secrets--custom-env-into-runner) — `containers` / `containers.env`
+> - [食谱 3](#recipe-3-pin-runners-to-dedicated-nodes) — `tolerations`
+> - [食谱 4](#recipe-4-limit-cpu--memory-of-runners) — `containers` / `containers.resources`
+> - [食谱 5](#recipe-5-spread-runners-across-nodes) — `topologySpreadConstraints`
+> - [食谱 6](#recipe-6-mount-maven-cache--extra-configmap--ca-bundle) — `volumes` / `volumeMounts`
 
-> **Warning —— 自定义 `template.spec.containers[0]` 时必须保留下面这套
-> 安全骨架。** 因为 Helm 整段替换 `containers` 数组，您没写的字段会被
-> 全部丢失。chart 的 runner-container helper 会在缺失时兜底补上大部分
-> `ACTIONS_RUNNER_*` 变量，**但不会兜底 `image:` 和 `command:`**；而且
-> 它对 `ACTIONS_RUNNER_REQUIRE_JOB_CONTAINER` 兜底的默认值是 `"true"`
-> —— 而 Alauda 默认的 `kubernetes-novolume` 模式要求 `"false"`，所以
-> 您必须显式写回。任何改写
-> `containers[0]` 的 ECV 都从这套骨架起步：
+> **警告——在覆盖 `template.spec.containers[0]` 时，请保持下面的安全骨架。** 因为 Helm 替换整个 `containers` 数组，您未写入的任何字段都会被丢弃。图表的运行器容器助手在缺失时会自动提供大多数 `ACTIONS_RUNNER_*` 环境条目，但它**不**提供 `image:` 或 `command:`，并
+> `ACTIONS_RUNNER_REQUIRE_JOB_CONTAINER` 的默认值为 `"true"`，但 Alauda 默认的 `kubernetes-novolume` 模式需要 `"false"` — 您必须自己将该行写回。编写涉及 `containers[0]` 的 ECV 时，请始终从此骨架开始：
 >
 > ```yaml
 > template:
 >   spec:
 >     containers:
 >       - name: runner
->         image: <runner-extension-image>          # 必填；见 Recipe 9，或用下面命令读取现网值：
+>         image: <runner-extension-image>          # 必需 — 参见食谱 9，或读取实时值：
 >                                                  #   kubectl -n arc-runners get autoscalingrunnerset <scale-set-name> \
 >                                                  #     -o jsonpath='{.spec.template.spec.containers[0].image}'
->         command: ["/home/runner/run.sh"]         # 必填；chart 不会自动补，缺失时 runner 进程不会正确启动
+>         command: ["/home/runner/run.sh"]         # 必需 — chart 不会自动提供；缺少它会导致 runner 进程未启动
 >         env:
 >           - name: ACTIONS_RUNNER_REQUIRE_JOB_CONTAINER
->             value: "false"                       # kubernetes-novolume / dind 模式必填；否则所有未声明 `container:` 的 job 都会被拒绝
->         # 您自己的自定义字段（resources / volumeMounts / extra env / ...）从这里往下追加
+>             value: "false"                       # 对于 kubernetes-novolume / dind 模式是必需的；没有它，每个未声明 `container:` 的作业都会被拒绝
+>         # 在此行下添加您的自定义字段（资源 / volumeMounts / 额外的环境变量条目 / ...）
 > ```
 >
-> 漏写 `image:` 的症状：runner pod 报
-> `spec.containers[0].image: Required value`，永远调度不到。
-> 漏写 `ACTIONS_RUNNER_REQUIRE_JOB_CONTAINER=false` 的症状：workflow
-> 日志报 `Jobs without a job container are forbidden on this runner`。
+> 忘记 `image:` 的症状：runner pod 失败，显示 `spec.containers[0].image: Required value`，并且永远不会调度。
+> 忘记 `ACTIONS_RUNNER_REQUIRE_JOB_CONTAINER=false` 的症状：
+> 工作流日志显示 `Jobs without a job container are forbidden on this runner`。
 >
-> 改完 ECV 后的自检：
+> 编辑 ECV 后的自检：
 >
 > ```shell
 > $ kubectl -n arc-runners get autoscalingrunnerset <scale-set-name> \
 >     -o yaml | yq '.spec.template.spec.containers[0]'
-> # 确认 `image`、`command`、`env` 条目都在
+> # 确认您期望的 `image`、`command` 和 `env` 条目都存在
 > ```
 
-### Step 1: 理解 ECV vs EGV
+### 第一步：理解 ECV 与 EGV
 
-ECV 写顶层 chart 字段；EGV 写 `global:` 下的子键。经验法则：
+ECV 适用于 chart 的顶级键；EGV 适用于 `global:`。作为经验法则：
 
-- 用 **ECV** 写 runner pod 模板字段：`template.spec.*` 下的
-  serviceAccount / nodeSelector / tolerations / containers / volumes，
-  以及 `containerMode:`（条件式 —— 仅在表单 Container Mode 留空时才写到
-  ECV，详见下文禁忌列表）、`listenerTemplate.spec.*`，以及
-  `scaleSetLabels:`（数组，每个元素非空且 < 256 字符；**install-time-only**
-  ——必须在 scale-set 首次安装的 ECV 里就写好，详见
-  [Workflow 侧：runs-on 数组形式与 scaleSetLabels](#workflow-侧runs-on-数组形式与-scalesetlabels)）等。
-- 用 **EGV** 写镜像覆盖：`images.*`（controller / runnerExtension /
-  dind）。
+- 对于 runner pod 模板字段，请使用 **ECV**：`template.spec.*` 用于 serviceAccount / nodeSelector / tolerations / containers / volumes；还包括 `containerMode:`（条件 — 仅在表单的 Container Mode 字段为空时在 ECV 中写入此内容；有关详细信息，请参见下面的禁止键列表），`listenerTemplate.spec.*` 和 `scaleSetLabels:`（一个数组；每个元素必须非空且短于 256 个字符；此字段为 **安装时仅** — 参见 [Workflow side: runs-on array form with scaleSetLabels](#workflow-side-runs-on-array-form-with-scalesetlabels)）等。
+- 对于镜像覆盖，请使用 **EGV**：`images.*`（controller / runnerExtension / dind）。
 
-最常见的错误是写了一个表单已经渲染过的顶层 key。下面列出禁忌顶层 key。
+一个常见的错误是写入一个已经由表单渲染的顶级键。禁止的顶级键列在下面。
 
-**ECV 不要写下列顶层 key：**
+**请勿在 ECV 中写入以下顶级键：**
 
-- 控制器插件：`flags`、`metrics`、`namespaceOverride`、`replicaCount`、
-  `global`。
-- Scale-Set 插件：`namespaceOverride`、`global`、`githubConfigUrl`、
-  `githubConfigSecret`、`runnerScaleSetName`、`minRunners`、`maxRunners`、
-  `controllerServiceAccount`。
-  - `containerMode` 是**条件式**：表单 Container Mode 字段**非空时禁止**
-    （插件已经渲染了 `containerMode:` 块）；表单 Container Mode **留空时**
-    反而**必须**在 ECV 完整接管 `containerMode:` 块 —— 详见
-    [Recipe 7](#recipe-7-kubernetes-模式--持久工作目录)。
+- Controller 插件：`flags`、`metrics`、`namespaceOverride`、`replicaCount`、`global`。
+- Scale-set 插件：`namespaceOverride`、`global`、`githubConfigUrl`、`githubConfigSecret`、`runnerScaleSetName`、`minRunners`、`maxRunners`、`controllerServiceAccount`。
+  - `containerMode` 是 **条件**：当表单的 Container Mode 字段非空时禁止（插件已经渲染了它）；当表单 Container Mode **留空** 时，您必须在 ECV 中写入完整的 `containerMode:` 块 — 参见 [Recipe 7](#recipe-7-kubernetes-mode-with-persistent-work-volume)。
 
-如果需要覆盖 `global.*` 下的内容（比如 `global.images.*`），改用 EGV
-—— 详见 [Recipe 9](#recipe-9-覆盖-arc-镜像自定义版本--替换镜像源)。
+如果您需要覆盖 `global.*` 下的任何内容（例如 `global.images.*`），请改用 EGV — 参见 [Recipe 9](#recipe-9-override-arc-images-custom-version--private-registry)。
 
-> **完整 chart values 参考（按插件分别给出，注释保留）已挪到全文末的 [Appendix: 全量 chart values 参考](#appendix-全量-chart-values-参考)。** 主教程从这里直接接 [Step 2: 验证配置真的生效](#step-2-验证配置真的生效) 与下方各 Recipe。
+> **完整的 chart-values 参考（按插件，保留上游注释）已移至 [附录：完整 chart 值参考](#appendix-full-chart-values-reference) 本文档末尾。** 主要教程直接继续到 [第二步：验证配置更改是否生效](#step-2-verifying-a-config-change-took-effect) 和下面的食谱。
 
-### Step 2: 验证配置真的生效
+### 第二步：验证配置更改是否生效
 
-每改一次 ECV 或 EGV，建议按下面 3 步确认改动真正落到 runner pod 上：
+在每次更改 ECV / EGV 后，使用以下三个步骤确认更改确实到达 runner pods：
 
-1. **确认插件状态变成 `Installed`。** 保存表单后稍等 30s 左右，平台
-   有两个入口都能查到状态：
-   - **Marketplace → Cluster Plugins**：列表里 ARC Scale-Set 一行的
-     状态应当显示为 `Installed`（绿色对勾）。
-   - **Clusters → \<您的集群\> → Functional Components**：注意先在
-     面包屑里选对目标集群，再切到 **Functional Components** 标签页；
-     列表里 `Alauda Support for GitHub Actions Runner Scale Set` 一行
-     状态应当是 `Running`（绿色箭头），右侧还会带版本号。
+1. **确认插件实例已达到 `Installed`。** 保存表单后，等待 ~30 秒。平台提供两个入口点来检查状态：
 
-   如果一直没变成 `Installed`、或显示安装失败，点开插件详情看
-   "事件 / 状态" 信息（最常见的是 ECV 同名顶层 key 冲突或 EGV 缩进错）。
+   - **Marketplace → Cluster Plugins** — 插件行应显示 `Installed`（绿色勾）。
+   - **Clusters → \<your cluster> → Functional Components** — 确保面包屑选择了目标集群，然后切换到 **Functional Components** 选项卡。`Alauda Support for GitHub Actions Runner Scale Set` 行应显示 `Running`（绿色箭头）及右侧的版本。
 
-2. **检查渲染后的 AutoscalingRunnerSet 模板。** 插件 reconcile 完会
-   更新 namespace 内的 `AutoscalingRunnerSet`，您可以直接看 chart
-   合并后的最终 spec：
+   如果状态保持卡住或显示安装失败，请单击插件详细信息并检查事件 / 状态块（最常见的原因：顶级键的 ECV 冲突，或 EGV 缩进错误）。
+
+2. **检查渲染的 AutoscalingRunnerSet 模板。** 当插件进行协调时，它会更新安装命名空间中的 `AutoscalingRunnerSet`。您可以直接读取合并的 spec：
 
    ```shell
    $ kubectl -n arc-runners get autoscalingrunnerset -o yaml \
-       | grep -A 3 <您新加的字段名>
+       | grep -A 3 <new-field-name>
    ```
 
-   能看到您写的字段说明 ARC chart 已经把 ECV / EGV 合并进去了。
+   在合并的 spec 中看到您的字段确认 ECV / EGV 成功合并到 chart 值中。
 
-3. **触发一个测试 workflow，确认新 runner pod 真正带上了配置。** 随便
-   一个 `workflow_dispatch` + 一行 `echo` step 都行。workflow 跑起来时
-   另开一个终端：
+3. **触发测试工作流并确认新的 runner pod 实际上携带配置。** 任何带有单个 `echo` 步骤的 `workflow_dispatch` 都可以。在工作流运行时：
 
    ```shell
    $ kubectl -n arc-runners get pods -w
-   # 等 ephemeral runner pod 出现，记下 pod 名
+   # 等待短暂的 runner pod 出现，注意 pod 名称
    $ kubectl -n arc-runners get pod <pod-name> -o yaml \
-       | grep -A 3 <您新加的字段名>
+       | grep -A 3 <new-field-name>
    ```
 
-   runner pod 里能看到新字段，才说明配置端到端生效。
+   在 pod spec 中看到新字段确认了端到端传播。
 
-### Step 3: Update / Upgrade / 详情 —— 三个不同入口
+### 第三步：更新 / 升级 / 查看 — 三个不同的入口点
 
-平台 UI 上"维护插件"对应**三个不同入口**，分别管不同的事：
+平台 UI 提供三个不同的入口点用于“维护插件”，每个处理不同的关注点：
 
-| 您要做什么 | 入口 | 结果 |
-|---|---|---|
-| **改 ECV / EGV / 其他可改字段** | **Marketplace → Cluster Plugins** → 插件行右侧 ⋮ → **Update** | 只更新允许修改的字段；**不会升级版本** |
-| **查看完整配置面板（含版本号等元信息）** | **Marketplace → Cluster Plugins** → 点击**插件名称**进入详情 | 详情页 Plugin Configuration 区列出 Install Namespace、Log Level、Log Format、Enable Metrics、Advanced 块（含 ECV / EGV 等）所有项，并显示当前安装版本 |
-| **升级插件版本（chart / 镜像）** | **Clusters → \<您的集群\> → Functional Components** → 顶部 **Upgrade** 按钮 | 拉 chart 仓库里更新版本，真正做版本升级 |
+| 目标                                                               | 入口点                                                                            | 结果                                                                                                                                                            |
+| ------------------------------------------------------------------ | -------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **修改 ECV / EGV / 其他可编辑字段**                               | **Marketplace → Cluster Plugins** → ⋮ 在插件行上 → **Update**                   | 仅更新可编辑字段；**不升级 chart 版本**。                                                                                                 |
+| **查看完整配置面板（包括版本元数据）**                           | **Marketplace → Cluster Plugins** → 单击插件 **名称** 进入详细页面             | 详细页面列出安装命名空间、日志级别、日志格式、启用指标和高级块（包括 ECV / EGV）以及已安装版本。 |
+| **升级插件版本（chart / images）**                               | **Clusters → \<cluster> → Functional Components** → 顶部 **Upgrade** 按钮       | 从 chart 仓库拉取较新版本并执行实际升级。                                                                                |
 
-两个特别容易踩的细节：
+两个会让用户困惑的细节：
 
-- **Update 表单以只读方式展示部署期字段。** `Install Namespace` 等
-  部署期一次性写死的字段不可在线修改，但 Update 表单会以只读标签
-  形式列出，便于您在不离开页面的情况下确认当前值。**插件详情页**
-  （第三行入口）展示同样的信息加上版本号等元信息，适合在需要全面板
-  视图时打开。
-- **Update 不能用来升级版本。** Update 用的是当前已安装的 chart 版本，
-  改完只是 reconcile 一次。要拿到新版本必须走 Functional Components 的
-  Upgrade 按钮。
+- **更新表单显示安装时字段为只读。** 像 `Install Namespace` 这样的字段在安装时决定，无法在线更改，但更新表单将其列为只读标签，以便您可以在不离开页面的情况下确认当前值。插件详细信息页面（上面第三行）显示相同的信息以及版本元数据，当您需要单个完整面板视图时非常有用。
+- **更新无法升级版本。** 更新重用当前安装的 chart 版本；它仅进行协调。要拉取新版本，请使用功能组件下的 **Upgrade** 按钮。
 
-下面按客户最常见的几类需求**分组**给出可复制的配置片段。每个 Recipe
-都在 ACP 集群上验证过，含 **何时用 → YAML → 期望效果** 三部分。请按
-需要复制粘贴到对应字段。
+本章的其余部分根据常见需求对食谱进行分组。每个食谱已在 ACP 集群中验证，包含三个部分：**何时使用 → YAML → 预期效果**。根据需要复制并粘贴到适当的字段中。
 
-### Recipe 1: Runner pod 用自定义 ServiceAccount（跑 in-cluster 任务）
+### 食谱 1：为集群内作业创建自定义 ServiceAccount
 
-**何时用：** workflow 里要 `kubectl apply -f manifest.yaml`、调集群
-API。默认 SA 只有 runner container hooks 所需的基础权限，不等于业务
-workflow 真正需要的 RBAC。
+**何时使用：** 工作流运行 `kubectl apply -f manifest.yaml` 或调用集群 API。默认的 SA 仅携带 runner 容器钩子所需的基础权限；它与工作流实际需要的业务 RBAC 不同。
 
-先在 install ns 建 SA + 绑权限（下面 `my-runner-sa` 是示例名称，请按
-业务命名规范替换为您实际想用的名字）：
+首先在安装命名空间中创建一个 SA，并绑定权限（`my-runner-sa` 是示例名称；根据您的约定重命名）：
 
 ```shell
 $ kubectl create serviceaccount my-runner-sa -n arc-runners
 
-# 推荐做法：根据 workflow 实际要做什么列出最小动词集合，写成一个
-# namespace-scoped Role 再绑给 SA。下面这个例子允许 workflow 在
-# arc-runners 内 list/get pods、读 pod log、kubectl exec 进 pod。
+# 推荐：在命名空间范围的角色中准确列出工作流所需的动词，然后将其绑定到 SA。下面的示例允许工作流列出/获取 pods，读取 pod 日志，并 `kubectl exec` 进入 arc-runners 命名空间内的 pods。
 $ cat <<EOF | kubectl apply -f -
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
@@ -1081,14 +770,9 @@ $ kubectl create rolebinding my-runner-sa-binding \
     -n arc-runners
 ```
 
-如果 workflow 还要操作 deployment、CRD、跨 namespace 资源，把对应的
-动词追加到 Role 的 `rules:` 即可；跨 namespace 改用 ClusterRole +
-ClusterRoleBinding，但仍按"动词最小化"原则列具体资源，**不要直接绑
-`ClusterRole/edit`** —— `edit` 含读写 Secret、修改 ConfigMap、删
-Deployment 等高风险动作，等于把整个 ns 的写权限交给任何能改 workflow
-YAML 的 GitHub 用户。
+如果工作流需要管理部署、CRD 或跨命名空间资源，请使用这些特定动词扩展角色的 `rules:`（或切换到 ClusterRole + ClusterRoleBinding 以进行跨命名空间使用，仍然列出具体资源）。**请勿直接绑定 `ClusterRole/edit`** — `edit` 包括对 Secrets 的读/写、变更 ConfigMaps、删除 Deployments 和其他高影响动词，这实际上将整个命名空间的写入表面交给任何可以修改 GitHub 存储库中的工作流 YAML 的人。
 
-然后在 Extra Chart Values 指过去：
+然后通过额外的 Chart 值将 runner pod 指向此 SA：
 
 ```yaml
 template:
@@ -1096,111 +780,65 @@ template:
     serviceAccountName: my-runner-sa
 ```
 
-**期望效果：** runner pod 用 `my-runner-sa` 而不是 chart 默认的
-`<scaleset>-gha-rs-kube-mode`，workflow 内 `kubectl` 命令按
-`my-runner-sa` 的 RBAC 鉴权。
+**预期效果：** runner pod 使用 `my-runner-sa` 而不是 chart 默认的 `<release>-gha-rs-kube-mode`。工作流中的 `kubectl` 调用将根据 `my-runner-sa` 的 RBAC 进行授权。
 
-> **Warning —— kubernetes / kubernetes-novolume 模式下慎用。** 这两个
-> 模式下，chart 默认的 `<release>-gha-rs-kube-mode` SA 不是“空白 SA”，
-> 它自带 runner container hooks 所需的基础权限：`pods`、
-> `pods/exec`、`pods/log`、`secrets`，以及 `kubernetes` 模式下额外的
-> `jobs`。一旦您换成自己的 SA，就要把这套权限按实际需要补齐；否则依赖
-> container hooks 的能力（如 `container:` job、日志跟踪、k8s mode
-> 下的 job / secret 流程）会失败。
+> **警告 — 在 kubernetes / kubernetes-novolume 模式下要小心。** 在这些模式下，默认的 `<release>-gha-rs-kube-mode` SA 不是空白的；它携带 `pods`、`pods/exec`、`pods/log`、`secrets` 的 runner-container-hooks 基础权限，并且在 `kubernetes` 模式下还包括 `jobs`。如果您用自己的 SA 替换它，您必须重新添加工作流仍然需要的权限；否则，基于容器钩子的流（例如 `container:` 作业、日志访问或 k8s 模式作业/秘密操作）将失败。
 >
-> 同时要注意：这个默认 SA 有 hooks 所需基础权限，并不代表它已经具备您
-> 业务 workflow 真正需要的权限。比如是否能读 Tekton Pipeline、创建
-> PipelineRun、访问其他 namespace 资源，都要看当前环境里额外绑定了什么
-> RBAC。最稳妥的做法仍然是按业务场景显式准备一个自定义 SA，并用
-> `kubectl auth can-i` 做一次权限验收。
+> 还要注意，拥有此默认 SA 基线并不意味着它已经携带工作流所需的业务权限。它是否可以读取 Tekton Pipelines、创建 PipelineRuns 或访问其他命名空间中的资源仍然取决于环境中绑定的额外 RBAC。最安全的方法仍然是为工作流场景准备一个明确的自定义 SA，并通过 `kubectl auth can-i` 验证它。
 >
-> **Known issue（当前版本已知问题）：** 在 `kubernetes` /
-> `kubernetes-novolume` 模式下，如果您**临时**把
-> `template.spec.serviceAccountName` 改成自定义 SA，后续又把这个字段清空
-> 或改回默认路径，平台/上游 cleanup 流程有概率把自动生成的默认
-> `<scaleset>-gha-rs-kube-mode` `ServiceAccount` / `Role` /
-> `RoleBinding` 留在 `Terminating` 状态（`metadata.deletionTimestamp`
-> 挂住，且 finalizer 仍是 `actions.github.com/cleanup-protection`）。
-> 一旦发生，后续依赖默认 SA 的 workflow 可能表现为：
-> `container:` job 在 "Initialize containers" 阶段失败并报
-> `HTTP-Code: 401 Unauthorized`，或 runner 容器内 `kubectl auth can-i`
-> 直接返回 `error`。如果您需要长期跑 in-cluster 任务，建议**持续使用**
-> 明确的自定义 SA，不要在默认 SA 与自定义 SA 之间频繁来回切换；如确实切
-> 回默认 SA，请先看本章后文的"已知问题：切回默认 runner SA 后，默认
-> kube-mode RBAC 资源卡在 `Terminating`"并做一次验收。
+> **已知问题（当前基线）：** 在 `kubernetes` / `kubernetes-novolume` 模式下，如果您 **暂时** 将 `template.spec.serviceAccountName` 切换到自定义 SA，然后稍后清除此字段或切换回默认路径，平台 / 上游清理流程可能会将生成的默认 `<scaleset>-gha-rs-kube-mode` `ServiceAccount` / `Role` / `RoleBinding` 卡在 `Terminating` 状态（`metadata.deletionTimestamp` 保持设置，最终处理程序仍为 `actions.github.com/cleanup-protection`）。当发生这种情况时，后续依赖于默认 SA 的工作流可能会在 `container:` 作业初始化期间失败，显示 `HTTP-Code: 401 Unauthorized`，或者从 runner 容器内部运行 `kubectl auth can-i` 可能会直接返回 `error`。如果此 runner 池需要长期的集群内访问，最好保持一个明确的自定义 SA，而不是在默认 SA 和自定义 SA 之间来回切换。如果您确实切换回默认 SA，请查看本章后面已知问题的说明，并验证默认 kube-mode 资源是否已干净地重新创建。
 
-#### 关于权限模型
+#### 权限模型说明
 
-**作用范围。** 通过 `template.spec.serviceAccountName` 配置的 SA 是
-**runner pod 级**的，意味着**同一个 Scale-Set 实例下所有 workflow 共享
-这一个 SA 与对应的 RBAC**。SA 实际能访问到的资源，由您给它绑定的
-Role / ClusterRole 决定 —— 上面例子用 `--role=my-runner-sa-role` +
-`rolebinding -n arc-runners` 是 namespace 级。
+**范围。** 通过 `template.spec.serviceAccountName` 配置的 SA 是在 **runner pod 级别**，这意味着 **同一 scale-set 实例下的所有工作流共享相同的 SA 及其 RBAC**。SA 可以访问的实际资源由您授予的 Role / ClusterRole 绑定决定 — 上面的示例（`--role=my-runner-sa-role` + `rolebinding -n arc-runners`）是命名空间范围的。
 
-生产环境建议遵循最小权限原则：
+对于生产环境，请遵循最小权限原则：
 
-- **优先用 Role + RoleBinding**（namespace 级，限定在 runner 安装
-  namespace 内），而不是 ClusterRole / ClusterRoleBinding（集群级）。
-- 给 SA 单独定制一份 Role，列出 workflow 实际需要的资源 / 动词；不要
-  直接套用 `cluster-admin`、`edit` 这类宽泛的 ClusterRole。
+- **优先选择 Role + RoleBinding**（命名空间范围，限制在 runner 安装命名空间内）而不是 ClusterRole / ClusterRoleBinding（集群范围）。
+- 定义一个自定义 Role，准确列出工作流所需的资源 / 动词；不要直接绑定广泛的 ClusterRoles，如 `cluster-admin` 或 `edit`。
 
-**是否可以让不同 workflow 用不同 SA / 权限？** 当前架构下 runner pod
-的 SA 由插件级配置决定，**同一个 Scale-Set 实例下所有 workflow 共享
-同一个 SA**。如果您需要按 workflow 区分权限，常见做法：
+**不同工作流可以使用不同的 SA 吗？** 在当前架构下，runner pod 的 SA 是由插件级配置固定的 — **同一 scale-set 实例下的所有工作流共享相同的 SA**。如果您需要每个工作流的权限分离，常见的方法：
 
-- 在 workflow 内调用 `kubectl --token=...` 或挂载 kubeconfig，显式指定
-  另一个 SA 的 token，绕过 pod 默认 SA。
-- 把权限敏感的步骤转成触发 Tekton PipelineRun（参考
-  [Example 2](#example-2-触发集群中已存在的-tekton-pipeline)），
-  PipelineRun 里再让具体 Task 用自己的 SA。
-- 在 GitHub 端用
+- 在工作流内部，使用 `kubectl --token=...` 或显式挂载 kubeconfig，指向另一个 SA 的令牌，绕过 pod 默认。
+- 将权限敏感的步骤移动到触发 Tekton PipelineRun
+  （[示例 2](#example-2-trigger-an-in-cluster-tekton-pipeline-from-a-workflow)）；在 PipelineRun 内，单个任务使用自己的 SA。
+- 在 GitHub 端，使用
   [environments](https://docs.github.com/en/actions/deployment/targeting-different-environments/using-environments-for-deployment)
-  / branch protection 限定哪些 workflow 才能跑到这个 runner 池。
+  / 分支保护来限制哪些工作流可以使用此 runner 池。
 
-### Recipe 2: 在 runner 容器内注入 secret / 自定义 env
+### 食谱 2：将秘密 / 自定义环境注入 runner
 
-**何时用：** workflow 里要访问私有 npm registry / 私有 maven 仓 / 业务
-后端 API 等需要 secret 的资源。
+**何时使用：** 工作流需要访问私有 npm 注册表、私有 Maven 仓库、后端 API 或任何其他需要秘密的资源。
 
-先在 install ns 创建好 Secret（如 `npm-credentials`），然后在 Extra
-Chart Values 写：
+首先在安装命名空间中创建 Secret（例如 `npm-credentials`），然后写入额外的 Chart 值：
 
 ```yaml
 template:
   spec:
     containers:
     - name: runner
-      image: <runner-extension-image>           # required — 见 Chapter 3 数组替换警告
+      image: <runner-extension-image>           # 必需 — 参见第 3 章数组警告
       command: ["/home/runner/run.sh"]
       env:
       - name: ACTIONS_RUNNER_REQUIRE_JOB_CONTAINER
-        value: "false"                          # kubernetes-novolume / dind 模式必填
+        value: "false"                          # 对于 kubernetes-novolume / dind 模式是必需的
       - name: NPM_TOKEN
         valueFrom:
           secretKeyRef:
             name: npm-credentials
             key: token
-            optional: true                      # 设为 true：Secret 轮换期间短暂缺失不会阻塞 pod 启动
+            optional: true                      # true: 如果 Secret 在轮换期间短暂缺失，pod 启动不会被阻止
       - name: BUILD_PROFILE
         value: production
 ```
 
-**期望效果：** 每个 runner pod 的 runner 容器能直接读到 `$NPM_TOKEN`
-和 `$BUILD_PROFILE`。注意：Helm 整段替换 `containers` 数组（详见本章
-开头的[数组警告](#chapter-3-通过-extra-values-自定义-runner)），
-chart 默认的 `ACTIONS_RUNNER_*` 条目会被丢失 —— chart 的 runner-container
-helper 会在缺失时兜底 `ACTIONS_RUNNER_POD_NAME` /
-`ACTIONS_RUNNER_CONTAINER_HOOKS`，但
-`ACTIONS_RUNNER_REQUIRE_JOB_CONTAINER` 兜底默认是 `"true"`，所以必须像
-上面那样显式覆写为 `"false"`。
+**预期效果：** 每个 runner pod 的 runner 容器读取 `$NPM_TOKEN` 和 `$BUILD_PROFILE`。由于 helm 替换整个 `containers` 数组（参见 [第 3 章数组警告](#chapter-3-customizing-runners-via-extra-values)），chart 默认的 `ACTIONS_RUNNER_*` 环境条目被删除 — chart 的 runner-container 辅助工具在缺失时会自动提供 `ACTIONS_RUNNER_POD_NAME` 和 `ACTIONS_RUNNER_CONTAINER_HOOKS`，但 `ACTIONS_RUNNER_REQUIRE_JOB_CONTAINER` 默认值为 `"true"`，必须如上所示覆盖。
 
-### Recipe 3: 把 runner pin 到专用节点
+### 食谱 3：将 runners 固定到专用节点
 
-**何时用：** 集群里有专用机器跑 CI runner（比如标了
-`workload=arc-runner` label，加了 `arc-dedicated:NoSchedule` taint），
-其他 workload 不能落上去。
+**何时使用：** 集群中有专用节点用于 CI runners（例如标记为 `workload=arc-runner` 并带有污点 `arc-dedicated:NoSchedule`）；其他工作负载不应落在这些节点上。
 
-**Extra Chart Values**（在 Scale-Set 插件表单填）：
+**额外的 Chart 值**（在 scale-set 插件表单上）：
 
 ```yaml
 template:
@@ -1213,28 +851,24 @@ template:
       effect: NoSchedule
 ```
 
-**期望效果：** runner pod 只调度到带 `workload=arc-runner` label 的
-节点；对 `arc-dedicated:NoSchedule` taint 的节点能容忍。如果集群里
-没这种 label / taint 的节点，runner pod 会停在 Pending 并报
-`FailedScheduling` 事件 —— 这正好可用来"反向验证规则真生效了"。
+**预期效果：** runner pods 仅在标记为 `workload=arc-runner` 的节点上调度，并容忍 `arc-dedicated:NoSchedule` 污点。如果不存在这样的节点，runner pod 将保持 Pending 状态，并出现 `FailedScheduling` 事件 — 有助于“反向验证规则确实应用”。
 
-### Recipe 4: 限制 runner 的 CPU / memory
+### 食谱 4：限制 runners 的 CPU / 内存
 
-**何时用：** 避免单个 runner pod 跑出资源边界把节点压崩；或者对接
-ResourceQuota 时。
+**何时使用：** 防止单个 runner pod 消耗所有节点资源，或与 ResourceQuota 集成。
 
-**Extra Chart Values：**
+**额外的 Chart 值：**
 
 ```yaml
 template:
   spec:
     containers:
     - name: runner
-      image: <runner-extension-image>      # required — 见 Chapter 3 数组警告
-      command: ["/home/runner/run.sh"]     # required — chart 不会兜底
+      image: <runner-extension-image>      # 必需 — 参见第 3 章数组警告
+      command: ["/home/runner/run.sh"]     # 必需 — chart 不会自动提供
       env:
       - name: ACTIONS_RUNNER_REQUIRE_JOB_CONTAINER
-        value: "false"                     # kubernetes-novolume / dind 模式必填
+        value: "false"                     # 对于 kubernetes-novolume / dind 模式是必需的
       resources:
         requests:
           cpu: 500m
@@ -1244,24 +878,18 @@ template:
           memory: 8Gi
 ```
 
-**期望效果：** 每个 EphemeralRunner pod 的 runner 容器带上指定
-resources。
+**预期效果：** 每个 EphemeralRunner pod 的 runner 容器携带指定的资源。
 
-> **Warning —— 两个细节：**
+> **警告 — 两个细节：**
 >
-> - `command: ["/home/runner/run.sh"]` 必须保留 —— Helm 合并数组时
->   **整段替换**（见本章开头数组警告），漏写时 pod 虽然能起来，但
->   runner 容器会用镜像默认 entrypoint 而非 `run.sh`，runner 进程
->   不正确启动，workflow 一直 Queued。
-> - **CPU 整数必须写字符串：** `cpu: "4"` 不是 `cpu: 4`。后者裸数字
->   虽然 k8s 能接受，但部分客户端再序列化时会拒。统一双引号最稳。
+> - `command: ["/home/runner/run.sh"]` 必须保留。Helm 整体替换数组（参见本章开头的数组警告）；省略此行会让 pod 启动，但 runner 容器会回退到镜像默认的入口点，而不是 `run.sh`，这意味着 runner 进程永远不会启动，工作流将保持排队状态。
+> - **引用整数 CPU 值：** `cpu: "4"`，而不是 `cpu: 4`。裸数字形式被 Kubernetes 接受，但某些客户端在重新序列化时会拒绝它。始终使用双引号。
 
-### Recipe 5: 多节点集群把 runner 散布到不同节点
+### 食谱 5：在节点之间分散 runners
 
-**何时用：** 避免 maxRunners=20 时所有 runner 都挤一个节点把节点压崩；
-多 AZ 集群的 HA 部署。
+**何时使用：** 防止所有 20 个 runners 堆积在一个节点上，当 `maxRunners=20`；或在多 AZ 集群中进行 HA 部署。
 
-**Extra Chart Values：**
+**额外的 Chart 值：**
 
 ```yaml
 template:
@@ -1284,31 +912,26 @@ template:
           actions.github.com/scale-set-name: my-runners
 ```
 
-**期望效果：** scheduler 优先把 runner pod 分散到不同 hostname 的节点；
-节点不够时仍然能调度（"软"反亲和）。
+**预期效果：** 调度程序更倾向于在不同主机名之间分散 runner pods；在必要时回退到在同一节点上调度（软反亲和性）。
 
-> **Note：** 想要"硬"分散（节点不够就不调度），把
-> `preferredDuringSchedulingIgnoredDuringExecution` 改成
-> `requiredDuringSchedulingIgnoredDuringExecution`，并把
-> `whenUnsatisfiable` 改为 `DoNotSchedule`。
+> **注意：** 对于硬分散（在节点不足时拒绝调度），将 `preferredDuringSchedulingIgnoredDuringExecution` 更改为 `requiredDuringSchedulingIgnoredDuringExecution`，并将 `whenUnsatisfiable` 更改为 `DoNotSchedule`。
 
-### Recipe 6: Runner pod 挂 maven 缓存 / 额外 ConfigMap / CA bundle
+### 食谱 6：挂载 maven 缓存 / 额外的 ConfigMap / CA 包
 
-**何时用：** workflow 跑 maven build 想加速（共享 .m2 cache PVC）；
-或注入集群外 CA 证书；或共享其他 ConfigMap / Secret 文件。
+**何时使用：** 通过共享的 `.m2` PVC 加快 Maven 构建速度；注入额外的集群 CA 证书；共享其他 ConfigMap / Secret 文件。
 
-先把 PVC / ConfigMap 在 install ns 创好，然后在 Extra Chart Values 写：
+首先在安装命名空间中创建 PVC / ConfigMap，然后写入额外的 Chart 值：
 
 ```yaml
 template:
   spec:
     containers:
     - name: runner
-      image: <runner-extension-image>      # required — 见 Chapter 3 数组警告
+      image: <runner-extension-image>      # 必需 — 参见第 3 章数组警告
       command: ["/home/runner/run.sh"]
       env:
       - name: ACTIONS_RUNNER_REQUIRE_JOB_CONTAINER
-        value: "false"                     # kubernetes-novolume / dind 模式必填
+        value: "false"                     # 对于 kubernetes-novolume / dind 模式是必需的
       volumeMounts:
       - name: maven-repo
         mountPath: /home/runner/.m2
@@ -1319,38 +942,31 @@ template:
     volumes:
     - name: maven-repo
       persistentVolumeClaim:
-        claimName: maven-cache-pvc         # 您需要先在 arc-runners 建好这个 PVC
+        claimName: maven-cache-pvc         # 首先在 arc-runners 中创建此 PVC
     - name: ca-bundle
       configMap:
-        name: extra-ca-bundle              # 同上
+        name: extra-ca-bundle              # 首先在 arc-runners 中创建此 ConfigMap
 ```
 
-**期望效果：** runner pod 起来后能直接读到挂载的 maven cache 与 CA
-文件。您写的 volumes 会与 chart 默认管理的卷（如 DinD 模式下的
-`dind-sock`、kubernetes 模式下的 `work` PVC）**共存**，不冲突。
+**预期效果：** runner pods 在指定路径挂载 Maven 缓存和 CA 文件。您的卷与 chart 管理的默认值共存（例如在 DinD 模式下的 `dind-sock` 卷或在 kubernetes 模式下的 `work` PVC）。
 
-> **Note：** 如果 PVC 用的 StorageClass 是 `volumeBindingMode:
-> WaitForFirstConsumer`（许多基于本地盘的 SC 实现会采用此模式，例如
-> 某些 TopoLVM 部署），PVC 在第一个 runner
-> pod 真正起来消费它之前会一直处于 `Pending` —— 这是预期行为，不是
-> 配置错误，`kubectl describe pvc maven-cache-pvc` 会写
-> `waiting for first consumer to be created before binding`。
+> **注意：** 如果 PVC 的 StorageClass 使用 `volumeBindingMode: WaitForFirstConsumer`（通常由本地磁盘支持的 SC 实现使用，例如某些 TopoLVM 部署），则 PVC 将保持 `Pending` 状态，直到第一个 runner pod 使用它。这是预期行为，而不是配置错误 — `kubectl describe pvc maven-cache-pvc` 将显示 `waiting for first consumer to be created before binding`。
 
-### Recipe 7: kubernetes 模式 + 持久工作目录
+### 食谱 7：使用持久工作卷的 Kubernetes 模式
 
-**何时用：** workflow 需要
-[container-job](https://docs.github.com/en/actions/using-workflows/workflow-syntax-for-github-actions#jobsjob_idcontainer)、
-`actions/cache@v4`、或其他需要 runner 内挂 PVC 的能力。
+**何时使用：** 工作流需要
+[container-job](https://docs.github.com/en/actions/using-workflows/workflow-syntax-for-github-actions#jobsjob_idcontainer),
+`actions/cache@v4`，或其他需要在 runner 内部 PVC 的功能。
 
-**配置三步：**
+**三个配置步骤：**
 
-1. **Container Mode 表单字段留空**（让插件不渲染 `containerMode:` 块）。
-2. 在 Extra Chart Values 写完整 `containerMode:`：
+1. **将 Container Mode 表单字段留空**，以便插件不渲染 `containerMode:` 块。
+2. 在额外的 Chart 值中写入完整的 `containerMode:` 块：
    ```yaml
    containerMode:
      type: kubernetes
      kubernetesModeWorkVolumeClaim:
-       storageClassName: <集群已存在的 SC>      # 比如 sc-topolvm
+       storageClassName: <existing-sc-name>      # 例如 sc-topolvm
        accessModes: [ReadWriteOnce]
        resources:
          requests:
@@ -1358,23 +974,11 @@ template:
    ```
 3. 保存。
 
-**期望效果：** 每个 EphemeralRunner pod 起来时，k8s 会用 generic
-ephemeral volume 机制为它创建一份 PVC `<pod-name>-work`，挂在
-`/home/runner/_work`，随 pod 销毁而清理。Scale-Set 插件 chart 的两个
-helper（`kubernetes-mode-runner-container` 与
-`kubernetes-novolume-mode-runner-container`，都位于
-`gha-runner-scale-set/templates/_helpers.tpl`）会在 `containerMode.type`
-为 `kubernetes` 或 `kubernetes-novolume` 时分别给 runner 容器注入
-`ACTIONS_RUNNER_CONTAINER_HOOKS` 环境变量，指向 k8s mode 的 hook 脚本
-（默认 `/home/runner/k8s/index.js` 或 `/home/runner/k8s-novolume/index.js`）。
+**预期效果：** 对于每个 EphemeralRunner pod，Kubernetes 创建一个通用的临时 PVC `<pod-name>-work`，挂载在 `/home/runner/_work`，在 pod 被删除时清理。Scale-Set 插件 chart 提供两个助手 — `kubernetes-mode-runner-container` 和 `kubernetes-novolume-mode-runner-container`（均在 `gha-runner-scale-set/templates/_helpers.tpl` 中） — 当 `containerMode.type` 为 `kubernetes` 或 `kubernetes-novolume` 时，将 `ACTIONS_RUNNER_CONTAINER_HOOKS` 注入到 runner 容器中，指向相应的钩子脚本（默认 `/home/runner/k8s/index.js` 或 `/home/runner/k8s-novolume/index.js`）。
 
-#### 演示 workflow：用最简 step 集验证 workspace PVC 真的可读写
+#### 演示工作流：验证工作区 PVC 是可读写的
 
-`kubernetesModeWorkVolumeClaim` 配好之后，您不需要在 workflow YAML 里
-显式引用这个 StorageClass —— ARC 会自动用它给每个 runner pod 创建一份
-临时 PVC，挂载到 `/home/runner/_work`。下面这个 workflow 用最小集
-（inspect → 写 16 MiB 文件 + 时间戳 → 读回校验）证明 workspace 真落
-在 PVC 上、且文件能跨 step 持久：
+在设置 `kubernetesModeWorkVolumeClaim` 后，您无需在工作流 YAML 中显式引用此 StorageClass — ARC 会自动为每个 runner pod 创建一个临时 PVC，并挂载在 `/home/runner/_work`。以下工作流验证工作区落在 PVC 上，并且文件在步骤之间保持持久：
 
 ```yaml
 name: K8s Mode Persistent Work Volume Demo
@@ -1384,13 +988,12 @@ on:
 
 jobs:
   pvc-smoke:
-    # Alauda 当前验证路径：runs-on 用单字符串
+    # Alauda 验证的路径：runs-on 使用单字符串形式
     runs-on: my-runners
     steps:
       - name: inspect workspace mount
         run: |
           set -eux
-          # POD_NAME 让您能在日志里直接对照 kubectl 看到的 runner pod
           POD_NAME="${ACTIONS_RUNNER_POD_NAME:-${HOSTNAME:-$(cat /proc/sys/kernel/hostname 2>/dev/null || echo unknown)}}"
           echo "runner_name=${RUNNER_NAME:-unset}"
           echo "pod_name=${POD_NAME}"
@@ -1400,11 +1003,11 @@ jobs:
           mkdir -p "${GITHUB_WORKSPACE}"
           ls -ld "${GITHUB_WORKSPACE}"
           ls -ld /home/runner/_work
-          # df 证明 workspace 落在独立挂载点（不是 container rootfs）；
-          # 后面写入 + 读回的步骤再证明这个挂载点是可写、稳定的。
+          # df 证明工作区落在一个单独的挂载上（而不是容器根文件系统）；
+          # 下面的写入 + 读取步骤证明挂载是可写且稳定的。
           df -h "${GITHUB_WORKSPACE}"
           df -h /home/runner/_work
-          # mountinfo 拿到的是源设备（最有说服力），失败时回退到 mount / proc/mounts
+          # mountinfo 给出源设备（最权威）；回退到 mount / proc/mounts
           grep " /home/runner/_work " /proc/self/mountinfo || \
             mount | grep -E "(/__w/|/home/runner/_work|${GITHUB_WORKSPACE})" || \
             cat /proc/mounts | grep -E "(/__w/|/home/runner/_work|${GITHUB_WORKSPACE})"
@@ -1414,7 +1017,7 @@ jobs:
           set -eux
           DEMO_DIR="${GITHUB_WORKSPACE}/pvc-demo"
           mkdir -p "${DEMO_DIR}"
-          # 时间戳文件用于在第三步证明跨 step 的文件持久性
+          # 时间戳文件：在步骤 3 中用于证明跨步骤持久性
           date -u +%FT%TZ > "${DEMO_DIR}/timestamp.txt"
           dd if=/dev/zero of="${DEMO_DIR}/payload.bin" bs=1M count=16 status=none
           sha256sum "${DEMO_DIR}/payload.bin" | tee "${DEMO_DIR}/payload.bin.sha256"
@@ -1427,140 +1030,95 @@ jobs:
           DEMO_DIR="${GITHUB_WORKSPACE}/pvc-demo"
           test -s "${DEMO_DIR}/payload.bin"
           sha256sum -c "${DEMO_DIR}/payload.bin.sha256"
-          # 上一步写的时间戳能读回，说明文件跨 step 真实持久在 PVC 上
+          # 步骤 2 中写入的时间戳在这里可读，证明 PVC 上的跨步骤持久性
           cat "${DEMO_DIR}/timestamp.txt"
           du -sh "${DEMO_DIR}"
           df -h "${GITHUB_WORKSPACE}"
 ```
 
-**预期跑成功后您能看到：**
+**成功时的预期：**
 
-- `runner_name` / `pod_name` / `id` 输出可以直接和
-  `kubectl -n arc-runners get pods` / `kubectl describe pod` 对照。
+- `runner_name` / `pod_name` / `id` 输出可以与 `kubectl -n arc-runners get pods` / `kubectl describe pod` 匹配。
 - `GITHUB_WORKSPACE` 落在 `/home/runner/_work/<repo>/<repo>`。
-- `df -h ${GITHUB_WORKSPACE}` 与 `/proc/self/mountinfo` 一致显示底层
-  是您配置的 SC 提供的块设备（比如 `/dev/topolvm/<volume-id>`，而不是
-  节点本地的 overlay rootfs）。
-- 16 MiB 文件 `pvc-demo/payload.bin` 写入成功。
-- 第三步 `sha256sum -c` 读回校验通过、`cat timestamp.txt` 也能拿到
-  step 2 写的 UTC 时间（证明文件跨 step 持久）。
+- `df -h ${GITHUB_WORKSPACE}` 和 `/proc/self/mountinfo` 就由您的 StorageClass 提供的块设备达成一致（例如 `/dev/topolvm/<volume-id>`，而不是节点本地的 overlay 根文件系统）。
+- 16 MiB 文件 `pvc-demo/payload.bin` 成功写入。
+- 第 3 步 `sha256sum -c` 通过；`cat timestamp.txt` 返回步骤 2 的 UTC 时间（证明跨步骤持久性）。
 - `du -sh pvc-demo` 显示约 17M。
 
-> **Note：** 这个 demo **故意不用 `container:` 字段也不用
-> `actions/checkout`** —— Recipe 7 的核心就是验证「workspace 落在
-> 持久 PVC 上」这一件事，step 越简单越容易复现。如果您还想顺手验证
-> job container（`jobs.<id>.container`）也能正常用，参考
-> [Example 1](#example-1-让单个-job-跑在自定义-container-里)。
+> **注意：** 此演示故意避免 `container:` 和 `actions/checkout` — 食谱 7 的重点是验证工作区位于持久 PVC 上，步骤越简单，越容易重现。如果您还想验证作业容器（`jobs.<id>.container`）是否可以正常工作，请参见 [示例 1](#example-1-run-a-job-in-a-custom-container)。
 
-触发后可在 ACP 集群侧观察 PVC 自动创建与销毁：
+观察集群侧 PVC 的创建和清理：
 
 ```shell
-# workflow 跑起来时
+# 在工作流运行时
 $ kubectl -n arc-runners get pvc
-# 期望：<runner-pod-name>-work   Bound   <storageClassName>   ...
+# 预期：<runner-pod-name>-work   Bound   <storageClassName>   ...
 
-# workflow 结束后，PVC 自动释放
+# 工作流完成后，PVC 会自动释放
 $ kubectl -n arc-runners get pvc
-# 期望：no resources found（或仅剩其他还在跑的 workflow 对应的 PVC）
+# 预期：未找到资源（或仅找到其他仍在运行的工作流的 PVC）
 ```
 
-> **Note：** 如果 PVC 一直 `Pending`，多半是 `storageClassName` 写错或
-> 集群里该 SC 不能动态 provisioning。可用 `kubectl get sc` 列出可用
-> SC，并 `kubectl describe pvc <name>` 看 events。
+> **注意：** 如果 PVC 保持 `Pending`，最可能的原因是 `storageClassName` 错误或 SC 不支持动态供应。使用 `kubectl get sc` 列出 SC，并使用 `kubectl describe pvc <name>` 检查事件。
 
-### Recipe 8: DinD 模式（在 runner 里跑 docker build）
+### 食谱 8：DinD 模式（在 runner 内部运行 docker build）
 
-**何时用：** workflow 需要 `docker build` / `docker push` / 调用
-docker CLI。
+**何时使用：** 工作流需要 `docker build` / `docker push` / 任何 docker CLI 调用。
 
-> **Warning —— DinD 镜像不在安装包内。** 插件安装包不内置 DinD 镜像
-> （避免把上游 Docker CVE 面带进 Alauda 补丁包）。您必须先把上游
-> `docker:<docker-tag>-dind` 同步到平台镜像仓库的某个路径下，然后通过
-> Extra Global Values 把 `global.images.dind.repository` / `tag` 指
-> 过去（见 [Recipe 9](#recipe-9-覆盖-arc-镜像自定义版本--替换镜像源)）。
+> **警告 — DinD 镜像未捆绑。** 安装包不包括 DinD 镜像（以避免将上游 Docker CVE 带入 Alauda 补丁包）。您必须首先将上游的 `docker:<docker-tag>-dind` 镜像同步到平台注册表，然后通过额外的全局值将 `global.images.dind.repository` / `tag` 指向它（参见 [食谱 9](#recipe-9-override-arc-images-custom-version--private-registry)）。
 
-**配置两步：**
+**两个配置步骤：**
 
-1. **同步并 override DinD 镜像。** 在 Scale-Set 插件的 Extra Global
-   Values 字段写：
+1. **同步并覆盖 DinD 镜像。** 在 scale-set 插件的额外全局值中，写入：
    ```yaml
      images:
        dind:
-         repository: <您在平台仓库内的 dind 路径>   # 例如 devops/actions/docker
-         tag: <您的 docker dind tag>             # 例如 28.0.4-dind
+         repository: <dind-path-inside-platform-registry>   # 例如 devops/actions/docker
+         tag: <your-docker-dind-tag>                         # 例如 28.0.4-dind
    ```
-2. **表单 Container Mode 选 `dind`。**
+2. **在表单上，将容器模式设置为 `dind`。**
 
-**期望效果：** 每个 runner pod 起一个 init container
-（`init-dind-externals`，跑完后退出，负责把 docker CLI 拷进共享卷）和
-一个 sidecar container（`dind`，持续运行 dockerd），加上一个 runner
-主容器。runner 容器里有 `DOCKER_HOST=unix:///var/run/docker.sock`
-环境变量，直接对接 DinD sidecar；workflow 里 `docker build` 命令直接
-生效。
+**预期效果：** 每个 runner pod 获得一个初始化容器（`init-dind-externals`，在复制 docker CLI 到共享卷后退出）、一个侧车（`dind`，运行 docker 守护进程）和 runner 主容器。runner 容器具有 `DOCKER_HOST=unix:///var/run/docker.sock`，指向 DinD 侧车；工作流中的 `docker build` 调用直接工作。
 
-> **Note：** 在 Kubernetes 1.29+ 上，上游 chart 会用 native sidecar
-> 语义渲染 `dind`（表现为出现在 `initContainers` 下且带
-> `restartPolicy: Always`）；在更低版本上它通常表现为普通 sidecar
-> container。两种写法的运行意图相同，排障时请按实际 pod spec 判断。
+> **注意：** 在 Kubernetes 1.29+ 上，上游 chart 使用原生侧车语义渲染 `dind`（因此它出现在 `initContainers` 下，`restartPolicy: Always`）；在较低版本中，它通常作为常规侧车容器出现。运行时意图是相同的，因此请根据您看到的实际 pod spec 进行故障排除。
 
-> **Note —— 更安全的替代：** 如果您的集群禁用 privileged，或者您不想给
-> runner pod 整个 Docker daemon 的能力，看
-> [Example 3](#example-3-进阶buildah-无-docker-daemon-构建镜像仍需-privileged) 用 Buildah
-> rootless 在普通 job container 里构建镜像。
+> **注意 — 更安全的替代方案：** 如果您的集群禁止特权 pod，或者您不想授予 runner pod 完整的 Docker 守护进程能力，请参见 [示例 3](#example-3-advanced-buildah-daemonless-image-build-still-privileged)，该示例在常规作业容器内使用 Buildah 无根模式。
 
-### Recipe 9: 覆盖 ARC 镜像（自定义版本 / 替换镜像源）
+### 食谱 9：覆盖 ARC 镜像（自定义版本 / 私有注册表）
 
-**何时用：** 插件安装包默认包含与本插件版本匹配的 **controller** 与
-**runner-extension** 两个镜像，所以 ACP 集群**默认就支持 air-gap 部署**
-（控制器 + Scale-Set 装上即跑）。下列场景才需要主动覆盖镜像：
+**何时使用：** 安装包默认包括与插件版本匹配的 **controller** 和 **runner-extension** 镜像，因此 ACP 集群 **默认支持气隙**（controller + scale-set 直接工作）。仅在以下情况下覆盖镜像：
 
-- 用 `dind` 模式 —— **DinD 镜像不在安装包内，必须 override**（前置见
-  [Recipe 8](#recipe-8-dind-模式在-runner-里跑-docker-build)）。
-- 想用比插件版本更新的 ARC 上游版本（升级 controller / runner-extension）。
-- 想换其他 DinD 镜像（比如 `docker:dind-alpine`）。
-- 安全审计要求镜像走团队私有仓库的 sub-path。
+- 使用 DinD 模式 — **DinD 镜像未捆绑，必须覆盖**（参见 [食谱 8](#recipe-8-dind-mode-run-docker-build-inside-runner)）。
+- 使用比插件提供的更新的上游 ARC 版本（升级 controller / runner-extension）。
+- 切换到不同的 DinD 镜像（例如 `docker:dind-alpine`）。
+- 安全审计要求镜像来自团队的私有注册表子路径。
 
-**前置要求：**
+**先决条件：**
 
-1. 把您想要的目标镜像**先同步到 ACP 平台镜像仓库**，路径要与下面配置
-   片段里 `repository` 字段一致。例如片段写
-   `repository: devops/actions/docker` + `tag: dind-alpine`，您必须
-   先把 `docker:dind-alpine` 推到平台镜像仓库的
-   `<global.registry.address>/devops/actions/docker:dind-alpine` 路径
-   上。否则 runner pod 起来时 ImagePullBackOff。
-2. **`repository` 字段不要带 registry 域名** —— 平台已自动注入
-   `global.registry.address`，runner 拉镜像时会拼前缀。
-3. **`tag` 必须在平台镜像仓库内真实存在。** 下面片段里
-   `<your-target-tag>` 是占位符，您需要替换成您目标 ARC 版本的实际
-   tag（在平台 UI 的"集群插件"详情页能看到当前 chart 版本，ARC 三件套
-   的镜像 tag 与 chart 版本对齐）。
+1. **首先将目标镜像同步到 ACP 平台注册表。** 路径必须与下面的 `repository` 字段匹配。例如，如果片段说 `repository: devops/actions/docker` + `tag: dind-alpine`，您必须将 `docker:dind-alpine` 推送到 `<global.registry.address>/devops/actions/docker:dind-alpine` 的平台注册表中。否则，runner pod 会遇到 ImagePullBackOff。
+2. **在 `repository` 中不要包含注册表域。** 平台会自动在拉取时添加 `global.registry.address` 前缀。
+3. **`tag` 必须实际存在于平台注册表中。** 下面的 `<your-target-tag>` 占位符必须替换为您的实际目标标签。当前 chart 版本在集群插件详细信息页面上可见，ARC 三个镜像集的标签与 chart 版本对齐。
 
-**配置：** 在 **Extra Global Values** 字段写入下面任一片段。
+**配置：** 将以下片段之一写入 **额外全局值** 字段。
 
-> **Warning —— 粘贴前必读：行首必须有 2 个空格。** 本 Recipe 接下来给的
-> YAML 都是要贴到 **Extra Global Values** 字段（嵌入到 `global:` 块内）。
-> 该字段没有 indent 模板辅助，您写的内容会被原样插入到一个 2 空格缩进
-> 的上下文里 —— **每一行都必须以 2 个空格起始**，否则装包会直接失败。
-> 复制粘贴下方代码块时请逐行核对行首再保存。
+> **警告 — 需要前导 2 个空格。** 本食谱中的所有 YAML 都放入 **额外全局值** 字段（嵌入在 `global:` 下）。该字段没有缩进模板助手，您的内容逐行插入到 2 空格缩进的上下文中 — **每行必须以 2 个空格开头**，否则安装将完全失败。保存前逐行验证。
 
-下面 A / B 两组配置片段分别对应两个插件，按您的诉求挑对应版本，**粘贴
-到对应插件的 Extra Global Values 字段即可**（不是二选一，是两个插件
-各管自己的）。
+两个片段组 A 和 B 分别针对两个插件。选择正确的组并粘贴到该插件的额外全局值中（这不是二选一；每个插件管理自己的）。
 
-#### A — 控制器插件
+#### A — Controller 插件
 
-控制器插件只接受一个镜像 key（`controller`）。
+Controller 插件接受一个镜像键（`controller`）。
 
-只改 tag（最常见的升级场景）：
+仅覆盖标签（最常见的升级场景）：
 
 ```yaml
   images:
     controller:
       repository: devops/actions/gha-runner-scale-set-controller
-      tag: <your-target-tag>          # 您目标 ARC 版本的 tag，必须已同步到平台镜像仓库
+      tag: <your-target-tag>          # 目标 ARC 版本标签，必须已同步到平台注册表
 ```
 
-或者连 `repository` 也换路径（团队私有仓库 sub-path / 安全审计场景）：
+或者也覆盖 `repository`（团队私有注册表子路径 / 安全审计）：
 
 ```yaml
   images:
@@ -1569,18 +1127,14 @@ docker CLI。
       tag: <your-target-tag>
 ```
 
-#### B — Scale-Set 插件
+#### B — Scale-set 插件
 
-Scale-Set 插件接受两个镜像 key：
+Scale-set 插件接受两个镜像键：
 
-- **`runnerExtension`** —— runner 镜像，**安装包内置**有匹配版本，覆盖
-  仅在升级版本 / 换镜像源时需要。
-- **`dind`** —— DinD sidecar 镜像，**安装包不内置**（参见
-  [Recipe 8](#recipe-8-dind-模式在-runner-里跑-docker-build) 前置说明）。
-  只在您启用了 `dind` 模式时才需要写这一节，且必须先把镜像同步到平台
-  仓库。
+- **`runnerExtension`** — runner 主镜像；**捆绑**在安装包中；仅在升级版本或切换镜像源时覆盖。
+- **`dind`** — DinD 侧车镜像；**未捆绑**（参见 [食谱 8](#recipe-8-dind-mode-run-docker-build-inside-runner) 的先决条件）。仅在启用 DinD 模式时写入此部分，且镜像必须已同步到平台注册表。
 
-只改 tag：
+仅覆盖标签：
 
 ```yaml
   images:
@@ -1589,7 +1143,7 @@ Scale-Set 插件接受两个镜像 key：
       tag: <your-target-tag>
 ```
 
-启用 DinD 模式时（在上面的 `images:` 块下追加）：
+当启用 DinD 模式时（附加到上面的 `images:` 块）：
 
 ```yaml
   images:
@@ -1597,11 +1151,11 @@ Scale-Set 插件接受两个镜像 key：
       repository: devops/actions/gha-runner-scale-set-runner-extension
       tag: <your-target-tag>
     dind:
-      repository: <您在平台仓库内的 dind 路径>     # 比如 devops/actions/docker
-      tag: <您的 docker dind tag>               # 比如 28.0.4-dind
+      repository: <dind-path-inside-platform-registry>     # 例如 devops/actions/docker
+      tag: <your-docker-dind-tag>                          # 例如 28.0.4-dind
 ```
 
-或者全部覆盖到团队私有仓库 sub-path：
+或者将所有内容覆盖到团队私有注册表子路径：
 
 ```yaml
   images:
@@ -1613,154 +1167,75 @@ Scale-Set 插件接受两个镜像 key：
       tag: <your-docker-dind-tag>
 ```
 
-**期望效果：** controller / listener / runner / dind 的实际镜像从您
-指定的路径（在平台镜像仓库内）拉取。
+**预期效果：** controller / listener / runner / dind 镜像从您指定的路径中拉取到平台注册表中。
 
-> **Warning —— `registry` 子键不能写。** 平台已经渲染了
-> `global.registry`，您在 Extra Global Values 写 `  registry:` 会被
-> 静默丢弃（不报错，但您写的不生效）。
+> **警告 — 不能写入 `registry:` 子键。** 平台已经渲染了 `global.registry`。写入 `  registry:`（在 EGV 中的 2 空格缩进）会被静默丢弃；没有错误报告，但您的覆盖没有效果。
 
 ---
 
-## Chapter 4. 多团队 / 多项目隔离策略
+## 第四章 多团队 / 多项目隔离
 
-通过 ACP **集群插件入口**时，每个集群插件在同一集群上**只能装一个默认
-实例**；这意味着插件化安装路径不适合在单集群里直接起多组彼此独立的
-runner。若有团队 / 项目级隔离诉求，请按下面三种方式之一：
+通过 ACP **集群插件入口**，每个插件仅支持 **每个集群一个默认实例**。这意味着当您想要在一个集群上拥有多个隔离的 runner 池时，插件安装路径并不合适。对于团队 / 项目隔离，请选择以下之一：
 
-### 如何快速选择
+### 快速决策指南
 
-先问自己一个问题：**所有团队 / 项目能否共享同一份 runner 运行身份**
-（同一个 ServiceAccount、同一个节点池、同一份 GitHub 凭证）？
+从一个问题开始：**所有团队 / 项目是否可以共享相同的 runner 运行时身份**（相同的 ServiceAccount、相同的节点池、相同的 GitHub 凭证）？
 
-- **能** → 选 **Method 1**：单装一套 ARC，去 GitHub 网页上用 runner
-  group 收紧访问范围；ACP 侧不动。
-- **不能、且各团队本来就在不同集群** → 选 **Method 2**：每个集群各装
-  一套，资源 / 网络 / 节点天然隔离。
-- **不能、且只能用一套集群** → 选 **Method 3**：通过 ACP
-  **Catalog → Helm Chart** 把上游 chart 装多套实例。
-- **仓库会接收 fork PR / 外部贡献** → 不论上面选哪种，**额外**为这些
-  仓库单独起一池 runner，避免和主线 runner 共享 secrets / SA（详见
-  本章末「安全注意事项」第 4 条）。
+- **是** → 选择 **方法 1**：安装单个 ARC 并使用 GitHub runner-group 策略来缩小访问范围。ACP 端没有变化。
+- **不，并且团队已经使用不同的集群** → 选择 **方法 2**：每个集群安装一组插件；资源 / 网络 / 节点在结构上是隔离的。
+- **不，但仅有一个集群可用** → 选择 **方法 3**：通过 ACP **Catalog → Helm Chart** 多次安装上游 chart。
+- **存储库接受分叉 PR / 外部贡献** → 无论上述选择如何，为这些存储库运行一个 **单独** 的 runner 池，以便它们不与主池共享秘密 / SA（请参见本章后面安全检查表的第 4 项）。
 
-| 隔离诉求 | 谁来配置 | 推荐 Method | 隔离粒度 |
-|---|---|---|---|
-| 「只让这几个 repo / workflow 调度到这组 runner」，所有 workflow 共享同一份 SA / 凭证 / 节点池没问题 | GitHub 管理员（org → Settings → Actions → Runner groups；enterprise → Policies → Actions → Runner groups） | **Method 1** | 仅 GitHub 侧的访问授权；运行时仍共享 |
-| 团队 A、B 本来就用不同 ACP 集群 | ACP 管理员（每个集群分别装控制器插件 + Scale-Set 插件） | **Method 2** | 集群级（资源、网络、节点全独立） |
-| 单集群但要多套独立 runner（不同 GitHub URL / 凭证 / SA / 节点池） | ACP 管理员（Catalog → Helm Chart 多次安装上游 chart） | **Method 3** | 单集群内多实例 |
+| 隔离目标                                                                                                    | 配置者                                                                                                  | 推荐        | 隔离粒度                                               |
+| ----------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- | ----------- | ----------------------------------------------------- |
+| “仅这些存储库 / 工作流可以调度到此池”；所有工作流可以共享一个 SA / 凭证 / 节点池                          | GitHub 管理员（组织 → 设置 → 操作 → Runner 组；企业 → 策略 → 操作 → Runner 组）                       | **方法 1** | GitHub 端授权；运行时仍然共享                         |
+| 团队 A 和团队 B 已经使用不同的 ACP 集群                                                                     | ACP 管理员（在每个集群中安装 controller + scale-set 插件）                                            | **方法 2** | 集群级别（资源 / 网络 / 节点完全独立）               |
+| 单个集群但需要多个独立的 runner 池（不同的 GitHub URL / 凭证 / SA / 节点池）                              | ACP 管理员（通过 Catalog → Helm Chart 多次安装上游 chart）                                           | **方法 3** | 在一个集群内的多实例                                   |
 
-### Method 1: 单一 ARC 实例 + 在 GitHub 侧用 runner group 收紧访问范围（推荐）
+### 方法 1：一个 ARC 实例，通过 GitHub runner 组缩小访问（推荐）
 
-让单个 scale-set 实例对应一个 org 级或 enterprise 级 `githubConfigUrl`，
-再在 GitHub 侧用 **runner group** 的访问策略限定"谁能用这组 runner"。
+将单个 scale-set 实例绑定到组织级或企业级 `githubConfigUrl`，然后使用 GitHub **runner 组** 策略定义谁可以使用该 runner 池。
 
-- **GitHub App / PAT 的职责是 ARC 调 GitHub API 的鉴权。** 它们决定
-  ARC 如何注册 runner、如何向 GitHub 取任务；**不直接等价于**
-  "哪些仓库 / workflow 能使用这组 runner"。
-- **组织级 runner**：在 GitHub 组织的 **Settings → Actions → Runner
-  groups** 里把这组 runner 放入专用 runner group，再用
-  `Selected repositories` / `Selected workflows` 收紧访问范围。
-- **企业级 runner**：在 GitHub enterprise 的 **Policies → Actions →
-  Runner groups** 里先限制 `Selected organizations` /
-  `Selected workflows`；如果这组 enterprise runner 再共享给组织，
-  组织所有者还可以继续收紧仓库 / workflow 访问策略。
+- **GitHub App / PAT 是 ARC 身份验证方法。** 它们决定 ARC 如何与 GitHub API 通信、注册 runners 和获取作业；它们本身并不定义哪些存储库 / 工作流可以使用 runner 池。
+- **组织 runners**：在 GitHub **设置 → 操作 → Runner 组** 中，将 runners 放入专用的 runner 组，并通过 `Selected repositories` / `Selected workflows` 缩小访问范围。
+- **企业 runners**：在 GitHub 企业 **策略 → 操作 → Runner 组** 中，首先通过 `Selected organizations` / `Selected workflows` 缩小访问范围；如果企业 runner 组共享给一个组织，组织所有者可以进一步缩小存储库 / 工作流访问（如适用）。
 
-这种方式解决的是 **GitHub 侧的使用授权边界**（谁能把 job 调度到这组
-runner），**不**包含"runner 跑在不同节点 / 不同 namespace"这种运行时
-隔离。如果您的诉求主要是"一组 runner 只给某些仓库 / workflow 用"，这
-通常是最合适的第一选择。
+此方法解决了共享 runner 池的 **GitHub 端使用边界**。它并不提供运行时隔离，例如单独的节点或命名空间。如果您的主要目标是“仅这些存储库 / 工作流可以调度到此池”，这通常是正确的首选。
 
-> **关于 GitHub App 与 enterprise runner 的关系：** GitHub 不接受
-> GitHub App 用于 enterprise 级 runner 注册（见 [权限要求](#权限要求)）；
-> 这时 ARC 鉴权必须改用 Classic PAT +
-> `manage_runners:enterprise`。但即便在 enterprise 级，"哪些组织 /
-> workflow 能使用这组 runner"的访问控制，仍然主要应由 runner group
-> 策略来做，而不是靠 PAT 本身完成。
+> **关于 GitHub App 和企业 runners：** GitHub 不接受 GitHub App 进行企业级 runner 注册（参见 [权限要求](#permission-requirements)）；ARC 必须使用具有 `manage_runners:enterprise` 的经典 PAT。即便如此，“哪些组织 / 工作流可以使用此 runner 池”的控制仍应主要通过 runner 组策略处理，而不是通过 PAT 本身。
 
-### Method 2: 多 ACP 集群分别装 ARC（强隔离）
+### 方法 2：多集群 ARC 部署（强隔离）
 
-团队 A 用集群 A、团队 B 用集群 B；**每个集群上各自独立装一套控制器
-插件 + Scale-Set 插件**，分别配不同的 `runnerScaleSetName`、不同的
-`githubConfigUrl`、不同的 GitHub 凭证 Secret，互不干扰。每组 runner
-跑在自己的集群里，资源 / 网络 / 节点完全隔离。适合团队之间本来就因为
-业务 / 安全边界需要分集群部署的场景 —— 单集群只能装一份 Scale-Set
-插件，不影响**跨集群**部署多份。
+团队 A 使用集群 A，团队 B 使用集群 B。**每个集群安装自己的 controller 插件 + scale-set 插件**，具有独立的 `runnerScaleSetName`、独立的 `githubConfigUrl` 和独立的 GitHub 凭证 Secret。Runner 池生活在自己的集群中，具有完全的资源 / 网络 / 节点隔离。适合团队因业务 / 安全原因已经部署独立集群的情况 — 单集群“仅一个 scale-set 插件”不会影响 **跨集群** 多实例部署。
 
-### Method 3: 通过 Helm Chart 直接部署多实例（特殊诉求）
+### 方法 3：直接 Helm chart 部署（特殊需求）
 
-如果有强隔离需求且只想用一套集群，可以通过 ACP 平台的
-**Catalog → Helm Chart** 入口（不是 Marketplace 集群插件入口），把上游
-`gha-runner-scale-set` chart 装成多套独立的 ARC 实例 —— 整个过程仍在
-ACP UI 中完成，**不需要 `helm` 命令行**。这条路径**没有集群插件那套
-表单化字段**（如 "Container Mode"、"GitHub URL" 等下拉项），
-所有参数都要在 chart values（YAML）里写明；升级、参数调整也通过
-Catalog 中对应实例的操作完成。
+如果您需要强隔离但只想要一个集群，请通过平台的 **Catalog → Helm Chart** 入口（而不是 Marketplace 集群插件入口）部署多个独立的 ARC 实例，安装上游的 `gha-runner-scale-set` chart — 整个流程保持在 ACP UI 内；**不需要 `helm` CLI**。此路径 **不提供基于表单的配置字段**（例如“容器模式”和“GitHub URL”下拉框）；所有参数必须在 chart 值（YAML）中设置，升级 / 参数更改通过 Catalog 中相应的实例进行。
 
-> **Note —— labels 路由不能替代真正的多实例。** 上游 chart 支持
-> `scaleSetLabels` + 数组形式 `runs-on:`，可以让一个 scale-set 同时
-> 响应多组 label 名（用法与 install-time-only 约束见
-> [Workflow 侧：runs-on 数组形式与 scaleSetLabels](#workflow-侧runs-on-数组形式与-scalesetlabels)）—— 但所有匹配到的 workflow 仍然跑在**同一个**
-> scale-set 实例下，共享同一份 controller、同一份 SA 与 RBAC、同一份
-> GitHub 凭证。如果您追求的是"团队 A 的 workflow 不能动到团队 B 的
-> 资源"这种**运行时真正隔离**，labels 路由不解决问题，通常需要上面的
-> Method 2 / 3；Method 1 只解决"谁可以使用 runner 池"的 GitHub 侧访问
-> 控制。
+> **注意 — 标签路由不是实际多实例的替代方案。** 上游 chart 支持 `scaleSetLabels` + 数组形式的 `runs-on:`，让一个 scale-set 响应多个标签名称（用法和安装时仅约束在 [Workflow side: runs-on array form with scaleSetLabels](#workflow-side-runs-on-array-form-with-scalesetlabels) 中覆盖） — 但每个匹配的工作流仍然在 **同一** scale-set 实例上运行，共享一个 controller、一个 SA / RBAC 和一个 GitHub 凭证。如果您真正想要“团队 A 的工作流无法接触团队 B 的资源”的 **运行时隔离**，标签路由无法解决此问题；通常需要上述方法 2 / 3。方法 1 仅控制谁可以在 GitHub 端使用 runner 池。
 
-### 安全注意事项（短 checklist）
+### 安全检查表
 
-把 ARC 部署到生产前，至少把下面四件事过一遍 —— 这些点散在各 Recipe /
-Example 里都讲过，这里集中列一份方便审阅。
+在生产中运行 ARC 之前，请逐项检查以下四个项目。每个项目也在分散的食谱 / 示例中覆盖；此检查表只是一个合并的审计参考。
 
-- **`githubConfigUrl` 范围 = 注册边界；runner group 策略 = 实际使用边界。**
-  `githubConfigUrl` 越大，ARC 注册到 GitHub 的边界越宽；真正决定"哪些
-  仓库 / workflow 可以使用这组 runner"的，应是 runner group 的
-  `Selected repositories` / `Selected workflows`（enterprise 级还包括
-  `Selected organizations`）。企业级 / 组织级 `githubConfigUrl` 配合一份
-  共享 SA 时，**任何被允许提交到该 runner group 的 workflow 作者**都能
-  用这组 runner 跑代码，因此规划时要同时收紧 `githubConfigUrl` 与
-  runner group 策略。
-- **自定义 SA = 把集群权限交给 workflow 作者。** 走
-  [Recipe 1](#recipe-1-runner-pod-用自定义-serviceaccount跑-in-cluster-任务)
-  给 runner 配 SA 后，**任何能修改 workflow YAML 的 GitHub 用户**都
-  能继承这份 SA 的全部 RBAC。**不要**绑 `ClusterRole/edit` 之类宽泛角色；
-  按 workflow 实际需要的动词逐条放权（参考 Recipe 1 里的最小 Role 示例）。
-- **DinD / privileged Buildah 只发给受控仓库。**
-  [Recipe 8 (DinD)](#recipe-8-dind-模式在-runner-里跑-docker-build) 与
-  [Example 3 (Buildah)](#example-3-进阶buildah-无-docker-daemon-构建镜像仍需-privileged) 都
-  会让 runner 拿到 root / 容器逃逸面更宽的权限。**只给您信任的内部仓库**
-  接入这组 runner；把开放贡献的仓库放到独立的、走非 privileged 路径的
-  scale-set 实例上。
-- **fork PR / 外部贡献建议隔离 runner 池。** GitHub 的
-  `pull_request_target` 等触发条件可让外部 PR 在仓库主分支的 secrets
-  / SA 上下文里跑代码，是常见的供应链攻击面。如果您的仓库接受外部
-  贡献，**单独装一组 runner**（按上面 Method 2 / Method 3）专门给它们
-  用，不共享主线 runner 的 secrets / SA。
+- **`githubConfigUrl` 范围 = 注册边界；runner 组策略 = 实际使用边界。** `githubConfigUrl` 越宽，ARC 的 GitHub 端注册边界越广。真正控制“哪些存储库 / 工作流可以使用此池”的应来自 runner 组策略：`Selected repositories` / `Selected workflows`（以及企业 runners 的 `Selected organizations`）。使用企业或组织级 `githubConfigUrl` 加上共享 SA，**任何被允许进入该 runner 组的工作流作者**都可以在此池上运行代码。一起缩小 `githubConfigUrl` 和 runner 组策略。
+- **自定义 SA 将集群权限交给工作流作者。** 一旦 [食谱 1](#recipe-1-custom-serviceaccount-for-in-cluster-jobs) 将自定义 SA 附加到 runner，**任何可以编辑工作流 YAML 的人**都将继承 SA 的完整 RBAC。**请勿** 绑定广泛的角色，如 `ClusterRole/edit`；根据工作流需求授予动词（请参见食谱 1 中的最小权限角色示例）。
+- **DinD / 特权 Buildah 仅用于受控存储库。** [食谱 8 (DinD)](#recipe-8-dind-mode-run-docker-build-inside-runner) 和 [示例 3 (Buildah)](#example-3-advanced-buildah-daemonless-image-build-still-privileged) 给予 runner root 或更广泛的容器逃逸表面。**仅让受信任的内部存储库**目标此 runner 池；将开放贡献的存储库路由到单独的、非特权的 scale-set。
+- **为分叉 PR / 外部贡献隔离 runner 池。** GitHub 触发器，如 `pull_request_target` 允许外部 PR 在主分支的秘密 / SA 上下文中运行代码，这是一个已知的供应链攻击面。如果您的存储库接受外部贡献，**为它们提供一个单独的 runner 池**（通过上述方法 2 / 方法 3），并且不要与主 runners 共享秘密或 SA。
 
 ---
 
-## Chapter 5. Workflow 示例
+## 第五章 工作流示例
 
-下面 3 个示例展示几种常见的 workflow 写法，用 runner 自带的工具或
-GitHub Actions 原生能力覆盖典型 CI 场景。所有 YAML 都可直接复制粘贴
-使用（按需把 `my-runners` 换成您自己的 `runnerScaleSetName`，把镜像
-路径换成您内网集群可拉到的镜像）。
+以下三个示例涵盖使用 runner 捆绑工具或原生 GitHub Actions 功能的常见工作流模式。所有 YAML 可以按原样复制粘贴 — 将 `my-runners` 替换为您的 `runnerScaleSetName`，并将镜像路径替换为从您的集群可访问的镜像。
 
-> **Note：** 以下示例仅供参考，实际 workflow 结构请按项目需要调整。
+> **注意：** 示例仅供参考；根据项目的需要调整工作流结构。
 
-### Example 1: 让单个 job 跑在自定义 container 里
+### 示例 1：在自定义容器中运行作业
 
-**何时用：** 默认 runner 镜像没装某语言运行时（例如想要 Maven、想要
-特定 JDK 版本）；不想改 runner 镜像；又不想用 DinD。GitHub Actions
-原生
-[`jobs.<id>.container`](https://docs.github.com/en/actions/using-jobs/running-jobs-in-a-container)
-字段在 ACP scale-set 模式下完全可用 —— ARC 会通过
-runner-container-hooks 在 runner 所在 namespace 里为该 job 动态创建对应的
-job pod / k8s job，step 在那个容器环境里执行，而不是简单在同一个 runner
-pod 里再挂一个 sidecar。**这一模式要求 Scale-Set 的 Container Mode 为
-`kubernetes-novolume`（默认）或 `kubernetes`；`dind` 模式不支持
-`container:`。**
+**何时使用：** 默认的 runner 镜像缺少运行时（例如，您需要 Maven、特定的 JDK 版本）；您不想修改 runner 镜像；您也不想使用 DinD。GitHub Actions 原生 [`jobs.<id>.container`](https://docs.github.com/en/actions/using-jobs/running-jobs-in-a-container) 字段在 ACP scale-set 模式下完全有效 — ARC 使用 runner-container-hooks 动态创建相应的作业 pod / Kubernetes 作业在 runner 命名空间中，步骤在该容器环境中执行，而不是简单地在同一 runner pod 内添加一个侧车。**此模式要求 scale set 使用 `kubernetes-novolume`（默认）或 `kubernetes` 容器模式；`dind` 不支持 GHA 的 `container:` 字段。**
 
-**完整 workflow：**
+**完整工作流：**
 
 ```yaml
 name: Container Job Example
@@ -1776,8 +1251,8 @@ jobs:
       image: docker.io/library/ubuntu:24.04
     steps:
       - name: identify the container
-        # 避免依赖 job container 是否自带 `hostname` 命令，直接用
-        # shell 内置 ${HOSTNAME} 更稳。
+        # 避免依赖于作业容器镜像是否恰好
+        # 提供 `hostname`；使用 shell 内置的 ${HOSTNAME}。
         run: |
           echo "runner_name: ${RUNNER_NAME:-unknown}"
           echo "hostname:    ${HOSTNAME:-unknown}"
@@ -1787,30 +1262,13 @@ jobs:
           id
 ```
 
-**期望效果：** job 的 step 跑在 `ubuntu:24.04` 提供的容器环境里，不影响
-runner 主容器本身；集群侧通常会看到与该 job 对应的额外 job pod / k8s job
-资源。
+**预期效果：** 作业的步骤在 `ubuntu:24.04` 容器环境中运行，保持 runner 主容器不变。在集群侧，您通常会看到该工作流作业的额外作业 pod / Kubernetes 作业资源。
 
-#### 如果 job container 还需要其他权限 / 凭证
+#### 作业容器的额外权限 / 凭证
 
-- **访问集群 API（在容器里跑 `kubectl`）：** job container 默认会继承
-  runner pod 的 ServiceAccount（k8s 自动挂载 SA token 到
-  `/var/run/secrets/kubernetes.io/serviceaccount/`）—— 给 runner pod
-  配自定义 SA 的方法见
-  [Recipe 1](#recipe-1-runner-pod-用自定义-serviceaccount跑-in-cluster-任务)。
-  注意 `image:` 指向的镜像里**必须自带 `kubectl` 二进制**（社区
-  `ubuntu:24.04` 不带，请用自带 kubectl 的镜像，或在 step 里临时下载）。
-- **拉私有 registry 镜像：** job container 的 image 拉取最终仍由 runner
-  pod 的拉镜像凭证路径决定。当前 Alauda 插件化安装路径里，runner 侧
-  推荐通路是平台注入的 `global.registry.imagePullSecrets`，或通过
-  自定义 SA 间接挂载。上游 chart 会把
-  `template.spec.imagePullSecrets` 透传到 runner pod spec，但本文没有把它
-  作为插件化安装路径的主推荐 / 主验证方式；如要使用，建议先在目标集群
-  现网验证渲染结果与实际拉镜像行为。
-- **注入业务凭证：** 优先把 `${{ secrets.X }}` 放到具体 step 的 `env:`
-  （或多个 step 共用时放到 `jobs.<id>.env`）里；`container.env` 更适合放
-  非敏感常量。原因是 ARC 的 Kubernetes container mode 下，secrets 通过
-  step `env:` 传递更稳。例如：
+- **访问集群 API（容器内的 `kubectl`）：** 作业容器默认继承 runner pod 的 ServiceAccount（Kubernetes 自动挂载 SA 令牌在 `/var/run/secrets/kubernetes.io/serviceaccount/`）。有关 runner pod 上自定义 SA 的信息，请参见 [食谱 1](#recipe-1-custom-serviceaccount-for-in-cluster-jobs)。请注意，引用的 `image:` **必须包含 `kubectl` 二进制文件** — 社区的 `ubuntu:24.04` 不包含；使用一个捆绑 `kubectl` 的镜像，或者在步骤中动态下载它。
+- **从私有注册表拉取：** 作业容器的镜像拉取仍然依赖于 runner 端的镜像拉取凭证路径。在当前的 Alauda 插件安装路径中，支持的 runner 端路径是平台注入的 `global.registry.imagePullSecrets`，或通过自定义 SA 间接附加凭证。上游 chart 确实将 `template.spec.imagePullSecrets` 传递到 runner pod spec，但本文档并未将该路径视为主要验证 / 推荐的插件安装路径；如果您使用它，请验证渲染的 spec 和目标集群上的实际拉取行为。
+- **注入业务凭证：** 更倾向于将 `${{ secrets.X }}` 放在步骤级的 `env:` 块中（或 `jobs.<id>.env` 如果多个步骤共享它）；保留 `container.env` 用于非敏感常量。在 ARC 的 Kubernetes 容器模式中，通过步骤 `env:` 传递秘密是更可靠的路径。例如：
 
   ```yaml
   jobs:
@@ -1829,33 +1287,19 @@ runner 主容器本身；集群侧通常会看到与该 job 对应的额外 job 
             echo "token length=${#NPM_TOKEN}"
   ```
 
-> **Warning —— 要求 Container Mode：** `kubernetes-novolume`（默认）或
-> `kubernetes`（Recipe 7）。`dind` 模式下不支持 GHA 的 `container:`
-> 字段。
+> **警告 — 容器模式要求。** 此模式要求 `kubernetes-novolume`（默认）或 `kubernetes`（食谱 7）。`dind` 模式不支持 GHA 的 `container:` 字段。
 >
-> **Warning —— air-gap：** 您写的 `image:` 必须是平台镜像仓库或集群
-> 可拉到的镜像路径。`docker.io/library/ubuntu:24.04` 在内网集群里通常
-> 拉不到 —— 换成您平台镜像仓库内已经同步好的对应镜像。
+> **警告 — 气隙。** 您指定的 `image:` 必须是平台镜像注册表或集群可以拉取的路径。`docker.io/library/ubuntu:24.04` 在内部集群中通常无法访问 — 请替换为您已同步到平台注册表的相应镜像。
 
-### Example 2: 触发集群中已存在的 Tekton Pipeline
+### 示例 2：从工作流触发集群内的 Tekton Pipeline
 
-**何时用：** GitHub Actions 负责触发与编排，Tekton 在集群里跑实际的
-重活（构建、测试、部署）。真实部署都把 Tekton `Pipeline` 资源放在
-集群里作为带版本的可复用定义；workflow 只创建一个新的 `PipelineRun`
-引用它。
+**何时使用：** GitHub Actions 处理触发和编排；Tekton 在集群上运行实际的重工作（构建、测试、部署）。真实部署将 Tekton `Pipeline` 资源保留在集群中作为版本化、可重用的定义；工作流仅创建一个引用它的新 `PipelineRun`。
 
-**前置：**
+**先决条件：**
 
-- **集群已部署 Tekton Pipelines。** 本示例假设 `tekton.dev/v1` 的
-  CRD（`Pipeline` / `PipelineRun` / `Task` / `TaskRun`）已经安装。在
-  ACP 上可通过 ACP DevOps 模块或上游
-  [tektoncd/pipeline](https://github.com/tektoncd/pipeline) 安装。
-  未部署时，下面的 `kubectl apply` 会报
-  `no matches for kind "Pipeline" in version "tekton.dev/v1"`。
-- **runner pod 用一个带 Tekton 操作权限的 ServiceAccount。** 先参考
-  [Recipe 1](#recipe-1-runner-pod-用自定义-serviceaccount跑-in-cluster-任务)
-  建好自定义 SA（如 `my-runner-sa`），然后给它绑下面这份 Role，用以
-  创建 / 跟踪 PipelineRun：
+- **Tekton Pipelines 已在集群中部署。** 此示例假设已安装 `tekton.dev/v1` CRDs（`Pipeline` / `PipelineRun` / `Task` / `TaskRun`）。在 ACP 上，通过 ACP DevOps 模块或上游 [tektoncd/pipeline](https://github.com/tektoncd/pipeline) 安装。否则，下面的 `kubectl apply` 将返回 `no matches for kind "Pipeline" in version "tekton.dev/v1"`。
+
+- **Runner pod 使用具有 Tekton 操作权限的 ServiceAccount。** 使用 [食谱 1](#recipe-1-custom-serviceaccount-for-in-cluster-jobs) 创建自定义 SA（例如 `my-runner-sa`），然后绑定以下角色以创建 / 跟踪 PipelineRuns：
 
   ```shell
   $ kubectl apply -n arc-runners -f - <<'EOF'
@@ -1865,7 +1309,7 @@ runner 主容器本身；集群侧通常会看到与该 job 对应的额外 job 
     name: tekton-pipelinerun-runner
   rules:
   - apiGroups: ["tekton.dev"]
-    resources: ["pipelines"]                  # `tkn pipeline start` 先 GET Pipeline 取参数列表
+    resources: ["pipelines"]                  # `tkn pipeline start` 首先 GET Pipeline 以发现其参数
     verbs: ["get", "list", "watch"]
   - apiGroups: ["tekton.dev"]
     resources: ["pipelineruns"]
@@ -1895,23 +1339,11 @@ runner 主容器本身；集群侧通常会看到与该 job 对应的额外 job 
   EOF
   ```
 
-  Role 给 Pipeline 的 **read** 权限（`tkn pipeline start` 要先读取
-  Pipeline 的参数列表），PipelineRun 的 **create + read** 权限，以及
-  TaskRun / pods 的 **read** 权限，以及 pod log 的 **get** 权限
-  （`tkn pipeline start --showlog` 与 `tkn pr logs -f` 跟踪运行需要）。
-  本文场景不需要给 TaskRun `create`。
-  如果漏掉 Pipelines 的 read 规则，
-  `tkn pipeline start` 会报 `Pipeline name <pipeline> does not exist
-  in namespace <ns>` —— 即便 Pipeline 在 cluster admin 视角下确实存在。
+  该角色授予对 Pipelines 的 **读取** 权限（以便 `tkn pipeline start` 可以解析 Pipeline 的参数）、对 PipelineRuns 的 **创建 + 读取** 权限，以及对 TaskRuns 和 pods 的 **读取** 权限，以及对 pod 日志的 **获取** 权限（因此 `tkn pipeline start --showlog` 和 `tkn pr logs -f` 可以跟踪运行）。本文档的场景不需要对 TaskRuns 的 `create` 权限。如果没有 Pipelines 读取规则，`tkn pipeline start` 将失败，显示 `Pipeline name <pipeline> does not exist in namespace <ns>` — 即使从集群管理员的角度来看，Pipeline 是存在的。
 
-- **在集群中预创建一个最小 Pipeline。** 直接 apply 下面的 manifest。
-  默认所有资源都放在 `arc-runners`（与 runner pod 同一个 namespace，
-  避免跨 namespace 的 RBAC 麻烦）。如要换 namespace，把这条命令以及
-  下面 workflow `env` 块里的 `arc-runners` 一起改掉。
+- **在集群中预创建一个最小的 Pipeline。** 应用以下清单。默认情况下，一切都位于 `arc-runners`（与 runner pod 相同的命名空间，避免跨命名空间 RBAC）。要使用不同的命名空间，请在此处和工作流 `env` 块中替换 `arc-runners`。
 
-  > **Note：** 下面 `image:` 字段用了 `docker.io/library/busybox:1.36`
-  > 作为 demo 镜像。**air-gap 集群里请先替换为您平台镜像仓库可拉到的
-  > 路径**再 apply。
+  > **注意：** 下面的 `image:` 使用 `docker.io/library/busybox:1.36` 进行演示。**对于气隙集群，请在应用之前将其替换为您的平台注册表可以拉取的路径。**
 
   ```shell
   $ kubectl apply -n arc-runners -f - <<'EOF'
@@ -1940,17 +1372,16 @@ runner 主容器本身；集群侧通常会看到与该 job 对应的额外 job 
           type: string
         steps:
         - name: echo
-          image: docker.io/library/busybox:1.36   # air-gap: replace with an internally-reachable image
+          image: docker.io/library/busybox:1.36   # 气隙：用内部可访问的镜像替换
           script: |
             #!/bin/sh
             echo "triggered for $(params.git-url) @ $(params.git-revision)"
   EOF
   ```
 
-  真实部署里这个 Pipeline 会是一条完整的构建-部署流（`git-clone` →
-  `buildah` → `kubectl-deploy` 等）。
+  在真实部署中，此 Pipeline 将是一个完整的构建和部署流程（`git-clone` → `buildah` → `kubectl-deploy` 等）。
 
-**完整 workflow：**
+**完整工作流：**
 
 ```yaml
 name: Trigger Tekton PipelineRun
@@ -1964,20 +1395,16 @@ jobs:
     runs-on: my-runners
     steps:
       - name: start tekton pipeline
-        # `env` carries the platform-specific values for this trigger.
-        # Defaults match the prerequisites above; override here (or
-        # promote to GitHub repo variables for multi-pipeline use).
+        # `env` 携带此触发的特定平台值。
+        # 默认值与上述先决条件匹配；在此处覆盖（或提升到 GitHub 存储库变量以供多管道使用）。
         env:
           TEKTON_NS: arc-runners
           PIPELINE_NAME: gh-trigger-demo
           GIT_URL: ${{ github.server_url }}/${{ github.repository }}
           GIT_SHA: ${{ github.sha }}
         run: |
-          # 直接使用 runner 镜像内置的 `tkn` CLI 触发 Pipeline。
-          # `tkn pipeline start` 会创建一个由服务端生成名字的
-          # PipelineRun；`--showlog` 则会持续跟踪日志直到执行结束，
-          # 不再需要单独渲染 manifest、跑 kubectl create，或额外
-          # 再接一个 `tkn pr logs -f`。
+          # 使用捆绑的 `tkn` CLI 启动管道。
+          # `tkn pipeline start` 创建一个 PipelineRun（带有服务器生成的名称）；`--showlog` 跟踪其日志直到运行完成 — 替代清单渲染、kubectl 创建和单独的 `tkn pr logs -f` 步骤。
           tkn pipeline start "${PIPELINE_NAME}" \
             -n "${TEKTON_NS}" \
             -p git-url="${GIT_URL}" \
@@ -1985,46 +1412,22 @@ jobs:
             --showlog
 ```
 
-**期望效果：** `tkn pipeline start` 创建一个引用集群中
-`gh-trigger-demo` Pipeline 的 `PipelineRun`；Tekton 控制器把
-`pipelineRef.name` 解析为当前 Pipeline spec 并执行；`--showlog` 把
-PipelineRun 的日志流式输出到 GitHub Actions 控制台；PipelineRun 跑完
-之后 step 退出码与 PipelineRun 的成功状态一致。**Pipeline 定义留在
-集群里、由您的平台团队维护；workflow 只是个借用 runner 镜像内置 CLI
-的轻量触发器**。
+**预期效果：** `tkn pipeline start` 创建一个引用集群内 `gh-trigger-demo` Pipeline 的 `PipelineRun`；Tekton 控制器解析 `pipelineRef.name` 到当前的 Pipeline spec 并运行它。`--showlog` 将运行的日志尾部返回到 GitHub Actions 控制台；当 PipelineRun 完成时，步骤以 PipelineRun 的成功状态退出。**Pipeline 定义保存在集群中，由您的平台团队拥有；工作流只是使用 runner 镜像捆绑的 CLI 的薄触发器。**
 
-> **Note —— 为什么用 `tkn pipeline start` 而不是 `kubectl create -f`？**
-> runner 镜像内置了 `tkn`；`tkn pipeline start` 一条命令就完成
-> "创建 PipelineRun + 跟踪日志"，不需要渲染 YAML manifest、不需要
-> 处理 `metadata.generateName` 的细节、也不需要再单独跑
-> `tkn pr logs -f`。RBAC 仍以本节上面那份最小 Role 为准：Pipeline 需要
-> read，PipelineRun 需要 create + read，TaskRun / pods 需要 read，
-> pod log 需要 get，因此 Recipe 1 那套自定义 SA 仍然适用。
-> `tkn pipeline start --help` 还提供 `--serviceaccount` /
-> `--workspace` / `--use-param-defaults` 等扩展能力，等您的真实
-> Pipeline 复杂度上来时按需启用。
+> **注意 — 为什么使用 `tkn pipeline start` 而不是 `kubectl create -f`？** runner 镜像捆绑了 `tkn`；`tkn pipeline start` 覆盖整个“创建 PipelineRun + 尾部其日志”的流程，只需一个命令，无需渲染 YAML 清单、处理 `metadata.generateName` 或链接单独的 `tkn pr logs -f`。RBAC 要求仍然是上面列出的最小角色：对 Pipelines 的读取、对 PipelineRuns 的创建 + 读取、对 TaskRuns 和 pods 的读取，以及对 pod 日志的获取，因此食谱 1 的自定义 SA 仍然适用。使用 `tkn pipeline start --help` 发现 `--serviceaccount`、`--workspace`、`--use-param-defaults` 和其他标志，因为您的真实 Pipeline 变得更大。
 
-### Example 3 (进阶): Buildah 无 Docker daemon 构建镜像（仍需 privileged）
+### 示例 3（高级）：Buildah 无根镜像构建（仍然特权）
 
-**何时用：** workflow 要 `buildah build` / `docker build` 类操作；又
-不想启用 DinD（[Recipe 8](#recipe-8-dind-模式在-runner-里跑-docker-build)
-需要 privileged sidecar）。Buildah rootless 在普通 job container 里
-就能跑构建，对集群安全策略更友好。这里的 **rootless** 指 Buildah 进程在
-容器内以非 root 用户身份运行；**不等于** 整个 job pod 就一定不需要额外
-capability / privileged。
+**何时使用：** 工作流需要 `buildah build` / `docker build` 风格的操作，但您不想启用 DinD
+（[食谱 8](#recipe-8-dind-mode-run-docker-build-inside-runner) 需要一个特权侧车）。Buildah 无根模式可以在常规作业容器内构建，更友好于集群安全策略。这里的 **无根** 意味着 Buildah 进程本身作为非根用户在容器内运行；它并不自动意味着整个作业 pod 免于额外的能力 / 特权要求。
 
-**关键挑战：** Buildah 在容器内 rootless 构建时，默认 storage 路径
-需要非 root 用户可写、又不能复用宿主机的 root-owned 路径。把
-`CONTAINERS_STORAGE_CONF` 指到 `/tmp` 下一份自定义配置即可绕过。
+**关键挑战：** Buildah 无根模式在容器内需要一个非根可写存储路径，而不与主机的根拥有默认路径冲突。将 `CONTAINERS_STORAGE_CONF` 重定向到 `/tmp` 可以解决此问题。
 
-**前置：** 在您的 GitHub 仓库 **Settings → Secrets and variables →
-Actions** 里创建两个 repository secret：`REGISTRY_USERNAME` 和
-`REGISTRY_PASSWORD`，值为您平台镜像仓库的登录凭证（用于 push 构建产物）。
+**先决条件：** 在您的 GitHub 存储库中，**设置 → 秘密和变量 → 操作**，创建两个存储库秘密：`REGISTRY_USERNAME` 和 `REGISTRY_PASSWORD` 用于您的平台注册表登录（用于推送构建工件）。
 
-这套示例同样依赖 GHA 的 `container:` 字段，因此**只适用于**
-`kubernetes-novolume`（默认）或 `kubernetes` 模式；`dind` 模式不支持。
+此示例还依赖于 GHA 的 `container:` 字段，因此仅适用于 `kubernetes-novolume`（默认）或 `kubernetes` 模式；`dind` 不支持它。
 
-**完整 workflow**（社区 buildah 镜像 + 通用 secret 名）：
+**完整工作流**（社区 Buildah 镜像 + 通用秘密名称）：
 
 ```yaml
 name: Buildah Rootless Example
@@ -2040,7 +1443,7 @@ jobs:
       env:
         STORAGE_DRIVER: vfs
         BUILDAH_ISOLATION: chroot
-        # 把 buildah storage 重定向到 /tmp（mode 1777，非 root 也能写）
+        # 将 buildah 存储重定向到 /tmp（模式 1777，非根用户可写）
         HOME: /tmp
         CONTAINERS_STORAGE_CONF: /tmp/storage.conf
 
@@ -2077,243 +1480,192 @@ jobs:
             my.registry.example.com/my/repo:${{ github.sha }}
 ```
 
-**关键说明：**
+**注意事项：**
 
-- `options: --privileged`：Buildah rootless 仍需要部分 capability，
-  最简单做法是 privileged。换句话说，**rootless != unprivileged**：
-  进程身份可以是非 root，但 pod 级仍可能需要额外 capability。生产更严格
-  场景可以只授 SYS_ADMIN，但配置复杂。
-- `HOME=/tmp` + `CONTAINERS_STORAGE_CONF=/tmp/storage.conf`：把
-  Buildah 的 storage 路径强制重定向到 `/tmp`（job container 内 `/tmp`
-  是 mode 1777，非 root user 也能写）。
-- `STORAGE_DRIVER=vfs` + `BUILDAH_ISOLATION=chroot`：在容器嵌套场景下
-  最稳的 storage / isolation 组合（性能不是最好，但兼容性最佳）。
-- 上面的 `image: quay.io/buildah/stable:latest`、
-  `docker.io/library/alpine:3.20` 等都是社区路径，**air-gap 集群必须
-  先把这些镜像同步到平台镜像仓库并把 `image:` 字段改成对应内部路径**，
-  否则起不来。
-- `quay.io/buildah/stable:latest` 仅适合 demo 说明，不适合作为长期可复现
-  的文档建议。真正落地时，建议改成您团队已验证并已同步到内网仓库的固定
-  tag（或 digest）。
+- `options: --privileged` — Buildah 无根模式仍然需要一些能力；最简单的路径是特权。换句话说，**无根 != 非特权**：进程身份可以是非根用户，而 pod 仍然需要额外的能力。对于更严格的生产环境，仅授予 SYS_ADMIN，但配置会更复杂。
+- `HOME=/tmp` + `CONTAINERS_STORAGE_CONF=/tmp/storage.conf` — 强制 Buildah 的存储路径为 `/tmp`（在作业容器内为模式 1777，非根用户可写）。
+- `STORAGE_DRIVER=vfs` + `BUILDAH_ISOLATION=chroot` — 嵌套容器场景中最兼容的存储 / 隔离组合（性能不是最佳，但兼容性最高）。
+- 上述 `image: quay.io/buildah/stable:latest`、`docker.io/library/alpine:3.20` 路径是社区路径。**气隙集群必须首先将这些镜像同步到平台注册表，并更新 `image:` 为相应的内部路径**，否则 pods 将无法启动。
+- `quay.io/buildah/stable:latest` 适用于演示，但不作为长期可重复的文档推荐。为了真正采用，请将其切换为您的团队已验证并镜像到内部注册表的固定标签（或摘要）。
 
-> **Warning —— 以下为演示代码，不建议直接用于生产环境。**
-> `--privileged` + `STORAGE_DRIVER=vfs` + `BUILDAH_ISOLATION=chroot`
-> 这套是兼容性最好、最容易跑通的组合，但：
+> **警告 — 仅用于演示；不建议按原样用于生产。** 组合 `--privileged` + `STORAGE_DRIVER=vfs` + `BUILDAH_ISOLATION=chroot` 是最兼容和最容易设置的，但：
 >
-> - 集群启用了 PSA `restricted` / OpenShift SCC `restricted` 之类策略
->   时，`--privileged` 会被准入拒绝，本 workflow 起不来。
-> - `vfs` storage driver 性能差，复杂构建会慢。
-> - 真在 air-gap 内打镜像还要处理 base image 路径替换、registry 凭证
->   注入、缓存等。
+> - 在具有 PSA `restricted` / OpenShift SCC `restricted` 策略的集群上，`--privileged` 会被拒绝，导致此工作流无法启动。
+> - `vfs` 存储驱动速度较慢；复杂构建将很慢。
+> - 气隙镜像构建仍需处理基础镜像路径替换、注册表凭证注入、缓存等。
 >
-> **生产环境推荐路径：** 把镜像构建任务**下放到 ACP 内的 Tekton
-> Pipelines**（用
-> [Example 2](#example-2-触发集群中已存在的-tekton-pipeline)
-> 的模式，从 GitHub workflow 里 `tkn pipeline start` 触发一个内含 Buildah /
-> Kaniko Task 的 PipelineRun）。Tekton 社区的 buildah / kaniko Task
-> 已经把权限边界、缓存、签名这些做得比较成熟，比在 GHA workflow 里
-> 现搭一个 buildah 容器更靠谱。
+> **生产建议：** 将镜像构建任务 **下推到 ACP 的 Tekton Pipelines**（使用 [示例 2](#example-2-trigger-an-in-cluster-tekton-pipeline-from-a-workflow) 模式；从 GitHub 工作流中，`tkn pipeline start` 触发一个包含 Buildah / Kaniko 任务的 PipelineRun）。Tekton 社区的 buildah / kaniko 任务在权限边界、缓存和签名处理方面比临时 Buildah 在 GHA 工作流中更成熟。
 
 ---
 
-## Chapter 6. 故障排查
+## 第六章 故障排除
 
-下面按客户**实际遇到的频次**排序，从最常踩的往下排。
+问题按 **在客户部署中观察到的频率** 排序，最常见的在前。
 
-> **Note：** 本章命令默认使用控制器 namespace `arc-systems` 与
-> Scale-Set namespace `arc-runners`。如果您的实际部署使用自定义
-> namespace，排障时请先做命令替换，再观察现象。
+> **注意：** 本章中的命令假设控制器命名空间为 `arc-systems`，scale-set 命名空间为 `arc-runners`。如果您的部署使用自定义命名空间，请先重写命令，然后比较观察到的行为。
 
-### Issue 1: 安装失败 —— 选的 Install Namespace 在集群上不存在
+### 问题 1：安装失败 — 选择的安装命名空间不存在
 
-**症状：** 在平台 UI 装控制器插件 / Scale-Set 插件，等几秒后插件实例
-没能变成 `Installed`，停在错误状态，详情里报
-`namespaces "<your-ns>" not found`。
+**症状：** 在平台 UI 中，安装控制器插件或 scale-set 插件后，插件实例在几秒钟内未达到 `Installed`；详细页面显示 `namespaces "<your-ns>" not found`。
 
-**原因：** 您在表单 Install Namespace 字段填的命名空间在目标集群上还
-没创建，平台不会替您建。
+**原因：** 安装命名空间表单字段中指定的命名空间在目标集群中不存在，平台不会为您创建它。
 
-**解决：** 先建 namespace 再装。两种方式：
+**解决方案：** 首先创建命名空间，然后安装。有两种方法：
 
 ```shell
-# 方式 1：kubectl
-$ kubectl create ns arc-systems   # 控制器插件用
-$ kubectl create ns arc-runners   # Scale-Set 插件用
+# 选项 1：kubectl
+$ kubectl create ns arc-systems   # 用于控制器插件
+$ kubectl create ns arc-runners   # 用于 scale-set 插件
 ```
 
-或在平台 UI："集群 → 命名空间"页面预先创建。
+或者在平台 UI 上预创建：集群 → 命名空间页面。
 
-> **Note —— 两个插件用各自独立的 namespace。** 默认情况下控制器装在
-> `arc-systems`，Scale-Set 装在 `arc-runners`（这两个值是 ACP 表单的
-> 默认值，不是硬性约束 —— 您的实际部署完全可以用其他名字，比如
-> `arc-controller-prod` / `team-a-runners`）。如果您改了默认名，**请
-> 同步把 Scale-Set 表单的 "Controller Namespace" 字段指向控制器实际
-> 安装到的那个 ns**，否则 Scale-Set 侧对 controller 的引用与授权绑定会
-> 指错对象，listener 无法正常创建或更新。
+> **注意 — 这两个插件位于不同的命名空间。** 默认情况下，控制器安装到 `arc-systems`，scale-set 安装到 `arc-runners`（这些是 ACP 表单默认值，而不是硬性要求 — 您的实际部署可以使用其他名称，例如 `arc-controller-prod` / `team-a-runners`）。如果您更改了默认值，**确保 scale-set 表单的控制器命名空间字段指向控制器的实际安装命名空间**；否则，scale-set 会将其控制器面向的引用 / RBAC 指向错误的主体，导致监听器无法正确创建或更新。
 
-### Issue 2: Listener pod 起不来（Pending 或 CrashLoopBackOff）—— GitHub 凭证问题
+### 问题 2：监听器 pod 无法启动（Pending 或 CrashLoopBackOff） — GitHub 凭证问题
 
-**症状：** `kubectl -n arc-systems get pod` 看 `<scaleset>-...-listener`
-长时间 Pending；或起来了又 CrashLoopBackOff，日志里有 `401`、
-`Bad credentials`、`Could not find any installation`、`PEM` 之类字样。
+**症状：** `kubectl -n arc-systems get pod` 显示 `<scaleset>-...-listener` 长时间处于 Pending 状态，或者它启动并 CrashLoopBackOff，日志中显示 `401`、`Bad credentials`、`Could not find any installation` 或 `PEM` 错误。
 
-**最常见原因：**
+**常见原因：**
 
-| 现象 | 原因 | 解决 |
-|---|---|---|
-| `secret "gha-runner-scale-set-github-config" not found` | Step 1 的 GitHub 凭证 Secret 没建，或建在了错的 namespace | 按 [GitHub 凭证准备](#github-凭证准备) 重新创建；**namespace 必须是 Scale-Set 插件的 Install Namespace**（默认 `arc-runners`） |
-| 首次安装后才补建 Secret，之前一直报 not found / listener 起不来 | 初始凭证缺失，scale-set 启动时拿不到 GitHub 凭证 | 先按 [GitHub 凭证准备](#github-凭证准备) 补建 Secret；通常 Secret 出现后会自动恢复，若几分钟后仍未恢复，再手动删除 listener pod 触发重建 |
-| listener 日志 `401 Unauthorized` 或 `Bad credentials` | GitHub App 的 `app_id` / `installation_id` 写错了 | 到 GitHub UI（**Settings → Developer settings → GitHub Apps → 您的 App**）核对 App ID；点开 "Install App" 页面 URL 后缀的数字是 installation_id |
-| listener 日志 `failed to parse private key` 或类似 PEM 报错 | private key 不是合法 PEM 格式（典型是 `--from-literal` 单行存了，换行被吞） | 用 `--from-file=github_app_private_key=app.pem` 重建 secret |
-| listener 日志 `Could not find any installation` | App 还没装到目标 org / repo 上 | 在 GitHub UI "Install App"，把 App 装到 `githubConfigUrl` 指向的 org / repo |
-| listener 日志 `401 Unauthorized` / `Bad credentials`（PAT 场景） | PAT 已过期、被撤销，或 Secret 里的 token 值写错了 | 重新生成 / 重新注入 PAT；确认 Secret 键名是 `github_token` |
-| 轮换已有 Secret 后 listener 仍报旧凭证 / 继续 `401` | listener 不会热加载已经存在 Secret 的新内容 | 删除 listener pod，让 controller 按新凭据重建 |
-| listener 日志 `403 Forbidden`、`Resource not accessible by personal access token`，或 enterprise 级一直注册失败 | PAT scope / 权限不足；例如 classic PAT 缺 `repo` / `admin:org` / `manage_runners:enterprise`，或把 fine-grained PAT 用到了 enterprise 级 | 按 [权限要求](#权限要求) 重建 PAT；**enterprise 级只支持 Classic PAT + `manage_runners:enterprise`** |
-| 使用 fine-grained PAT 时持续报权限错误，但 token 看起来有效 | token 的 owner / repository selection 没覆盖 `githubConfigUrl` 指向的目标 repo / org | 重新创建 fine-grained PAT，确认资源 owner 与 repository 选择覆盖目标范围；拿不准时先用 classic PAT 交叉验证 |
+| 症状                                                                                                                         | 原因                                                                                                                                                                                             | 解决方案                                                                                                                                                                                         |
+| --------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `secret "gha-runner-scale-set-github-config" not found`                                                                         | 第一步中的 Secret 未创建，或位于错误的命名空间                                                                                                                                | 根据 [GitHub 凭证设置](#github-credential-setup) 重新创建；**命名空间必须是集群插件的安装命名空间**（默认 `arc-runners`）。                                      |
+| Secret 仅在安装后创建，而集群插件在启动时失败并显示 `not found` / 监听器从未启动 | 启动时缺少初始凭证                                                                                                                                       | 根据 [GitHub 凭证设置](#github-credential-setup) 创建 Secret；一旦 Secret 出现，通常会自动恢复，如果没有，删除监听器 Pod 一次以强制重建。 |
+| 监听器日志 `401 Unauthorized` 或 `Bad credentials`                                                                            | GitHub 应用的 `app_id` / `installation_id` 错误                                                                                                                                             | 在 GitHub UI 中验证应用 ID (**设置 → 开发者设置 → GitHub 应用 → 你的应用**)；在“安装应用” → 配置 URL 的尾部数字即为 `installation_id`。                         |
+| 监听器日志 `failed to parse private key` 或类似 PEM 错误                                                                 | 私钥不是有效的 PEM 格式（典型：通过 `--from-literal` 存储在单行中，换行符丢失）                                                                                          | 使用 `--from-file=github_app_private_key=app.pem` 重新创建 Secret。                                                                                                                            |
+| 监听器日志 `Could not find any installation`                                                                                  | 应用尚未安装在目标组织 / 仓库                                                                                                                                             | 在 GitHub UI 中“安装应用”，将应用安装到 `githubConfigUrl` 引用的组织 / 仓库。                                                                                                     |
+| 使用 PAT 时监听器日志 `401 Unauthorized` / `Bad credentials`                                                              | PAT 已过期、被撤销，或 Secret 中的令牌值错误                                                                                                                            | 重新创建 / 重新注入 PAT，并验证 Secret 键为 `github_token`。                                                                                                                          |
+| 监听器持续报告旧凭证 / 在你旋转 Secret 后仍返回 `401`                                     | 监听器未从现有 Secret 热重载更新内容                                                                                                                             | 删除监听器 Pod，以便控制器使用新凭证重新创建它。                                                                                                                    |
+| 监听器日志 `403 Forbidden`、`Resource not accessible by personal access token`，或企业注册持续失败      | PAT 范围 / 权限不足；例如，Classic PAT 缺少 `repo` / `admin:org` / `manage_runners:enterprise`，或在企业级使用了细粒度 PAT | 根据 [权限要求](#permission-requirements) 重新创建 PAT；**企业运行器仅支持 Classic PAT + `manage_runners:enterprise`**。                                           |
+| 尽管令牌看起来有效，但细粒度 PAT 持续出现权限错误                                         | 令牌的所有者 / 仓库选择未覆盖 `githubConfigUrl` 引用的仓库 / 组织                                                                                            | 重新创建细粒度 PAT，并确保其所有者和仓库选择覆盖目标范围；如果不确定，先与 Classic PAT 交叉检查。                                            |
 
-排查命令：
+诊断命令：
 
 ```shell
-# 看 listener 当前状态
+# 当前监听器状态
 $ kubectl -n arc-systems get pod -l app.kubernetes.io/component=runner-scale-set-listener
 
-# 看最近的日志（GitHub 错误一般在 listener 启动时报）
+# 最近日志（GitHub 错误通常在监听器启动时出现）
 $ kubectl -n arc-systems logs -l app.kubernetes.io/component=runner-scale-set-listener --tail=50
 ```
 
-### Issue 3: Workflow stays "Queued" - runner 永远不来
+### 问题 3：工作流保持“排队”，运行器从未到达
 
-**症状：** GitHub UI 上 workflow 一直 `Queued`；listener pod
-Running、日志看起来正常；runner pod 一直没起。
+**症状：** GitHub UI 显示工作流为 `Queued`；监听器 Pod 正在运行且日志正常；没有运行器 Pod 出现。
 
-**原因：** workflow YAML 的 `runs-on:` 没匹配到 scale-set。对本文当前已
-验证的 Alauda 路径，**最稳妥**的写法是使用**单字符串**，直接等于
-Scale-Set 插件里的 `runnerScaleSetName`。
+**原因：** 工作流 YAML 中的 `runs-on:` 与集群插件不匹配。
+对于本文中验证的 Alauda 路径，**最安全**的形式是与集群插件表单中的 `runnerScaleSetName` 相等的 **单字符串**。
 
-**解决：** 简单做法 —— 改成单字符串：
+**解决方案：** 最简单的修复 — 使用单字符串形式：
 
 ```yaml
-# 本文当前已验证、最稳妥：单字符串
-runs-on: my-runners       # 等于 Scale-Set 插件 Runner Scale-Set Name 字段
+# 本文中当前验证的最安全形式：单字符串
+runs-on: my-runners       # 等于集群插件的运行器规模集名称字段
 ```
 
-> **Note：** 上游 chart 支持 `scaleSetLabels` + 数组形式 `runs-on:`，
-> 想让一个 scale-set 同时承接多组 label 时使用；用法、注入方式、
-> install-time-only 约束以及"装完想改 labels 怎么办"见
-> [Workflow 侧：runs-on 数组形式与 scaleSetLabels](#workflow-侧runs-on-数组形式与-scalesetlabels)。
+> **注意：** 上游图表支持 `scaleSetLabels` + 数组形式的 `runs-on:` 以从单个集群插件提供多个标签集；
+> 完整用法、注入方法、仅限安装时的约束，以及“如果我已经安装该怎么办”在
+> [工作流侧：带有 scaleSetLabels 的 runs-on 数组形式](#workflow-side-runs-on-array-form-with-scalesetlabels) 中。
 
-**排查步骤：**
+**诊断步骤：**
 
 ```shell
-# 1. 确认 scale-set 注册名
+# 1. 确认集群插件注册名称
 $ kubectl -n arc-runners get autoscalingrunnerset \
     -o jsonpath='{range .items[*]}{.metadata.name}: {.spec.runnerScaleSetName}{"\n"}{end}'
 
-# 2. workflow 推上去后，listener 日志里应当出现 "Acquired job ..." 字样；
-#    没出现说明 runs-on 没匹配上
+# 2. 推送工作流后，监听器日志应显示“获取作业 ...”；
+#    缺少该信息意味着 runs-on 不匹配
 $ kubectl -n arc-systems logs -l app.kubernetes.io/component=runner-scale-set-listener --tail=20
 ```
 
-> **Note：** 想给不同团队 / 项目分隔 runner 池？看
-> [Chapter 4. 多团队 / 多项目隔离策略](#chapter-4-多团队--多项目隔离策略)。
+> **注意：** 需要每个团队 / 项目单独的运行器池？请参见
+> [第 4 章 多团队 / 多项目隔离](#chapter-4-multi-team--multi-project-isolation)。
 
-### Issue 4: Listener 不出现 / 不可用 —— controller 引用不一致或节点资源不够
+### 问题 4：监听器缺失 / 不可用 — 控制器引用不匹配或节点资源不足
 
-**症状：** listener 没有正常可用；要么根本没出现，要么 pod 一直 Pending
-（不是 GitHub 凭证问题，那种归 Issue 2）。
+**症状：** 监听器未变为可用；要么它从未出现，要么 Pod 保持 Pending（而不是问题 2 中的 GitHub 凭证问题）。
 
-| 原因 | 常见表现 | 解决 |
-|---|---|---|
-| Scale-Set 表单里的 **Controller Namespace** / **Controller ServiceAccount Name** 与控制器插件不一致 | listener 可能根本不出现，或 controller 日志 / 事件里出现权限、reconcile 相关错误。这里的 `arc-gha-rs-controller` 是 Scale-Set 给 controller 绑定权限时引用的 subject，不是 listener pod 自己挂载的 SA | 改回控制器插件实际使用的 namespace / SA（默认 `arc-systems` / `arc-gha-rs-controller`） |
-| 节点资源不够 | listener pod 已创建但 Pending；`kubectl describe pod` 里有 `0/N nodes are available: insufficient cpu/memory` | 加节点 / 减少 listener resources / 检查全局 nodeSelector 没把它锁到没资源的节点 |
+| 原因                                                                                                               | 通常看到的内容                                                                                                                                                                                                                           | 解决方案                                                                                                 |
+| ------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| 集群插件表单的 **控制器命名空间** / **控制器服务帐户名称** 与控制器插件不匹配 | 监听器可能从未出现，或控制器日志 / 事件显示 RBAC 或协调失败。此处 `arc-gha-rs-controller` 是集群插件控制器面向绑定引用的主题，而不是监听器 Pod 本身挂载的 SA | 恢复控制器插件的实际命名空间 / SA（默认值：`arc-systems` / `arc-gha-rs-controller`）  |
+| 节点资源不足                                                                                         | 监听器 Pod 存在但保持 Pending；`kubectl describe pod` 显示 `0/N nodes are available: insufficient cpu/memory`                                                                                                                     | 添加节点 / 减少监听器资源 / 验证全局 nodeSelector 未将其固定到资源不足的节点。 |
 
-### Issue 5: Runner pod ImagePullBackOff / ContainerCreating 不动
+### 问题 5：运行器 Pod ImagePullBackOff 或卡在 ContainerCreating
 
-**症状：** workflow 触发了，runner pod 起来后卡 `ContainerCreating` 或
-`ImagePullBackOff`。
+**症状：** 工作流触发，运行器 Pod 出现，然后保持在 `ContainerCreating` 或 `ImagePullBackOff`。
 
-**常见原因 + 解决：**
+**常见原因和解决方案：**
 
-- **改了 ARC 镜像 override 但没把目标镜像同步到平台镜像仓库：** 检查
-  [Recipe 9](#recipe-9-覆盖-arc-镜像自定义版本--替换镜像源) 写的
-  `repository` 路径是否真的能在 ACP 平台镜像仓库里 pull 到。**默认
-  安装包内含匹配镜像，原则上不需要做 override。**
-- **PVC 没就绪**（kubernetes 模式）：检查 Recipe 7 写的
-  `storageClassName` 是否存在且能动态 provisioning。
-- **私有 registry imagePullSecrets：** 默认
-  `global.registry.imagePullSecrets` 已由平台注入；如果是从您自己的
-  私有 registry 拉镜像，runner 侧请优先沿用平台注入的
-  `global.registry.imagePullSecrets`，或通过自定义 SA 间接挂载。
-  `template.spec.imagePullSecrets` 不是本文推荐的诊断路径，详见
-  [已知限制](#已知限制) 中关于 `imagePullSecrets` 的说明。
+- **覆盖了 ARC 镜像但未将目标镜像同步到平台注册表。** 验证在
+  [食谱 9](#recipe-9-override-arc-images-custom-version--private-registry)
+  中写入的 `repository` 实际上可以从 ACP 平台注册表中拉取。**默认安装包包含匹配的镜像，因此原则上不需要覆盖。**
+- **PVC 未准备好**（Kubernetes 模式）：验证来自
+  食谱 7 的 `storageClassName` 存在并支持动态供给。
+- **私有注册表 imagePullSecrets：** 默认的
+  `global.registry.imagePullSecrets` 是平台注入的。如果从您自己的私有注册表拉取，建议使用平台注入的
+  `global.registry.imagePullSecrets` 或通过自定义 SA 间接附加凭证。`template.spec.imagePullSecrets` 不是本文推荐的诊断路径；请参见
+  [已知限制](#known-limitations) 下的 `imagePullSecrets` 条目。
 
-### Issue 6: 改了表单但集群没反应
+### 问题 6：表单更改未传播
 
-**症状：** 在平台 UI 改了 Extra Chart Values（或其他字段），保存后集群
-上的 ARS / Deployment / Pod 没更新。
+**症状：** 您在平台 UI 上编辑了额外的图表值（或其他字段）；保存后，集群的 ARS / 部署 / Pod 未更新。
 
-**最常见原因：** Extra Chart Values 里写了一个表单已经渲染过的顶层
-key，导致 helm 解析失败。例子：
+**最常见原因：** ECV 包含一个顶级键，该表单已经呈现，破坏了图表的 Helm 解析。示例：
 
 ```yaml
-# ❌ 错误：flags 是控制器表单已渲染的顶层 key
+# ❌ 错误：`flags` 是控制器表单呈现的顶级键
 flags:
   watchSingleNamespace: my-team-namespace
 ```
 
 ```yaml
-# ❌ 错误：global 是表单已渲染的顶层 key（要覆盖 global.images.* 请改用 EGV，见 Recipe 9）
+# ❌ 错误：`global` 是表单呈现的（通过 EGV 覆盖 global.images.* 而不是 — 请参见食谱 9）
 global:
   images:
     runnerExtension:
       repository: x/y
 ```
 
-**解决：**
+**解决方案：**
 
-- **先看插件实例状态：** 在平台 UI（**Marketplace → Cluster Plugins**）
-  找该插件实例。如果没变成 `Installed`，详情里会有类似
-  `yaml: unmarshal errors: mapping key "<key>" already defined` 的
-  错误。
-- **改 Extra Global Values（不是 Extra Chart Values）覆盖 `global.*`：**
-  写 `images:` 顶层（每行 2 空格起始）替代 `global.images.*`。详见
-  [Recipe 9](#recipe-9-覆盖-arc-镜像自定义版本--替换镜像源)。
-- **不要在 Extra Chart Values 里写下列顶层 key**（已被表单渲染）：
-  - 控制器：`flags`、`metrics`、`namespaceOverride`、`replicaCount`、
-    `global`。
-  - Scale-Set：`namespaceOverride`、`global`、`githubConfigUrl`、
-    `githubConfigSecret`、`runnerScaleSetName`、`minRunners`、
-    `maxRunners`、`controllerServiceAccount`。
-  - `containerMode` 是**条件式**：表单 Container Mode **非空时**，不要在
-    ECV 再写 `containerMode:`；只有当表单刻意**留空**、需要在 ECV 里
-    完整接管该块时，才应该写 `containerMode:`。详见
-    [Container Mode 怎么选](#container-mode-怎么选)。
+- **检查插件实例状态。** 在平台 UI
+  (**Marketplace → Cluster Plugins**)，找到插件实例。如果它不是 `Installed`，详细信息页面将显示类似
+  `yaml: unmarshal errors: mapping key "<key>" already defined` 的错误。
+- **使用额外的全局值（而不是额外的图表值）覆盖 `global.*`。** 在顶级写 `images:`（每行缩进 2 个空格），而不是 `global.images.*` — 请参见
+  [食谱 9](#recipe-9-override-arc-images-custom-version--private-registry)。
+- **不要在 ECV 中写入以下顶级键**（已经表单呈现）：
+  - 控制器插件：`flags`、`metrics`、`namespaceOverride`、
+    `replicaCount`、`global`。
+  - 集群插件：`namespaceOverride`、`global`、`githubConfigUrl`、
+    `githubConfigSecret`、`runnerScaleSetName`、`minRunners`、`maxRunners`、
+    `controllerServiceAccount`。
+  - `containerMode` 是 **条件性的**：当表单的容器模式字段为 **非空** 时，不要在 ECV 中再次写 `containerMode:`；仅在您故意将表单字段留空并完全接管该块时写 `containerMode:`。请参见
+    [容器模式选择](#container-mode-selection)。
 
-#### 已知问题：切回默认 runner SA 后，默认 kube-mode RBAC 资源卡在 `Terminating`
+#### 已知问题：切换回默认运行器 SA 后，默认 kube-mode RBAC 对象仍然卡在 `Terminating`
 
-**适用范围：** 当前基线版本，在 `kubernetes` / `kubernetes-novolume`
-模式下，**先**按 [Recipe 1](#recipe-1-runner-pod-用自定义-serviceaccount跑-in-cluster-任务)
-把 `template.spec.serviceAccountName` 指到自定义 SA，**后**又把这个字段清空
-或切回默认路径。
+**适用范围：** 当前基线版本，在 `kubernetes` /
+`kubernetes-novolume` 模式下，当您首次根据
+[食谱 1](#recipe-1-custom-serviceaccount-for-in-cluster-jobs) 将
+`template.spec.serviceAccountName` 指向自定义 SA，然后稍后清除该字段或切换回默认路径时。
 
 **症状：**
 
-- 后续走默认 SA 的 workflow 异常：GitHub job 卡在
-  "Initialize containers"，日志里有 `HTTP-Code: 401 Unauthorized`；
-- 或 runner pod 里明明带了 `kubectl`，但 `kubectl auth can-i ...`
-  直接返回 `error`；
-- `kubectl get sa,role,rolebinding -n arc-runners` 能看到默认的
-  `<scaleset>-gha-rs-kube-mode` 资源，但其中一个或多个对象带
-  `metadata.deletionTimestamp`，一直不消失。
+- 后续工作流使用默认 SA 时，在 `container:` 作业初始化期间失败，显示 `HTTP-Code: 401 Unauthorized`；
+- 或者运行器 Pod 仍包含 `kubectl`，但
+  `kubectl auth can-i ...` 直接返回 `error`；
+- 或者 `kubectl get sa,role,rolebinding -n arc-runners` 仍显示默认的 `<scaleset>-gha-rs-kube-mode` 对象，但其中一个或多个仍然带有 `metadata.deletionTimestamp`。
 
-**确认命令：**
+**如何确认：**
 
 ```shell
 $ kubectl -n arc-runners get sa,role,rolebinding \
     <runner-scale-set-name>-gha-rs-kube-mode -o yaml
 ```
 
-如果输出里仍能看到：
+如果输出仍包含：
 
 ```yaml
 metadata:
@@ -2322,20 +1674,16 @@ metadata:
     - actions.github.com/cleanup-protection
 ```
 
-说明您已经命中这个已知问题。
+您遇到了这个已知问题。
 
-**Workaround：**
+**解决方法：**
 
-1. **优先规避：** 如果这组 runner 长期需要访问集群 API，建议固定使用一份
-   自定义 runner SA，不要在默认 SA 与自定义 SA 之间频繁来回切换。
-2. **切回默认 SA 后做一次验收：** 在 ACP UI 里
-   **Marketplace → Cluster Plugins → 该 Scale-Set 插件 → Update**，
-   保存一次无害变更触发 reconcile（例如临时把 `Maximum Runners` `+1`
-   保存，再改回原值保存一次），然后重新检查上面 3 个默认 kube-mode
-   资源是否都已重建且**不带** `deletionTimestamp`。
-3. **如果已经卡住：** 先手工清掉 3 个默认 kube-mode 资源上的
-   `actions.github.com/cleanup-protection` finalizer，再按上一步做一次
-   Update / reconcile，让平台重建默认 SA / Role / RoleBinding。例如：
+1. **尽量避免状态转换：** 如果该运行器池需要长期的集群内访问，保持一个专用的自定义运行器 SA，而不是在默认 SA 和自定义 SA 之间来回切换。
+2. **切换回默认 SA 后验证一次：** 在 ACP UI 中，
+   **Marketplace → Cluster Plugins → 该集群插件 → 更新**，
+   保存一个无害的更改以触发协调（例如暂时将 `最大运行器` 增加 1，保存，然后再改回并再次保存），然后验证三个默认 kube-mode 资源已被重新创建且不再携带 `deletionTimestamp`。
+3. **如果它们已经卡住：** 首先从三个默认 kube-mode 资源中清除
+   `actions.github.com/cleanup-protection` 最终器，然后触发上述协调，以便平台重新创建默认 SA / 角色 / 角色绑定。例如：
 
 ```shell
 $ kubectl -n arc-runners patch sa <runner-scale-set-name>-gha-rs-kube-mode \
@@ -2346,111 +1694,87 @@ $ kubectl -n arc-runners patch rolebinding <runner-scale-set-name>-gha-rs-kube-m
     --type=merge -p '{"metadata":{"finalizers":[]}}'
 ```
 
-这是当前版本与上游 cleanup/finalizer 问题同类的已知限制，不代表
-`template.spec.serviceAccountName` 这条能力本身不支持；它的主效果
-（runner pod 改用自定义 SA 并按该 SA 的 RBAC 鉴权）仍然是生效的。
+这是与当前清理/最终器问题相关的已知限制。它并不意味着
+`template.spec.serviceAccountName` 本身不受支持；主要行为仍按预期工作：运行器 Pod 切换到自定义 SA 并根据该 SA 的 RBAC 授权。
 
 ---
 
-## Chapter 7. 卸载
+## 第 7 章 卸载
 
-### 卸载前必须确认
+### 卸载前检查清单
 
-下手前，确认：
+在运行以下任何步骤之前，请确认以下内容：
 
-- GitHub 端 workflow 都已停跑（卸载时正在跑的 workflow 会失败）。
-- 没有其他业务依赖 `arc-runners` namespace 里的 PVC / ConfigMap /
-  Secret。
-- GitHub 端对应的 runner 注册（**Settings → Actions → Runners**）
-  已记好，卸载后如果 controller 侧自动清理没走通，需要您手工去删除
-  （详见下方 Step 1 的 Note）。
+- GitHub 侧的所有工作流已停止（在卸载期间，正在进行的工作流将失败）。
+- 没有业务工作负载依赖于 `arc-runners` 中的 PVC / ConfigMap / Secret 资源。
+- GitHub 侧的相应运行器注册信息 (**设置 → 操作 → 运行器**) 已记录；您需要在卸载后删除它们（仅当控制器侧清理未自动删除它们时 — 请参见第 1 步下的说明）。
 
-### Step 1: 卸载 Scale-Set 插件
+### 第 1 步：卸载集群插件
 
-在平台 UI 上：**Marketplace → Cluster Plugins**，找到 Scale-Set 插件
-实例 → ⋮ → **Uninstall**。
+在平台 UI 中，**Marketplace → Cluster Plugins**，找到集群插件实例，点击 ⋮ → **卸载**。
 
-> **Note：** 如果您的控制器 / Scale-Set 不是装在默认的
-> `arc-systems` / `arc-runners`，本节后续所有 `kubectl -n ...` 与
-> `kubectl delete namespace ...` 命令都要同步替换成您的实际 namespace。
-> 卸载命令是 destructive 操作，不建议直接照抄默认值。
+> **注意：** 如果您的控制器 / 集群插件未安装在默认的
+> `arc-systems` / `arc-runners` 命名空间中，请在下面的每个 `kubectl -n ...` 和 `kubectl delete namespace ...` 命令中用您的实际部署命名空间替换这些命名空间值。这些是破坏性命令；请勿盲目复制默认值。
 
-等 `arc-runners`（默认 Install Namespace）下的 pod 清理完：
+等待 `arc-runners`（默认安装命名空间）中的 Pods 被清理：
 
 ```shell
 $ kubectl -n arc-runners get autoscalingrunnerset
-# 期望：no resources found
+# 预期：未找到资源
 
 $ kubectl -n arc-runners get pod
-# 期望：no resources found（或仅剩您自己其他非 ARC 的 workload）
+# 预期：未找到资源（或仅您的非 ARC 工作负载）
 ```
 
-> **Note：** 在当前 ARC 版本里，**正常**卸载 Scale-Set 插件时，controller
-> 会在 `AutoscalingRunnerSet` finalizer 阶段调用 GitHub API 删除对应的
-> runner scale set 注册条目，因此**通常不需要**您再到 GitHub UI 手工删。
-> 只有在这条清理链路没走通时（例如控制器先被卸掉、GitHub 凭证失效、或
-> finalizer 阶段报错卡住），才需要到 GitHub 上 **Settings → Actions →
-> Runners** 手工检查并删除残留条目。注意这里的 scale set 条目与 GitHub 的
-> "runner group"（runner 访问控制分组）不是同一个概念。
+> **注意：** 在当前 ARC 版本中，**正常**的集群插件卸载会导致控制器在 `AutoscalingRunnerSet` 完成时从 GitHub 删除相应的运行器集，因此 **手动 GitHub UI 清理通常是不必要的**。您只需检查并删除 **设置 → 操作 → 运行器** 中的剩余条目，当该清理路径未完成时（例如，控制器首先被删除，GitHub 凭证已损坏，或完成失败且资源被卡住）。此集群插件条目与 GitHub 的“运行器组”（运行器访问控制分组）不同。
 
-### Step 2: 卸载控制器插件
+### 第 2 步：卸载控制器插件
 
-> **Warning —— 必须先卸载所有 Scale-Set 插件实例。** 控制器卸载时若
-> 还有 scale-set 存在，listener pod 会进入 reconcile 循环，控制器的
-> CRD 也可能残留 finalizer。
+> **警告 — 首先卸载集群插件。** 在集群插件仍存在的情况下卸载控制器，监听器 Pod 进入协调循环，控制器的 CRD 可能会留下残余的最终器。
 
-Marketplace → Cluster Plugins，找到控制器插件 → ⋮ → **Uninstall**。
+Marketplace → Cluster Plugins，找到控制器插件，点击 ⋮ →
+**卸载**。
 
-确认控制器资源已经删除：
+验证控制器资源是否已消失：
 
 ```shell
 $ kubectl -n arc-systems get pod
-# 期望：no resources found
+# 预期：未找到资源
 
 $ kubectl get crd | grep actions.github.com
-# 期望：empty（4 个 ARC CRD 由控制器插件移除）
+# 预期：空（四个 ARC CRD 被控制器插件删除）
 ```
 
-### Step 3: 清理残留资源
+### 第 3 步：清理残余资源
 
-部分资源不会被插件卸载自动删，需要手动清理：
+某些资源不会被插件卸载删除，需要手动清理：
 
 ```shell
-# GitHub 凭证 Secret（插件不会删用户创建的 Secret）
+# GitHub 凭证 Secret（插件不会删除用户创建的 Secrets）
 $ kubectl -n arc-runners delete secret gha-runner-scale-set-github-config
 
-# Recipe 1 自定义的 SA / Role / RoleBinding
+# 来自食谱 1 的任何自定义 SA / 角色 / 角色绑定
 $ kubectl -n arc-runners delete sa my-runner-sa
 $ kubectl -n arc-runners delete rolebinding my-runner-sa-binding
 $ kubectl -n arc-runners delete role my-runner-sa-role
 
-# Recipe 6 自定义的 PVC / ConfigMap
+# 来自食谱 6 的任何自定义 PVC / ConfigMap
 $ kubectl -n arc-runners delete pvc maven-cache-pvc
 $ kubectl -n arc-runners delete configmap extra-ca-bundle
 
-# namespace（确认无残留 pod 后）
+# 命名空间（在确认没有残余 Pods 后）
 $ kubectl delete namespace arc-runners arc-systems
 ```
 
-> **Warning：** 上面的删除命令按默认 namespace 展示。若您实际部署用了
-> 自定义 namespace，请逐条替换后再执行，尤其不要在未核对的情况下直接
-> 删除默认 `arc-runners` / `arc-systems`。
+> **警告：** 上述删除命令使用默认命名空间进行说明。如果您的部署使用自定义命名空间，请在执行之前逐行替换它们，尤其是在删除 `arc-runners` /
+> `arc-systems` 之前。
 
 ---
 
 ## 已知限制
 
-- **控制器单 namespace 监听不可配。** 上游 chart 的
-  `flags.watchSingleNamespace` 字段当前不可通过 Extra Chart Values
-  设置（`flags` 顶层 key 已被表单渲染）。如有强需求，请联系平台支持
-  团队。
-- **本文对 runner 私有镜像拉取的主推荐路径是平台注入的
-  `global.registry.imagePullSecrets`，或通过 ServiceAccount 间接挂
-  `imagePullSecrets`。** 上游 chart 会把
-  `template.spec.imagePullSecrets` 透传到 runner pod spec，但本文没有把它
-  单列为插件化安装路径的主验证矩阵；若您想走这条路径，建议直接检查渲染后
-  的 ARS / runner pod spec，并在目标集群上完成一次实际拉镜像验证。下面
-  给出更稳妥、也更便于平台统一治理的 SA 挂载方式：
+- **控制器单命名空间监视不可配置。** 上游图表的 `flags.watchSingleNamespace` 目前无法通过额外图表值设置（`flags` 顶级键是表单呈现的）。如有需要，请联系平台支持团队。
+- **本文推荐的运行器侧私有镜像拉取的主要路径是平台注入的 `global.registry.imagePullSecrets`，或通过服务帐户间接附加 `imagePullSecrets`。** 上游图表确实将 `template.spec.imagePullSecrets` 传递到运行器 Pod 规格，但本文不将其视为单独验证的插件安装矩阵。如果您希望依赖该路径，请先检查渲染的 ARS / 运行器 Pod 规格，并在目标集群上验证实际镜像拉取。基于 SA 的路径通常更容易一致管理：
 
   ```shell
   $ kubectl create secret docker-registry my-private-registry \
@@ -2462,63 +1786,50 @@ $ kubectl delete namespace arc-runners arc-systems
       -p '{"imagePullSecrets":[{"name":"my-private-registry"}]}'
   ```
 
-  然后参考 [Recipe 1](#recipe-1-runner-pod-用自定义-serviceaccount跑-in-cluster-任务)
-  把 `template.spec.serviceAccountName: runner-puller` 配进去。Listener
-  侧 imagePullSecrets 不受此限制，可以直接在 Extra Chart Values 写
+  然后参考 [食谱 1](#recipe-1-custom-serviceaccount-for-in-cluster-jobs)
+  设置 `template.spec.serviceAccountName: runner-puller`。监听器侧的 imagePullSecrets 不受此限制，可以通过额外图表值直接写为
   `listenerTemplate.spec.imagePullSecrets`。
-- **Scale-Set 集群插件入口只支持一个默认实例。** 通过 ACP 集群插件
-  入口在同一集群上装第二份会被拒绝；如需在同集群上跑多组互相隔离的
-  runner，可通过 ACP 平台的 **Catalog → Helm Chart** 多装几份上游
-  `gha-runner-scale-set` chart 实例 —— 详见
-  [Chapter 4 Method 3](#method-3-通过-helm-chart-直接部署多实例特殊诉求)。
+- **集群插件条目仅支持每个集群一个默认实例。** 通过 ACP 集群插件条目在同一集群上安装第二个实例将被拒绝。要在同一集群上运行多个隔离的运行器池，请通过平台的
+  **Catalog → Helm Chart** 条目安装上游 `gha-runner-scale-set` 图表的额外副本 — 请参见
+  [第 4 章 方法 3](#method-3-direct-helm-chart-deployment-special-needs)。
 
 ---
 
-## Appendix: 全量 chart values 参考
+## 附录：完整图表值参考
 
-> **Tip —— 这是参考资料，不是必读。** 如果您只是想直接照着 Recipe 改
-> 配置，可以跳过本节，直接到 [Step 2: 验证配置真的生效](#step-2-验证配置真的生效)
-> 或下面的 [Recipe 1](#recipe-1-runner-pod-用自定义-serviceaccount跑-in-cluster-任务)。
-> 本节把两个插件的上游 chart values（`gha-runner-scale-set-0.14.1`）完整
-> 内嵌（带原文注释），方便您在写 ECV / EGV 时不离开本文档就能查到所有
-> 字段的语义与 default。
+> **提示 — 这是参考材料，而不是必读内容。** 如果您
+> 只想遵循食谱并调整配置，请跳过此部分，直接跳转到
+> [第 2 步：验证配置更改已生效](#step-2-verifying-a-config-change-took-effect)
+> 或下面的 [食谱 1](#recipe-1-custom-serviceaccount-for-in-cluster-jobs)。此部分内联了两个插件（`gha-runner-scale-set-0.14.1`，保留注释）的完整上游图表值，以便您在编写 ECV / EGV 时查找字段语义和默认值，而无需离开文档。
 
-ARC 由两个独立的 Cluster Plugin 组成 —— **控制器插件**和 **Scale-Set
-插件**，两者各自有自己的 chart 与 values schema。Alauda overlay 对它们
-的 default 调整也不一样，最显眼的差异在 `global.images.*`：控制器插件
-只有 `images.controller`，Scale-Set 插件有 `images.runnerExtension`，
-DinD 用户还会额外配置 `images.dind`。下面按插件分别给出。
+ARC 作为两个独立的集群插件发布 — **控制器插件**
+和 **集群插件** — 每个插件都有自己的图表及其值架构。Alauda 覆盖以不同的方式调整它们的默认值；
+最明显的是，`global.images.*` 在每个插件中不同（控制器插件仅包含 `images.controller`，而集群插件包含 `images.runnerExtension` 和 `images.dind`，供 DinD 用户使用）。
+这两个插件在下面分别记录。
 
-每个插件都按两层组织 values：
+对于每个插件，值以两个层次呈现：
 
-- **Alauda overlay** —— Alauda Cluster Plugin 新增的字段（最关键的是
-  `global:` 整块，承载平台镜像仓库 rewrite + pull-secret 注入），以及
-  Alauda 改了 default 的字段。
-- **上游 chart** —— ARC 上游发布、未经修改的 `gha-runner-scale-set-
-  controller` / `gha-runner-scale-set` chart。当前 Alauda 插件对应上游
-  `gha-runner-scale-set-0.14.1` 这个 release，下方链接与内嵌的 values
-  都 pin 在该 tag。任何未在 Alauda overlay 显式列出的字段，default 都
-  与上游一致 —— 把上游 values 当作 default 与字段语义的权威来源。
+- **Alauda 覆盖** — Alauda 集群插件添加的字段（最显著的是携带平台注册表重写 +
+  拉取密钥注入的 `global:` 块）或其设置的与上游不同的默认值。
+- **上游图表** — ARC 发布的未修改的 `gha-runner-scale-set-controller`
+  / `gha-runner-scale-set` 图表。当前 Alauda 插件发布上游 `gha-runner-scale-set-0.14.1` 版本；下面的链接和内联值固定在该标签。将此层视为每个可配置字段及其默认值的权威参考 — 任何未在上述 Alauda 覆盖中明确列出的内容都保持上游默认值。
 
-先读 Alauda 层了解平台已经替您处理掉哪些事；写 ECV / EGV 覆盖表单未
-暴露的字段时，再去查上游层。下方折叠块里的 YAML 注释**保持英文**，与
-源 chart 注释一致，便于您把片段直接对照原文。
+首先阅读 Alauda 层以了解已实施的特定平台行为；在需要为表单未公开的字段编写 ECV / EGV 覆盖时，请查阅上游层。
 
 ### 控制器插件
 
 <details>
-<summary>Alauda overlay —— 控制器插件独有的新增 / default 改动（点击展开）</summary>
+<summary>Alauda 覆盖 — 控制器特定的附加项 / 默认覆盖（点击展开）</summary>
 
-下面的 `global:` 块是最显眼的 Alauda 新增字段 —— 上游 chart 顶层
-**没有** `global:`，是 Alauda Cluster Plugin 在装机时自动注入的，让
-控制器的镜像拉取走平台仓库：
+下面的 `global:` 块是最明显的 Alauda 添加 — 它
+**不是** 上游图表的一部分，Alauda 集群插件在安装时填充它，因此每个控制器镜像拉取都通过平台注册表解析：
 
 ```yaml
-# Provided by the Alauda Cluster Plugin; not present in the upstream chart.
+# 由 Alauda 集群插件提供；不在上游图表中。
 global:
   registry:
-    address: registry.alauda.cn:60070   # platform-injected on ACP install
-    imagePullSecrets: []                # platform-managed; do not write directly
+    address: registry.alauda.cn:60070   # 在 ACP 安装时平台注入
+    imagePullSecrets: []                # 平台管理；请勿直接写入
   labelBaseDomain: alauda.io
   images:
     controller:
@@ -2526,35 +1837,34 @@ global:
       tag: "latest"
 ```
 
-此外，Alauda overlay 还把以下上游字段改了 default（字段名与上游一致，
-仅 default 不同）：
+此外，以下上游字段在此插件中以 Alauda 调整的默认值提供（字段名称与上游匹配 — 仅默认值不同）：
 
-- `resources` / `podSecurityContext` / `securityContext` —— 调整为 PSS
-  `restricted` 兼容值，按 ACP 控制面节点尺寸预设。
-- `flags.logFormat: "json"`（上游默认 `text`）。
+- `resources` / `podSecurityContext` / `securityContext` — 设置为与 PSS-`restricted` 兼容的值，适用于默认 ACP 控制平面节点的大小。
+- `flags.logFormat: "json"`（上游默认值为 `text`）。
 
 </details>
 
 <details>
-<summary>上游 chart values —— gha-runner-scale-set-0.14.1（点击展开）</summary>
+<summary>上游图表值 — gha-runner-scale-set-0.14.1（点击展开）</summary>
 
-源文件：[`charts/gha-runner-scale-set-controller/values.yaml` @ `gha-runner-scale-set-0.14.1`](https://github.com/actions/actions-runner-controller/blob/gha-runner-scale-set-0.14.1/charts/gha-runner-scale-set-controller/values.yaml)。下方为该文件原样转载，注释保留，免得您再跳到 GitHub。
+来源：[ `charts/gha-runner-scale-set-controller/values.yaml` @ `gha-runner-scale-set-0.14.1`](https://github.com/actions/actions-runner-controller/blob/gha-runner-scale-set-0.14.1/charts/gha-runner-scale-set-controller/values.yaml)。
+完整文件逐字复制，保留上游注释，以便您无需离开文档即可阅读。
 
 ```yaml
-# Default values for gha-runner-scale-set-controller.
-# This is a YAML-formatted file.
-# Declare variables to be passed into your templates.
+# gha-runner-scale-set-controller 的默认值。
+# 这是一个 YAML 格式的文件。
+# 声明要传递到模板中的变量。
 labels: {}
 
-# leaderElection will be enabled when replicaCount>1,
-# So, only one replica will in charge of reconciliation at a given time
-# leaderElectionId will be set to {{ define gha-runner-scale-set-controller.fullname }}.
+# 当 replicaCount>1 时，将启用 leaderElection，
+# 因此，在给定时间内，只有一个副本负责协调
+# leaderElectionId 将设置为 {{ define gha-runner-scale-set-controller.fullname }}。
 replicaCount: 1
 
 image:
   repository: "ghcr.io/actions/gha-runner-scale-set-controller"
   pullPolicy: IfNotPresent
-  # Overrides the image tag whose default is the chart appVersion.
+  # 覆盖默认的图表应用版本的镜像标签。
   tag: ""
 
 imagePullSecrets: []
@@ -2562,7 +1872,7 @@ nameOverride: ""
 fullnameOverride: ""
 
 env:
-## Define environment variables for the controller pod
+## 为控制器 Pod 定义环境变量
 #  - name: "ENV_VAR_NAME_1"
 #    value: "ENV_VAR_VALUE_1"
 #  - name: "ENV_VAR_NAME_2"
@@ -2573,13 +1883,13 @@ env:
 #        optional: true
 
 serviceAccount:
-  # Specifies whether a service account should be created for running the controller pod
+  # 指定是否应为运行控制器 Pod 创建服务帐户
   create: true
-  # Annotations to add to the service account
+  # 要添加到服务帐户的注释
   annotations: {}
-  # The name of the service account to use.
-  # If not set and create is true, a name is generated using the fullname template
-  # You can not use the default service account for this.
+  # 要使用的服务帐户名称。
+  # 如果未设置且创建为 true，则使用 fullname 模板生成名称
+  # 您不能使用默认服务帐户。
   name: ""
 
 podAnnotations: {}
@@ -2598,10 +1908,8 @@ securityContext: {}
 # runAsUser: 1000
 
 resources: {}
-## We usually recommend not to specify default resources and to leave this as a conscious
-## choice for the user. This also increases chances charts run on environments with little
-## resources, such as Minikube. If you do want to specify resources, uncomment the following
-## lines, adjust them as necessary, and remove the curly braces after 'resources:'.
+## 我们通常建议不要指定默认资源，而是将其留给用户做出有意识的选择。
+## 这也增加了图表在资源较少的环境（如 Minikube）上运行的机会。如果您确实想指定资源，请取消注释以下行，按需调整，并在 'resources:' 后删除大括号。
 # limits:
 #   cpu: 100m
 #   memory: 128Mi
@@ -2617,157 +1925,147 @@ affinity: {}
 
 topologySpreadConstraints: []
 
-# Mount volumes in the container.
+# 在容器中挂载卷。
 volumes: []
 volumeMounts: []
 
-# Leverage a PriorityClass to ensure your pods survive resource shortages
-# ref: https://kubernetes.io/docs/concepts/configuration/pod-priority-preemption/
+# 利用优先级类确保您的 Pods 在资源短缺时存活
+# 参考：https://kubernetes.io/docs/concepts/configuration/pod-priority-preemption/
 # PriorityClass: system-cluster-critical
 priorityClassName: ""
 
-## If `metrics:` object is not provided, or commented out, the following flags
-## will be applied the controller-manager and listener pods with empty values:
-## `--metrics-addr`, `--listener-metrics-addr`, `--listener-metrics-endpoint`.
-## This will disable metrics.
+## 如果未提供 `metrics:` 对象，或将其注释掉，则以下标志
+## 将应用于控制器管理器和监听器 Pods，值为空：
+## `--metrics-addr`、`--listener-metrics-addr`、`--listener-metrics-endpoint`。
+## 这将禁用指标。
 ##
-## To enable metrics, uncomment the following lines.
+## 要启用指标，请取消注释以下行。
 # metrics:
 #   controllerManagerAddr: ":8080"
 #   listenerAddr: ":8080"
 #   listenerEndpoint: "/metrics"
 
 flags:
-  ## Log level can be set here with one of the following values: "debug", "info", "warn", "error".
-  ## Defaults to "debug".
+  ## 日志级别可以在此处设置为以下值之一：“debug”、“info”、“warn”、“error”。
+  ## 默认值为“debug”。
   logLevel: "debug"
-  ## Log format can be set with one of the following values: "text", "json"
-  ## Defaults to "text"
+  ## 日志格式可以设置为以下值之一：“text”、“json”
+  ## 默认值为“text”
   logFormat: "text"
 
-  ## Restricts the controller to only watch resources in the desired namespace.
-  ## Defaults to watch all namespaces when unset.
+  ## 限制控制器仅监视所需命名空间中的资源。
+  ## 默认情况下，未设置时监视所有命名空间。
   # watchSingleNamespace: ""
 
-  ## The maximum number of concurrent reconciles which can be run by the EphemeralRunner controller.
-  # Increase this value to improve the throughput of the controller.
-  # It may also increase the load on the API server and the external service (e.g. GitHub API).
+  ## 可由临时运行器控制器运行的最大并发协调数。
+  # 增加此值以提高控制器的吞吐量。
+  # 这也可能增加 API 服务器和外部服务（例如 GitHub API）的负载。
   runnerMaxConcurrentReconciles: 2
 
-  ## Defines how the controller should handle upgrades while having running jobs.
+  ## 定义控制器在运行作业时如何处理升级。
   ##
-  ## The strategies available are:
-  ## - "immediate": (default) The controller will immediately apply the change causing the
-  ##   recreation of the listener and ephemeral runner set. This can lead to an
-  ##   overprovisioning of runners, if there are pending / running jobs. This should not
-  ##   be a problem at a small scale, but it could lead to a significant increase of
-  ##   resources if you have a lot of jobs running concurrently.
+  ## 可用的策略有：
+  ## - "immediate"：（默认）控制器将立即应用更改，导致
+  ##   重新创建监听器和临时运行器集。如果有待处理/正在运行的作业，这可能会导致运行器的过度配置。这在小规模下通常不是问题，但如果您有大量作业并发运行，可能会导致资源显著增加。
   ##
-  ## - "eventual": The controller will remove the listener and ephemeral runner set
-  ##   immediately, but will not recreate them (to apply changes) until all
-  ##   pending / running jobs have completed.
-  ##   This can lead to a longer time to apply the change but it will ensure
-  ##   that you don't have any overprovisioning of runners.
+  ## - "eventual"：控制器将立即删除监听器和临时运行器集，
+  ##   但在所有待处理/正在运行的作业完成之前不会重新创建它们（以应用更改）。
+  ##   这可能导致应用更改的时间更长，但将确保
+  ##   您不会有任何运行器的过度配置。
   updateStrategy: "immediate"
 
-  ## Defines a list of prefixes that should not be propagated to internal resources.
-  ## This is useful when you have labels that are used for internal purposes and should not be propagated to internal resources.
-  ## See https://github.com/actions/actions-runner-controller/issues/3533 for more information.
+  ## 定义应不传播到内部资源的前缀列表。
+  ## 当您有用于内部目的的标签且不应传播到内部资源时，这很有用。
+  ## 有关更多信息，请参见 https://github.com/actions/actions-runner-controller/issues/3533。
   ##
-  ## By default, all labels are propagated to internal resources
-  ## Labels that match prefix specified in the list are excluded from propagation.
+  ## 默认情况下，所有标签都传播到内部资源
+  ## 匹配列表中指定的前缀的标签将被排除在传播之外。
   # excludeLabelPropagationPrefixes:
   #   - "argocd.argoproj.io/instance"
 
-# Overrides the default `.Release.Namespace` for all resources in this chart.
+# 覆盖此图表中所有资源的默认 `.Release.Namespace`。
 namespaceOverride: ""
 
-## Defines the K8s client rate limiter parameters.
+## 定义 K8s 客户端速率限制器参数。
   # k8sClientRateLimiterQPS: 20
   # k8sClientRateLimiterBurst: 30
 ```
 
 </details>
 
-### Scale-Set 插件
+### 集群插件
 
 <details>
-<summary>Alauda overlay —— Scale-Set 插件独有的新增 / default 改动（点击展开）</summary>
+<summary>Alauda 覆盖 — 集群特定的附加项 / 默认覆盖（点击展开）</summary>
 
-下面的 `global:` 块是最显眼的 Alauda 新增字段 —— 上游 chart 顶层
-**没有** `global:`，是 Alauda Cluster Plugin 在装机时自动注入的，让
-runner / runner-extension 的镜像拉取走平台仓库：
+下面的 `global:` 块是最明显的 Alauda 添加 — 它
+**不是** 上游图表的一部分，Alauda 集群插件在安装时填充它，因此每个运行器 / 运行器扩展镜像拉取都通过平台注册表解析：
 
 ```yaml
-# Provided by the Alauda Cluster Plugin; not present in the upstream chart.
+# 由 Alauda 集群插件提供；不在上游图表中。
 global:
   registry:
-    address: registry.alauda.cn:60070   # platform-injected on ACP install
-    imagePullSecrets: []                # platform-managed; do not write directly
+    address: registry.alauda.cn:60070   # 在 ACP 安装时平台注入
+    imagePullSecrets: []                # 平台管理；请勿直接写入
   labelBaseDomain: alauda.io
   images:
     runnerExtension:
       repository: devops/actions/gha-runner-scale-set-runner-extension
       tag: "latest"
-    # `dind` image is intentionally NOT pre-declared — DinD mode is
-    # opt-in and the upstream Docker CVE surface is best kept off the
-    # Alauda patch backlog. Customers using DinD must mirror an upstream
-    # image and override `global.images.dind.{repository,tag}` themselves.
+    # `dind` 镜像故意未预先声明 — DinD 模式是
+    # 自愿的，上游 Docker CVE 表面最好保持关闭
+    # Alauda 补丁积压。使用 DinD 的客户必须镜像上游
+    # 镜像并自行覆盖 `global.images.dind.{repository,tag}`。
 ```
 
-此外，Alauda overlay 还把以下上游字段改了 default（字段名与上游一致，
-仅 default 不同）：
+此外，以下上游字段在此插件中以 Alauda 调整的默认值提供（字段名称与上游匹配 — 仅默认值不同）：
 
-- `githubConfigUrl` —— 写成显式占位符，让安装时缺值立即失败而不是
-  渲染出空 URL。
-- `githubConfigSecret: gha-runner-scale-set-github-config` —— 表单要求
-  的默认 Secret 名。
+- `githubConfigUrl` — 设置为明显无效的占位符，以便安装快速失败，而不是渲染为空 URL。
+- `githubConfigSecret: gha-runner-scale-set-github-config` — 表单期望的默认 Secret 名称。
 - `containerMode.type: kubernetes-novolume`。
-- `template.spec.containers[0]` —— 预填平台 runner 镜像 +
-  `command: ["/home/runner/run.sh"]` +
+- `template.spec.containers[0]` — 预填充平台运行器镜像 + `command: ["/home/runner/run.sh"]` +
   `ACTIONS_RUNNER_REQUIRE_JOB_CONTAINER=false`。
 - `minRunners: 0` / `maxRunners: 5`。
-- `controllerServiceAccount` —— 写死指向 `arc-systems` /
+- `controllerServiceAccount` — 固定为 `arc-systems` /
   `arc-gha-rs-controller`。
 
 </details>
 
 <details>
-<summary>上游 chart values —— gha-runner-scale-set-0.14.1（点击展开）</summary>
+<summary>上游图表值 — gha-runner-scale-set-0.14.1（点击展开）</summary>
 
-源文件：[`charts/gha-runner-scale-set/values.yaml` @ `gha-runner-scale-set-0.14.1`](https://github.com/actions/actions-runner-controller/blob/gha-runner-scale-set-0.14.1/charts/gha-runner-scale-set/values.yaml)。下方为该文件原样转载，注释保留，免得您再跳到 GitHub。
+来源：[ `charts/gha-runner-scale-set/values.yaml` @ `gha-runner-scale-set-0.14.1`](https://github.com/actions/actions-runner-controller/blob/gha-runner-scale-set-0.14.1/charts/gha-runner-scale-set/values.yaml)。
+完整文件逐字复制，保留上游注释，以便您无需离开文档即可阅读。
 
-> **Warning：** 下方内容按上游 `values.yaml` 原样转载，其中 pre-defined
-> GitHub App Secret 的示例命令有一处已知瑕疵：它把
-> `github_app_private_key` 示例写成了
-> `-----BEGIN CERTIFICATE-----...`。实际使用时这里必须是 GitHub App
-> private key 的 PEM 内容，而不是 certificate。执行请以正文的
-> [Method 1：GitHub App 方式（推荐）](#method-1github-app-方式推荐)
-> 为准。
+> **警告：** 以下摘录逐字复制自上游
+> `values.yaml`，包括预定义的 GitHub 应用 Secret 示例中的一个已知缺陷。显示 `github_app_private_key='-----BEGIN
+> CERTIFICATE-----...'` 的示例行对于实际使用是不正确的：此值必须是
+> GitHub 应用私钥 PEM，而不是证书。请使用
+> [方法 1：GitHub 应用（推荐）](#method-1-github-app-recommended) 中的可执行程序。
 
 ```yaml
-## githubConfigUrl is the GitHub url for where you want to configure runners
-## ex: https://github.com/myorg/myrepo or https://github.com/myorg or https://github.com/enterprises/myenterprise
+## githubConfigUrl 是您希望配置运行器的 GitHub URL
+## 例如：https://github.com/myorg/myrepo 或 https://github.com/myorg 或 https://github.com/enterprises/myenterprise
 githubConfigUrl: ""
 
 scaleSetLabels: []
 
-## githubConfigSecret is the k8s secret information to use when authenticating via the GitHub API.
-## You can choose to supply:
-##   A) a PAT token,
-##   B) a GitHub App, or
-##   C) a pre-defined secret.
-## The syntax for each of these variations is documented below.
-## (Variation A) When using a PAT token, the syntax is as follows:
+## githubConfigSecret 是在通过 GitHub API 进行身份验证时使用的 k8s secret 信息。
+## 您可以选择提供：
+##   A) PAT 令牌，
+##   B) GitHub 应用，或
+##   C) 预定义的 secret。
+## 每种变体的语法在下面记录。
+## （变体 A）使用 PAT 令牌时，语法如下：
 githubConfigSecret:
-  # Example:
+  # 示例：
   # github_token: "ghp_sampleSampleSampleSampleSampleSample"
   github_token: ""
 #
-## (Variation B) When using a GitHub App, the syntax is as follows:
+## （变体 B）使用 GitHub 应用时，语法如下：
 # githubConfigSecret:
-#   # NOTE: IDs MUST be strings, use quotes
-#   # The github_app_id can be an app_id or the client_id
+#   # 注意：ID 必须是字符串，请使用引号
+#   # github_app_id 可以是 app_id 或 client_id
 #   github_app_id: ""
 #   github_app_installation_id: ""
 #   github_app_private_key: |
@@ -2778,58 +2076,51 @@ githubConfigSecret:
 #      .
 #      private key line N
 #
-## (Variation C) When using a pre-defined secret.
-## The secret can be pulled either directly from Kubernetes, or from the vault, depending on configuration.
-## Kubernetes secret in the same namespace that the gha-runner-scale-set is going to deploy.
-## On the other hand, if the vault is configured, secret name will be used to fetch the app configuration.
-## The syntax is as follows:
+## （变体 C）使用预定义的 secret。
+## Secret 可以直接从 Kubernetes 中提取，或根据配置从保管库中提取。
+## Kubernetes secret 在 gha-runner-scale-set 将要部署的相同命名空间中。
+## 另一方面，如果配置了保管库，将使用 secret 名称来获取应用配置。
+## 语法如下：
 # githubConfigSecret: pre-defined-secret
-## Notes on using pre-defined Kubernetes secrets:
-##   You need to make sure your predefined secret has all the required secret data set properly.
-##   For a pre-defined secret using GitHub PAT, the secret needs to be created like this:
+## 使用预定义 Kubernetes secrets 的注意事项：
+##   您需要确保您的预定义 secret 正确设置了所有必需的 secret 数据。
+##   对于使用 GitHub PAT 的预定义 secret，secret 需要这样创建：
 ##   > kubectl create secret generic pre-defined-secret --namespace=my_namespace --from-literal=github_token='ghp_your_pat'
-##   For a pre-defined secret using GitHub App, the secret needs to be created like this:
+##   对于使用 GitHub 应用的预定义 secret，secret 需要这样创建：
 ##   > kubectl create secret generic pre-defined-secret --namespace=my_namespace --from-literal=github_app_id=123456 --from-literal=github_app_installation_id=654321 --from-literal=github_app_private_key='-----BEGIN CERTIFICATE-----*******'
 
-## proxy can be used to define proxy settings that will be used by the
-## controller, the listener and the runner of this scale set.
+## proxy 可用于定义控制器、监听器和此集群的运行器的代理设置。
 #
 # proxy:
 #   http:
 #     url: http://proxy.com:1234
-#     credentialSecretRef: proxy-auth # a secret with `username` and `password` keys
+#     credentialSecretRef: proxy-auth # 一个包含 `username` 和 `password` 键的 secret
 #   https:
 #     url: http://proxy.com:1234
-#     credentialSecretRef: proxy-auth # a secret with `username` and `password` keys
+#     credentialSecretRef: proxy-auth # 一个包含 `username` 和 `password` 键的 secret
 #   noProxy:
 #     - example.com
 #     - example.org
 
-## maxRunners is the max number of runners the autoscaling runner set will scale up to.
+## maxRunners 是自动缩放运行器集将扩展到的最大运行器数量。
 # maxRunners: 5
 
-## minRunners is the min number of idle runners. The target number of runners created will be
-## calculated as a sum of minRunners and the number of jobs assigned to the scale set.
+## minRunners 是空闲运行器的最小数量。创建的目标运行器数量将计算为 minRunners 和分配给集群的作业数量之和。
 # minRunners: 0
 
 # runnerGroup: "default"
 
-## name of the runner scale set to create.  Defaults to the helm release name
+## 要创建的运行器规模集的名称。默认为图表发布名称
 # runnerScaleSetName: ""
 
-## A self-signed CA certificate for communication with the GitHub server can be
-## provided using a config map key selector. If `runnerMountPath` is set, for
-## each runner pod ARC will:
-## - create a `github-server-tls-cert` volume containing the certificate
-##   specified in `certificateFrom`
-## - mount that volume on path `runnerMountPath`/{certificate name}
-## - set NODE_EXTRA_CA_CERTS environment variable to that same path
-## - set RUNNER_UPDATE_CA_CERTS environment variable to "1" (as of version
-##   2.303.0 this will instruct the runner to reload certificates on the host)
+## 可以使用配置映射键选择器提供与 GitHub 服务器通信的自签名 CA 证书。如果设置了 `runnerMountPath`，对于每个运行器 Pod ARC 将：
+## - 创建一个包含在 `certificateFrom` 中指定的证书的 `github-server-tls-cert` 卷
+## - 在路径 `runnerMountPath`/{证书名称} 上挂载该卷
+## - 将 NODE_EXTRA_CA_CERTS 环境变量设置为相同的路径
+## - 将 RUNNER_UPDATE_CA_CERTS 环境变量设置为 "1"（自版本 2.303.0 起，这将指示运行器重新加载主机上的证书）
 ##
-## If any of the above had already been set by the user in the runner pod
-## template, ARC will observe those and not overwrite them.
-## Example configuration:
+## 如果用户在运行器 Pod 模板中已经设置了上述任何内容，ARC 将观察这些内容并不会覆盖它们。
+## 示例配置：
 #
 # githubServerTLS:
 #   certificateFrom:
@@ -2839,9 +2130,9 @@ githubConfigSecret:
 #   runnerMountPath: /usr/local/share/ca-certificates/
 
 # keyVault:
-  # Available values: "azure_key_vault"
+  # 可用值：“azure_key_vault”
   # type: ""
-  # Configuration related to azure key vault
+  # 与 azure key vault 相关的配置
   # azure_key_vault:
   #   url: ""
   #   client_id: ""
@@ -2850,26 +2141,22 @@ githubConfigSecret:
     # proxy:
     #   http:
     #     url: http://proxy.com:1234
-    #     credentialSecretRef: proxy-auth # a secret with `username` and `password` keys
+    #     credentialSecretRef: proxy-auth # 一个包含 `username` 和 `password` 键的 secret
     #   https:
     #     url: http://proxy.com:1234
-    #     credentialSecretRef: proxy-auth # a secret with `username` and `password` keys
+    #     credentialSecretRef: proxy-auth # 一个包含 `username` 和 `password` 键的 secret
     #   noProxy:
     #     - example.com
     #     - example.org
 
-## Container mode is an object that provides out-of-box configuration
-## for dind and kubernetes mode. Template will be modified as documented under the
-## template object.
-##
-## If any customization is required for dind or kubernetes mode, containerMode should remain
-## empty, and configuration should be applied to the template.
+## 容器模式是一个对象，为 dind 和 kubernetes 模式提供开箱即用的配置。
+## 如果需要对 dind 或 kubernetes 模式进行任何自定义，containerMode 应保持为空，并应将配置应用于模板。
 # containerMode:
-#   type: "dind"  ## type can be set to "dind", "kubernetes", or "kubernetes-novolume"
-#   ## the following is required when containerMode.type=kubernetes
+#   type: "dind"  ## 类型可以设置为 "dind"、"kubernetes" 或 "kubernetes-novolume"
+#   ## 当 containerMode.type=kubernetes 时，以下是必需的
 #   kubernetesModeWorkVolumeClaim:
 #     accessModes: ["ReadWriteOnce"]
-#     # For local testing, use https://github.com/openebs/dynamic-localpv-provisioner/blob/develop/docs/quickstart.md to provide dynamic provision volume with storageClassName: openebs-hostpath
+#     # 对于本地测试，请使用 https://github.com/openebs/dynamic-localpv-provisioner/blob/develop/docs/quickstart.md 提供具有 storageClassName: openebs-hostpath 的动态供给卷
 #     storageClassName: "dynamic-blob-storage"
 #     resources:
 #       requests:
@@ -2877,30 +2164,29 @@ githubConfigSecret:
 #   kubernetesModeAdditionalRoleRules: []
 #
 
-## listenerTemplate is the PodSpec for each listener Pod
-## For reference: https://kubernetes.io/docs/reference/kubernetes-api/workload-resources/pod-v1/#PodSpec
+## listenerTemplate 是每个监听器 Pod 的 PodSpec
+## 参考：https://kubernetes.io/docs/reference/kubernetes-api/workload-resources/pod-v1/#PodSpec
 # listenerTemplate:
 #   spec:
 #     containers:
-#     # Use this section to append additional configuration to the listener container.
-#     # If you change the name of the container, the configuration will not be applied to the listener,
-#     # and it will be treated as a side-car container.
+#     # 使用此部分将其他配置附加到监听器容器。
+#     # 如果您更改容器的名称，则配置将不会应用于监听器，
+#     # 它将被视为侧车容器。
 #     - name: listener
 #       securityContext:
 #         runAsUser: 1000
-#     # Use this section to add the configuration of a side-car container.
-#     # Comment it out or remove it if you don't need it.
-#     # Spec for this container will be applied as is without any modifications.
+#     # 使用此部分添加侧车容器的配置。
+#     # 如果您不需要它，请将其注释掉或删除。
+#     # 此容器的规范将按原样应用，而无需任何修改。
 #     - name: side-car
 #       image: example-sidecar
 
-## listenerMetrics are configurable metrics applied to the listener.
-## In order to avoid helm merging these fields, we left the metrics commented out.
-## When configuring metrics, please uncomment the listenerMetrics object below.
-## You can modify the configuration to remove the label or specify custom buckets for histogram.
+## listenerMetrics 是应用于监听器的可配置指标。
+## 为了避免 helm 合并这些字段，我们将指标注释掉。
+## 配置指标时，请取消注释下面的 listenerMetrics 对象。
+## 您可以修改配置以删除标签或为直方图指定自定义桶。
 ##
-## If the buckets field is not specified, the default buckets will be applied. Default buckets are
-## provided here for documentation purposes
+## 如果未指定桶字段，将应用默认桶。默认桶在此处提供以供文档参考
 # listenerMetrics:
 #   counters:
 #     gha_started_jobs_total:
@@ -3050,11 +2336,11 @@ githubConfigSecret:
 #           3600.0,
 #         ]
 
-## template is the PodSpec for each runner Pod
-## For reference: https://kubernetes.io/docs/reference/kubernetes-api/workload-resources/pod-v1/#PodSpec
+## template 是每个运行器 Pod 的 PodSpec
+## 参考：https://kubernetes.io/docs/reference/kubernetes-api/workload-resources/pod-v1/#PodSpec
 template:
-  ## template.spec will be modified if you change the container mode
-  ## with containerMode.type=dind, we will populate the template.spec with following pod spec
+  ## template.spec 将在您更改容器模式时修改
+  ## 当 containerMode.type=dind 时，我们将填充 template.spec 以包含以下 Pod 规格
   ## template:
   ##   spec:
   ##     initContainers:
@@ -3113,7 +2399,7 @@ template:
   ##     - name: dind-externals
   ##       emptyDir: {}
   ######################################################################################################
-  ## with containerMode.type=kubernetes, we will populate the template.spec with following pod spec
+  ## 当 containerMode.type=kubernetes 时，我们将填充 template.spec 以包含以下 Pod 规格
   ## template:
   ##   spec:
   ##     containers:
@@ -3143,7 +2429,7 @@ template:
   ##                 requests:
   ##                   storage: 1Gi
   ######################################################################################################
-  ## with containerMode.type=kubernetes-novolume, we will populate the template.spec with following pod spec
+  ## 当 containerMode.type=kubernetes-novolume 时，我们将填充 template.spec 以包含以下 Pod 规格
   ## template:
   ##   spec:
   ##     containers:
@@ -3158,7 +2444,7 @@ template:
   ##             fieldRef:
   ##               fieldPath: metadata.name
   ##         - name: ACTIONS_RUNNER_IMAGE
-  ##           value: ghcr.io/actions/actions-runner:latest # should match the runnerimage
+  ##           value: ghcr.io/actions/actions-runner:latest # 应与运行器镜像匹配
   ##         - name: ACTIONS_RUNNER_REQUIRE_JOB_CONTAINER
   ##           value: "true"
   spec:
@@ -3166,37 +2452,37 @@ template:
       - name: runner
         image: ghcr.io/actions/actions-runner:latest
         command: ["/home/runner/run.sh"]
-## Optional controller service account that needs to have required Role and RoleBinding
-## to operate this gha-runner-scale-set installation.
-## The helm chart will try to find the controller deployment and its service account at installation time.
-## In case the helm chart can't find the right service account, you can explicitly pass in the following value
-## to help it finish RoleBinding with the right service account.
-## Note: if your controller is installed to only watch a single namespace, you have to pass these values explicitly.
+## 需要具有所需角色和角色绑定的可选控制器服务帐户
+## 以操作此 gha-runner-scale-set 安装。
+## Helm 图表将在安装时尝试查找控制器部署及其服务帐户。
+## 如果 Helm 图表无法找到正确的服务帐户，您可以显式传递以下值
+## 以帮助它完成与正确服务帐户的角色绑定。
+## 注意：如果您的控制器仅安装为监视单个命名空间，则必须显式传递这些值。
 # controllerServiceAccount:
 #   namespace: arc-system
 #   name: test-arc-gha-runner-scale-set-controller
 
-# Overrides the default `.Release.Namespace` for all resources in this chart.
+# 覆盖此图表中所有资源的默认 `.Release.Namespace`。
 namespaceOverride: ""
 
-## Optional annotations and labels applied to all resources created by helm installation
+## 在 Helm 安装创建的所有资源上应用的可选注释和标签
 ##
-## Annotations applied to all resources created by this helm chart. Annotations will not override the default ones, so make sure
-## the custom annotation is not reserved.
+## 应用于此 Helm 图表创建的所有资源的注释。注释不会覆盖默认注释，因此请确保
+## 自定义注释未被保留。
 # annotations:
 #   key: value
 ##
-## Labels applied to all resources created by this helm chart. Labels will not override the default ones, so make sure
-## the custom label is not reserved.
+## 应用于此 Helm 图表创建的所有资源的标签。标签不会覆盖默认标签，因此请确保
+## 自定义标签未被保留。
 # labels:
 #   key: value
 
-## If you want more fine-grained control over annotations applied to particular resource created by this chart,
-## you can use `resourceMeta`.
-## Order of applying labels and annotations is:
-## 1. Apply labels/annotations globally, using `annotations` and `labels` field
-## 2. Apply `resourceMeta` labels/annotations
-## 3. Apply reserved labels/annotations
+## 如果您希望对此图表创建的特定资源应用的注释进行更细粒度的控制，
+## 您可以使用 `resourceMeta`。
+## 应用标签和注释的顺序是：
+## 1. 使用 `annotations` 和 `labels` 字段全局应用标签/注释
+## 2. 应用 `resourceMeta` 标签/注释
+## 3. 应用保留的标签/注释
 # resourceMeta:
 #   autoscalingRunnerSet:
 #     labels:
@@ -3284,16 +2570,13 @@ namespaceOverride: ""
 
 ---
 
-## 参考资料
+## 参考文献
 
-- [Alauda Container Platform 文档](https://docs.alauda.io/) —— 平台 UI 通用操作。
-- [Creating a GitHub App](https://docs.github.com/en/apps/creating-github-apps) —— GitHub App 创建步骤。
-- [GitHub Actions Runner Controller (upstream)](https://github.com/actions/actions-runner-controller) —— 上游项目，含完整 chart values 文档。
-- [Self-hosted runner concepts](https://docs.github.com/en/actions/hosting-your-own-runners/managing-self-hosted-runners-with-actions-runner-controller/about-actions-runner-controller) —— GitHub 官方对 ARC scale-set 模式的概念介绍。
-- [Communicating with self-hosted runners](https://docs.github.com/en/enterprise-cloud@latest/actions/reference/runners/self-hosted-runners) —— GitHub 官方 self-hosted runner 连通性要求，含 `github.com`、`api.github.com`、`*.actions.githubusercontent.com` 等域名范围（[系统要求](#系统要求) 段引用）。
-- [Authenticate to the GitHub API (ARC)](https://docs.github.com/en/enterprise-cloud@latest/actions/how-tos/manage-runners/use-actions-runner-controller/authenticate-to-the-api) —— GitHub 官方 PAT scope 与 fine-grained 权限矩阵的权威来源（[权限要求](#权限要求)、
-  [Method 2：PAT](#method-2pat-personal-access-token-方式) 段引用）。
-- [Managing access to self-hosted runners using groups](https://docs.github.com/en/enterprise-cloud@latest/actions/how-tos/manage-runners/self-hosted-runners/manage-access) —— GitHub 官方对 runner groups、`Selected repositories`、`Selected workflows`、enterprise `Selected organizations` 的说明（[Chapter 4](#chapter-4-多团队--多项目隔离策略) 段引用）。
-- [Use ARC in a workflow](https://docs.github.com/en/actions/how-tos/manage-runners/use-actions-runner-controller/use-arc-in-a-workflow) —— GitHub 官方对 `runs-on:` 字符串与数组形式、`scaleSetLabels` 的说明（[Workflow 侧：runs-on 要求](#workflow-侧runs-on-要求)、
-  [Workflow 侧：runs-on 数组形式与 scaleSetLabels](#workflow-侧runs-on-数组形式与-scalesetlabels)、
-  [Issue 3](#issue-3-workflow-stays-queued---runner-永远不来) 段引用）。
+- [Alauda 容器平台文档](https://docs.alauda.io/) — 一般平台 UI 操作。
+- [创建 GitHub 应用](https://docs.github.com/en/apps/creating-github-apps) — GitHub 应用创建步骤。
+- [GitHub Actions Runner Controller（上游）](https://github.com/actions/actions-runner-controller) — 上游项目，包括完整的图表值文档。
+- [自托管运行器概念](https://docs.github.com/en/actions/hosting-your-own-runners/managing-self-hosted-runners-with-actions-runner-controller/about-actions-runner-controller) — GitHub 官方对 ARC 集群模式的概念介绍。
+- [与自托管运行器通信](https://docs.github.com/en/enterprise-cloud@latest/actions/reference/runners/self-hosted-runners) — GitHub 官方自托管运行器的网络通信要求，包括 `github.com`、`api.github.com` 和 `*.actions.githubusercontent.com`（[系统要求](#system-requirements) 引用）。
+- [对 GitHub API 进行身份验证（ARC）](https://docs.github.com/en/enterprise-cloud@latest/actions/how-tos/manage-runners/use-actions-runner-controller/authenticate-to-the-api) — PAT 范围和细粒度权限矩阵的规范来源；引用自 [权限要求](#permission-requirements) 和 [方法 2：PAT](#method-2-personal-access-token)。
+- [使用组管理对自托管运行器的访问](https://docs.github.com/en/enterprise-cloud@latest/actions/how-tos/manage-runners/self-hosted-runners/manage-access) — GitHub 官方关于运行器组、`Selected repositories`、`Selected workflows` 和企业 `Selected organizations` 的指导（[第 4 章](#chapter-4-multi-team--multi-project-isolation) 引用）。
+- [在工作流中使用 ARC](https://docs.github.com/en/actions/how-tos/manage-runners/use-actions-runner-controller/use-arc-in-a-workflow) — 关于 `runs-on:` 字符串与数组形式及 `scaleSetLabels` 的官方指导；引用自 [工作流侧：runs-on 要求](#workflow-side-runs-on-requirements)、[工作流侧：带有 scaleSetLabels 的 runs-on 数组形式](#workflow-side-runs-on-array-form-with-scalesetlabels) 和 [问题 3](#issue-3-workflow-stays-queued-runner-never-arrives)。
