@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# NetworkPolicies are not recreated after migrating Service Mesh v2 to v3
 ## Issue
 
 When migrating the platform's Service Mesh from v2 to v3, the auto-managed `NetworkPolicy` resources that v2 wrote into mesh-member namespaces are removed and not recreated:
