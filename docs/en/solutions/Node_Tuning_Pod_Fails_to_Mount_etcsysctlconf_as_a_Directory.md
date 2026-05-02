@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Node Tuning Pod Fails to Mount /etc/sysctl.conf as a Directory
 ## Issue
 
 After migrating sysctl management away from per-node configuration objects (which previously declared `/etc/sysctl.conf` through the platform's node-configuration surface) toward the cluster node-tuning operator, the Tuned DaemonSet pod on at least one node refuses to start. The container runtime emits an event of the form:
