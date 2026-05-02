@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Blacklisting a kernel module on cluster nodes via MachineConfiguration
 ## Issue
 
 A specific kernel module shipped by the host image needs to stay unloaded on every cluster worker. Common reasons:
