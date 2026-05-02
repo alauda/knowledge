@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Operator install fails with BundleLookupFailed and DeadlineExceeded
 ## Issue
 
 When OLM tries to install or upgrade an operator, the InstallPlan stays stuck and the operator never reconciles. The InstallPlan status shows the bundle-unpack job never finished:
