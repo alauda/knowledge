@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Storage migration wizard creates a MigPlan with every PVC in the namespace before the user submits
 ## Issue
 
 On ACP Virtualization, opening the **Migration > Storage** wizard in the web console creates a `MigPlan` Custom Resource immediately — before the user fills in any fields or clicks **Create**. The mig-controller reconciles the empty-shaped plan by sweeping in every `PersistentVolumeClaim` in the target namespace.
