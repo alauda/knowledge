@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Trunking Multiple Tagged VLANs to a VM NIC over a Single Bridge
 ## Issue
 
 A virtual machine — typically a virtual appliance such as a load balancer or firewall — must terminate **multiple** tagged VLANs on a single NIC, the way a physical appliance plugged into a tagged trunk port would. The default Bridge CNI `NetworkAttachmentDefinition` (NAD) only attaches the VM NIC to one VLAN at a time: setting `vlan: 120` carries that one tag, and the VM cannot see frames tagged for other VLANs.
