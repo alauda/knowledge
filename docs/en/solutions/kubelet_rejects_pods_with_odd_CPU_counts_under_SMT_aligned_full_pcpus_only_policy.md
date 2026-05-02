@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# kubelet rejects pods with odd CPU counts under SMT-aligned full-pcpus-only policy
 ## Issue
 
 A pod with a `Guaranteed` QoS class (`requests` equal to `limits` on integer CPU) requesting an odd number of CPUs is repeatedly admitted by the scheduler and immediately rejected by the kubelet on the chosen node. The pod's events / logs carry:
