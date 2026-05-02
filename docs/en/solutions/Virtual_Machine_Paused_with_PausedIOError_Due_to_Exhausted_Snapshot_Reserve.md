@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Virtual Machine Paused with PausedIOError Due to Exhausted Snapshot Reserve
 ## Issue
 
 A virtual machine running on the platform's KubeVirt-based virtualization stack unexpectedly pauses and does not resume immediately. The VM may eventually recover on its own after a delay, but the symptom repeats.
