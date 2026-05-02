@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Migration Plan NetworkMap Fails When the NAD Lives in a Different Namespace
 ## Issue
 
 A VM migration plan authored through the virtualization migration toolkit fails to become ready. The `Plan` carries a critical condition `NetworkMapNotReady`, and the companion `NetworkMap` object itself reports that the destination `NetworkAttachmentDefinition` (NAD) cannot be found — despite the NAD existing on the cluster and being the intended destination network:
