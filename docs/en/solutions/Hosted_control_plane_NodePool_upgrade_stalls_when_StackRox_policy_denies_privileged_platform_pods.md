@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Hosted control plane NodePool upgrade stalls when StackRox policy denies privileged platform pods
 ## Issue
 
 A hosted-control-plane (HCP) cluster is asked to upgrade its NodePool to a
