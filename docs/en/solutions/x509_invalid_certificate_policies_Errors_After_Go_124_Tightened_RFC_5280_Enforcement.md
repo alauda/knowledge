@@ -6,6 +6,9 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# x509: invalid certificate policies Errors After Go 1.24 Tightened RFC 5280 Enforcement
+
 ## Issue
 
 A cluster component that establishes TLS connections to an external endpoint starts failing to parse the server's certificate after a platform upgrade:

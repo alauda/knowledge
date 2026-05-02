@@ -6,6 +6,9 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Node NotReady with "PLEG is not healthy"
+
 ## Issue
 
 One or more cluster nodes flap into `NotReady` and the kubelet status logs report errors similar to:
