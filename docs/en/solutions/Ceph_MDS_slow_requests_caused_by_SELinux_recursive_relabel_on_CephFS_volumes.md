@@ -6,6 +6,9 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Ceph MDS slow requests caused by SELinux recursive relabel on CephFS volumes
+
 ## Issue
 
 Pods that mount a CephFS PersistentVolume take a very long time to become Ready, and the MDS in the ACP Ceph storage stack records `slow request` warnings for `setxattr` on `security.selinux`. Representative entries from the MDS:

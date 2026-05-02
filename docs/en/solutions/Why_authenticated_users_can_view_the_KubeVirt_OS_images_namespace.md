@@ -6,6 +6,9 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Why authenticated users can view the KubeVirt OS-images namespace
+
 ## Overview
 
 A standard rule of multi-tenant clusters is that namespaces are isolated by default — an authenticated user without explicit permission cannot list resources in a namespace they do not own. KubeVirt-based virtualization stacks intentionally break that rule for one specific namespace: the namespace that holds the curated OS boot-source images (the DataVolumes / DataSources / PVCs cloned to back new VMs).

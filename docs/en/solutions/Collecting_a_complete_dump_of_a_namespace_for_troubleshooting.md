@@ -7,6 +7,9 @@ ProductsVersion:
    - 4.1.0,4.2.x
 id: KB260500002
 ---
+
+# Collecting a complete dump of a namespace for troubleshooting
+
 ## Issue
 
 When a workload in a single namespace misbehaves, support engineers usually need a snapshot of every resource in that namespace plus all container logs, packaged in one file. The cluster-wide diagnostic bundle (`inspection` collector, `kubectl cluster-info dump`) is too coarse — it overwhelms the responder with platform internals — and `kubectl get -A` is too narrow because it loses non-namespaced context (events, RBAC bindings, storage). The need is for a per-namespace dump that captures resource manifests, recent events, and previous + current container logs in one transferable archive.

@@ -6,6 +6,9 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Deploy a Throwaway SMTP Sink to Test Alertmanager Email Receiver Configuration
+
 ## Issue
 
 When wiring up an Alertmanager email receiver (`smtp_smarthost`, `smtp_auth_username`, `smtp_from`, `smtp_require_tls`, etc.) the actual delivery path runs through corporate relays, anti-spam filters, and TLS chains that may quarantine, silently drop, or rate-limit the test alert. A failed delivery in any of those layers makes it hard to tell whether the misconfiguration is in Alertmanager, in the relay, or in the recipient mailbox. A disposable in-cluster SMTP sink lets the operator verify the Alertmanager pipeline end-to-end before swapping the smarthost back to the production relay.

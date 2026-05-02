@@ -6,6 +6,9 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Merge Multiple Image Pull Secrets Into a Single Kubernetes Docker-Config Secret
+
 ## Issue
 
 A workload needs to pull container images from more than one private registry (for example a public mirror, a vendor registry, and a team-internal Harbor). Each registry exposes its own credentials in a separate `~/.docker/config.json`-style file. Kubernetes accepts only one `imagePullSecrets` entry at a time per ServiceAccount default, and even when several are listed, supplying many secrets adds operational noise.

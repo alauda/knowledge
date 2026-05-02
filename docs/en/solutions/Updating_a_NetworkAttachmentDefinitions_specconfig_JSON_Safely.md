@@ -6,6 +6,9 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Updating a NetworkAttachmentDefinition's `spec.config` JSON Safely
+
 ## Issue
 
 A `NetworkAttachmentDefinition` (NAD) needs to have one of its configuration parameters changed — for example, switching the CNI plugin `type` from `bridge` to `cnv-bridge` so VMs on ACP Virtualization can share the same underlying host bridge through KubeVirt's MAC-spoof / VLAN-preservation extensions, or adjusting a VLAN tag, MTU, or IPAM block without recreating the NAD object.

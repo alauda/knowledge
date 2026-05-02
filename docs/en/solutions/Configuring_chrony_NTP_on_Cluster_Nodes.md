@@ -7,6 +7,9 @@ ProductsVersion:
    - 4.1.0,4.2.x
 id: KB260500013
 ---
+
+# Configuring chrony / NTP on Cluster Nodes
+
 ## Issue
 
 Cluster nodes need to synchronise their clocks against a specific NTP server set — often an internal time source inside a restricted network, or a hardened NTP pool with Network Time Security (NTS). The default chrony configuration that ships on each node points at public time servers, which is either not reachable (air-gapped / egress-controlled environments), not acceptable by policy, or not trusted (no NTS).

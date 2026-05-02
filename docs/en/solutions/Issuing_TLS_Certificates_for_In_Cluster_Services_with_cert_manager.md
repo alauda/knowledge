@@ -7,6 +7,9 @@ ProductsVersion:
    - 4.1.0,4.2.x
 id: KB260500007
 ---
+
+# Issuing TLS Certificates for In-Cluster Services with cert-manager
+
 ## Overview
 
 Applications running in the cluster increasingly require TLS for service-to-service traffic: mesh sidecars, user-facing gateways, database drivers with `sslmode=verify-full`, and compliance-driven policies that disallow plaintext between pods. Operators want this to be automatic — certificates issued per service, rotated before expiry, and trustable by other workloads without hand-distributing CA bundles.

@@ -6,6 +6,9 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Generating an emergency admin kubeconfig via CertificateSigningRequest
+
 ## Issue
 
 The original administrator kubeconfig produced at install time can be lost, leaked, or fail with `x509: certificate signed by unknown authority` after a control-plane CA rotation. When that happens — and the operator no longer has any working cluster-admin path through the OIDC / OAuth identity provider — the cluster still has to be reachable.

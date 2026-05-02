@@ -7,6 +7,9 @@ ProductsVersion:
    - 4.1.0,4.2.x
 id: KB260500006
 ---
+
+# Protecting Identity Infrastructure From DNS Burst Storms in Cloud-Native Clusters
+
 ## Overview
 
 Migrating workloads from a small fleet of virtual machines to a high-density Kubernetes cluster changes the shape of the DNS traffic an upstream identity / DNS service has to absorb. A steady, low-rate stream of recursive queries is replaced by parallel bursts: a single Deployment that scales out by a few hundred pods, or a node that drains and reschedules its workload, can issue thousands of resolution requests within milliseconds.

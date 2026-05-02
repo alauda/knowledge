@@ -6,6 +6,9 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Newly added node stays NotReady with "No CNI configuration file
+
 ## Issue
 
 A new worker is added to the cluster but the node never transitions from `NotReady` to `Ready`. The kubelet on the affected node reports:

@@ -6,6 +6,9 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Automating etcd Snapshot Backups on the Control Plane
+
 ## Overview
 
 etcd is the source of truth for every Kubernetes object. Losing it — through disk corruption, simultaneous node failure, or accidental delete — without a recent backup is a full cluster rebuild. Automating a regular on-host snapshot is the cheapest and most effective disaster-recovery primitive the platform can maintain.

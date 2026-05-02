@@ -6,6 +6,9 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# cert-manager Fails with "x509: invalid certificate policies" When Parsing a Server Certificate
+
 ## Issue
 
 `cert-manager` reports it cannot parse the certificate served by an `Issuer` endpoint (ACME server, CA webhook, remote `https://…` target) and logs an error of the form:

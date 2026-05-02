@@ -6,6 +6,9 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Generate a New kubeconfig for ACP Cluster Access
+
 ## Issue
 
 A platform administrator needs a fresh `kubeconfig` for an Alauda Container Platform cluster — for handing access to a new automation system, replacing a leaked file, or rotating a long-lived credential. Directly revoking the contents of an existing kubeconfig is risky because the same file may be shared by system components, CI jobs, or other administrators; instead the supported workflow is to mint a new credential and retire the old one in a controlled fashion.

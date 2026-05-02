@@ -6,6 +6,9 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Sending namespace-scoped Prometheus alerts to email via AlertmanagerConfig
+
 ## Issue
 
 A namespace owner has authored a `PrometheusRule` in their own namespace and the rule is firing — `kubectl get prometheusrule` shows the alert in `Firing` state and the user-workload Alertmanager web UI lists it. But the configured email recipient never sees a notification. The cluster's platform-side Alertmanager only forwards alerts whose routing tree has been wired up; alerts from a workload namespace need their own routing tree, exposed through the namespace-scoped `AlertmanagerConfig` CRD that the Prometheus operator stack supports for user-workload monitoring.
