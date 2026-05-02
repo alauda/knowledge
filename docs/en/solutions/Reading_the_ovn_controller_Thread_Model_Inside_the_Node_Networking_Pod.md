@@ -5,6 +5,7 @@ products:
    - Alauda Container Platform
 ProductsVersion:
    - 4.1.0,4.2.x
+id: KB260500042
 ---
 
 # Reading the ovn-controller Thread Model Inside the Node Networking Pod
