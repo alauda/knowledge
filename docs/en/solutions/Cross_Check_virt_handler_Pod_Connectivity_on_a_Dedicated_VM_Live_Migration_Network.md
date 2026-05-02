@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Cross-Check virt-handler Pod Connectivity on a Dedicated VM Live-Migration Network
 ## Issue
 
 ACP Virtualization is configured to use a **dedicated migration network** — a Multus `NetworkAttachmentDefinition` that gives every `virt-handler` pod a second interface used exclusively for live-migration traffic between hypervisor nodes. Live migration of VMs between most nodes works, but migrations between specific node pairs hang or fail with timeout / connection-refused at the network layer.
