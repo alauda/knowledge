@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Reverting Cluster Nodes Back to UTC After a Custom Timezone Was Pinned
 ## Issue
 
 A cluster's nodes were earlier reconfigured to a regional timezone (for example `Africa/Cairo`) through a node-level systemd unit, and the operator now needs them back on UTC for log correlation, scheduled jobs, and audit consistency. Removing the original node-config object alone does **not** undo the change — after a reboot the node still reports the regional zone:
