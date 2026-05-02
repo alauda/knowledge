@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Prometheus failing to report data due to "no space left on device"
 ## Issue
 
 The web console shows the shape of objects correctly but all metrics panels — CPU, memory, pod counts — read "no datapoints found". Dashboards that depend on Prometheus data appear empty. In the Prometheus pods the logs are full of write-ahead-log (WAL) write failures:
