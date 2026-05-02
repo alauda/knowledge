@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Scheduled OADP / Velero Backups Disappear From the Cluster When ArgoCD Manages the Backup Operator
 ## Issue
 
 A cluster-managed backup pipeline (OADP / Velero with a `Schedule`) is configured through GitOps: ArgoCD owns the Application that contains the backup operator's configuration. Scheduled backups succeed — the backup artifacts land in object storage — but the corresponding `Backup` custom-resource objects in the cluster vanish shortly after each schedule fires:
