@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Huge Page Kernel Arguments Persist After Removing the Tuning Profile or Custom Node Pool
 ## Issue
 
 Huge pages were enabled at boot time on a subset of worker nodes, typically via a tuning profile that declares `hugepagesz=2M hugepages=50` (or the 1G variant) as kernel arguments. The profile and the matching custom node pool were later removed — either because the workload that required huge pages was retired, or because the pool was being reshaped — and the nodes were rebooted.
