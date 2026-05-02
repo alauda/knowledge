@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# OVN pods fail on dual-stack hosted-control-plane KubeVirt nodes when IPv6 method is dhcp
 ## Issue
 
 A dual-stack hosted-control-plane (HCP) cluster running on the KubeVirt
