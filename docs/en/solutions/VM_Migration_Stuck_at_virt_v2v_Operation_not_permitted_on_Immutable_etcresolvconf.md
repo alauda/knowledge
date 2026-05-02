@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# VM Migration Stuck at virt-v2v "Operation not permitted" on Immutable /etc/resolv.conf
 ## Issue
 
 A VM migration into ACP Virtualization — typically from VMware through the migration toolkit's `virt-v2v` conversion step — fails at the guest-configuration phase. The migration pipeline leaves one or more conversion pods in `Error` state. The `virt-v2v` log ends with a message like:
