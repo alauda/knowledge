@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Collecting scoped Service Mesh v3 must-gather data for specific namespaces
 ## Issue
 
 The Service Mesh v3 (Istio) must-gather flow gathers mesh-wide data — every namespace participating in the mesh — even when the operator is only interested in a single namespace's traffic, sidecar config, or policy state. This is by design: the bundled must-gather plugin is shaped for full-mesh diagnosis. For targeted diagnostics (one application's namespace, one tenant's CRs), the full collection is heavyweight and expensive to ship in a support case.
