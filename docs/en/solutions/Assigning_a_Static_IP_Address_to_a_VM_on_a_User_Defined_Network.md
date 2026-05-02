@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Assigning a Static IP Address to a VM on a User-Defined Network
 ## Issue
 
 A VM needs a fixed IP address on a user-defined network — typically because downstream systems (firewalls, application allow-lists, monitoring tools, databases with hostname pinning) reference the VM by IP and cannot tolerate a dynamically-assigned value. Configuring the static IP inside the guest OS after the VM is created does not work: the network plumbing at the pod / VM level rejects unknown source IPs, so the VM loses connectivity the moment its guest OS applies the manual address.
