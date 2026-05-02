@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# How the Istio sidecar inject label gets applied to a workload from Kiali
 ## Overview
 
 On ACP Service Mesh, sidecar injection for a Deployment is governed by the `sidecar.istio.io/inject` label on the pod template. Operators occasionally see this label appear with the value `"false"` on a workload they did not edit by hand, and ask where the change came from.
