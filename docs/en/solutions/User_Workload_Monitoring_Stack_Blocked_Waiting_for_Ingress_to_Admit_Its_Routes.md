@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# User Workload Monitoring Stack Blocked Waiting for Ingress to Admit Its Routes
 ## Issue
 
 After enabling user workload monitoring on ACP, the monitoring stack reports itself as degraded and never finishes progressing. A status condition similar to the one below is visible on the owning component:
