@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# FIPS 140-3 Cipher and Algorithm Classification Reference
 ## Overview
 
 Workloads and platform components running in a cluster that claims FIPS 140-3 compliance must negotiate TLS, sign data, hash payloads, and derive keys using **only** the algorithms that NIST approves under the standard. When a cluster operator flips the platform-wide FIPS mode on, the kernel crypto module, the Go/OpenSSL runtimes, and the Java security provider all narrow their allowed algorithm set — any connection that tries to use a non-approved primitive fails the handshake outright, usually with `no cipher suites in common` or `unsupported algorithm`.
