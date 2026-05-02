@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# CIS Benchmark 5.1.3 False Positives From OLM-Generated Wildcard ClusterRoles
 ## Issue
 
 A Compliance scan against the Kubernetes CIS Benchmark on Alauda Container Platform reports a 5.1.3 violation:
