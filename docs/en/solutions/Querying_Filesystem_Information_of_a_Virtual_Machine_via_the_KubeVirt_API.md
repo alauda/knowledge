@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Querying Filesystem Information of a Virtual Machine via the KubeVirt API
 ## Overview
 
 KubeVirt exposes a per-VMI subresource that returns the in-guest filesystem layout — mount points, filesystem types, total and used bytes — without requiring SSH or console access into the guest. The data is collected by the QEMU guest agent and surfaced through the `subresources.kubevirt.io` API group, which makes it suitable for inventory tooling, capacity dashboards, or pre-migration sanity checks where shelling into every VM is not feasible.
