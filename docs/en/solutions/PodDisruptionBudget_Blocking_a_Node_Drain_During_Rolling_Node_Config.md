@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# PodDisruptionBudget Blocking a Node Drain During Rolling Node Config
 ## Issue
 
 A rolling node-configuration change (kernel parameter update, chrony push, kubelet config change) applied through the node-config controller gets stuck. One or more nodes sit in `Ready,SchedulingDisabled`, the rollout progress never advances past that node, and the controller's log stream keeps retrying an eviction for the same pod:
