@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Windows Guest BSODs on KubeVirt VMs Caused by Storage I/O Stalls
 ## Issue
 
 Microsoft Windows guests running on Alauda Container Platform Virtualization fall into intermittent Blue Screen of Death (BSOD) events. The bug-check codes vary but cluster around memory and paging:
