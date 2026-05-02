@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# OLM catalog-operator Slow to Start CatalogSource Pod — A Namespace ResourceQuota Is the Hidden Blocker
 ## Issue
 
 A `CatalogSource` is recreated (as part of an operator-hub refresh, a catalog image bump, or disaster recovery), and OLM takes an unreasonably long time to bring up the registry pod. During the wait, the `catalog-operator` pod's log fills with a mix of two error shapes:
