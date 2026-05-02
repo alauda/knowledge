@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# node_exporter Exposes Fibre Channel Metrics Because the Collector Is on by Default
 ## Overview
 
 `node_exporter` surfaces a `--collector.fibrechannel` metrics group on clusters where the monitoring stack ships an unmodified upstream build. Operators sometimes flag this during scrape review — the metrics appear even on clusters that have no Fibre Channel HBAs — and wonder whether the collector was enabled by cluster configuration or is always on.
