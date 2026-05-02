@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# VM Storage Migration Stuck with ConflictingPVCMappings — Clean Up Leftover Target PVCs from a Cancelled Migration
 ## Issue
 
 A VM storage migration never reaches execution. The `MigMigration` resource stays in `Pending`, and its status reports a critical `ConflictingPVCMappings` condition:
