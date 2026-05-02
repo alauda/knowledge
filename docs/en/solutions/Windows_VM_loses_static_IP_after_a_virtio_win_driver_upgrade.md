@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Windows VM loses static IP after a virtio-win driver upgrade
 ## Issue
 
 A Windows guest running on the cluster's virtualization stack has a manually configured static IP on its NIC. The guest's virtio-win driver package is upgraded in place — typically by mounting the new ISO and running the installer or via Windows Update — and after the upgrade the guest still boots, but the network interface no longer has the static IP. The interface either falls back to DHCP or has no IPv4 address at all.
