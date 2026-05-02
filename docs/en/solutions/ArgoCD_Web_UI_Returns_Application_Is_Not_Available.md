@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# ArgoCD Web UI Returns Application Is Not Available
 ## Issue
 
 The ArgoCD web console refuses to load with an `Application is not available` error before the login screen renders, blocking every user from signing in. The ingress / load-balancer in front of ArgoCD returns a 503 (or the platform's standard "no upstream" page), even though the ArgoCD server pod itself appears to be healthy in `kubectl get pod`.
