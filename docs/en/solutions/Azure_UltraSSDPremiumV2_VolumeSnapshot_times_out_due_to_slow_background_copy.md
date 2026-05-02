@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Azure UltraSSD/PremiumV2 VolumeSnapshot times out due to slow background copy
 ## Issue
 
 VolumeSnapshot creation against an Azure-backed PVC on the
