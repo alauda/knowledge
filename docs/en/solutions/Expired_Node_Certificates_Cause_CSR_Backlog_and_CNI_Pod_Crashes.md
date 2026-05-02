@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Expired Node Certificates Cause CSR Backlog and CNI Pod Crashes
 ## Issue
 
 Node certificates expire and the automatic renewal process stalls, causing a cascade of failures:
