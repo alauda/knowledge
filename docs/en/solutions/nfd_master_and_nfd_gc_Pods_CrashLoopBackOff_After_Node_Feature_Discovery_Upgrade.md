@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# nfd-master and nfd-gc Pods CrashLoopBackOff After Node Feature Discovery Upgrade
 ## Issue
 
 After upgrading both the cluster and the Node Feature Discovery operator, the operator-managed pods in the NFD namespace fail to stabilise. The garbage-collector pod loops in `CrashLoopBackOff` and the master pod stays in `Running` but its readiness probe keeps failing:
