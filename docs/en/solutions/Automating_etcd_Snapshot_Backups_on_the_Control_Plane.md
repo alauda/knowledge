@@ -9,7 +9,6 @@ id: KB260500016
 ---
 
 # Automating etcd Snapshot Backups on the Control Plane
-
 ## Overview
 
 etcd is the source of truth for every Kubernetes object. Losing it — through disk corruption, simultaneous node failure, or accidental delete — without a recent backup is a full cluster rebuild. Automating a regular on-host snapshot is the cheapest and most effective disaster-recovery primitive the platform can maintain.
@@ -132,13 +131,13 @@ kubectl -n etcd-backup get jobs --sort-by=.status.startTime | tail -n 10
 kubectl -n etcd-backup logs job/$(kubectl -n etcd-backup get job -o jsonpath='{.items[-1].metadata.name}')
 ```
 
-Inspect a control-plane node for snapshot files:
+Inspect a control-plane node for snapshot files. ACP's cluster PSA rejects `chroot /host`, and `registry.k8s.io/...` may not be reachable from isolated clusters — read through the debug pod's `/host` bind-mount with any in-cluster mirror image that ships `ls`:
 
 ```bash
 NODE=<control-plane-1>
 kubectl debug node/$NODE -it \
-  --image=registry.k8s.io/e2e-test-images/busybox:1.36 \
-  -- chroot /host ls -lh /var/lib/etcd/backup/ 2>/dev/null
+  --image=<image-with-shell> \
+  -- ls -lh /host/var/lib/etcd/backup/ 2>/dev/null
 ```
 
 Sanity-check the snapshot's integrity before relying on it:

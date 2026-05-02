@@ -9,7 +9,6 @@ id: KB260500018
 ---
 
 # etcd rafthttp reports clock difference against peer is too high
-
 ## Issue
 
 The etcd pods on the control-plane nodes log repeated warnings of the form:
@@ -31,12 +30,13 @@ Because etcd treats the heartbeat as authoritative evidence that a peer is alive
 
 Bring the control-plane nodes back into NTP sync. Once the clocks converge, the `rafthttp` warnings stop within a couple of heartbeat intervals and etcd recovers on its own; no etcd restart is required.
 
-1. Identify which nodes are skewed relative to the others. Run a timedatectl check across every control-plane node:
+1. Identify which nodes are skewed relative to the others. Run a timedatectl check across every control-plane node. ACP's cluster PSA rejects `chroot /host`; use `--profile=sysadmin` and an image that ships `timedatectl`/`chronyc`:
 
    ```bash
    for NODE in $(kubectl get nodes -l node-role.kubernetes.io/control-plane= -o name); do
      echo "-------- $NODE --------"
-     kubectl debug -q "$NODE" -- chroot /host bash -c "hostname; timedatectl"
+     kubectl debug -q "$NODE" --image=<image-with-systemd> --profile=sysadmin -- \
+       bash -c "hostname; timedatectl"
      echo
    done
    ```
@@ -46,8 +46,10 @@ Bring the control-plane nodes back into NTP sync. Once the clocks converge, the 
 2. On each affected node, confirm chrony is running and has at least one reachable upstream source:
 
    ```bash
-   kubectl debug node/<name> -- chroot /host chronyc tracking
-   kubectl debug node/<name> -- chroot /host chronyc sources -v
+   kubectl debug node/<name> --image=<image-with-chrony> --profile=sysadmin -- \
+     chronyc tracking
+   kubectl debug node/<name> --image=<image-with-chrony> --profile=sysadmin -- \
+     chronyc sources -v
    ```
 
    If the daemon is stopped, start it; if there are no reachable sources, fix the NTP server list or the firewall path for UDP/123.

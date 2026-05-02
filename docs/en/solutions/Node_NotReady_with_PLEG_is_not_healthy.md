@@ -9,7 +9,6 @@ id: KB260500038
 ---
 
 # Node NotReady with "PLEG is not healthy"
-
 ## Issue
 
 One or more cluster nodes flap into `NotReady` and the kubelet status logs report errors similar to:
@@ -42,17 +41,17 @@ kubectl cordon <node-name>
 kubectl drain <node-name> --ignore-daemonsets --delete-emptydir-data
 ```
 
-Step 2 — on the node host, restart the runtime and kubelet. Use `kubectl debug node/<node-name>` to get a privileged shell into a debug container that has `/host` bind-mounted, then `chroot /host` to operate on the host filesystem and services:
+Step 2 — on the node host, restart the runtime and kubelet. ACP's cluster PSA rejects `chroot /host`; instead use `kubectl debug node` with `--profile=sysadmin` (which mounts the host's systemd socket and PID namespace) and an image that ships `systemctl`. A `busybox` image lacks `systemctl`:
 
 ```bash
-kubectl debug node/<node-name> --image=busybox:1.36 -it -- chroot /host \
+kubectl debug node/<node-name> --image=<image-with-systemd> --profile=sysadmin -it -- \
   sh -c 'systemctl restart crio && systemctl restart kubelet'
 ```
 
-Step 3 — purge exited containers and untagged images. These accumulate on a node across workload churn and inflate every relist:
+Step 3 — purge exited containers and untagged images. These accumulate on a node across workload churn and inflate every relist. The image must ship `crictl`:
 
 ```bash
-kubectl debug node/<node-name> --image=busybox:1.36 -it -- chroot /host \
+kubectl debug node/<node-name> --image=<image-with-crictl> --profile=sysadmin -it -- \
   sh -c '
     crictl ps -a | awk "/Exited/ {print \$1}" | xargs -r crictl rm
     crictl images | awk "/<none>/ {print \$3}" | xargs -r crictl rmi
@@ -87,25 +86,26 @@ Confirm PLEG is the actual condition the node is reporting (not a generic `Kubel
 kubectl describe node <node-name> | sed -n '/Conditions/,/Addresses/p'
 ```
 
-Look at the kubelet log around the transition to `NotReady` to see which CRI call was outstanding when PLEG timed out:
+Look at the kubelet log around the transition to `NotReady` to see which CRI call was outstanding when PLEG timed out. `journalctl --root=/host` reads the host's journal directory through the `/host` bind-mount — no chroot needed:
 
 ```bash
-kubectl debug node/<node-name> --image=busybox:1.36 -it -- chroot /host \
-  journalctl -u kubelet --since='30 min ago' \
+kubectl debug node/<node-name> --image=<image-with-systemd> --profile=sysadmin -it -- \
+  journalctl --root=/host -u kubelet --since='30 min ago' \
     | grep -iE 'pleg|relist|container runtime'
 ```
 
 Look at the container runtime log for the same window — a runtime-side deadlock or exceptionally long syscall usually shows as a matching stall there:
 
 ```bash
-kubectl debug node/<node-name> --image=busybox:1.36 -it -- chroot /host \
-  journalctl -u crio --since='30 min ago' | tail -200
+kubectl debug node/<node-name> --image=<image-with-systemd> --profile=sysadmin -it -- \
+  journalctl --root=/host -u crio --since='30 min ago' | tail -200
 ```
 
-Count containers on the node to rule out density:
+Count containers on the node to rule out density. `crictl` talks to the runtime over its CRI socket at `/run/crio/crio.sock` (or `/run/containerd/containerd.sock`); `--profile=sysadmin` mounts those:
 
 ```bash
-kubectl debug node/<node-name> --image=busybox:1.36 -it -- chroot /host crictl ps -a | wc -l
+kubectl debug node/<node-name> --image=<image-with-crictl> --profile=sysadmin -it -- \
+  crictl ps -a | wc -l
 ```
 
 Nodes routinely over 300 live containers plus exited-not-yet-reclaimed are in the danger zone for PLEG.
@@ -113,7 +113,7 @@ Nodes routinely over 300 live containers plus exited-not-yet-reclaimed are in th
 Spot-check unused resources that balloon relist cost:
 
 ```bash
-kubectl debug node/<node-name> --image=busybox:1.36 -it -- chroot /host \
+kubectl debug node/<node-name> --image=<image-with-crictl> --profile=sysadmin -it -- \
   sh -c 'crictl ps -a | grep -i Exited | wc -l; crictl images | grep -c "<none>"'
 ```
 

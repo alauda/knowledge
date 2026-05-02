@@ -9,7 +9,6 @@ id: KB260500005
 ---
 
 # Configuring Container and Image Garbage Collection on the kubelet
-
 ## Overview
 
 The kubelet on every worker node continuously reclaims resources from the local container runtime. Two related mechanisms drive this:
@@ -109,20 +108,20 @@ kubectl get --raw "/api/v1/nodes/${NODE}/proxy/configz" | jq .
 
 The `kubeletconfig` block in the response contains every default the kubelet has applied, including those the YAML did not set explicitly.
 
-Check the running kubelet process for the GC values:
+Check the running kubelet process for the GC values. ACP's cluster PSA rejects `chroot /host`, and `registry.k8s.io/...` images may not be pullable from isolated clusters — read the host's `/var/lib/kubelet/config.yaml` through the debug pod's `/host` bind-mount with any in-cluster mirror image that ships `grep`:
 
 ```bash
 kubectl debug node/${NODE} -it \
-  --image=registry.k8s.io/e2e-test-images/busybox:1.36 \
-  -- chroot /host sh -c 'grep -E "GC|eviction" /var/lib/kubelet/config.yaml'
+  --image=<image-with-shell> \
+  -- grep -E "GC|eviction" /host/var/lib/kubelet/config.yaml
 ```
 
-Confirm garbage collection is doing work by tailing the kubelet journal:
+Confirm garbage collection is doing work by tailing the kubelet journal. `journalctl --root=/host` reads the host's journal directory:
 
 ```bash
 kubectl debug node/${NODE} -it \
-  --image=registry.k8s.io/e2e-test-images/busybox:1.36 \
-  -- chroot /host journalctl -u kubelet --since "10 minutes ago" | grep -iE 'image_gc|container_gc|evict'
+  --image=<image-with-systemd> --profile=sysadmin \
+  -- journalctl --root=/host -u kubelet --since "10 minutes ago" | grep -iE 'image_gc|container_gc|evict'
 ```
 
 A healthy node logs occasional `image_gc_manager` lines reporting how many bytes were reclaimed and which images were removed; recurrent eviction lines suggest the thresholds are too tight for the workload.

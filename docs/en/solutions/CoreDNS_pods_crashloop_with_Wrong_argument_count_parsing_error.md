@@ -9,7 +9,6 @@ id: KB260500017
 ---
 
 # CoreDNS pods crashloop with "Wrong argument count" parsing error
-
 ## Issue
 
 DNS pods enter `CrashLoopBackOff`. The pod log includes a Corefile
@@ -146,10 +145,10 @@ the new pods becoming Ready.
    The new pods reach `Running` and the crashloop counter stops
    incrementing.
 
-5. Validate cluster DNS is functional from a workload pod:
+5. Validate cluster DNS is functional from a workload pod. The image must ship `nslookup` (or `dig`); a vanilla `busybox` image works on clusters that mirror Docker Hub but is often unreachable on isolated ACP clusters — substitute with any in-cluster mirror image that ships `nslookup`:
 
    ```bash
-   kubectl run dnscheck --rm -it --image=busybox -- nslookup kubernetes.default
+   kubectl run dnscheck --rm -it --image=<image-with-nslookup> -- nslookup kubernetes.default
    ```
 
    A successful answer confirms the DNS Service is back to having

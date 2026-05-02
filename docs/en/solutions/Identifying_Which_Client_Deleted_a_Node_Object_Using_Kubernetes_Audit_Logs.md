@@ -9,7 +9,6 @@ id: KB260500003
 ---
 
 # Identifying Which Client Deleted a Node Object Using Kubernetes Audit Logs
-
 ## Issue
 
 A worker node disappears from the cluster shortly after it joined, or vanishes during steady-state operation. `kubectl get nodes` no longer lists it, the kubelet on the host is healthy and continues to make heartbeat calls (which now create the node again under the same name and the cycle repeats), and there is no obvious controller status condition that explains the deletion.
@@ -42,9 +41,11 @@ kubectl get nodes -l node-role.kubernetes.io/control-plane \
       # Stream the apiserver audit log off this control-plane node.
       # Path is the kubeadm default; adjust to your cluster's audit
       # policy if you use a different sink.
+      # ACP cluster PSA rejects `chroot /host`; read host files via the
+      # debug pod's /host bind-mount. The image must contain `cat`.
       kubectl debug node/${master_name} \
         -it --image=registry.alauda.cn:60070/acp/alb-nginx:v4.3.1 \
-        -- chroot /host cat /var/log/kube-apiserver/audit.log 2>/dev/null \
+        -- cat /host/var/log/kube-apiserver/audit.log 2>/dev/null \
         | jq -cr --arg node "$NODE" '
             select(
               (.verb != "get") and (.verb != "watch") and
@@ -99,9 +100,11 @@ If the audit search above returns no rows, two failure modes are likely:
 1. **Audit logging is not enabled.** Check the apiserver process arguments on a control-plane host:
 
    ```bash
+   # `ps -ef` from a debug pod with --profile=sysadmin sees the host PID
+   # namespace; chroot is not needed (and is rejected by ACP's PSA).
    kubectl debug node/<master> -it \
-     --image=registry.alauda.cn:60070/acp/alb-nginx:v4.3.1 \
-     -- chroot /host ps -ef | grep kube-apiserver | grep -oE '\-\-audit-(log-path|policy-file)=[^ ]+'
+     --image=registry.alauda.cn:60070/acp/alb-nginx:v4.3.1 --profile=sysadmin \
+     -- ps -ef | grep kube-apiserver | grep -oE '\-\-audit-(log-path|policy-file)=[^ ]+'
    ```
 
    Both `--audit-policy-file` and `--audit-log-path` should be set. If they are not, configure an audit policy (a permissive policy that records all `verbs` against `nodes` is enough for this investigation) and roll the apiserver pods.
@@ -111,7 +114,7 @@ If the audit search above returns no rows, two failure modes are likely:
    ```bash
    kubectl debug node/<master> -it \
      --image=registry.alauda.cn:60070/acp/alb-nginx:v4.3.1 \
-     -- chroot /host cat <policy-file-path>
+     -- cat /host<policy-file-path>
    ```
 
    Add a rule for the `nodes` resource at `level: Metadata` (or higher) so the deletion is recorded going forward.
