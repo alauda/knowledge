@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Recover Prometheus from TSDB head chunk corruption
 ## Issue
 
 The platform monitoring stack starts emitting `KubeAPIDown` (and other rule-based) alerts even though `kubectl get --raw=/healthz` and the API server pods themselves are healthy. The Prometheus pods log repeated rule-evaluation failures of the form:
