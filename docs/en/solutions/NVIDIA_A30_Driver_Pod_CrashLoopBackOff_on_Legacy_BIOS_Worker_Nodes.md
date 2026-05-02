@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# NVIDIA A30 Driver Pod CrashLoopBackOff on Legacy-BIOS Worker Nodes
 ## Issue
 
 On a worker node equipped with an NVIDIA A30 GPU, the driver DaemonSet pod (`nvidia-driver-daemonset-*`) refuses to initialize. It enters `CrashLoopBackOff` with hundreds of restarts, and the downstream `gpu-feature-discovery` pod stays stuck in `Init:0/1` because the driver never becomes ready:
