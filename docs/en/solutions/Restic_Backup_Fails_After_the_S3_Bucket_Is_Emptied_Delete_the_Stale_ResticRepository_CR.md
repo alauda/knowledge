@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Restic Backup Fails After the S3 Bucket Is Emptied — Delete the Stale `ResticRepository` CR
 ## Issue
 
 A Velero-backed Restic backup flow that was previously working starts failing on every attempt after the underlying S3 / object-storage bucket is manually emptied (accidental `s3 rm`, bucket re-provision, disaster-recovery test, etc.). The backup's node-agent pod logs a Restic-level refusal:
