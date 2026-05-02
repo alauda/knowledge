@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Enable HAProxy access logs on the default ingress / ALB
 ## Issue
 
 The default ingress / load-balancer layer on ACP is implemented with HAProxy (under the ALB component). By default HAProxy access logging is disabled, so when a specific Ingress / route behaves unexpectedly there is no HTTP-level record of the incoming request, the back-end chosen, or the termination state. The operator wants to:
