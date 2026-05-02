@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Service mesh application unreachable through re-encrypt ingress
 ## Issue
 
 A workload exposed through the service mesh (Istio) becomes unreachable when the platform ingress in front of the mesh is configured to perform a TLS re-encrypt — the client TLS session is terminated at the platform ingress and a brand-new TLS session is opened toward the Istio ingress gateway. Envoy on the gateway logs:
