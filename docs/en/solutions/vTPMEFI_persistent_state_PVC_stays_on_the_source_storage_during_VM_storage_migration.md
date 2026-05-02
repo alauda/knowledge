@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# vTPM/EFI persistent-state PVC stays on the source storage during VM storage migration
 ## Issue
 
 A VM is migrated from one storage backend to another using the storage-migration flow. The main disks (root, data) move to the new StorageClass as expected, but a small (~10 MiB) PVC named like `persistent-state-for-<vm>` is left behind on the source storage. The migration reports success even though that one volume did not move.
