@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# New Worker Boot Hangs on "Enable Multipathing for SCSI over FC"
 ## Issue
 
 Adding a new worker to a cluster that uses Fibre Channel storage stalls during early boot. The console (or the hypervisor's serial log) shows systemd working its way through the boot unit list and then parking on the multipath unit:
