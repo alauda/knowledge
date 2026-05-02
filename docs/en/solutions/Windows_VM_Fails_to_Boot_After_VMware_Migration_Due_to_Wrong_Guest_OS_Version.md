@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Windows VM Fails to Boot After VMware Migration Due to Wrong Guest-OS Version
 ## Issue
 
 A Windows VM migrated from VMware — for example Windows Server 2019 — completes conversion successfully but fails to boot in the destination cluster. The VM console shows `INACCESSIBLE_BOOT_DEVICE`, `0x0000007B`, or hangs on the Windows boot logo. Other migrated Linux VMs and other modern Windows VMs on the same plan boot normally.
