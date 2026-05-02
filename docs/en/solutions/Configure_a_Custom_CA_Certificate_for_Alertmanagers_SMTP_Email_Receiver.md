@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Configure a Custom CA Certificate for Alertmanager's SMTP Email Receiver
 ## Issue
 
 Alertmanager is configured to send notifications through an internal SMTP relay that presents a TLS certificate signed by a private (in-house) Certificate Authority. Notifications never arrive at their inbox; the Alertmanager pod log shows a TLS handshake failure against the SMTP server:
