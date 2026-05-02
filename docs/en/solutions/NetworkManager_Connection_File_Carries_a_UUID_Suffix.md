@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# NetworkManager Connection File Carries a UUID Suffix
 ## Issue
 
 On a node, the NetworkManager keyfile for an interface has been written with the interface name **and** its UUID concatenated into the filename, for example:
