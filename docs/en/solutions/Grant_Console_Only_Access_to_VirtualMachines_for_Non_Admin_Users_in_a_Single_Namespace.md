@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Grant Console-Only Access to VirtualMachines for Non-Admin Users in a Single Namespace
 ## Issue
 
 A common multi-tenant requirement on ACP Virtualization is to let an end user **open a VM's serial console or VNC session** — for day-to-day operations like logging into the guest OS, running `systemd` checks, or observing boot messages — without granting them enough authority to start, stop, reconfigure, or delete the VM itself.
