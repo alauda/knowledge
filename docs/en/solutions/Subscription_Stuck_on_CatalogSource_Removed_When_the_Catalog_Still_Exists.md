@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Subscription Stuck on CatalogSource Removed When the Catalog Still Exists
 ## Issue
 
 The extend / installed-operators surface shows an operator with `Cannot update` and `CatalogSource was removed` (or `CatalogSource not found`), even though the named `CatalogSource` is present and serving fine. The catalog-operator pod logs in the OLM namespace report repeated `ResolutionFailed` warnings of the form:
