@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# HorizontalPodAutoscaler Pod-Selection Policy on Scale-Down
 ## Overview
 
 A common operator question for the Horizontal Pod Autoscaler: when the controller decides to shrink a workload, *which* pods does it remove? The expectation is sometimes that the oldest pods will be evicted first, on the theory that they have accumulated the most state, the most leaked memory, or the most ambient drift since the rollout. The actual behaviour is the opposite, and that behaviour cannot be tuned through the HPA's own API.
