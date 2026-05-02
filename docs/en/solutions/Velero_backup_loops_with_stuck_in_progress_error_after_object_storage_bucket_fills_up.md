@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Velero backup loops with stuck-in-progress error after object storage bucket fills up
 ## Issue
 
 A backup orchestrated by the platform's data-protection controller (Velero-based) fails. The `Backup` object's `failureReason` reports:
