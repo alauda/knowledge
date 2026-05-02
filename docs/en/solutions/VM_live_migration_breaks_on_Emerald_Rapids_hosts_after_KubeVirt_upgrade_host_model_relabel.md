@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# VM live migration breaks on Emerald Rapids hosts after KubeVirt upgrade — host-model relabel
 ## Issue
 
 After upgrading the KubeVirt operator on a cluster whose worker nodes are Intel Emerald Rapids hosts, live migration breaks for VMs that had been migrated previously. Symptoms:
