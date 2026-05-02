@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Running Multiple Kiali Instances Against Separate Istio Control Planes
 ## Issue
 
 When more than one Istio control plane is deployed on the same cluster — for example, one per tenant or per environment — every Kiali instance ends up surfacing the same merged telemetry. Workloads from tenant A appear in the Kiali console of tenant B, mesh topology graphs combine traffic across control planes, and operators cannot reason about a single mesh in isolation.
