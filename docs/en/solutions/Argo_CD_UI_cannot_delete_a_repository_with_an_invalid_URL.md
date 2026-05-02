@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Argo CD UI cannot delete a repository with an invalid URL
 ## Issue
 
 A repository entry in the Argo CD UI is stuck in `Failed` status because the URL was entered incorrectly — missing scheme, invalid port, malformed host, or some other syntactic problem that Argo CD cannot parse. Attempting to remove the repository through the UI has no effect: clicking **Delete** either returns an error or silently leaves the row in place.
