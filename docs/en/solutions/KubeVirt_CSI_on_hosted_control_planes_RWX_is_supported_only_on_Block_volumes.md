@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# KubeVirt-CSI on hosted control planes — RWX is supported only on Block volumes
 ## Issue
 
 A workload running inside a hosted control plane requests a PVC with `accessModes: [ReadWriteMany]` and `volumeMode: Filesystem` against a StorageClass backed by the KubeVirt CSI driver (the driver that exposes the management cluster's storage to the hosted cluster's workloads). Provisioning fails:
