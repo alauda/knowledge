@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Configuring and Troubleshooting Prometheus remote_write Tuning Options
 ## Issue
 
 The cluster monitoring stack lets operators forward time-series samples to an external long-term store via the `remoteWrite` block of the Prometheus ConfigMap or the equivalent `Prometheus` / `PrometheusOperator`-managed CR. Two frictions show up repeatedly:
