@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Operator upgrade blocked when a new required CRD field is missing on existing custom resources
 ## Issue
 
 An operator upgrade managed by the Operator Lifecycle Manager (OLM) fails to install a new `ClusterServiceVersion` (CSV). The new CSV ships an updated `CustomResourceDefinition` (CRD) that introduces a previously optional field as `required`. Existing custom resources that were created with the older CRD schema do not contain that field. OLM enforces a CRD upgrade safety check, sees that legacy resources would no longer validate against the new schema, and refuses to apply the upgrade. The CSV stays in `Pending` or `Failed`, no `InstallPlan` for the new version completes, and the operator pod continues to run on the old version.
