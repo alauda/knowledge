@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Operator Update Blocked by Unhealthy CatalogSource Registry Pod
 ## Issue
 
 A `Subscription` that previously held an operator at an earlier version stops advancing to a newer channel or patch level. The `InstallPlan` queue empties out, `CSV` transitions stall, and operator upgrades across the cluster quietly freeze. Inspecting the relevant `CatalogSource` reveals that its registry pod is not running, and the object's `status.message` field names the specific failure — typically a `PodSecurity` admission refusal against the registry pod's security context, for example:
