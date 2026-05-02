@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Prometheus remoteWrite oauth2 tokenUrl does not honour proxyUrl
 ## Issue
 
 On a cluster that sits behind an HTTP(S) egress proxy, a Prometheus remote-write endpoint configured with OAuth2 client-credentials authentication fails to deliver samples. The remote-write target itself is reachable through the proxy, and `proxyUrl` is set on the remote-write block, but the OAuth2 `tokenUrl` fetch does not go through the proxy. As a consequence, Prometheus cannot acquire a bearer token, the authorization step fails, and samples are dropped at remote-write time.
