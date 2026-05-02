@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Descheduling Virtual Machines Based on Live Node Utilization
 ## Issue
 
 Stock descheduler profiles only react to **static** signals — request/limit ratios, pod count per node, taints. They do not move workloads when a node's *actual* CPU, memory, or network utilization spikes, which is the symptom that matters most in mixed virtualization clusters where a few resource-hungry virtual machines can saturate a host while peers idle.
