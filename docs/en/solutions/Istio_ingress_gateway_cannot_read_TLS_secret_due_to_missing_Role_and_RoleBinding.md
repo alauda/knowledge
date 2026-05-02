@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Istio ingress gateway cannot read TLS secret due to missing Role and RoleBinding
 ## Issue
 
 Applications exposed through Istio's ingress gateway are suddenly unreachable from outside the mesh after a fresh install or an upgrade to the v3-line control plane. Observed symptoms:
