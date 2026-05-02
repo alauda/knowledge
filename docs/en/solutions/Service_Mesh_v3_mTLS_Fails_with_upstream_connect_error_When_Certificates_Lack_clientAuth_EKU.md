@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Service Mesh v3 mTLS Fails with "upstream connect error" When Certificates Lack clientAuth EKU
 ## Issue
 
 After installing or upgrading the platform service-mesh stack to its v3 generation (Istio + sidecar/Ambient with the Sail-operator API), east-west traffic between meshed workloads stops working as soon as workload mTLS is in effect. Any pod-to-pod request through the sidecar fails with:
