@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Deployment RollingUpdate Percentages — `maxSurge` Rounds Up, `maxUnavailable` Rounds Down
 ## Overview
 
 A `Deployment` configured with a RollingUpdate strategy expresses its surge / unavailable budgets as either a fixed count (`2`) or a percentage (`25%`). When percentages are used and the computed value does not land on a whole number, the rounding direction is not symmetric:
