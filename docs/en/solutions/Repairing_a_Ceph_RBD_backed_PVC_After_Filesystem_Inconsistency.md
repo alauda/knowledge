@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Repairing a Ceph RBD-backed PVC After Filesystem Inconsistency
 ## Issue
 
 A pod fails to mount its PersistentVolumeClaim and the kubelet reports a filesystem-inconsistency error from the underlying Ceph RBD volume. The pod stays in `ContainerCreating` indefinitely; events on the pod or in the kubelet journal contain a line of the form:
