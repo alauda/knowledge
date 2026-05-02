@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Shrink Multus-related container images by clearing the package-manager cache in the same RUN layer
 ## Overview
 
 A Multus-related container image (the multus-network-policy controller, a
