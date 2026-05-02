@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Compliance Rule `cis-insecure-registries` Fails — Empty the insecureRegistries List or Tailor the Rule Out
 ## Issue
 
 The Compliance Operator's CIS profile reports the `cis-insecure-registries` rule as **FAIL**:
