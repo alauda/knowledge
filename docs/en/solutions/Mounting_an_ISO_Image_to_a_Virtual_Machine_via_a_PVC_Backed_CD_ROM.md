@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Mounting an ISO Image to a Virtual Machine via a PVC-Backed CD-ROM
 ## Issue
 
 A virtual machine needs an ISO image mounted as a CD-ROM — for installer media, driver bundles, or a one-shot configuration payload. The common attempts fail in predictable ways:
