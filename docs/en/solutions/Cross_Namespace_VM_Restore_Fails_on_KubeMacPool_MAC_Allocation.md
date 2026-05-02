@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Cross-Namespace VM Restore Fails on KubeMacPool MAC Allocation
 ## Issue
 
 A Velero-driven restore that targets a different namespace than the original
