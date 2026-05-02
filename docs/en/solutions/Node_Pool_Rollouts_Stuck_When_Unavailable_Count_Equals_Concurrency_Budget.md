@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Node Pool Rollouts Stuck When Unavailable Count Equals Concurrency Budget
 ## Issue
 
 A worker node pool has been rendered to a new node configuration, but the rollout makes no forward progress. Inspecting the pool object shows it is in an `Updating=True`, `Degraded=False` state with zero updated machines, even though the cluster appears otherwise healthy:
