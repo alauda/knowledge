@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# KubeVirt VMs Visible from CLI but Not from the Web Console
 ## Issue
 
 Application users on Alauda Container Platform Virtualization can list and inspect their virtual machines through `kubectl`, `virtctl`, or any other API client, but the platform web console shows the namespace as empty (or hides the Virtualization tab entirely). The same user can run, for example:
