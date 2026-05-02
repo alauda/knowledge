@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# \"rejected connection\" EOF Warnings in etcd Pod Logs Are TLS-Probe Noise
 ## Overview
 
 The etcd pods in ACP's control plane periodically log `rejected connection` warnings with an `"error":"EOF"` tail and a `remote-addr` that points at another control-plane node. The warning repeats at irregular intervals — every few seconds to a few minutes — and can add up to a visible fraction of the etcd log volume on a busy cluster.
