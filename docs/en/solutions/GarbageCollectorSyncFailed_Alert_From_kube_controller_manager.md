@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# GarbageCollectorSyncFailed Alert From kube-controller-manager
 ## Issue
 
 The `GarbageCollectorSyncFailed` alert keeps firing on a cluster that is otherwise healthy. The control-plane components are `Running`, the API server responds, and most workloads are unaffected — but orphaned objects accumulate, finalizers do not run, and `kube-controller-manager` logs repeat the same `garbagecollector` synchronisation errors at a fixed interval.
