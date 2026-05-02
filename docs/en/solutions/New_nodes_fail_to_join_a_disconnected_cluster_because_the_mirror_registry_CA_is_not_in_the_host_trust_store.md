@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# New nodes fail to join a disconnected cluster because the mirror registry CA is not in the host trust store
 ## Issue
 
 After cycling or scaling out a disconnected cluster, freshly provisioned nodes never finish joining. Their `BareMetalHost` (or equivalent provider) shows the host registered, but the kubelet on the node cannot pull the cluster's release image from the mirror registry. The journal log on the node fills with TLS verification failures pointing at the mirror endpoint:
