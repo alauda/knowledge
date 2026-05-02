@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# VolumeSnapshot Creation Is Slow or Times Out — Stale VolumeSnapshotContent Objects Break the Snapshot-Controller's Watch
 ## Issue
 
 Creating a `VolumeSnapshot` in the cluster takes an unexpectedly long time — typically 3–5 minutes — and sometimes times out entirely:
