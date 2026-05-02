@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# APIs that behave differently on Hosted Control Plane guest clusters
 ## Overview
 
 A Hosted Control Plane (HCP) guest cluster runs the standard Kubernetes data plane on its worker nodes, but the control-plane components live as pods inside the management cluster's hosting namespace, not on the guest itself. As a result, several cluster-scoped APIs that are normally configured **inside** the cluster are either invisible from the guest, or must be set on the management-side `HostedCluster` / `NodePool` resources. This document is a reference of the affected APIs and where to configure each.
