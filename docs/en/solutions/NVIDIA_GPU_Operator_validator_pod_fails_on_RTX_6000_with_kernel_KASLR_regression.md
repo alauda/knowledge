@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# NVIDIA GPU Operator validator pod fails on RTX 6000 with kernel KASLR regression
 ## Issue
 
 The NVIDIA GPU Operator deploys cleanly on a node with an NVIDIA RTX 6000 (Ada Generation) card, but the validator pod loops in `Init:CrashLoopBackOff`:
