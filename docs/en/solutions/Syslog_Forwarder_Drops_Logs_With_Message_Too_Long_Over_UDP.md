@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Syslog Forwarder Drops Logs With Message Too Long Over UDP
 ## Issue
 
 The cluster log collector — Vector or, on older platform releases, Fluentd — fails to forward a subset of log records to a downstream syslog server. The collector emits a `Message too long` error for each oversize record and a high-error-rate alert (`CollectorHighErrorRate` / `FluentDHighErrorRate`) appears on the platform monitoring stack.
