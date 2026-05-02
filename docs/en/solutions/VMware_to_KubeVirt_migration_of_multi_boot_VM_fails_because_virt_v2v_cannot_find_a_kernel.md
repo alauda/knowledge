@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# VMware-to-KubeVirt migration of multi-boot VM fails because virt-v2v cannot find a kernel
 ## Issue
 
 A VMware virtual machine being migrated into a KubeVirt-backed cluster
