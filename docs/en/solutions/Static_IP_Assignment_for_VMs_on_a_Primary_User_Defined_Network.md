@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Static IP Assignment for VMs on a Primary User-Defined Network
 ## Overview
 
 A VM attached to a **primary** user-defined network (UDN or CUDN) — i.e. the UDN replaces the default pod network as the VM's only network — often needs a predictable IP. Typical reasons: a firewall upstream whitelists by IP, an application config file hard-codes its own address, or a cluster-external monitoring system addresses the VM by a pinned value.
