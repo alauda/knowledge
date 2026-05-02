@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Node configuration daemon fails to apply cgroup v2 kernel arguments — runtime security policy kills the pod
 ## Issue
 
 When migrating cluster nodes from cgroup v1 to cgroup v2, the platform's node configuration controller (the immutable-infrastructure / machine-configuration operator) flips the relevant kernel arguments on each node:
