@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# VM Snapshot fsfreeze Fails with Permission Denied Due to SELinux
 ## Issue
 
 Taking a consistent snapshot of a running VirtualMachine fails. The `VirtualMachineSnapshot` object surfaces a freeze error that looks like:
