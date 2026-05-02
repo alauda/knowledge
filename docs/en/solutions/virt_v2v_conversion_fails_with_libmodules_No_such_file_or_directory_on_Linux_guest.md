@@ -5,6 +5,7 @@ products:
    - Alauda Container Platform
 ProductsVersion:
    - 4.1.0,4.2.x
+id: KB260500040
 ---
 
 # virt-v2v conversion fails with "/lib/modules: No such file or directory" on Linux guest
