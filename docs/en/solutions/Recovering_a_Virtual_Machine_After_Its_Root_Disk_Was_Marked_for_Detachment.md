@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Recovering a Virtual Machine After Its Root Disk Was Marked for Detachment
 ## Issue
 
 A user operating ACP Virtualization requested a detach of the primary boot volume (the "root disk") of a running Virtual Machine — most often by accidentally clicking **Detach** on the boot entry in the VM's disk list. Because the root disk's attachment metadata (`AutoDetach`, hotplug classification) cannot be rewritten while the VM is live, the platform accepts the request but parks it in a pending state. The VM therefore:
