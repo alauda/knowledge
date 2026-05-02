@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Compliance Scans Report INCONSISTENT On Schedulable Control-Plane Nodes
 ## Issue
 
 A compliance scan run by the platform's compliance scanner (the Compliance Service extension on ACP, built on the open-source OpenSCAP / Compliance Operator stack) returns `INCONSISTENT` for one or more node-level scans, even though every node in the pool is the same image and reports the same version. A typical result table:
