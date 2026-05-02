@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Container Security Sensor Crash with "tls bad certificate" After Cert Rotation
 ## Issue
 
 After rotating internal certificates from the Container Security web console — typically by clicking the certificate-renewal banner — Sensor pods on the secured cluster start crashing and Collector pods cannot connect to them. Logs from the Sensor container contain a TLS handshake failure pointing back at Central:
