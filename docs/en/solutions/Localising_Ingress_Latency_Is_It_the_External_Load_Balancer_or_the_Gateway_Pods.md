@@ -31,13 +31,13 @@ The probes run in a dedicated namespace so cleanup is a single `kubectl delete n
    kubectl create namespace ingress-latency-probe
    ```
 
-2. **Export the URL you want to probe and the gateway pod IPs.** Pick any reliable health endpoint that the gateway routes to — the cluster authentication `/healthz` is common, but any stable backend path works. For ACP the gateway pods typically live under the `cpaas-system` namespace with a selector like `service=alb-operator`; adjust for your installation.
+2. **Export the URL you want to probe and the gateway pod IPs.** Pick any reliable health endpoint that the gateway routes to — the cluster authentication `/healthz` is common, but any stable backend path works. For ACP the gateway pods live under the `cpaas-system` namespace; the dataplane pods (`global-alb2-*`) carry the label `alb2.cpaas.io/pod_type=alb`. The `alb-operator-ctl-*` pod is the controller and is not on the data path — do not point the bypass probe at it.
 
    ```bash
    URL=https://auth.apps.example.com/healthz
 
    GATEWAY_NS=cpaas-system       # ACP ALB namespace; edit for your platform
-   GATEWAY_SELECTOR=service=alb-operator
+   GATEWAY_SELECTOR=alb2.cpaas.io/pod_type=alb
 
    GATEWAY_IPS=$(kubectl -n $GATEWAY_NS get pod -l $GATEWAY_SELECTOR \
                    -o jsonpath='{range .items[*]}{.status.hostIP}{"\n"}{end}' \
