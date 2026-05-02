@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Configuring Velero with an S3-compatible object store that has no region
 ## Overview
 
 The cluster's data-protection controller (Velero-based) ships an `aws` plugin that talks to S3 and S3-compatible object stores. The plugin was originally built for AWS S3 and treats the bucket region as a required attribute. Many on-premise S3-compatible systems (IBM COS on-prem, MinIO, Ceph RGW, NetApp StorageGRID, ECS, on-prem Cloudian, and others) do not expose a region concept at all. Without a region, the plugin's discovery code returns an error such as:
