@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Increasing NIC Ring Buffer Size via Declarative Node Tuning
 ## Issue
 
 Workloads on a node intermittently drop network packets and `ethtool -S <iface>` reports growing counters such as `ring full` on the transmit side and `pkts rx OOB` on the receive side:
