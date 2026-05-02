@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Preventing MetalLB From Auto-Assigning IPs — Mark an IPAddressPool Non-Autoassign and Opt Services In
 ## Issue
 
 A cluster running MetalLB to back `Service` objects of type `LoadBalancer` is auto-handing out external IPs from the default `IPAddressPool` to every new LoadBalancer service — including services the administrator did not intend to expose externally. Specific symptoms reported on ACP:
