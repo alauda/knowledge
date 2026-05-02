@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Whereabouts Reconciler Logs Benign "failed to update reservation list" Errors
 ## Issue
 
 Operators of a cluster that uses Multus with the Whereabouts IPAM plugin notice error-level entries in the `whereabouts-reconciler` pod logs. The reconciler pods run as a DaemonSet in the Multus-control namespace, and their purpose is to periodically reclaim leaked IP reservations left behind by crashed or force-deleted pods.
