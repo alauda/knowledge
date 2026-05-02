@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Cluster Upgrades Stall on VM Node Drains When the Migration Network Is Saturated
 ## Issue
 
 A cluster upgrade stalls when the upgrade controller tries to drain a node that hosts ACP Virtualization workloads. The drain proceeds quickly for ordinary pods but gets stuck evicting the VMs: live migrations start, make progress for a while, and then fail to converge — the VM stays on the source node and the node cannot be taken out of service.
