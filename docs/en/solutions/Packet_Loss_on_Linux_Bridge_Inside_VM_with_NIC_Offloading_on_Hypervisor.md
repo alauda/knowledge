@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Packet Loss on Linux Bridge Inside VM with NIC Offloading on Hypervisor
 ## Issue
 
 A guest VM running on Alauda Container Platform Virtualization shows TX drops and severely degraded throughput when traffic is forwarded through a Linux bridge inside the VM — typically when `podman` (or a nested Kubernetes node) is using a default bridge network on the guest. Curl downloads from external hosts plateau at a fraction of expected throughput; `ip -s -d link` on the guest bridge counts steady TX errors. The same VM with traffic going straight out (no inner bridge) does not lose packets.
