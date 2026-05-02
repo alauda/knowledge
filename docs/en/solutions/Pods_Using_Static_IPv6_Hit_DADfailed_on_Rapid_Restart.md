@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Pods Using Static IPv6 Hit DADfailed on Rapid Restart
 ## Issue
 
 A workload runs as a `Deployment` and its pod template pins a specific IPv6 address (via a CNI attachment, a static allocator, or an equivalent mechanism). When the pod is deleted or restarted, the replacement pod either takes up to roughly 30 seconds before it begins replying on the network, or fails sandbox setup entirely with a CNI error like:
