@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Configure Argo CD Operator Component Resource Requests and Limits
 ## Issue
 
 Argo CD operator components (controller manager, repo server, application controller) on Alauda Container Platform may be restarted by the kubelet when their default container memory or CPU limits are too low for the workload size. Operators wanting to right-size these components ask how to set CPU/memory requests and limits on the operator-managed pods so that they do not starve other tenants on the cluster yet are not OOMKilled themselves.
