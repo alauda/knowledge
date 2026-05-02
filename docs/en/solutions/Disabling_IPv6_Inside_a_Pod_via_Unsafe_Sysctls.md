@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Disabling IPv6 Inside a Pod via Unsafe Sysctls
 ## Issue
 
 A workload must bind only to IPv4 inside its pod network namespace, either because the upstream application silently prefers `::1` over `127.0.0.1` and fails on dual-stack loopback, or because the host network is IPv4-only and IPv6 advertisements from the pod trigger confusion upstream. The natural toggle —
