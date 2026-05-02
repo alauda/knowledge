@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Carrying a CA Certificate Through Ingress TLS to ALB
 ## Issue
 
 A TLS Secret created with `kubectl create secret tls` only carries `tls.crt` and `tls.key`. When a Secret is hand-built with an additional `ca.crt` key (the chain or backend CA the load balancer should trust on the upstream leg of a re-encrypt), that `ca.crt` is **not** automatically picked up by the Ingress controller's reencrypt logic — only `tls.crt` and `tls.key` get propagated to the underlying load-balancer object. The result: the platform load balancer terminates TLS in front of the workload but cannot validate the backend's certificate, and reencrypt fails.
