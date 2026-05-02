@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# vSphere CSI provisioning fails with "empty list of node VMs" — wrong datastore path
 ## Issue
 
 The cluster's storage operator goes `Degraded` and every PVC that targets the vSphere CSI StorageClass stays in `Pending`. The provisioner sidecar logs an `empty List of Node VMs returned from nodeManager` error:
