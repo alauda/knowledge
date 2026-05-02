@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Cold VM Migration from VMware Hangs at Conversion-Progress Reporting
 ## Issue
 
 A cold migration of a VMware VM into ACP Virtualization stalls at the final step. The migration plan sits at "converting…" forever. The `virt-v2v` pod in the target namespace completes its conversion work and opens an HTTP server to report the resulting VM XML, but the migration controller never completes the plan. Representative symptoms:
