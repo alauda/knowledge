@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Grant a group permission to approve InstallPlans in a specific namespace
 ## Issue
 
 Operators installed through OLM on ACP are governed by the `Subscription` / `InstallPlan` / `ClusterServiceVersion` trio from the `operators.coreos.com` API group. When a `Subscription` is created with `installPlanApproval: Manual`, each upgrade produces a fresh `InstallPlan` that stays `Pending` until a human sets `spec.approved: true`. Organisations commonly want to delegate that approval step to a specific identity group — the operator owner for a given namespace — without giving that group broader cluster-admin rights. The task is to build a least-privilege role that grants exactly the verbs needed to list, inspect, and approve `InstallPlans` in one namespace.
