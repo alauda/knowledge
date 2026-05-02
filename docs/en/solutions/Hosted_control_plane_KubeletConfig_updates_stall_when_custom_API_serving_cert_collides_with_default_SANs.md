@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Hosted control plane KubeletConfig updates stall when custom API serving cert collides with default SANs
 ## Issue
 
 A KubeletConfig change is rolled into a hosted-control-plane (HCP)
