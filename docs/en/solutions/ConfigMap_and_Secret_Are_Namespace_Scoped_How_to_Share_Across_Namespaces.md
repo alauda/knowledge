@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# ConfigMap and Secret Are Namespace-Scoped — How to Share Across Namespaces
 ## Issue
 
 A pod stays stuck in `CreateContainerConfigError` and the events show the kubelet refusing to mount or expand a referenced object:
