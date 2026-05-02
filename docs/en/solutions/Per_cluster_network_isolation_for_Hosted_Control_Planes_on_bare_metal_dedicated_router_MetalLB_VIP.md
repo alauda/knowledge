@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Per-cluster network isolation for Hosted Control Planes on bare metal — dedicated router + MetalLB VIP
 ## Issue
 
 The platform's Hosted Control Plane (HCP) capability runs each managed cluster's control plane as workloads on a hub cluster. By default, every hosted cluster's API server, OAuth server, Konnectivity, and Ignition endpoints are published through the hub's shared ingress controller and reach the network on the hub's shared VIP — multiplexed via SNI.
