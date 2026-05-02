@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# CFS CPU Throttling on JVM and Multi-Threaded Pods Without Crashes
 ## Issue
 
 A JVM-based workload (in-memory cache, search indexer, analytics engine, application server) reports stuttering response times under load. Grafana shows CPU usage well below the container's `limits.cpu`, yet the same pod's `container_cpu_cfs_throttled_periods_total` counter is climbing rapidly. The pod itself does not crash and is not OOM-killed; performance just sags during traffic peaks.
