@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Provision Dynamic NFS Storage for Tekton and Jenkins CI/CD Pipelines
 ## Overview
 
 Tekton `PipelineRun` workspaces and Jenkins shared `jnlp` agent workspaces both want a `ReadWriteMany` PersistentVolumeClaim so several Pods (or several Tasks within one Run) can stream artifacts and logs through the same backing volume. The simplest portable answer that does not require a CSI driver is the open-source `nfs-subdir-external-provisioner`. Pointed at any reachable NFS export, it dynamically carves a sub-directory per PVC and binds it as a PV.
