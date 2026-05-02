@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Pods Stuck in Init Because istio-cni-node Cannot Reach the API Server
 ## Issue
 
 New pods in a namespace managed by the mesh never transition beyond the `Init` phase. The pod event stream shows the CNI network configuration failing, with a message that is long on plumbing detail but short on the real cause:
