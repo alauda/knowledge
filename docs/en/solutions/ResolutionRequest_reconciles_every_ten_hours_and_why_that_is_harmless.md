@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# ResolutionRequest reconciles every ten hours — and why that is harmless
 ## Overview
 
 A long-lived PipelineRun has a `ResolutionRequest` resource attached — that is the object the remote resolver creates to resolve a Pipeline reference (a git URL, a bundle, a hub reference) into the actual Pipeline definition. Operators sometimes notice the resolver pod waking up against very old `ResolutionRequest` objects on a regular cadence, and ask whether that interval can be raised (for example to 24 hours) to cut log noise.
