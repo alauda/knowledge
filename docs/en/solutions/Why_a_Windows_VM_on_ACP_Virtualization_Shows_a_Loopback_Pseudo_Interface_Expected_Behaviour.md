@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Why a Windows VM on ACP Virtualization Shows a Loopback Pseudo-Interface — Expected Behaviour
 ## Overview
 
 A Windows VM freshly migrated onto ACP Virtualization shows, in the VM's network-interface list on the ACP console, a `Loopback Pseudo-Interface` alongside the expected Ethernet NICs. At first glance the extra entry looks like the migration toolkit or KubeVirt accidentally added a spurious interface. The entry typically carries the address `127.0.0.1` and does not participate in any configured pod-network or secondary-network attachment.
