@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Prometheus Operator skips ServiceMonitor with bearer-token or TLS file references
 ## Issue
 
 Prometheus stops scraping metrics from a platform namespace. The Prometheus Operator pod in the observability namespace repeatedly logs one of the following warnings:
