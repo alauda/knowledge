@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# PrometheusOperatorRejectedResources — ServiceMonitor Rejected for Using bearerTokenFile
 ## Issue
 
 On a cluster that ships the Cert Utils Operator (or any third-party operator that provides its own metrics scrape definition), the `PrometheusOperatorRejectedResources` alert begins firing after the operator is installed. The Prometheus Operator pod logs entries similar to:
