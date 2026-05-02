@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# TempoStack Redis Cache Password Must Be Inline (Not a Secret Reference) — Tracked RFE
 ## Overview
 
 A `TempoStack` configured with a Redis cache for query results needs the Redis password in its CR. The natural Kubernetes idiom is to reference a `Secret`:
