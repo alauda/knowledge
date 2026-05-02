@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Cross-Cluster VM Live Migration Fails — DecentralizedLiveMigration Feature Gate Not Enabled
 ## Issue
 
 When using the VMware-migration workflow (or any cross-cluster KubeVirt migration path) to live-migrate a Virtual Machine between two ACP Virtualization clusters, plan creation is rejected by a KubeVirt admission webhook with the following signature:
