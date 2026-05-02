@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Upgrade fails with osImage mismatch — custom API certificate not trusted by Multus and node-config daemon
 ## Issue
 
 A control-plane node fails to roll forward during a cluster upgrade. The visible symptom is an `osImageURL` mismatch reported by the cluster's node-configuration controller — the rendered desired image differs from what the node is running, and the node cannot rebase.
