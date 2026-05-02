@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Common-Image Poller Pods Stuck in ImagePullBackOff on a Fresh Virtualization Install
 ## Issue
 
 On a freshly installed cluster running ACP Virtualization, a set of "poller" pods in the boot-source images namespace stay in `ImagePullBackOff` indefinitely instead of cleaning themselves up after the pull fails:
