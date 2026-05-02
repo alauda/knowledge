@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Argo CD Redis HAProxy deployment stuck Pending after operator upgrade on a three-worker cluster
 ## Issue
 
 After upgrading the ACP GitOps component (Argo CD) on a cluster with exactly three schedulable worker nodes, the `redis-ha-haproxy` Deployment that fronts the Argo CD Redis HA tier never completes its rollout. A fourth replica is created alongside the three Running ones and remains `Pending` indefinitely:
