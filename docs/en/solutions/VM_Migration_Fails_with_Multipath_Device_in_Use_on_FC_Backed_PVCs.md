@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# VM Migration Fails with "Multipath Device in Use" on FC-Backed PVCs
 ## Issue
 
 A live-migration of a virtual machine — from one worker node to another — fails with the VMI reporting `FailedMapVolume` and the CSI layer refusing to release a multipath device on the source node. The event shows up on the target pod as:
