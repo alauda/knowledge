@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Sharing a single NVIDIA GPU between multiple pods using time-slicing
 ## Issue
 
 A node carries a single NVIDIA accelerator (for example one Tesla T4) but several workloads need GPU access at the same time — interactive notebooks, low-throughput inference pods, smoke tests. Without further configuration the device plugin advertises one `nvidia.com/gpu` resource on that node, the scheduler hands the device to a single pod, and any other pod that requests `nvidia.com/gpu` stays Pending. The goal is to declare that the device may be shared between N pods so multiple workloads can co-exist on a single physical card.
