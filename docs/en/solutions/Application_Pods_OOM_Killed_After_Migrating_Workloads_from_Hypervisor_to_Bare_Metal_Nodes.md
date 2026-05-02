@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Application Pods OOM-Killed After Migrating Workloads from Hypervisor to Bare-Metal Nodes
 ## Issue
 
 After moving an application off a hypervisor-backed cluster onto a bare-metal cluster, application pods start crashing intermittently with exit code 137 (OOM-killed). The pods enter `CrashLoopBackOff`, and the kubelet's pod events show `OOMKilled` against one or more containers. The same workload manifest, with the same memory request/limit values, was stable on the hypervisor cluster but is unstable on bare metal.
