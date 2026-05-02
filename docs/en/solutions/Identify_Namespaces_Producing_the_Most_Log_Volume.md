@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Identify Namespaces Producing the Most Log Volume
 ## Issue
 
 The cluster's log storage backend is filling up faster than expected and you want to find out which namespace (or set of namespaces) is the top contributor to ingested log volume, so you can follow up with the workload owner or adjust log-forwarding rules.
