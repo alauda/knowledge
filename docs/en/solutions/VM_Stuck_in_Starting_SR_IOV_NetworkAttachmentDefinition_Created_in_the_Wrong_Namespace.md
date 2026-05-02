@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# VM Stuck in `Starting` — SR-IOV NetworkAttachmentDefinition Created in the Wrong Namespace
 ## Issue
 
 A VM configured to use an SR-IOV network stays in `Starting` and never reaches `Ready`. The VM's status surfaces a `FailedCreate` condition pointing at a missing NetworkAttachmentDefinition:
