@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# KubeletConfig changes never reach the nodes — missing pool selector
 ## Issue
 
 A `KubeletConfig` custom resource is created (or patched) to raise `systemReserved`, change eviction thresholds, or otherwise tune kubelet behaviour. Despite the CR existing and showing the new spec values, the kubelets on the nodes never pick the change up — `/var/lib/kubelet/config.yaml` on each host still has the old values, and `kubectl describe node` shows the unchanged `Allocatable`.
