@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Cancelling a previously-applied compliance remediation
 ## Issue
 
 The Compliance Service has automatically applied a remediation for a scan rule that, in retrospect, should not be applied to this cluster — for example a banner template that conflicts with an internal policy, or a sysctl change that breaks an in-house workload. The cluster needs the remediation reverted, the rule kept on the scan profile (so it still produces a finding for visibility), and future re-runs of the scan should not re-apply it automatically.
