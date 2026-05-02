@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# `buildah-ns` Task Fails After Kubernetes Removes CRI-O's User-Namespace Annotation
 ## Issue
 
 A Tekton pipeline that uses the `buildah-ns` task variant (the one that runs `buildah` inside a **user namespace** to avoid needing root on the node) fails to start the container. The task pod lands in `Init:CreateContainerError` and the container's log carries a specific filesystem error:
