@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Distinguishing JVM Heap Growth from Page Cache in Container Memory Metrics
 ## Issue
 
 A JVM-based workload (a Spring-Boot service, a Java integration runtime, a Tomcat-style app server) runs with a clearly bounded Java heap — for example, `-Xmx2G` — yet the pod's `container_memory_usage_bytes` metric in the cluster's monitoring stack climbs steadily over time and eventually plateaus at several gigabytes higher than the configured heap. By the time it reaches `7G` against a 2G heap, dashboards alert on memory pressure, on-call assumes a heap leak, and the operator team starts the JVM-leak-hunt playbook — heap dumps, GC logs, JFR captures.
