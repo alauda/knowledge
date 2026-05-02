@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Intel ICE NIC driver "Failed stop Rx rings, VSI error-110" — pod traffic disruption
 ## Issue
 
 Pods on a node lose network connectivity in short bursts; the host's physical interfaces flap up and down on their own; and the kernel ring buffer carries entries from the Intel ICE driver of the form:
