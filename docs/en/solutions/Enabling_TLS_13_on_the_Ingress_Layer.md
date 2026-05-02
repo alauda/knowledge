@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Enabling TLS 1.3 on the Ingress Layer
 ## Overview
 
 TLS 1.3 removes a class of legacy weaknesses (RSA key exchange, CBC-mode ciphers, static Diffie-Hellman) that TLS 1.2 still supports. Compliance regimes increasingly require it on anything user-facing. Platforms ship with a conservative default (TLS 1.2) for broader compatibility; enabling TLS 1.3 on the ingress layer is a matter of picking a stricter profile or declaring a custom one.
