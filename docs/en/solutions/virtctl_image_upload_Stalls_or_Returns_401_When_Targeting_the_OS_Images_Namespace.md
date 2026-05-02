@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# virtctl image-upload Stalls or Returns 401 When Targeting the OS Images Namespace
 ## Issue
 
 Uploading a disk image to the namespace that hosts the platform-supplied VM base images fails or stalls shortly after the transfer starts. `virtctl image-upload` reports one of:
