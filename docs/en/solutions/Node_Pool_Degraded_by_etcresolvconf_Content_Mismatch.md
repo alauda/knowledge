@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Node Pool Degraded by /etc/resolv.conf Content Mismatch
 ## Issue
 
 One or more node pools in the cluster report `Degraded=True` after a node-configuration change that touches `/etc/resolv.conf`. The pool status carries a per-node message of the form `unexpected on-disk state validating against rendered-<pool>-<hash>`, and the on-node configuration daemon log expands that into a content diff:
