@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# CSI NodeStageVolume fails with NVMe/TCP transport error despite reachable target
 ## Issue
 
 On a cluster that uses a CSI driver backed by an NVMe-over-TCP storage array (for example an HPE Alletra-class backend), `PersistentVolumeClaim` objects stay in `Pending`, workloads (including VMs) never start, and the kubelet surfaces `NodeStageVolume` failures of the form:
