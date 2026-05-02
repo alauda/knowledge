@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Live Migration Fails When Worker Nodes Have Different CPU Models
 ## Issue
 
 A VirtualMachine live migration stops with:
