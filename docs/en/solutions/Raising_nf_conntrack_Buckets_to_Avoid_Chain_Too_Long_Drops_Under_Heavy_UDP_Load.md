@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Raising nf_conntrack Buckets to Avoid Chain-Too-Long Drops Under Heavy UDP Load
 ## Issue
 
 A heavy load test against a single host — roughly 35 000 requests per second of UDP (or bursty TCP with rapid connection turnover) landing on the primary interface of a node — starts dropping SYN packets and failing kubelet health probes on every pod hosted on that node. Symptoms seen on the host:
