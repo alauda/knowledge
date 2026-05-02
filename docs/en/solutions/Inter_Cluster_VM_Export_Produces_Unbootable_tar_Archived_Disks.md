@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Inter-Cluster VM Export Produces Unbootable tar-Archived Disks
 ## Issue
 
 A VirtualMachine exported from one cluster and imported into another fails to boot in the destination. The destination VM's disk shows up as a raw device that cannot be parsed by the bootloader. Inspecting the first MB of the disk reveals a **POSIX tar archive** rather than a filesystem or disk image.
