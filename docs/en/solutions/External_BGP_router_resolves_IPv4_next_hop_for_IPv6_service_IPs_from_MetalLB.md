@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# External BGP router resolves IPv4 next-hop for IPv6 service IPs from MetalLB
 ## Issue
 
 A datacentre gateway (DCGW) router peered with MetalLB observes IPv6 `Service` prefixes advertised with an IPv4 next-hop equal to the worker node's IPv4 address. The expectation was an IPv6 next-hop sourced from the IPv6 BGP session. Removing IPv4 peers from `BGPAdvertisement` does not change the behaviour. The traffic still reaches the service because the IPv4 next-hop resolves on the same path, but the router operator wants strict address-family separation: IPv4 routes over the IPv4 session, IPv6 routes over the IPv6 session.
