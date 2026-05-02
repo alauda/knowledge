@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Warm migration of a Windows VM fails at inspection — read-only NTFS from missing snapshot quiesce
 ## Issue
 
 A warm migration of a Windows VM from VMware into the cluster's virtualization stack fails during the **inspection** phase — before any disk-conversion work has started. The inspector pod (the one that runs `virt-v2v-inspector` on a snapshot of the source disk) reports that the NTFS filesystem could only be mounted read-only:
