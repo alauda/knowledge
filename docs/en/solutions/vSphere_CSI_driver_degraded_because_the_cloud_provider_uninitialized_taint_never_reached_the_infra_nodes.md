@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# vSphere CSI driver degraded because the cloud-provider-uninitialized taint never reached the infra nodes
 ## Issue
 
 After fresh installation of a vSphere-backed cluster, the storage cluster operator stays in a degraded state with a message that points at the vSphere CSI driver:
