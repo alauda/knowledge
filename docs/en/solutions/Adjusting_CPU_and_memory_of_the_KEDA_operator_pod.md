@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Adjusting CPU and memory of the KEDA operator pod
 ## Issue
 
 The KEDA operator pod (`keda-operator`) ships with a small default resources block — typically `requests: cpu=100m, memory=100Mi` and `limits: cpu=500m, memory=500Mi`. Clusters running many `ScaledObject` / `ScaledJob` resources, or a high-frequency external trigger (Prometheus, Kafka lag, custom CR), push the operator's reconcile loop and metrics-server traffic well past the default limit. The operator pod then hits CPU throttling or OOM, slows down `ScaledObject` reconciliation, and downstream HPA decisions lag.
