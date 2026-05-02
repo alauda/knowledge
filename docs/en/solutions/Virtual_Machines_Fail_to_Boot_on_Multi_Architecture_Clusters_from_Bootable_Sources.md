@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Virtual Machines Fail to Boot on Multi-Architecture Clusters from Bootable Sources
 ## Issue
 
 On a cluster with mixed CPU architectures (for example, some nodes on `amd64` and others on `arm64`), a newly created Virtual Machine fails to boot when its disk is provisioned from a "bootable source" template image. The VM starts, but the UEFI firmware prints an access-denied error and falls through to the boot manager:
