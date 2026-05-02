@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Force a CatalogSource to re-sync on demand
 ## Issue
 
 A `CatalogSource` is configured with a long polling interval (or no polling at all), so newly published bundles in the underlying index image do not become visible to the cluster until the next scheduled refresh. Operations needs a way to force the catalog to pick up the latest contents immediately — for example after pushing a new bundle to an in-house index, or after rotating credentials for a private registry.
