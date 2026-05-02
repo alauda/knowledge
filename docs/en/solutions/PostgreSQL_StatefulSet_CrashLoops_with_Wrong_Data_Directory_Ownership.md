@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# PostgreSQL StatefulSet CrashLoops with Wrong Data-Directory Ownership
 ## Issue
 
 A PostgreSQL pod that runs as part of a managed service (object-storage metadata, operator internal state, audit DB) enters `CrashLoopBackOff` after a restore, PVC remount, or pod reschedule. The container log fails early:
