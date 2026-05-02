@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Istio Sidecar CPU Limit Defaults to 2000m When Not Explicitly Defined in the Istio CR
 ## Overview
 
 On ACP Service Mesh v2 (Istio 1.26.x), a cluster operator who deliberately omits the sidecar's CPU limit in the `Istio` custom resource — whether by leaving the field unset, setting it to `null`, or passing an empty value — finds that injected `istio-proxy` sidecars still come up with a CPU limit of `2000m`. This is surprising: plain Kubernetes semantics say that an unset `limits.cpu` means no limit, but the mesh is clearly setting one.
