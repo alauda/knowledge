@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Inspecting virtio-win driver versions inside a Windows guest
 ## Issue
 
 A Windows VM running on the platform's KubeVirt-based virtualization stack uses paravirtualized devices (virtio-blk, virtio-scsi, virtio-net, virtio-balloon, virtio-serial). When troubleshooting performance, compatibility, or migration questions, the running version of each virtio driver inside the guest is needed — both to confirm that a planned host-side change matches the guest's driver level, and to attach in support correspondence. The driver bundle ships under the `virtio-win` umbrella; each subordinate device exposes its own `DriverVersion` and `DriverDate`.
