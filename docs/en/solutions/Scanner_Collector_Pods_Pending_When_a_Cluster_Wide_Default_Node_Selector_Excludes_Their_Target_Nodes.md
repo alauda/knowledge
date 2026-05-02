@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Scanner Collector Pods Pending When a Cluster-Wide Default Node Selector Excludes Their Target Nodes
 ## Issue
 
 Installing the container-security scanner (StackRox or its downstream variants) deploys a `collector` DaemonSet intended to land on every node. On some clusters, the DaemonSet's pods enter `Pending` and never schedule, with a scheduler message that looks fine on its face:
