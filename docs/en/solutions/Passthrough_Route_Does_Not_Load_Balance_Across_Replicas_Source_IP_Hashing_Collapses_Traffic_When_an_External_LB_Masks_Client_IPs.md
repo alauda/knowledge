@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Passthrough Route Does Not Load-Balance Across Replicas — Source-IP Hashing Collapses Traffic When an External LB Masks Client IPs
 ## Issue
 
 A Service or Route configured for TLS passthrough has multiple healthy backend pods but traffic collapses onto a single pod. Even under synthetic load:
