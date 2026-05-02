@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Live Migration Is Blocked for VMs Using Shared Disks with SCSI Persistent Reservations
 ## Overview
 
 Virtual machines that use shared iSCSI disks with SCSI Persistent Reservations (SPR) — most commonly a pair of Windows guests running a Failover Cluster — cannot be live-migrated on ACP Virtualization. The VMI status makes the reason explicit rather than silently failing the migration:
