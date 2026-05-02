@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Egress IP for Hosted Control Plane Tenant Clusters Running on ACP Virtualization
 ## Overview
 
 A tenant cluster provisioned through Hosted Control Planes (HCP) runs its worker "nodes" as VMs inside an ACP Virtualization management cluster. Each tenant-cluster worker is therefore a `virt-launcher` pod at the management layer — and the tenant cluster's egress traffic has to cross two OVN-Kubernetes SDN layers to leave the physical network: the tenant cluster's own SDN, then the management cluster's SDN, then the host's physical NIC.
