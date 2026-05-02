@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# How a cluster-wide proxy setting reaches the container runtime on each node
 ## Overview
 
 When a cluster sits behind a corporate egress proxy, every component that speaks to the public internet — image pulls from external registries, telemetry uploads, OperatorHub catalog updates — must respect the same `HTTP_PROXY` / `HTTPS_PROXY` / `NO_PROXY` settings. Setting these on the cluster's top-level proxy CR is straightforward. What surprises operators is the indirection between that CR and the place where the proxy values actually take effect: the kubelet itself does not consume the proxy at all. The container runtime (CRI-O, containerd) does, and only because the platform's node-configuration controller drops a systemd environment file onto every node and points the runtime's unit at it.
