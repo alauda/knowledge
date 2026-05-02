@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# VM snapshot fails on TopoLVM with Filesystem PVC volume mode
 ## Issue
 
 Creating a `VirtualMachineSnapshot` for a VM whose disk lives on a TopoLVM-backed PVC (or any logical-volume-based local storage) fails when the source PVC was created with `volumeMode: Filesystem`. The snapshot object stays in `InProgress` and the underlying `VolumeSnapshotContent` surfaces an `OutOfRange` CSI error that refers to a size mismatch between the requested snapshot size and the source logical volume:
