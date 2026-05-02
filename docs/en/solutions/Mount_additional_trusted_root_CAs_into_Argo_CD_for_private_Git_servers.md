@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Mount additional trusted root CAs into Argo CD for private Git servers
 ## Issue
 
 Argo CD cannot clone from a Git server that is fronted by a private or enterprise Root Certificate Authority. When the `argocd-repo-server` tries to pull the repository it fails with:
