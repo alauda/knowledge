@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Enabling Virtualization-Based Security on Windows Guests in ACP Virtualization
 ## Issue
 
 Operators running Microsoft Windows guests on ACP Virtualization want to enable Virtualization-Based Security (VBS) inside the guest. VBS is a Windows security stack (Credential Guard, Device Guard, HVCI) that relies on the guest OS running its own hypervisor-style isolation boundary on top of the host hypervisor — it therefore imposes specific requirements on the `VirtualMachine` spec that are not defaulted.
