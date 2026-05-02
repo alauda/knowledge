@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Pods Pending with Insufficient Memory While Nodes Show Free Memory
 ## Issue
 
 A pod stays in `Pending` state with a scheduling error similar to:
