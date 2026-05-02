@@ -6,6 +6,9 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Auto-Approve Pending Node CSRs with a Scheduled Job
+
 ## Issue
 
 Node kubelets periodically submit CertificateSigningRequests (CSRs) to renew their client and serving certificates. When the controller responsible for approving them is not running, or when CSRs arrive from workloads faster than an operator can process manually, new nodes stall in `NotReady` and existing nodes fail `kubectl logs`, `kubectl exec`, and `kubectl port-forward` with TLS errors. Manual approval through `kubectl certificate approve` does not scale and is error-prone during incidents.

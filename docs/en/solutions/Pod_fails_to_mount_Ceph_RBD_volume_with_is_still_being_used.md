@@ -7,6 +7,9 @@ ProductsVersion:
    - 4.1.0,4.2.x
 id: KB260500009
 ---
+
+# Pod fails to mount Ceph RBD volume with "is still being used
+
 ## Issue
 
 A pod backed by a ReadWriteOnce Ceph RBD PVC fails to start. The kubelet reports:

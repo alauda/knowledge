@@ -7,6 +7,9 @@ ProductsVersion:
    - 4.1.0,4.2.x
 id: KB260500008
 ---
+
+# Backend Performance Requirements for etcd
+
 ## Issue
 
 etcd performance degrades due to insufficient storage or network backend capabilities, producing log messages similar to the following:

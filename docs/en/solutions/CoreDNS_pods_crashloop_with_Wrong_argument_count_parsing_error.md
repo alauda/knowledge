@@ -6,6 +6,9 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# CoreDNS pods crashloop with "Wrong argument count" parsing error
+
 ## Issue
 
 DNS pods enter `CrashLoopBackOff`. The pod log includes a Corefile

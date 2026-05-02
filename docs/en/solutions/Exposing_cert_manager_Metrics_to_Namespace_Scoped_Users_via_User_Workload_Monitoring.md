@@ -7,6 +7,9 @@ ProductsVersion:
    - 4.1.0,4.2.x
 id: KB260500004
 ---
+
+# Exposing cert-manager Metrics to Namespace-Scoped Users via User Workload Monitoring
+
 ## Issue
 
 A namespace-scoped user, granted access only to a single project, cannot view the `certmanager_certificate_expiration_timestamp_seconds` metric (or any other cert-manager metric) even though User Workload Monitoring is enabled on the cluster. The same query works for a cluster-monitoring user.

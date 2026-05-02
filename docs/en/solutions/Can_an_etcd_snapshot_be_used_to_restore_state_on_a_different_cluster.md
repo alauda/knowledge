@@ -7,6 +7,9 @@ ProductsVersion:
    - 4.1.0,4.2.x
 id: KB260500010
 ---
+
+# Can an etcd snapshot be used to restore state on a different cluster?
+
 ## Overview
 
 An etcd snapshot has been captured from a running cluster. The operator wants to know whether that snapshot can be restored into a freshly provisioned, separately installed cluster — effectively using etcd backup as a cross-cluster migration tool for workloads, PVs, and cluster-scoped state.

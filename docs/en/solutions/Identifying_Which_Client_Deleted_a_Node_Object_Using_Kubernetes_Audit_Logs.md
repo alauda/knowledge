@@ -7,6 +7,9 @@ ProductsVersion:
    - 4.1.0,4.2.x
 id: KB260500003
 ---
+
+# Identifying Which Client Deleted a Node Object Using Kubernetes Audit Logs
+
 ## Issue
 
 A worker node disappears from the cluster shortly after it joined, or vanishes during steady-state operation. `kubectl get nodes` no longer lists it, the kubelet on the host is healthy and continues to make heartbeat calls (which now create the node again under the same name and the cycle repeats), and there is no obvious controller status condition that explains the deletion.

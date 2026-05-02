@@ -7,6 +7,9 @@ ProductsVersion:
    - 4.1.0,4.2.x
 id: KB260500005
 ---
+
+# Configuring Container and Image Garbage Collection on the kubelet
+
 ## Overview
 
 The kubelet on every worker node continuously reclaims resources from the local container runtime. Two related mechanisms drive this:

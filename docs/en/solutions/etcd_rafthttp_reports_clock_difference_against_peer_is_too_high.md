@@ -6,6 +6,9 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# etcd rafthttp reports clock difference against peer is too high
+
 ## Issue
 
 The etcd pods on the control-plane nodes log repeated warnings of the form:

@@ -6,6 +6,9 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Approving a CertificateSigningRequest via the Kubernetes API
+
 ## Issue
 
 A CertificateSigningRequest (CSR) needs to be approved programmatically — for example from a CI job, a webhook handler, or an automation controller — and shelling out to `kubectl certificate approve` is not a viable option. The standard `kubectl` admin verb is missing in some build environments, the toolchain only carries an HTTP client, or the workflow needs to attach extra auditable metadata to the approval call.

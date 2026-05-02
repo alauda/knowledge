@@ -7,6 +7,9 @@ ProductsVersion:
    - 4.1.0,4.2.x
 id: KB260500012
 ---
+
+# Namespace Stuck in Terminating Due to Lingering Finalizers
+
 ## Issue
 
 A namespace has been deleted but remains visible in `kubectl get ns` with the phase `Terminating`. The usual follow-up command lists no workload resources in the namespace, yet the namespace object itself refuses to go away:

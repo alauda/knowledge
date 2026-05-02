@@ -6,6 +6,9 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Velero includedNamespaces Does Not Support Wildcards or Regex
+
 ## Issue
 
 A backup or restore on the ACP backup surface (`configure/backup`, which packages the upstream Velero project) is declared with a glob pattern in `spec.includedNamespaces`:

@@ -7,6 +7,9 @@ ProductsVersion:
    - 4.1.0,4.2.x
 id: KB260500001
 ---
+
+# Understanding Kubernetes event TTL and how to retain events longer
+
 ## Overview
 
 Kubernetes records every meaningful state change as an `Event` object. An event holds context about who created or mutated a resource, what controller acted on it, and why; together they are the primary breadcrumb trail for debugging scheduling, image pulls, probe failures, OOMs, and reconciliation loops. Because every reconciliation cycle of every controller can emit one or more events, the event volume far outpaces ordinary resource churn — often by an order of magnitude on a busy cluster.

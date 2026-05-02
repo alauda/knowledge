@@ -7,6 +7,9 @@ ProductsVersion:
    - 4.1.0,4.2.x
 id: KB260500011
 ---
+
+# Navigating Kubernetes API deprecations and removals
+
 ## Overview
 
 Kubernetes follows a strict API versioning policy. Every beta API (`v1beta1`, `v2beta1`, and so on) is guaranteed to be supported for nine months or three Kubernetes releases — whichever is longer — after it is marked deprecated, and is then free to be removed from the server entirely. When that removal happens, any workload, controller, tool or pipeline that still talks to the old version stops working.
