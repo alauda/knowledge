@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# VM From CX Instance Type Stuck in FailedScheduling Without Hugepages
 ## Issue
 
 A new virtual machine declared from one of the compute-exclusive (CX) cluster instance types — for example `cx1.large` — never reaches `Running`. The `virt-launcher` pod is created but the scheduler refuses to bind it, returning events along the lines of:
