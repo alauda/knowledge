@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# kube-state-metrics Logs "Got Nil While Resolving Path" for VPA Optional Fields
 ## Issue
 
 After installing the Vertical Pod Autoscaler (VPA) operator on Alauda Container Platform and creating one or more `VerticalPodAutoscaler` resources without specifying the optional `minAllowed` / `maxAllowed` fields, the cluster monitoring stack starts showing two related symptoms:
