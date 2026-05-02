@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Operator Subscription Stuck on "Listing Bundles" Deadline Exceeded
 ## Issue
 
 An operator install initiated through the lifecycle layer (the `extend` surface) does not progress. The Subscription's status condition reports a gRPC deadline against the catalog source, of the form:
