@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Running vLLM on CPU-only nodes for experimental LLM serving
 ## Overview
 
 vLLM is the de facto open-source inference engine for large language models, valued for its high throughput, low latency, and paged-attention memory layout. It is engineered around GPU acceleration, but the project upstream also publishes a CPU build that lets a developer prototype an OpenAI-compatible model endpoint without dedicated accelerator hardware. CPU mode is **not** a production target — token throughput is one to two orders of magnitude below a GPU run — but it is enough to wire up an end-to-end serving topology, exercise client tooling, and benchmark relative behaviour before committing to GPU-backed nodes.
