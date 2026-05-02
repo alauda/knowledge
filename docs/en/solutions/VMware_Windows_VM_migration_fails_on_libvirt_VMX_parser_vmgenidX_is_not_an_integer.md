@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# VMware Windows VM migration fails on libvirt VMX parser — vm.genidX is not an integer
 ## Issue
 
 A migration plan for a Windows VM coming from VMware fails during the *ImageConversion* phase. The conversion pod emits a libvirt-side error from the VMX parser:
