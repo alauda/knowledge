@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# New Pod's macvlan Interface Reports UP When Parent Bond Is Admin-Down
 ## Issue
 
 A CNF pod uses a macvlan **secondary network** whose master is a VLAN sub-interface on top of a bonded physical interface (for example, `bond0.100` on top of `bond0`). The application inside the pod watches `/sys/class/net/net1/operstate` and expects to see `lowerlayerdown` if the underlying physical uplink is down, so that it can take its own failover action.
