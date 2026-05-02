@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Pod DNS Resolution Fails While Node-Level DNS Works — Old Base-Image glibc / nsswitch Behavior
 ## Issue
 
 Application pods cannot resolve an external hostname, while the same lookup works cleanly from the host OS on the same node. A typical failure from inside the pod is:
