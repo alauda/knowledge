@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Pinning a Rook-Ceph storage stack to dedicated storage nodes
 ## Issue
 
 A Rook-Ceph-based storage stack — operator pods, MON/MGR/OSD daemons, MDS for CephFS, RGW for object, NooBaa for S3 gateway, plus the CSI provisioner / plugin pods — usually starts out scheduled across whatever cluster nodes happen to fit. Operators eventually want to:
