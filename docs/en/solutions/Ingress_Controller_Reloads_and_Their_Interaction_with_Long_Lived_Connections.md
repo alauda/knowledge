@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Ingress Controller Reloads and Their Interaction with Long-Lived Connections
 ## Overview
 
 Ingress controllers on ACP reconcile their rendered configuration whenever a matching `Ingress` (or ALB `Frontend` / `Rule`) is created, updated, or deleted. Each such change triggers a **reload** — a controlled swap between the old running configuration and the new one. For short-lived HTTP requests, reloads are invisible: new requests land on the freshly-loaded config, in-flight requests drain through the outgoing config, and the whole handoff completes in milliseconds.
