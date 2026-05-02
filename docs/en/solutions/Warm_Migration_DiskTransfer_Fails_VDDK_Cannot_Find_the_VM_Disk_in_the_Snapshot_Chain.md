@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Warm Migration DiskTransfer Fails — VDDK Cannot Find the VM Disk in the Snapshot Chain
 ## Issue
 
 A warm migration from a VMware-backed source to ACP Virtualization fails in the **DiskTransfer** phase, with an error that names the missing disk but does not explain why it is missing:
