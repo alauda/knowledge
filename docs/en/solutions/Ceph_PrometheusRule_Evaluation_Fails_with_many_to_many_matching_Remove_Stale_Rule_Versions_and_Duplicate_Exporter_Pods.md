@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Ceph PrometheusRule Evaluation Fails with "many-to-many matching" — Remove Stale Rule Versions and Duplicate Exporter Pods
 ## Issue
 
 A Ceph-based storage cluster reports evaluation errors on one of its shipped alerting rules — typically the one that joins `ceph_disk_occupation` against device and pool metadata:
