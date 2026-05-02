@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Alertmanager Sends Inhibited Alert After Pod Restart — Order Inhibiting Rules Before Inhibited Rules
 ## Issue
 
 Alertmanager occasionally sends a notification for an alert that should have been suppressed by an inhibition rule. The unwanted notification appears within a short window (seconds to minutes) after one of the Alertmanager pods is restarted — during a rolling upgrade of the monitoring stack, a node drain, a crash-loop recovery, or a manual `kubectl delete pod` for debugging.
