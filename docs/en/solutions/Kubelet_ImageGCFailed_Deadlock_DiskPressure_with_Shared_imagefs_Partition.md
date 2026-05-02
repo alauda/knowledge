@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Kubelet ImageGCFailed Deadlock — DiskPressure with Shared imagefs Partition
 ## Issue
 
 Worker nodes report `DiskPressure: True`, become unschedulable, and frequently stop responding to API calls. The kubelet log shows the image garbage collector running, freeing nothing, and the node never leaves the pressure state:
