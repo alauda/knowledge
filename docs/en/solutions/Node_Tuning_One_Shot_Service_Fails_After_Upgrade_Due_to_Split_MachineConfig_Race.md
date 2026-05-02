@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Node Tuning One-Shot Service Fails After Upgrade Due to Split MachineConfig Race
 ## Issue
 
 After a cluster upgrade on a node running a `PerformanceProfile`, a node drops into `NotReady`. The host-level systemd unit that prepares the node-tuning environment (historically named `node-tuned-one-shot.service` or similar) fails at start-up with a message like:
