@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Prometheus PVC Resize on Ceph RBD Does Not Expand the In-Pod Filesystem
 ## Issue
 
 A cluster operator bumps the request on the monitoring stack's Prometheus PVC — for example from 100 GiB to 250 GiB — and the object is accepted without error. `kubectl describe pvc` reports the new capacity and the `Bound` condition stays green. Inside the Prometheus pod, however, `df -h /prometheus` still shows the original size:
