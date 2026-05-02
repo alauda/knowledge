@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Node configuration controller degraded because a config object's role label has no matching pool
 ## Issue
 
 The cluster's node-configuration operator goes degraded shortly after a new node-config object lands on the cluster. The render controller log is repeatedly emitting one entry like:
