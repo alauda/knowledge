@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# VMs on Ceph-RBD RWX volumes pause due to reclaim-space sparsify on a mounted disk
 ## Issue
 
 Virtual machines whose disks are backed by Ceph-RBD volumes mounted in `accessMode: ReadWriteMany` (RWX) — typical for VM live migration — pause unexpectedly. The VMI status reports:
