@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# virt-handler crashes with "no IP found" after enabling a migration network
 ## Issue
 
 After enabling a dedicated live-migration network on the KubeVirt operator (HyperConverged Cluster Operator, HCO) — typically by setting `spec.liveMigrationConfig.network` to a NetworkAttachmentDefinition — the `virt-handler` DaemonSet pods enter `CrashLoopBackOff`. The pod logs end with a panic from the handler's startup path:
