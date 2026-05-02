@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Alertmanager Email Receiver Fails Because SMTP Server Does Not Advertise STARTTLS
 ## Issue
 
 Alertmanager cannot deliver alerts through an email receiver. The Alertmanager pod log shows that the notifier aborts every attempt because the configured SMTP server never advertises `STARTTLS`:
