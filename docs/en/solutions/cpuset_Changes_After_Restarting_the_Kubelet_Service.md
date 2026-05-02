@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# cpuset Changes After Restarting the Kubelet Service
 ## Issue
 
 After restarting the kubelet service on a node, the CPU sets assigned to guaranteed pods change unexpectedly. Pods that were pinned to specific CPUs get reassigned to different cores, potentially breaking NUMA-aware placement and degrading workload performance.
