@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Tune the StackRox Admission Webhook Timeout Through the SecuredCluster CR
 ## Issue
 
 A cluster-insights recommendation (or a direct inspection of the cluster's webhook configuration) flags the StackRox `ValidatingWebhookConfiguration` for having a `timeoutSeconds` that exceeds the platform's maximum admission timeout — typically 13 seconds. Hand-editing the `ValidatingWebhookConfiguration` object to lower the timeout appears to work for a few seconds, after which the StackRox operator reconciles the value back to whatever the operator-owned `SecuredCluster` custom resource says it should be.
