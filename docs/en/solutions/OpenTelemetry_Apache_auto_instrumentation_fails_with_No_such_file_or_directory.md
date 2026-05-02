@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# OpenTelemetry Apache auto-instrumentation fails with "No such file or directory"
 ## Issue
 
 A Deployment that mounts the OpenTelemetry Apache auto-instrumentation
