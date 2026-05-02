@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# CSI provisioner stuck because the StorageClass omits provisioner-secret-name
 ## Issue
 
 A StorageClass that delegates to an external CSI driver fails to provision PVCs. Pods that wait on the claim — most visibly the CDI (Containerized Data Importer) importer used to seed VM disks — sit in `Pending`, and the controller pod for the CSI external-provisioner emits an error that points back to a templating problem in the StorageClass parameters:
