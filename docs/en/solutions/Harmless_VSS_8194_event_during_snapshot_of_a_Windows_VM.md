@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Harmless VSS 8194 event during snapshot of a Windows VM
 ## Issue
 
 When a VirtualMachineSnapshot is taken against a Windows Server 2019 or 2022 guest running on ACP virtualization, the snapshot itself completes successfully and the resulting `VirtualMachineSnapshotContent` is usable. Inside the guest, however, the Windows Application event log records a Volume Shadow Copy Service error with event ID 8194 shortly after the snapshot is requested. The event looks similar to the following:
