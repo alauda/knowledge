@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Adding Search Domains and Nameservers to Node /etc/resolv.conf
 ## Issue
 
 A workload migrated into the cluster fails to reach external hosts because the application sends short, unqualified names that the cluster's default DNS chain does not resolve. Operators reach for `/etc/resolv.conf` on the worker nodes — to add a search domain so that `db` resolves to `db.example.com`, or to point at a different nameserver — and find that any hand-edit is reverted within minutes by `NetworkManager`. Attempts to push the change through the platform's generic file-overlay surface trigger a node-pool reconcile failure that looks similar to:
