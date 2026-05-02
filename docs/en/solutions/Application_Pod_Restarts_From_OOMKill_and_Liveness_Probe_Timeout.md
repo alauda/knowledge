@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Application Pod Restarts From OOMKill and Liveness Probe Timeout
 ## Issue
 
 An application pod restarts intermittently. The kubelet records two distinct symptoms back-to-back on the affected node, both pointing at the same workload:
