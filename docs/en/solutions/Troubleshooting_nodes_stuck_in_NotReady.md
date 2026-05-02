@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Troubleshooting nodes stuck in NotReady
 ## Issue
 
 A node reports `Status: NotReady` in `kubectl get nodes`. Pods scheduled on the node go into `Unknown` or `Terminating`; new pods cannot be placed on it; existing workloads on the node may keep running for a while but become invisible to the cluster.
