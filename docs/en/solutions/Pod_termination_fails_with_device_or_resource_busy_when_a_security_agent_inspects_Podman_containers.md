@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Pod termination fails with device or resource busy when a security agent inspects Podman containers
 ## Issue
 
 Pods on an affected node are stuck in `Terminating` and the kubelet logs repeat a sandbox-stop failure citing an overlay mount that cannot be removed:
