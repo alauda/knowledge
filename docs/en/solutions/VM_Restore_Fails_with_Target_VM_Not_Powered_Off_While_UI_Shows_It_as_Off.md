@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# VM Restore Fails with `Target VM Not Powered Off` While UI Shows It as Off
 ## Issue
 
 A `VirtualMachineRestore` operation (from a snapshot, typically to roll a VM back to a known state) fails to progress. The restore object reports:
