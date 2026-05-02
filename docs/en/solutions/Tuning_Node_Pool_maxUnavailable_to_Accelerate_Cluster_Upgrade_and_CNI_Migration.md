@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Tuning Node-Pool maxUnavailable to Accelerate Cluster Upgrade and CNI Migration
 ## Issue
 
 A cluster operator wants to widen the concurrency of node rollouts — either during a platform upgrade, or when migrating the cluster network from one CNI to another (for instance, between revisions of Kube-OVN, or from a legacy CNI to Kube-OVN). The default policy rolls nodes one at a time, which is safe but slow on large clusters with hundreds of workers: a full rollout can take several hours or overnight.
