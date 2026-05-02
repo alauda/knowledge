@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Inspecting the CA Trust Store Inside a Container
 ## Issue
 
 A workload running inside a container needs to verify that its base image ships a specific root CA — for example, an external service it calls over HTTPS is signed under `DigiCert Global Root G2`, and the operator wants to confirm the container image already includes that root. The answer determines whether the workload "just works", or whether a custom CA bundle has to be mounted into the pod.
