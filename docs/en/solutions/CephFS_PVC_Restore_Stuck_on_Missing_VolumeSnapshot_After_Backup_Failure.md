@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# CephFS PVC Restore Stuck on Missing VolumeSnapshot After Backup Failure
 ## Issue
 
 A backup or restore workflow that creates a `PersistentVolumeClaim` from a `VolumeSnapshot` data source never reaches `Bound`. The namespace fills with repeating `Provisioning` events for the same PVC, and the CephFS CSI provisioner logs a tight loop of "snapshot not found" errors:
