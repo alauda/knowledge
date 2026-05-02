@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Java Application in a Pod Fails with java.net.SocketTimeoutException
 ## Issue
 
 A Java application running inside a pod logs a `java.net.SocketTimeoutException` when calling a remote service. The exception is exposed in the pod's stdout/stderr and frequently looks like:
