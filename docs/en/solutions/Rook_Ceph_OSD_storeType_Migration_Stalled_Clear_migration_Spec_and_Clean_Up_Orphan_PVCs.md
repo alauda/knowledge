@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Rook Ceph OSD storeType Migration Stalled — Clear `migration` Spec and Clean Up Orphan PVCs
 ## Issue
 
 During a Rook-Ceph major-version upgrade, the operator attempts to migrate OSDs from one `storeType` (for example `bluestore_rdr`) to another (`bluestore`). Two concrete symptoms appear together:
