@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Per-User API Rate Limiting Is Not a Supported Capability
 ## Issue
 
 A common operational question: can the platform enforce a fixed quota of API calls per authenticated user or per client over a time window — for example, "no more than N `kubectl get pods` calls per minute per service account"? The expectation usually comes from external API gateway experience, where per-key rate limits are a standard primitive.
