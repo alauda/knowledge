@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# SR-IOV virtual function driver type for KubeVirt virtual machines
 ## Overview
 
 SR-IOV virtual functions (VFs) on a worker node can be exposed to workloads under two driver bindings: `netdevice`, which keeps the VF inside the host kernel network stack, and `vfio-pci`, which detaches the VF from the host kernel and binds it to the userspace VFIO framework so that another address space can drive it directly. Both bindings work for container-based workloads under Multus. For virtual machines managed by the KubeVirt-based virtualization stack, however, the practical choice is constrained by what the guest kernel needs to see and by the security model of PCI passthrough.
