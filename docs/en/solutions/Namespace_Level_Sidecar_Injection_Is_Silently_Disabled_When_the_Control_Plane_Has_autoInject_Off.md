@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Namespace-Level Sidecar Injection Is Silently Disabled When the Control Plane Has autoInject Off
 ## Issue
 
 Workloads in a namespace that is labelled `istio-injection=enabled` start without the `istio-proxy` sidecar. Pods come up at `1/1 Ready` instead of the expected `2/2 Ready`, and the only way to get the sidecar injected is to add the per-pod annotation on every Deployment:
