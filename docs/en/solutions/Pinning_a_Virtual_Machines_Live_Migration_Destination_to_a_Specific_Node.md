@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Pinning a Virtual Machine's Live-Migration Destination to a Specific Node
 ## Issue
 
 An operator wants to trigger a live migration of a running virtual machine and, as part of that migration, force the VM to land on a specific destination node — for example to drain a failing host, to consolidate workloads onto a smaller node set before a maintenance window, or to put a latency-sensitive workload next to a specific accelerator. The ACP virtualization stack (`docs/en/virtualization/`, KubeVirt-based) does not expose a first-class "target node" field on the `VirtualMachineInstanceMigration` object: the scheduler picks any node that satisfies the VM's constraints, which may or may not be the node the operator had in mind.
