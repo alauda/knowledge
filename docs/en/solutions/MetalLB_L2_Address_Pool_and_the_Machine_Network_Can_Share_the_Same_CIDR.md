@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# MetalLB L2 Address Pool and the Machine Network Can Share the Same CIDR
 ## Overview
 
 Operators deploying MetalLB in Layer 2 (L2) mode sometimes ask whether MetalLB's `IPAddressPool` can take addresses from the same CIDR that the cluster's nodes live on:
