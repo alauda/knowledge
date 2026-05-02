@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# 504 Timeouts Behind an External Cloud Load Balancer
 ## Issue
 
 Workloads exposed through an external cloud load balancer (for example a GCP TCP/HTTPS load balancer fronting the cluster ingress) periodically return HTTP 504 to the caller, even though the backend pod is healthy. A latency probe shows the time-to-first-byte (`starttransfer`) hovering close to 30 seconds before the request is cut off, while DNS lookup, TCP connect, and TLS handshake all complete in milliseconds. Sample probe line:
