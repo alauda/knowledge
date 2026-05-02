@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# New LUN Not Recognised — `/dev/bsg` Exhausted at 32768 by Phantom (PQual=1) Devices
 ## Issue
 
 A newly-allocated LUN or PV on a SAN-backed storage device is not recognised by a cluster node. Workloads that depend on the new LUN — pods with PVCs, VMs with attached disks — fail to start because the OS never presents a `sdX` block device for the LUN. The kernel's `dmesg` / journal surfaces a SCSI subsystem error pointing at the `bsg` layer rather than the storage path:
