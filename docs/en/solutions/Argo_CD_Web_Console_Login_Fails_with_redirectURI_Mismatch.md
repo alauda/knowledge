@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Argo CD Web Console Login Fails with redirectURI Mismatch
 ## Issue
 
 A user cannot sign in to the Argo CD web console. The browser is redirected back to a page showing one of these errors:
