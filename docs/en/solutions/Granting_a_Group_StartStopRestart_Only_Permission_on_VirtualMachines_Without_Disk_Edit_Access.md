@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Granting a Group Start/Stop/Restart-Only Permission on VirtualMachines Without Disk-Edit Access
 ## Issue
 
 A team needs to give an operations group on ACP Virtualization the ability to **power-cycle** virtual machines — start, stop, restart, pause, unpause — without granting the broader edit permissions that would let them resize disks, attach new PVCs, change CPU/memory, or alter the VM template.
