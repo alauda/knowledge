@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# VM Storage Migration Leaves Orphan PVCs Consuming Double Capacity — Source PVCs Must Be Deleted After Migration Completes
 ## Issue
 
 After running a VM storage migration (`updateVolumesStrategy: Migration` in the `VirtualMachine` spec), the cluster's backing storage shows roughly double the expected capacity consumed:
