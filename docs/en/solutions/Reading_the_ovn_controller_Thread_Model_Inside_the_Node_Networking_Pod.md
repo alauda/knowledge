@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Reading the ovn-controller Thread Model Inside the Node Networking Pod
 ## Overview
 
 `ovn-controller` is the per-node daemon that turns the global OVN southbound database into the local OpenFlow rules a node actually programs into Open vSwitch. It runs inside the node-side OVN pod (its name and namespace differ between distributions, but the daemon role is identical). When operators see an `ovn-controller` process consuming *several hundred percent CPU* on a single node, the first instinct is to assume a leak; the reality is usually that multiple threads are doing legitimate work in parallel and the host's `top` output is summing them.
