@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# PVC Usage Metric Reports Zero for Block-Mode Volumes
 ## Issue
 
 A PersistentVolumeClaim used by a VirtualMachine (or any workload consuming raw block storage) shows zero used bytes in the platform's dashboards:
