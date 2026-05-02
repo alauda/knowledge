@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# When the etcd Auto-Defragmentation Loop Stays Quiet
 ## Issue
 
 The control-plane etcd database keeps growing on disk and operators expect the automatic defragmentation loop to reclaim the slack. Instead, no defragmentation events are observed in the operator logs even though:
