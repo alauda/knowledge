@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Compliance Scan `oauth-or-oauthclient-token-maxage` Keeps Failing — Set the Profile Variable via TailoredProfile
 ## Issue
 
 A `ComplianceScan` keeps flagging `ocp4-moderate-oauth-or-oauthclient-token-maxage` as **FAIL**, even though the cluster's OAuth (or OAuthClient) configuration **has** been tuned to the intended token lifetime. The rule's own description says the token max-age should match a documented value, and the cluster does in fact use a custom `accessTokenMaxAgeSeconds`:
