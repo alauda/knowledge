@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# VMware to KubeVirt Cold Migration Fails with "plugin must set minimum block size between 1 and 64K"
 ## Issue
 
 A VM cold migration from VMware vSphere to platform virtualization aborts during the disk-transfer stage. The migration controller's conversion/transfer pod (virt-v2v over nbdkit) dies with:
