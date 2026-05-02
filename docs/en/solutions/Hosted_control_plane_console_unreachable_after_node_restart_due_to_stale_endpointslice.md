@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Hosted control plane console unreachable after node restart due to stale endpointslice
 ## Issue
 
 A hosted-control-plane (HCP) cluster running its worker nodes as KubeVirt
