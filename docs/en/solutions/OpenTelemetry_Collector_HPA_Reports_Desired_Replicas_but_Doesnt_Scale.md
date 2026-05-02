@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# OpenTelemetry Collector HPA Reports Desired Replicas but Doesn't Scale
 ## Issue
 
 An `OpenTelemetryCollector` resource has `spec.autoscaler` configured with `minReplicas`, `maxReplicas`, and CPU/memory targets. Under sustained load the resulting HorizontalPodAutoscaler reports desired replicas above the current count — e.g., `3 current / 6 desired` — yet the Collector Deployment never scales beyond the current count. Traffic keeps piling up and collectors drop events.
