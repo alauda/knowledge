@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Descheduler Evicts Running VMs Instead of Live-Migrating Them Without KubeVirt-Aware Profile
 ## Issue
 
 The descheduler is running on a cluster that also hosts virtual machines (ACP Virtualization, upstream KubeVirt, or an equivalent deployment). An alert similar to `HCOMisconfiguredDescheduler` (or the vendor-neutral equivalent: misconfigured-descheduler-for-KubeVirt) fires warning that the descheduler's current profile is not safe for VM workloads. The operational symptoms that follow are:
