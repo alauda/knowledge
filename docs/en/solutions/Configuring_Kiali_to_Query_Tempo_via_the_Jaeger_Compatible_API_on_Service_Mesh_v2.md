@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Configuring Kiali to Query Tempo via the Jaeger-Compatible API on Service Mesh v2
 ## Issue
 
 A Service Mesh v2 installation is migrating tracing storage from Jaeger to Tempo while keeping Kiali as the mesh visualization surface. Pointing Kiali's `in_cluster_url` at a native Tempo endpoint — for example the Tempo Gateway, the distributor, or the `/api/traces/v1` multi-tenant route — results in Kiali being unable to load any traces. The Kiali pod's log shows repeated tracing-client errors, and the Kiali UI reports "No traces found" even for workloads that are actively producing spans.
