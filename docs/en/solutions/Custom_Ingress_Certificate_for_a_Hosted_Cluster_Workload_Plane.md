@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Custom Ingress Certificate for a Hosted Cluster Workload Plane
 ## Issue
 
 A hosted cluster fronted by an externally signed wildcard certificate needs the workload plane's default ingress controller to serve the new chain, and the same custom CA must be trusted by every NodePool member. Editing the workload plane's `Proxy/cluster` directly is rejected by an admission policy:
