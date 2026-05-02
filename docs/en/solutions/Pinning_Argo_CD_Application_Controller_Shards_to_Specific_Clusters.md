@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Pinning Argo CD Application-Controller Shards to Specific Clusters
 ## Issue
 
 When Argo CD is wired to manage many remote clusters, the `application-controller` StatefulSet is scaled out and each replica owns a slice of the registered clusters. By default, the shard a given cluster lands on is decided by a hash over the cluster server URL — which means a busy cluster may end up co-located with another busy cluster on the same controller pod, while quieter shards sit idle. Operators sometimes need to override that placement: route a heavy production cluster onto a dedicated shard, or pin a flaky environment to a known controller for easier log scoping.
