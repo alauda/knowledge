@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Alertmanager 0.27+ UTF-8 Matcher Parser Warnings for Existing Routing Rules
 ## Issue
 
 After the platform's monitoring stack rolls Alertmanager to version `0.27` or later, the `alertmanager` container starts logging warnings for routing or inhibit rules that previously worked without complaint:
