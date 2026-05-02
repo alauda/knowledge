@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Bounding cardinality on PodMonitor and ServiceMonitor with metricRelabelings
 ## Issue
 
 Adding a `PodMonitor` or `ServiceMonitor` against a high-cardinality producer — most commonly the Istio sidecar's `/stats/prometheus` endpoint, but the same shape applies to any application that exposes thousands of unique time-series — causes the user-workload Prometheus instance to spike in memory, slow on queries, and run its WAL out of disk. The producer is "telling the truth": it really does emit that many series. The monitor is shaped to scrape *all* of it.
