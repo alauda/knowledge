@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# kube-controller-manager Degraded with GarbageCollectorSyncFailed — Slow Admission Webhook Blocks the GC Dependency-Graph Build
 ## Issue
 
 The cluster's `kube-controller-manager` reports a degraded condition continuously, with an alert named `GarbageCollectorSyncFailed` firing:
