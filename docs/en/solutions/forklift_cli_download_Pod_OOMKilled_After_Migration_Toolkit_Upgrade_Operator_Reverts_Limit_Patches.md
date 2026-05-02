@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# `forklift-cli-download` Pod OOMKilled After Migration Toolkit Upgrade — Operator Reverts Limit Patches
 ## Issue
 
 After upgrading the migration toolkit operator (Forklift / MTV style) from a 2.9.x release to a 2.10.x release, the `forklift-cli-download` pod — a small helper pod the toolkit runs to let operators download its CLI binary — enters `CrashLoopBackOff`. The pod is terminated repeatedly by the kernel OOM-killer:
