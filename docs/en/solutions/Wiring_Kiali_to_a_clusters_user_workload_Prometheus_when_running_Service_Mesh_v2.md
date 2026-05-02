@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Wiring Kiali to a cluster's user-workload Prometheus when running Service Mesh v2
 ## Issue
 
 A Service Mesh v2 install does not deploy Kiali by default, and even after Kiali is installed it does not pull telemetry from the cluster's existing user-workload monitoring stack out of the box. Operators want a Kiali instance that reads Istio metrics from the same Prometheus the rest of the platform uses — so Kiali graphs match what Grafana already shows and there is no second copy of the same time-series data.
