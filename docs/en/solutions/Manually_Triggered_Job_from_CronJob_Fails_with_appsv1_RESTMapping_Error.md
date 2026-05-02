@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Manually Triggered Job from CronJob Fails with apps/v1 RESTMapping Error
 ## Issue
 
 Triggering an ad-hoc Job from an existing CronJob (the standard "run it now" pattern) fails with a RESTMapping error similar to:
