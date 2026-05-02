@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# NFD Topology Updater Pods CrashLoopBackOff Due to Missing Kubelet Socket Mount
 ## Issue
 
 After enabling the topology-updater workload of the Node Feature Discovery (NFD) operator on Alauda Container Platform, the `nfd-topology-updater` pods continually restart with `CrashLoopBackOff`. The NFD custom resource shows the operator in a degraded state, and existing GPU/CPU feature labels stop refreshing on affected nodes.
