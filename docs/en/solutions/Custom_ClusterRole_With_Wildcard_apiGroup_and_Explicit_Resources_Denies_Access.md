@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Custom ClusterRole With Wildcard apiGroup and Explicit Resources Denies Access
 ## Issue
 
 An operator writes a custom `ClusterRole` intended to mimic full cluster admin privileges except for `secrets`. The rule uses `apiGroups: ["*"]` to span every API group in the cluster and then **lists each resource explicitly** — `pods`, `deployments.apps`, `alertmanagers.monitoring.coreos.com`, `prometheusrules.monitoring.coreos.com`, `servicemonitors.monitoring.coreos.com`, and so on — with `verbs: ["*"]`, so that `secrets` can be excluded by simply not being present in the list.
