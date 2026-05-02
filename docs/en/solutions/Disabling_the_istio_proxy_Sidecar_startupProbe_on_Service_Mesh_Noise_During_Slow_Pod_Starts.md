@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Disabling the istio-proxy Sidecar startupProbe on Service Mesh — Noise During Slow Pod Starts
 ## Issue
 
 Workloads with the istio-proxy sidecar injected occasionally take several extra seconds to reach `Ready` and emit noisy events about probe failure:
