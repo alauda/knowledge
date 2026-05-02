@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# High system CPU and service outages from kernel memory reclaim path thrashing
 ## Issue
 
 On nodes running a Linux 5.14-derived kernel (the kernel generation shipped with most enterprise distributions in the 9.x family), processes that approach their cgroup memory limit can drive the node into a CPU-exhaustion state instead of being killed cleanly by the out-of-memory (OOM) killer.
