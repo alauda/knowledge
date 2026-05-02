@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Live migration fails on VMs that pin Virtio video via a hook sidecar after a virt-launcher upgrade
 ## Issue
 
 After the cluster's virtualization runtime is rolled forward to a new patch version, **live migration** stops working for a subset of VMs. The common factor among the failing VMs is that they use a *hook sidecar* to set the guest's display device to the Virtio video driver (rather than letting the runtime pick the default).
