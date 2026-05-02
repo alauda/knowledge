@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# OLM `InstallPlanStepAppliedWithWarnings` Alerts — Triage by Warning Category
 ## Issue
 
 After installing an operator through OLM, the cluster fires an `InstallPlanStepAppliedWithWarnings` alert against the new `InstallPlan`. The event text names the operator and one of its bundled CRDs with a warning that OLM captured while applying the CRD to the API server:
