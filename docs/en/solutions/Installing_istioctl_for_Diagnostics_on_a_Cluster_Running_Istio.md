@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Installing istioctl for Diagnostics on a Cluster Running Istio
 ## Issue
 
 Operators want to use the `istioctl` command-line utility to inspect proxies, debug routing, and verify the control-plane state on a cluster that has Istio deployed. Unlike the long-lived sidecar binary, `istioctl` is a client tool that must match the **control-plane minor version** in use; running a mismatched client tends to produce confusing output (missing fields, deprecated flags, or "version skew" warnings on every command).
