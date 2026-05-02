@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Tuning KubeVirt Live Migration Settings in ACP Virtualization
 ## Issue
 
 Running virtual machines on the ACP virtualization stack (`docs/en/virtualization/`, built on KubeVirt) are migrated between nodes whenever the host goes into maintenance, is drained, or fails a health check. The default migration policy is deliberately conservative — two parallel outbound migrations per node, five in flight cluster-wide, a 150-second progress timeout, and auto-converge disabled — which suits a small mixed-workload cluster but becomes a bottleneck once many VMs share the cluster, or when a large VM's working set mutates faster than the migration pre-copy stream can converge.
