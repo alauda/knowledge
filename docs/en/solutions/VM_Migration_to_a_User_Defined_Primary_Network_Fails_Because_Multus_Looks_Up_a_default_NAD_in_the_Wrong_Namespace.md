@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# VM Migration to a User-Defined Primary Network Fails Because Multus Looks Up a `default` NAD in the Wrong Namespace
 ## Issue
 
 A migration plan from a VMware source to ACP Virtualization maps the VM's network to a cluster **user-defined primary network** (a UDN defined as the namespace's default pod network, rather than a secondary network). The migration reports success at the plan level, but the target VMI does not come up — the `virt-launcher` pod fails to start with a Multus error:
