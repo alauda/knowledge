@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Create PrometheusRule Alerts for etcd Defragmentation
 ## Issue
 
 When etcd auto-defragmentation is disabled, the database accumulates unused space over time. Without proactive monitoring, the etcd data file can grow to the point where cluster performance degrades. A mechanism is needed to alert operators when manual defragmentation becomes necessary.
