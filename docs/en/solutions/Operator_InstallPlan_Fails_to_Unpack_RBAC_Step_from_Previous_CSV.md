@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Operator InstallPlan Fails to Unpack RBAC Step from Previous CSV
 ## Issue
 
 An OLM-managed operator — in this case the local-storage provider that backs the TopoLVM storage system on ACP — is being upgraded to a new catalog revision. The `Subscription` produces an `InstallPlan` as expected, but the plan stalls with condition `Installed=False` and a message of the form:
