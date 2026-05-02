@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Capturing Scheduler Decisions by Raising kube-scheduler Log Verbosity
 ## Issue
 
 A pod lingers in `Pending` state, another pod lands on an unexpected node, or a Deployment scales up without distributing replicas as intended. `kubectl describe pod` only shows the last scheduling failure reason, which is often too coarse to explain why one node was preferred over another. To answer "why did the scheduler make this choice?" you need the scheduler's own log output at a higher verbosity than the default.
