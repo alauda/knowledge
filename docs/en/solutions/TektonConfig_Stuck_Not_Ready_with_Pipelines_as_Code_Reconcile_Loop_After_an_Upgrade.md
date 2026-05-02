@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# TektonConfig Stuck "Not Ready" with Pipelines-as-Code Reconcile Loop After an Upgrade
 ## Issue
 
 After upgrading the Tekton-based pipelines operator across a minor release boundary (for example, `v1.20` → `v1.21`), the `TektonConfig` CR fails to reconcile and stays in a `Not Ready` state. The status message points specifically at the Pipelines-as-Code (PAC) sub-component and keeps repeating the same reconcile line:
