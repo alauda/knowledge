@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# kubernetes-nmstate Operator Strips Custom Labels and Annotations From Its Namespace on Reconcile
 ## Issue
 
 ArgoCD shows the namespace holding the kubernetes-nmstate operator (typically `cpaas-nmstate` or `nmstate`) as **OutOfSync**. Labels or annotations defined in Git for that namespace disappear shortly after ArgoCD syncs — the next reconcile from ArgoCD reapplies them, the nmstate operator strips them again, and the "OutOfSync ↔ Synced" flapping continues indefinitely. Common victims are cost-center labels, monitoring-scrape-scope annotations, and compliance metadata applied by cluster operators.
