@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# CERTIFICATE_VERIFY_FAILED After Istio Upgrade from 1.20 to 1.24
 ## Issue
 
 After upgrading the mesh control plane from an Istio 1.20-era release (for example ACP Service Mesh v2 or the v1 extension) to an Istio 1.24-era release (ACP Service Mesh v2 with a newer control plane, or the standalone Service Mesh v2 extension), external HTTPS requests to internal services that were working before the upgrade now fail at the IngressGateway:
