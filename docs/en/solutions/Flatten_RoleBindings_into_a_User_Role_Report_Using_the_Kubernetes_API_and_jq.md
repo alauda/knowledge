@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Flatten RoleBindings into a User → Role Report Using the Kubernetes API and `jq`
 ## Issue
 
 Listing "who has which role where" on a cluster is surprisingly hard through the default CLI: `kubectl get rolebindings` prints `RoleBinding` objects, but each object packs a list of subjects and a single roleRef together — so a 1-to-many binding between a single role and several users appears as one row, not the per-subject rows an audit usually wants. The same limitation applies at the cluster-scope with `kubectl get clusterrolebindings`.
