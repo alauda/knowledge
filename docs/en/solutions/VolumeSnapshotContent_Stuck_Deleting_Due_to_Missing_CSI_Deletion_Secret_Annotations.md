@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# VolumeSnapshotContent Stuck Deleting Due to Missing CSI Deletion-Secret Annotations
 ## Issue
 
 `VolumeSnapshot` and `VolumeSnapshotContent` objects created by an external orchestrator (a third-party backup product, an in-house snapshot scheduler, or any controller that builds `VolumeSnapshotContent` directly via the API) accumulate in a `Terminating` / pending-delete state. The CSI driver targeted by these snapshots requires authentication against the storage backend, but the stuck `VolumeSnapshotContent` objects have a `deletionTimestamp` set and never finish deletion. Side effects observed cluster-wide:
