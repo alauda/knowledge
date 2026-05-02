@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Node Unreachable After a Third-Party Security Agent DaemonSet Takes Over the Primary Interface
 ## Issue
 
 A node suddenly drops to `NotReady`, the kubelet stops posting status, and the rest of the cluster can no longer reach it — SSH hangs, and even ICMP to the node address fails:
