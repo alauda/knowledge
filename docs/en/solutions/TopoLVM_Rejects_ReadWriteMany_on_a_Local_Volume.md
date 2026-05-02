@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# TopoLVM Rejects ReadWriteMany on a Local Volume
 ## Issue
 
 A PVC bound to a local-LVM `StorageClass` stays in `Pending` and the provisioner emits the same error every minute:
