@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# CIFS/SMB CSI Driver Volume Mount Fails with "Operation Now in Progress"
 ## Issue
 
 After the CIFS/SMB CSI driver is installed on the cluster, a pod that asks for a CIFS/SMB-backed PVC stays in `ContainerCreating` and the kubelet reports a mount failure. The corresponding event against the pod contains a `MountVolume.MountDevice` failure with the underlying `mount` error:
