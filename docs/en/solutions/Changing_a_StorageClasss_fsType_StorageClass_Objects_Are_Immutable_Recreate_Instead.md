@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Changing a StorageClass's fsType — StorageClass Objects Are Immutable, Recreate Instead
 ## Issue
 
 A CSI-backed StorageClass provisions PersistentVolumes with a default `fsType` (commonly `ext4`). Operators want to change that default for future PVs — for example, to `xfs` for a workload that expects xfs features, or to a vendor-specific filesystem for performance. The question is whether the change can be applied as a day-2 operation and what happens to existing PVs when it is.
