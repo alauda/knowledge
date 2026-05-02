@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# NodeNetworkConfigurationPolicy fails with "unknown variant up" on a route definition
 ## Issue
 
 A `NodeNetworkConfigurationPolicy` (NNCP) that defines static routes does not apply. The corresponding `NodeNetworkConfigurationEnactment` (NNCE) reports:
