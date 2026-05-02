@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Ceph OSDs Down After Multus Whereabouts Assigns the Shim IP
 ## Issue
 
 A Ceph cluster wired onto a private Multus secondary network shows one or
