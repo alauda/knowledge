@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# MetalLB FRRNodeState resources and controller replica count behaviour
 ## Overview
 
 Two questions come up regularly when MetalLB is deployed in Layer 2 (L2) mode under the cluster's load-balancer operator:
