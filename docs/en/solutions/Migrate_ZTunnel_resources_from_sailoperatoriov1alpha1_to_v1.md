@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Migrate ZTunnel resources from sailoperator.io/v1alpha1 to v1
 ## Issue
 
 Creating or applying a `ZTunnel` resource for Istio Ambient mode emits a
