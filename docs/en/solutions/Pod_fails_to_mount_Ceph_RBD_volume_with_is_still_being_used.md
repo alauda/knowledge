@@ -47,13 +47,15 @@ Either stale record produces the "still being used" error — the RBD image repo
 
 ## Resolution
 
+ACP runs Ceph through Rook in the `rook-ceph` namespace. The toolbox pod (`deploy/rook-ceph-tools`) is the canonical place to invoke `rbd` commands; the RBD CSI components live alongside it (`rook-ceph.rbd.csi.ceph.com-ctrlplugin` Deployment plus `rook-ceph.rbd.csi.ceph.com-nodeplugin` DaemonSet, container name `csi-rbdplugin` in both).
+
 Before touching Ceph, rule out the legitimate case: the image really is still attached somewhere. If the old consumer is still running and writing, forcibly removing the lock will cause data corruption or filesystem inconsistency. Proceed only once you have confirmed:
 
 - no pod using the PVC is scheduled anywhere (controller scaled to 0, or all replicas verifiably terminated),
 - no mount of the RBD image exists on any node (`lsblk` on every candidate node shows no `/dev/rbd*` for this image),
 - the node that previously owned the `VolumeAttachment` is gone or rebooted and cannot race you.
 
-For a safer, Kubernetes-first approach prefer the sibling workflow — "RWO RBD PVC fails to mount with Multi-Attach error" — which resolves most cases by deleting only the stale `VolumeAttachment`:
+For a safer, Kubernetes-first approach, prefer the sibling workflow — "RWO RBD PVC fails to mount with Multi-Attach error" — which resolves most cases by deleting only the stale `VolumeAttachment`:
 
 ```bash
 kubectl get volumeattachment | grep <pv-name>
@@ -62,10 +64,10 @@ kubectl delete volumeattachment <va-name>
 
 In many recovery scenarios, deleting the stale `VolumeAttachment` is enough: the attach-detach controller then issues a fresh attach on the correct node and the CSI plugin reconciles the lock.
 
-If after the `VolumeAttachment` is gone the lock is still present on the RBD image (the image is not mapped anywhere and no pod is running), clear the lock directly. Exec into the Rook / Ceph toolbox pod that ships with the ACP Ceph storage stack:
+If after the `VolumeAttachment` is gone the lock is still present on the RBD image (the image is not mapped anywhere and no pod is running), clear the lock directly. Open a shell in the Ceph toolbox:
 
 ```bash
-kubectl exec -n <ceph-namespace> -it deploy/rook-ceph-tools -- bash
+kubectl -n rook-ceph exec -it deploy/rook-ceph-tools -- bash
 ```
 
 Inside the toolbox, inspect and remove the stale lock:
@@ -107,20 +109,23 @@ Check the current `VolumeAttachment` state:
 kubectl get volumeattachment | grep <pv-name>
 ```
 
-Inspect the CSI node plugin logs on the node where the pod is scheduled:
+Inspect the CSI node plugin logs on the node where the pod is scheduled. The plugin DaemonSet uses one pod per node; pick the one running on the target node:
 
 ```bash
 NODE=<node-name>
-kubectl -n <ceph-namespace> get pod -l app=csi-rbdplugin -o wide | grep "$NODE"
-kubectl -n <ceph-namespace> logs <csi-rbdplugin-pod-on-node> -c csi-rbdplugin | tail -200
+kubectl -n rook-ceph get pod \
+  -l app=rook-ceph.rbd.csi.ceph.com-nodeplugin -o wide | grep "$NODE"
+kubectl -n rook-ceph logs <csi-rbdplugin-pod-on-node> -c csi-rbdplugin | tail -200
 ```
 
 From the Ceph toolbox, verify the image is not actually mapped anywhere before intervening:
 
 ```bash
-rbd status <pool>/csi-vol-<uuid>
-rbd showmapped
-rbd lock ls <pool>/csi-vol-<uuid>
+kubectl -n rook-ceph exec -it deploy/rook-ceph-tools -- bash -c '
+  rbd status <pool>/csi-vol-<uuid>
+  rbd showmapped
+  rbd lock ls <pool>/csi-vol-<uuid>
+'
 ```
 
 If `rbd status` lists a watcher whose address matches a node that is still alive, stop and reconcile at the Kubernetes layer instead of forcing the lock off.
