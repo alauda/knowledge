@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Disaster Recovery for KubeVirt Virtual Machines on Ceph-Backed Storage
 ## Overview
 
 KubeVirt virtual machines whose disks live on a Ceph-backed `StorageClass` (RBD or CephFS) can participate in two distinct disaster-recovery topologies:
