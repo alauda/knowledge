@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Operator Pod OOMKilled After Install — Override Limits Through the Subscription
 ## Issue
 
 An operator installed through OLM enters a crash loop shortly after its initial rollout. The `Subscription` reports `AtLatestKnown`, the `InstallPlan` is `Complete`, and the `ClusterServiceVersion` reaches `Succeeded`, but the operator's controller-manager pod oscillates between `CrashLoopBackOff` and `OOMKilled`:
