@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# VM Migration Disk Transfer Is Serialized — Parallel Disk Copy Is a Tracked RFE
 ## Overview
 
 When migrating a multi-disk VM from VMware (or another source hypervisor) into ACP Virtualization through the migration toolkit, operators observe that the disk transfers happen **sequentially** — one disk at a time. For a VM with several large disks, this sets the total migration time at the sum of per-disk copy times, rather than the maximum of them.
