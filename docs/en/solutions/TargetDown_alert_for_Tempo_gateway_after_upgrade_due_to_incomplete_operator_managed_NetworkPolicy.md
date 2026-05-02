@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# TargetDown alert for Tempo gateway after upgrade due to incomplete operator-managed NetworkPolicy
 ## Issue
 
 After upgrading the Tempo operator, Prometheus fires a `TargetDown` alert
