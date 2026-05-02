@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Diagnosing Large Dentry Slab and Tuning the Negative-Dentry Limit
 ## Issue
 
 A worker node intermittently goes unresponsive: file-related system calls (`stat`, `open`, `unlink`, mount/umount) slow to a crawl, the container runtime stalls, and the kubelet logs report `PLEG is not healthy` followed by the node flipping to `NodeNotReady`. After recovery, the symptoms reappear under the same workload some hours or days later.
