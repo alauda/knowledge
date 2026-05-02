@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Windows VM Random BSOD with PFN_LIST_CORRUPT on Certain AMD CPUs
 ## Issue
 
 A Windows guest running as a KubeVirt virtual machine on an ACP Virtualization cluster stops with a bugcheck screen carrying the stop code `PFN_LIST_CORRUPT` (numeric code `0x4E`). The crash is random: uptime can range from minutes to days, the workload inside the guest varies, and no single Windows update, driver, or application reliably reproduces it. Crashdumps opened in WinDbg consistently show `PFN_LIST_CORRUPT` as the stop code.
