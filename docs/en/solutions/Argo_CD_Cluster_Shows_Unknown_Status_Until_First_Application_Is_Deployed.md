@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Argo CD Cluster Shows Unknown Status Until First Application Is Deployed
 ## Issue
 
 A managed cluster has been registered with the Argo CD instance running on ACP's `gitops` capability — the cluster Secret was created successfully, the registration was acknowledged, the connection check passed at registration time. In the Argo CD UI, however, the cluster's status reads `Unknown`, and the panel carries the message:
