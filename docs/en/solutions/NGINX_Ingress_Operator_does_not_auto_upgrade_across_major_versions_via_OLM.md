@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# NGINX Ingress Operator does not auto-upgrade across major versions via OLM
 ## Issue
 
 A cluster has the NGINX Ingress Operator installed at an older release (for example, `v2.3.x`). A newer release (`v3.x`) is published in the same subscribed channel. Operator Lifecycle Manager (OLM) does not promote the cluster to the new release: no `InstallPlan` is created for `v3.x`, the `Subscription` keeps reporting the existing `currentCSV`, and the operator pod stays on the old version.
