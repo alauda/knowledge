@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Updating cluster proxy on a Hosted Control Plane Agent-based deployment after install
 ## Overview
 
 After an Agent-based Hosted Control Plane (HCP) cluster is up, the cluster-wide HTTP proxy can change for legitimate reasons: a new corporate egress endpoint, a TLS-inspection appliance, a re-IP'd outbound NAT. This is a day-2 change, so the goal is to update the running cluster's proxy configuration without re-bootstrapping the existing nodes, and to make sure newly added nodes pick up the new proxy when they join the cluster.
