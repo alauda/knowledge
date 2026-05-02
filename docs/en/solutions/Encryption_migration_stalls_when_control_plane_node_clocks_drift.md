@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Encryption migration stalls when control-plane node clocks drift
 ## Issue
 
 The cluster's apiserver and controller-manager operators sit in a degraded state for hours or days, never advancing. The conditions point at encryption-key migration:
