@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Intermittent Image Pull i/o Timeout from a Single Node
 ## Issue
 
 Pods scheduled on one node go into `ImagePullBackOff` while the same image pulls successfully on the rest of the cluster. Manual probes with `skopeo` or `podman pull` from inside the affected node reproduce the failure with the same `i/o timeout` symptom:
