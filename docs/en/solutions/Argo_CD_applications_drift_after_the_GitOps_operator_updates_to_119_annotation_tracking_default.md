@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Argo CD applications drift after the GitOps operator updates to 1.19 — annotation tracking default
 ## Issue
 
 After the GitOps operator updates to Argo CD 1.19 (which aligns with upstream Argo CD 3.0), every previously-synced `Application` flips to `OutOfSync` for changes that are not changes — typically `app.kubernetes.io/*` labels or `operators.coreos.com/*` labels added by the platform's controllers after the application syncs.
