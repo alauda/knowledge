@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# HTTP/2 ALPN Is Disabled for Ingress Paths That Share a TLS Certificate
 ## Issue
 
 A single `Ingress` object declares one host and multiple paths (for example, `/` and `/health`) under the same TLS secret. Exactly one of the paths — the one with `pathType: Exact` on `/` — negotiates HTTP/2 via ALPN on TLS; the other paths with `pathType: Prefix` or `pathType: ImplementationSpecific` fall back to HTTP/1.1. An `openssl s_client` / `curl -kv` probe to the prefix paths reports `No ALPN negotiated`:
