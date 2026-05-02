@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Granting Non-Admin Users Access to Application Logs in the ACP Console
 ## Issue
 
 A non-admin user opens the ACP console, navigates to **Observe → Logs** inside a namespace they own, and sees a `Forbidden: Missing permissions to get logs` error instead of their application's logs. The user is already a namespace admin (they can see pods, apply manifests, edit their workloads) — but log retrieval from the cluster's logging stack is gated by a separate RBAC check that their namespace role does not cover.
