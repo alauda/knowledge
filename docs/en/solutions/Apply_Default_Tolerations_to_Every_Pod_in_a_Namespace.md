@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Apply Default Tolerations to Every Pod in a Namespace
 ## Issue
 
 A namespace owner needs new pods landing in their namespace to be schedulable on tainted nodes (typically an `infra` pool, an `edge` pool, or a hardware-accelerated pool) without asking every workload manifest to add the same `tolerations` block by hand.
