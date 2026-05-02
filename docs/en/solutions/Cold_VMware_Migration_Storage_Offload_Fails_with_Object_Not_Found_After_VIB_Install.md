@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Cold VMware Migration Storage-Offload Fails with Object-Not-Found After VIB Install
 ## Issue
 
 A cold VMware migration configured with Storage Offload (direct SAN copy via `vmkfstools-wrapper`) fails on a host where the wrapper VIB was recently installed. The migration controller correctly identifies the VIB as installed, but the actual offload command errors with:
