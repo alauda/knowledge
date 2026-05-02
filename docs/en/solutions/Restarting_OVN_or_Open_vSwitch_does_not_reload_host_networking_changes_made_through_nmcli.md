@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Restarting OVN or Open vSwitch does not reload host networking changes made through nmcli
 ## Issue
 
 An administrator updates host networking on a worker node — adjusting a
