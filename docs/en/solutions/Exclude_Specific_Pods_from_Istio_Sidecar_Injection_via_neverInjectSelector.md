@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Exclude Specific Pods from Istio Sidecar Injection via `neverInjectSelector`
 ## Issue
 
 An Istio control plane is configured with automatic sidecar injection (namespaces labelled for injection, or a global default). Most workloads in those namespaces gain an `istio-proxy` sidecar automatically — correct behaviour for application pods that should participate in the mesh.
