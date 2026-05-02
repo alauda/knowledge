@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# VMs Report RestartRequired After Virtualization Operator Upgrade Due to firmware.uuid Backfill
 ## Issue
 
 After a minor-version upgrade of the platform virtualization operator, every pre-existing VM suddenly shows a `RestartRequired` banner in the console and a `RestartRequired` condition on the `VirtualMachine`:
