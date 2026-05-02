@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# NVIDIA GPU Operator False-Positive Alert When Device Plugin Is Intentionally Disabled
 ## Issue
 
 After deploying the upstream NVIDIA GPU Operator on Alauda Container Platform with the device plugin intentionally disabled — for example because GPU partitioning is being driven by an alternative slicer such as Dynamic Accelerator Slicer (DAS) on top of MIG — the alert `GPUOperatorNodeDeploymentFailed` starts firing within 30 minutes:
