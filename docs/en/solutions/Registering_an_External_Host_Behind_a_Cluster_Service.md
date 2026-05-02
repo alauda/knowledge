@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Registering an External Host Behind a Cluster Service
 ## Issue
 
 In-cluster workloads need to reach a backend that lives outside the cluster (a legacy VM, a third-party database, a managed API) by a stable Service DNS name — for example `service-1.my-namespace.svc.cluster.local` — instead of hardcoding the external IP in every consumer. The goal is to route the traffic to that external host rather than to any pod in the cluster.
