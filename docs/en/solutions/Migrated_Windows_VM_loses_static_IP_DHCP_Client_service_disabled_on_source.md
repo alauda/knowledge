@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Migrated Windows VM loses static IP — DHCP Client service disabled on source
 ## Issue
 
 A Windows VM is migrated from VMware into the cluster's virtualization stack via the migration toolkit (the workflow that drives `virt-v2v` and writes a Firstboot script into the destination guest to apply the source IP configuration). The VM boots, but its static IP address is not applied. The Firstboot logs inside the destination guest show the configuration script crashing on `New-NetIPAddress`:
