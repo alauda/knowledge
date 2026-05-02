@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Migration controller crashloops after a custom noProxy is set without cluster-internal entries
 ## Issue
 
 A workload-migration controller (Konveyor / forklift / cluster-side
