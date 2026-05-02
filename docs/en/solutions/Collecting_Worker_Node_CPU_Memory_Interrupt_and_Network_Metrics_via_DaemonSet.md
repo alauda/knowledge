@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Collecting Worker Node CPU, Memory, Interrupt, and Network Metrics via DaemonSet
 ## Issue
 
 Worker nodes are showing CPU load spikes, memory pressure, or interrupt storms and the platform-native monitoring stack does not capture the sub-second kernel-level signals needed to diagnose the root cause. Typical scenarios:
