@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Setting replicas and topologySpreadConstraints for gateways created via injection
 ## Issue
 
 The mesh's *gateway injection* flow lets you stand up an Istio Gateway by labelling a Deployment with `istio.io/gateway-name=<name>` and letting the injector materialise the proxy container, the listener, and the wiring. The shape is convenient — one label, no helm chart per gateway — but operators quickly run into the question of how to set fleet-wide defaults: minimum replica count, topology spread across zones, pod anti-affinity, etc., on **every** gateway that the injection produces, without editing each Deployment by hand.
