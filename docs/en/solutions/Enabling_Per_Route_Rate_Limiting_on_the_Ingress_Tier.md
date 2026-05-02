@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Enabling Per-Route Rate Limiting on the Ingress Tier
 ## Issue
 
 Operators want to cap the traffic that any single client can push through a specific ingress entry — a few concurrent TCP connections from one source IP, a bounded HTTP request rate per second, a bounded new-TCP-connection rate — without affecting other entries on the same ingress tier. The ask is explicitly *per route*, not per ingress, so that a noisy consumer on one hostname does not starve another hostname served by the same tier.
