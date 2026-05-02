@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Exposing an Istio Application Through the Kubernetes Gateway API
 ## Issue
 
 A mesh user wants to expose an application over the mesh ingress path, but prefers the Kubernetes-native **Gateway API** (`gateway.networking.k8s.io/v1`) rather than the older Istio-flavour `networking.istio.io/v1` `Gateway` + `VirtualService` pair. This is the recommended direction for new workloads — Gateway API is portable across implementations and has first-class role separation between `Gateway` (cluster-infrastructure-owned) and `HTTPRoute` (application-owned).
