@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Log Collectors Not Restarted After CA ConfigMap Update Triggers TLS Failures
 ## Issue
 
 The CA ConfigMap referenced by a `ClusterLogForwarder` output (`spec.outputs[*].tls.ca.configMapName`) is updated — for example because the upstream Loki / log receiver had its server certificate rotated and a new CA bundle was published. Within minutes, log collector pods on Alauda Container Platform start failing to deliver logs and emit:
