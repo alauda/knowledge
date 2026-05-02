@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Enabling Debug Logging on the Compliance Scanner and Its Scan Pods
 ## Issue
 
 The default log volume from the in-cluster compliance scanner — the OpenSCAP-based scanner that backs the Compliance Service extension on ACP — is deliberately quiet. Each scan pod prints a short summary of the profile it ran, the host it targeted, and the rule-pass/rule-fail rollup; it does not print the per-rule probe steps, the OpenSCAP CLI invocation, or the intermediate filesystem queries that produced each result.
