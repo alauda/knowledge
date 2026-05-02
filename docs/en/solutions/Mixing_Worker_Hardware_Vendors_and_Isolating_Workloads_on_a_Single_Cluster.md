@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Mixing Worker Hardware Vendors and Isolating Workloads on a Single Cluster
 ## Overview
 
 A single ACP cluster can absorb worker nodes from different hardware vendors (one batch from Dell, another from Cisco, future expansion onto a different supplier) and still schedule workloads predictably. Kubernetes — and ACP's `configure/clusters/nodes` surface on top of it — abstracts node-level differences behind labels and node pools, so the cluster does not need to be rebuilt for each new chassis batch. This article covers the requirements for mixing vendors and the four orthogonal mechanisms that the platform exposes to isolate workloads onto specific subsets of those workers.
