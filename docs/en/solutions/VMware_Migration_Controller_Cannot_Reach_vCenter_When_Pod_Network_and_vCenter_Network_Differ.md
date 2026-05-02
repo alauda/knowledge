@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# VMware Migration Controller Cannot Reach vCenter When Pod Network and vCenter Network Differ
 ## Issue
 
 The VMware-migration controller (Forklift-family) cannot reach vCenter over the cluster's default pod network. Plan creation or inventory sync fails with vCenter connection errors; logs in the migration-api pod show HTTPS timeouts against the vCenter VIP or FQDN. A common assumption is that the controller needs a "dedicated transfer network" — but a transfer network is for **data-plane** VM disk transport, not for the controller's vCenter REST calls.
