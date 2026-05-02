@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Grafana Operator 5.21.4+ install fails with grafananotificationpolicies CRD validation error
 ## Issue
 
 Installing or upgrading the Grafana Operator to version 5.21.4 (or any
