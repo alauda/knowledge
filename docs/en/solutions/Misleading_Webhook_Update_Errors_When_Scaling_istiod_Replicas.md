@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Misleading Webhook Update Errors When Scaling istiod Replicas
 ## Issue
 
 After increasing the `istiod` Deployment replica count beyond a single pod, every replica continuously logs failed updates against the validating admission webhook. The error spam looks like a control-plane outage but the data plane keeps working:
