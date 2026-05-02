@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Kiali login fails with HTTP 504 when egress restrictions block the auth provider
 ## Issue
 
 Loading the Kiali console returns `HTTP 504 Gateway Timeout` after the user authenticates, and login fails for every user. The Kiali pod log records timeouts when exchanging the auth code for a token:
