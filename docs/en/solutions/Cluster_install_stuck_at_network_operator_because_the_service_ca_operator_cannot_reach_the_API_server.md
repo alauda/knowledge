@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Cluster install stuck at network operator because the service-ca operator cannot reach the API server
 ## Issue
 
 A new cluster install reaches the point where the control-plane nodes
