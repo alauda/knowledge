@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Bond Member Disappears After Reboot — NNCP Declaration Conflicts With an Installation-Time Bond
 ## Issue
 
 A bond interface configured at installation time (day-0 network configuration, often through kickstart, cloud-init, or the platform's initial network provisioning) loses one or more member interfaces after a node reboot or a node-configuration rollout. Immediately after the reboot, `/proc/net/bonding/<bond>` shows fewer slaves than expected:
