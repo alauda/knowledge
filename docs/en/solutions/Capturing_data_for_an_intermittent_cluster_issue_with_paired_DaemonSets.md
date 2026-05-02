@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Capturing data for an intermittent cluster issue with paired DaemonSets
 ## Issue
 
 Some cluster failures are by nature intermittent: a DNS resolution times out occasionally, an in-cluster service request fails sporadically, packet loss appears once every several minutes. Reproducing the failure on demand is impractical, and waiting for it to happen with no instrumentation in place leaves no usable post-mortem.
