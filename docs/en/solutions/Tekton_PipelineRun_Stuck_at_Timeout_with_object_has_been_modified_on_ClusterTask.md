@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Tekton PipelineRun Stuck at Timeout with "object has been modified" on ClusterTask
 ## Issue
 
 A PipelineRun enters `PipelineRunTimeout` without ever scheduling a TaskRun pod. The controller emits a stream of errors like:
