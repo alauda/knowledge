@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Cap Intel E810 ice Driver PF MSI-X Allocation to Free Vectors for SR-IOV VFs
 ## Issue
 
 On worker nodes with high CPU counts and an Intel E810 (`ice` driver) NIC, the Physical Function (PF) reserves MSI-X interrupt vectors proportional to the host's online CPUs. The E810 has a finite total MSI-X vector pool; when the PF claims most of it, SR-IOV Virtual Functions (VFs) are left with too few queues for adequate Receive Side Scaling (RSS) performance — VF receive throughput drops, latency spikes under load, and per-VF queue depth becomes a bottleneck.
