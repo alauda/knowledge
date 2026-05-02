@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# PVC stuck pending with "can't find array with provided id" CSI error
 ## Issue
 
 A PersistentVolumeClaim never reaches `Bound`. The associated provisioner pod
