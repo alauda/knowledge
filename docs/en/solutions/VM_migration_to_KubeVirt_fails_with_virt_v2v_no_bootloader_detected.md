@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# VM migration to KubeVirt fails with virt-v2v "no bootloader detected"
 ## Issue
 
 A VM migration into the KubeVirt-based virtualization stack — typically from VMware via the platform's import workflow — fails during the disk conversion phase. The conversion pod in the migration namespace logs out the v2v trace and aborts:
