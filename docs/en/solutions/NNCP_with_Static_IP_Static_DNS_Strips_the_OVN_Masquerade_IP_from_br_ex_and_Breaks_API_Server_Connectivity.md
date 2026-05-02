@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# NNCP with Static IP + Static DNS Strips the OVN Masquerade IP from br-ex and Breaks API-Server Connectivity
 ## Issue
 
 An `NodeNetworkConfigurationPolicy` (NNCP) designed to add a VLAN with a static IP and DNS resolvers to a bond or base interface stalls on apply. A subset of nodes gets stuck with `ConfigurationProgressing` on the NNCP status; the nodes continue to serve their existing workloads but cannot reconcile any further network change. Closer inspection shows:
