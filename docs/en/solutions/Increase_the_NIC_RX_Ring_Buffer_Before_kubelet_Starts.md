@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Increase the NIC RX Ring Buffer Before kubelet Starts
 ## Issue
 
 Worker nodes show non-zero RX ring buffer error counters in `ethtool -S` output and packet drops in system logs. Workloads that send bursty inbound traffic — log shippers receiving aggregated traffic, ingress controllers under spike load, or VMs being live-migrated through the node — see retransmits and timeouts that correlate with the RX-drop counter ticking up.
