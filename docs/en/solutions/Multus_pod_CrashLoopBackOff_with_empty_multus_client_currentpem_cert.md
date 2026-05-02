@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Multus pod CrashLoopBackOff with empty multus-client-current.pem cert
 ## Issue
 
 A single Multus daemon pod on one node sits in `CrashLoopBackOff` while every other node's Multus pod is healthy. New pods scheduled to the affected node stick in `ContainerCreating` because they cannot satisfy the Multus readiness contract. Per-node DaemonSets that depend on Multus (`network-metrics-daemon`, secondary-CNI plugin pods) also fail to come up on the same node.
