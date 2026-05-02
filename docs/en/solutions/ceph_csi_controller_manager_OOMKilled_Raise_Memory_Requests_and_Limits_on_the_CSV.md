@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# ceph-csi-controller-manager OOMKilled — Raise Memory Requests and Limits on the CSV
 ## Issue
 
 On a cluster using the Ceph-based storage stack that backs ACP `storage/storagesystem_ceph`, the `ceph-csi-controller-manager` pod enters `CrashLoopBackOff`. The pod description shows the `manager` container was killed for exceeding its memory limit:
