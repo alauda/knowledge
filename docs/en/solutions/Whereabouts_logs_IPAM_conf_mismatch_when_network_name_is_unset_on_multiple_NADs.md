@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Whereabouts logs "IPAM conf mismatch" when network_name is unset on multiple NADs
 ## Issue
 
 The Whereabouts controller logs the following error in a loop, even though
