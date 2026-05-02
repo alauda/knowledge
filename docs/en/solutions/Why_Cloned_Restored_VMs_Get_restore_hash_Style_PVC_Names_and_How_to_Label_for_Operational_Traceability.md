@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Why Cloned / Restored VMs Get `restore-<hash>`-Style PVC Names — and How to Label for Operational Traceability
 ## Overview
 
 Creating a fresh VM produces a PVC whose name mirrors the VM's name — for example, a VM named `app-server` gets a root disk PVC called `app-server-disk`. Storage operations are easy to reason about because disk names clearly say which VM owns them.
