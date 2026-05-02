@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Multus DaemonSet pods stuck in ContainerCreating because the Multus kubeconfig token has expired
 ## Issue
 
 Pods on the cluster fail to come up with `FailedCreatePodSandBox` events that point at the Multus CNI plugin returning `Unauthorized`:
