@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Disabling Virtualization-Based Security (VBS) in a Windows Guest on ACP Virtualization
 ## Issue
 
 A Windows VM running on ACP Virtualization shows lower-than-expected CPU performance, especially on workloads that make heavy system calls, touch memory frequently, or rely on low-latency I/O. The administrator suspects Virtualization-Based Security (VBS) — a set of Hyper-V enlightenment features enabled by default on modern Windows builds — and wants to disable it for VMs that do not need it.
