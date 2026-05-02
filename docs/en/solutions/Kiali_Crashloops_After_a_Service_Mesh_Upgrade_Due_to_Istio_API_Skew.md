@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Kiali Crashloops After a Service Mesh Upgrade Due to Istio API Skew
 ## Issue
 
 After upgrading the in-cluster service-mesh control plane to a newer minor (for example a 2.6-class release), the Kiali observability pod stops coming back up and stays in crashloop. The container log fixates on a single line:
