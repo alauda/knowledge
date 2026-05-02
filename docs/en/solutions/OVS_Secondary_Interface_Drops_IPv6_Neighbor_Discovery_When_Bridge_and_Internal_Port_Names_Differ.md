@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# OVS Secondary Interface Drops IPv6 Neighbor Discovery When Bridge and Internal Port Names Differ
 ## Issue
 
 A node in Alauda Container Platform exposes a secondary network through an OVS bridge defined by an NMState `NodeNetworkConfigurationPolicy` (NNCP). External hosts on the same IPv6 subnet cannot reach the IPv6 address configured on that bridge:
