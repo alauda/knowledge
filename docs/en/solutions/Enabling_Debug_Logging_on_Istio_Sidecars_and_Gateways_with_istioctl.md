@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Enabling Debug Logging on Istio Sidecars and Gateways with istioctl
 ## Issue
 
 When triaging mesh traffic — a request that is being rejected by mTLS, a route that is not matching, a destination that intermittently returns 503 — the default log level on Envoy sidecars and gateways rarely carries enough detail. Operators need to raise Envoy's log verbosity on a specific proxy for a short window (often on a single pod, sometimes restricted to a single logger like `http` or `rbac`), and then return it to the steady-state level once the investigation is over.
