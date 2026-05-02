@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Logging Collector Pods OOMKilled Under Back-Pressure — Diagnose Upstream First, Then Raise Limits
 ## Issue
 
 Logging collector pods (Vector / Fluent Bit / whichever agent is deployed by the logging service's `DaemonSet`) enter `CrashLoopBackOff`. The count of affected pods grows over time, or stays concentrated on specific nodes. `kubectl get pod` inspection confirms the failure is an OOM kill:
