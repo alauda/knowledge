@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# VM Creation Rejected by `mutatevirtualmachines.kubemacpool.io` When Multiarch Is Enabled
 ## Issue
 
 Creating a new VM through the ACP console fails with an admission-webhook rejection that names `kubemacpool.io`:
