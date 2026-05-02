@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Forklift CRDs stuck Terminating after VMware migration operator uninstall
 ## Issue
 
 After uninstalling the VMware-to-KubeVirt migration operator (Forklift — the upstream project that powers ACP `virtualization`'s "migrate virtual machines from VMware" workflow) following the documented procedure, the cleanup never completes. Several of its `CustomResourceDefinition` objects remain visible on the cluster in the `Terminating` phase indefinitely:
