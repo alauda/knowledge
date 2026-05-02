@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Java Pod PKIX SSL Handshake Failure to External HTTPS Endpoint — Custom JKS TrustStore Missing the Server's Issuer CA
 ## Issue
 
 A Java application pod running on ACP fails to open an HTTPS connection to an external endpoint with a PKIX-class exception. Typical messages in the pod logs:
