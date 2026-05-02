@@ -6,25 +6,27 @@ products:
 ProductsVersion:
   - '4.1.0,4.2.x'
 id: KB260500007
-sourceSHA: a0ee339d6af94e1e393efedaf759a678855077febf0023a48bafe21119413bea
+sourceSHA: a2377ed589e032a8479faf1400d248d8a978d52552be35c32b3f1c1e8ec09555
 ---
+
+# 使用 cert-manager 为集群内服务颁发 TLS 证书
 
 ## 概述
 
-在集群中运行的应用程序越来越需要 TLS 以支持服务间的流量：网格边车、面向用户的网关、使用 `sslmode=verify-full` 的数据库驱动程序，以及禁止在 Pod 之间使用明文的合规性驱动政策。操作员希望这一过程是自动化的——每个服务颁发的证书，在到期前进行轮换，并且可以被其他工作负载信任，而无需手动分发 CA 包。
+在集群中运行的应用程序越来越需要 TLS 来处理服务间的流量：网格边车、面向用户的网关、使用 `sslmode=verify-full` 的数据库驱动程序，以及禁止 Pod 之间明文传输的合规性政策。操作员希望这一过程是自动化的——每个服务颁发证书，在到期前进行轮换，并且可以被其他工作负载信任，而无需手动分发 CA 包。
 
-ACP 通过 **cert-manager** 实现这一目标。cert-manager 拥有 `Certificate` CRD 以及一组描述证书来源的 `Issuer` / `ClusterIssuer` 资源（内部 CA、HashiCorp Vault、ACME 端点等）。单个 `Certificate` 对象会变成一个包含 `tls.crt` / `tls.key` / `ca.crt` 的 `Secret`，应用程序将其挂载。
+ACP 通过 **cert-manager** 实现这一目标。cert-manager 拥有 `Certificate` CRD 和一组描述证书来源的 `Issuer` / `ClusterIssuer` 资源（内部 CA、HashiCorp Vault、ACME 端点等）。单个 `Certificate` 对象会变成一个包含 `tls.crt` / `tls.key` / `ca.crt` 的 `Secret`，应用程序可以挂载该 `Secret`。
 
 ## 解决方案
 
-工作流程是：选择一个颁发者，然后让 `Certificate` 资源驱动每个服务证书。
+工作流程是：选择一个颁发者，然后让 `Certificate` 资源驱动每个服务的证书。
 
 ### 创建集群范围的内部 CA 颁发者
 
-对于内部服务间的 TLS，集群内自签名 CA 是最简单的模式。它镜像了平台管理的“服务提供证书”操作员所做的事情，并为每个工作负载提供一个可以信任的 CA，而无需访问外部基础设施。
+对于内部服务间的 TLS，集群内自签名 CA 是最简单的模式。它反映了平台管理的“服务提供证书”操作员所做的事情，并为每个工作负载提供一个可以信任的 CA，而无需访问外部基础设施。
 
 ```yaml
-# 1. 一次性自签名颁发者，仅用于生成 CA
+# 1. 一次性自签名颁发者，仅用于铸造 CA
 apiVersion: cert-manager.io/v1
 kind: ClusterIssuer
 metadata:
@@ -66,7 +68,7 @@ spec:
 
 ### 为服务颁发证书
 
-在服务旁边创建一个 `Certificate`。DNS 名称应与集群内服务的地址匹配：
+在服务旁边创建一个 `Certificate`。DNS 名称应与服务在集群中的地址匹配：
 
 ```yaml
 apiVersion: cert-manager.io/v1
@@ -113,7 +115,7 @@ spec:
           value: /etc/tls/tls.key
 ```
 
-如果您的运行时不支持热重载 TLS 材料，可以将挂载与像 `reloader` 这样的边车配对——它会监视 Secret 并在更改时执行滚动重启——而不是猜测 Pod 的缓存会保留旧证书多久。
+如果您的运行时不支持热重载 TLS 材料，请将挂载与像 `reloader` 这样的边车配对——它会监视 Secret 并在更改时执行滚动重启——而不是猜测 Pod 的缓存会保留旧证书多久。
 
 ### 让客户端信任 CA
 
@@ -131,13 +133,13 @@ kubectl -n team-a create configmap cluster-internal-ca \
 
 客户端挂载 ConfigMap，并将其 HTTP/SQL/gRPC 客户端指向该文件作为其信任锚。
 
-### 为外部服务做计划
+### 为外部服务做好规划
 
-对于暴露在集群外的服务（公共 API、与第三方的 mTLS），将 `cluster-internal` ClusterIssuer 替换为基于 ACME 的颁发者（Let's Encrypt、ZeroSSL）或外部 PKI 桥。工作负载侧的 `Certificate` 对象保持不变——这也是 cert-manager 值得标准化的主要原因，而不是一次性证书脚本。
+对于暴露在集群外的服务（公共 API、与第三方的 mTLS），将 `cluster-internal` ClusterIssuer 替换为基于 ACME 的颁发者（Let's Encrypt、ZeroSSL）或外部 PKI 桥。工作负载侧的 `Certificate` 对象保持不变——这也是 cert-manager 值得标准化而不是一次性证书脚本的主要原因。
 
 ## 诊断步骤
 
-检查 cert-manager 是否健康：
+检查 cert-manager 是否正常：
 
 ```bash
 kubectl -n cert-manager get pod
@@ -145,7 +147,7 @@ kubectl get clusterissuer
 kubectl get certificate -A
 ```
 
-如果证书卡在 `Issuing` 状态：
+如果证书处于 `Issuing` 状态：
 
 ```bash
 kubectl -n team-a describe certificate app-tls
@@ -170,4 +172,4 @@ kubectl -n team-a run curl --rm -it --image=curlimages/curl:8.10.1 \
   sh -c 'curl --cacert /etc/ssl/ca.crt https://app.team-a.svc/healthz -v'
 ```
 
-如果验证失败并出现 `self-signed certificate in certificate chain`，则 Pod 正在使用主机的默认信任存储，而不是您的 CA 包；确认客户端正在读取正确的 `--cacert` 路径，并且 ConfigMap 已正确挂载。
+如果验证失败并显示 `self-signed certificate in certificate chain`，则 Pod 正在使用主机的默认信任存储，而不是您的 CA 包；确认客户端正在读取正确的 `--cacert` 路径，并且 ConfigMap 已正确挂载。

@@ -6,12 +6,14 @@ products:
 ProductsVersion:
   - '4.1.0,4.2.x'
 id: KB260500008
-sourceSHA: cfde348090ff5ebb779df6e1c05d107a05bed95074d6b129e7300ea9260ba4a3
+sourceSHA: 80cbc0ebf21caddd392290c4f87c823cf5ceb041841e13769bafcd9bd1459784
 ---
+
+# etcd 后端性能要求
 
 ## 问题
 
-etcd 性能下降是由于存储或网络后端能力不足，产生类似以下的日志消息：
+由于存储或网络后端能力不足，etcd 性能下降，产生类似以下的日志消息：
 
 ```
 etcdserver: failed to send out heartbeat on time (exceeded the 100ms timeout for xxx ms)
@@ -24,15 +26,15 @@ wal: sync duration of xxxx s, expected less than 1s
 
 ## 根本原因
 
-etcd 对存储和网络性能非常敏感。后端基础设施中的任何瓶颈——慢速磁盘 I/O、高网络延迟、数据包丢失或 CPU 饱和——都会直接影响 etcd 集群处理写入和维持领导者心跳截止时间的能力。请求通常应在 50 毫秒内完成；超过 200 毫秒的持续时间会在日志中触发警告。
+etcd 对存储和网络性能高度敏感。后端基础设施中的任何瓶颈——慢磁盘 I/O、高网络延迟、数据包丢失或 CPU 饱和——都会直接影响 etcd 集群处理写入和维持领导者心跳截止时间的能力。请求通常应在 50 毫秒内完成；持续超过 200 毫秒的时长会在日志中触发警告。
 
 ## 解决方案
 
 ### 确定瓶颈
 
-etcd 缓慢的三种常见原因：
+etcd 变慢的三种常见原因：
 
-1. **慢速存储** — 磁盘 I/O 延迟超过可接受阈值
+1. **慢存储** — 磁盘 I/O 延迟超过可接受阈值
 2. **CPU 过载** — 控制平面节点超负荷
 3. **数据库大小增长** — etcd 数据文件已超出最佳大小
 
@@ -45,7 +47,7 @@ fio --name=etcd-io-test --ioengine=sync --bs=4k --numjobs=1 --size=512M \
     --rw=write --iodepth=1 --fsync=1 --runtime=30 --time_based
 ```
 
-99 百分位 fdatasync 延迟必须低于 **10 毫秒**。
+99 百分位的 fdatasync 延迟必须低于 **10 毫秒**。
 
 ### 监控关键 etcd 指标
 
@@ -53,10 +55,10 @@ fio --name=etcd-io-test --ioengine=sync --bs=4k --numjobs=1 --size=512M \
 
 | 指标                                                   | 阈值                  | 意义                    |
 | ------------------------------------------------------ | --------------------- | ----------------------- |
-| `etcd_disk_wal_fsync_duration_seconds_bucket` (p99)    | < 10 ms               | WAL 写入延迟            |
+| `etcd_disk_wal_fsync_duration_seconds_bucket` (p99)      | < 10 ms               | WAL 写入延迟            |
 | `etcd_disk_backend_commit_duration_seconds_bucket` (p99) | < 25 ms               | 后端提交延迟            |
 | `etcd_network_peer_round_trip_time_seconds_bucket` (p99) | < 50 ms               | 点对点网络 RTT         |
-| `etcd_mvcc_db_total_size_in_bytes`                     | < 2 GB (默认配额)     | 数据库大小              |
+| `etcd_mvcc_db_total_size_in_bytes`                       | < 2 GB (默认配额)     | 数据库大小              |
 
 ### 网络健康
 
@@ -93,4 +95,4 @@ curl -s http://127.0.0.1:12381/metrics \
   | grep -E "^(etcd_disk_wal_fsync|etcd_disk_backend_commit|etcd_mvcc_db_total_size)"
 ```
 
-如果集群有 Prometheus 抓取 etcd，则同样的指标也可以通过 PromQL 获取——通常在生产环境中是最干净的路径。
+如果集群有 Prometheus 抓取 etcd，则通过 PromQL 也可以获得相同的指标——通常是在生产环境中最干净的路径。

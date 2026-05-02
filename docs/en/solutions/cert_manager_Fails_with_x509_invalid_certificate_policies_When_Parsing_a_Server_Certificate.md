@@ -5,6 +5,7 @@ products:
    - Alauda Container Platform
 ProductsVersion:
    - 4.1.0,4.2.x
+id: KB260500025
 ---
 
 # cert-manager Fails with "x509: invalid certificate policies" When Parsing a Server Certificate

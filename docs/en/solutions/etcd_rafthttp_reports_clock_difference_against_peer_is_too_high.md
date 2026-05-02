@@ -5,6 +5,7 @@ products:
    - Alauda Container Platform
 ProductsVersion:
    - 4.1.0,4.2.x
+id: KB260500018
 ---
 
 # etcd rafthttp reports clock difference against peer is too high

@@ -5,18 +5,21 @@ products:
   - Alauda Container Platform
 ProductsVersion:
   - '4.1.0,4.2.x'
-sourceSHA: e8faf8b0373d7e73bb79a97436a7637126ad3a95d8c4becfc282e61d0684baea
+id: KB260500028
+sourceSHA: 323dcd54a466756e99cb158bbb8382413b25fad6636940c0c3e84448ba19c129
 ---
+
+# 部署一个临时 SMTP 接收器以测试 Alertmanager 邮件接收器配置
 
 ## 问题
 
-在配置 Alertmanager 的电子邮件接收器（`smtp_smarthost`、`smtp_auth_username`、`smtp_from`、`smtp_require_tls` 等）时，实际的投递路径会经过公司中继、反垃圾邮件过滤器和 TLS 链，这些可能会隔离、静默丢弃或限速测试告警。在这些层中的任何一个发生投递失败都很难判断是 Alertmanager 配置错误、是中继问题，还是收件箱的问题。一个一次性集群内 SMTP 接收器可以让操作员在将 smarthost 切换回生产中继之前，验证 Alertmanager 管道的端到端功能。
+在配置 Alertmanager 邮件接收器（`smtp_smarthost`、`smtp_auth_username`、`smtp_from`、`smtp_require_tls` 等）时，实际的传递路径会经过公司中继、反垃圾邮件过滤器和 TLS 链，这些可能会隔离、静默丢弃或限制测试告警的速率。这些层中的任何一个交付失败都使得很难判断配置错误是在 Alertmanager 中、在中继中，还是在收件人邮箱中。一个一次性集群内 SMTP 接收器可以让操作员在将 smarthost 切换回生产中继之前验证 Alertmanager 管道的端到端功能。
 
 ## 解决方案
 
-### 步骤 1 — 在集群内部署一次性 SMTP 接收器
+### 步骤 1 — 在集群内部署一个临时 SMTP 接收器
 
-[`mailhog`](https://github.com/mailhog/MailHog) 是一个单二进制的 SMTP 服务器，它将每条消息接收至内存存储中，并通过 HTTP 界面暴露这些消息。将其作为一个由 ClusterIP 服务前端的单个 Pod 运行：
+[`mailhog`](https://github.com/mailhog/MailHog) 是一个单二进制的 SMTP 服务器，它将每条消息接受到内存存储中，并通过 HTTP UI 进行展示。将其作为一个由 ClusterIP 服务前置的单个 Pod 运行：
 
 ```yaml
 apiVersion: apps/v1
@@ -79,11 +82,11 @@ receivers:
         send_resolved: true
 ```
 
-如果 Alertmanager 是由 Prometheus Operator 管理的，相应的 `AlertmanagerConfig` CR 使用相同的 `email_configs` 结构；如果是通过名为 `alertmanager-main`（或类似名称）的 `Secret` 配置的，请编辑该 Secret 的 `alertmanager.yaml` 负载并重启 Alertmanager Pods。
+如果 Alertmanager 是由 Prometheus Operator 管理的，相应的 `AlertmanagerConfig` CR 使用相同的 `email_configs` 结构；如果是通过名为 `alertmanager-main`（或类似名称）的 `Secret` 配置的，请编辑该 Secret 的 `alertmanager.yaml` 有效负载并重启 Alertmanager Pods。
 
 ### 步骤 3 — 触发测试告警
 
-创建一个始终触发的 `PrometheusRule`，附加到 Alertmanager 监听的任何 `Prometheus` 实例上：
+创建一个始终触发的 `PrometheusRule`，附加到 Alertmanager 监听的任何 `Prometheus` 实例：
 
 ```yaml
 apiVersion: monitoring.coreos.com/v1
@@ -103,21 +106,21 @@ spec:
           labels:
             severity: info
           annotations:
-            summary: Alertmanager 电子邮件路径烟雾测试
+            summary: Alertmanager 邮件路径烟雾测试
             description: 此告警始终触发；在 mailhog 中看到后可以安全忽略。
 ```
 
-在一到两个抓取间隔内，告警会到达 Alertmanager，电子邮件接收器会触发。
+在一到两个抓取间隔内，告警会到达 Alertmanager，邮件接收器会触发。
 
 ### 步骤 4 — 验证消息是否到达
 
-端口转发 mailhog HTTP 界面：
+端口转发 mailhog HTTP UI：
 
 ```bash
 kubectl -n monitoring port-forward svc/mailhog 8025:8025
 ```
 
-打开 `http://127.0.0.1:8025`，确认测试告警出现，并带有配置的 `From:` 和 `To:` 头部以及渲染的 Alertmanager 内容。相同的数据也可以通过 JSON API 获取：
+打开 `http://127.0.0.1:8025`，确认测试告警出现，并带有配置的 `From:` 和 `To:` 头部以及渲染的 Alertmanager 正文。相同的数据可以通过 JSON API 获取：
 
 ```bash
 curl -s http://127.0.0.1:8025/api/v2/messages | jq '.items[0] | {From, To, Subject: .Content.Headers.Subject}'

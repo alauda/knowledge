@@ -5,24 +5,27 @@ products:
   - Alauda Container Platform
 ProductsVersion:
   - '4.1.0,4.2.x'
-sourceSHA: 150b6cb4c7fa405a5bc9340f1b175447bf6e39af362844f0f34962291d6d3342
+id: KB260500027
+sourceSHA: 3079074819fe19007f1552b6d51eeb978eb08570c8a27c0661bcf8e9e28ec7c3
 ---
+
+# 为 ACP 集群访问生成新的 kubeconfig
 
 ## 问题
 
-平台管理员需要为 Alauda Container Platform 集群生成一个新的 `kubeconfig` —— 用于提供对新自动化系统的访问、更换泄露的文件或轮换长期凭证。直接撤销现有 kubeconfig 的内容是有风险的，因为同一个文件可能被系统组件、CI 作业或其他管理员共享；因此，支持的工作流程是生成一个新的凭证，并以受控的方式退役旧的凭证。
+平台管理员需要为 Alauda Container Platform 集群生成一个新的 `kubeconfig` —— 用于提供对新自动化系统的访问、替换泄露的文件或轮换长期凭证。直接撤销现有 kubeconfig 的内容是有风险的，因为同一个文件可能被系统组件、CI 作业或其他管理员共享；因此，支持的工作流程是生成一个新的凭证，并以受控的方式退役旧的凭证。
 
 ## 根本原因
 
-kubeconfig 只是一个 YAML 文档，包含一个集群端点、一个用户身份（客户端证书、令牌或执行凭证插件）和一个将两者配对的上下文。由于相同的身份可能嵌入在分发给多个用户的许多 kubeconfig 文件中，撤销访问需要使底层身份失效（轮换其证书、删除其 ServiceAccount 令牌 Secret 或移除其 RBAC 绑定）—— 而不是编辑一个本地文件。因此，通过生成一个全新的身份并导出一个引用它的 kubeconfig 来创建新的访问。
+kubeconfig 只是一个 YAML 文档，它将集群端点、用户身份（客户端证书、令牌或 exec 凭证插件）和将两者配对的上下文捆绑在一起。由于同一身份可能嵌入在分发给多个用户的许多 kubeconfig 文件中，因此撤销访问需要使底层身份失效（轮换其证书、删除其 ServiceAccount 令牌 Secret 或移除其 RBAC 绑定）—— 而不是编辑一个本地文件。因此，通过生成一个全新的身份并导出一个引用它的 kubeconfig 来创建新的访问。
 
 ## 解决方案
 
-选择与 kubeconfig 使用方式相匹配的凭证类型：
+选择与 kubeconfig 使用方式匹配的凭证类型：
 
 ### 选项 1 — 长期有效的 ServiceAccount 令牌（推荐用于自动化）
 
-手动提供令牌 Secret 的 ServiceAccount 提供了一个稳定的 bearer-token 身份，可以通过删除 Secret 来撤销，而不会影响其他用户。
+一个手动配置令牌 Secret 的 ServiceAccount 提供了一个稳定的 bearer-token 身份，可以通过删除 Secret 来撤销，而不会影响其他用户。
 
 ```yaml
 apiVersion: v1
@@ -83,7 +86,7 @@ kubectl config --kubeconfig=new-kubeconfig use-context ci-readonly
 kubectl -n kube-system create token ci-readonly --duration=8h > token.txt
 ```
 
-将令牌与集群 CA 包和服务器 URL 一起分发。用户运行与上述相同的 `kubectl config set-cluster / set-credentials / set-context` 序列，替换来自 `token.txt` 的令牌。
+将令牌与集群 CA 包和服务器 URL 一起分发。用户运行与上述相同的 `kubectl config set-cluster / set-credentials / set-context` 序列，替换 `token.txt` 中的令牌。
 
 ### 选项 3 — TLS 客户端证书
 
@@ -115,8 +118,8 @@ kubectl get csr jane-csr -o jsonpath='{.status.certificate}' \
 在验证新文件正常工作后，使旧凭证失效：
 
 - ServiceAccount 令牌：`kubectl delete secret <old-token-secret>`。来自旧 kubeconfig 的下一个 API 调用将返回 401。
-- 绑定的 TokenRequest：无需操作 —— 令牌会自行过期。
-- 客户端证书：在您的 CA/PKI 中撤销；在轮换之前，还需移除 RBAC 绑定（`kubectl delete clusterrolebinding <name>`）。
+- 绑定的 TokenRequest：无需操作——令牌会自行过期。
+- 客户端证书：在您的 CA/PKI 中撤销；在轮换之前，还需删除 RBAC 绑定（`kubectl delete clusterrolebinding <name>`）。
 
 ## 诊断步骤
 
