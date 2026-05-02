@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Import Every Key-Value Pair From an External Secret Path in a Single ExternalSecret
 ## Issue
 
 An `ExternalSecret` backed by a cloud / vault secret store — HashiCorp Vault, AWS Secrets Manager, Azure Key Vault, GCP Secret Manager, etc. — needs to mirror **all** the key-value pairs stored under a specific path into a cluster `Secret`. Using the standard `spec.data[]` field requires enumerating every key explicitly:
