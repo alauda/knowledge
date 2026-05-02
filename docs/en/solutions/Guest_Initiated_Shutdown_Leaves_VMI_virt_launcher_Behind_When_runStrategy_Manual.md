@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Guest-Initiated Shutdown Leaves VMI / virt-launcher Behind When `runStrategy: Manual`
 ## Issue
 
 A VirtualMachine configured with `spec.runStrategy: Manual` is shut down from **inside the guest OS** (a `shutdown -h now`, a Windows Start-menu shutdown, or a power-button event from the guest). The `VirtualMachine` object correctly transitions to `Stopped`, but the companion `VirtualMachineInstance` and the `virt-launcher` pod are **not** cleaned up — they linger in `Succeeded` / `Completed` state indefinitely, holding node resources (memory allocations, disk attachments) and occupying pod slots:
