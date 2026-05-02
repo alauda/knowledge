@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Attaching Two VM NICs to the Same OVN Secondary Network Requires Distinct NetworkAttachmentDefinitions
 ## Issue
 
 A KubeVirt `VirtualMachine` declares two NICs intended to connect to the same OVN-backed secondary network — for example, a VM with a primary data NIC and a redundant management NIC on the same L2 segment. The shape that feels natural is to reference the same `NetworkAttachmentDefinition` (NAD) twice:
