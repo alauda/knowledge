@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Compliance Report Export Lacks Scan-Execution Timestamp in Report Body
 ## Issue
 
 When the Container Security extension produces a compliance report and an operator exports it from the console, the resulting archive carries a UTC timestamp embedded in the *filename* — for example `compliance-report-2026-03-31T22_56_39Z.zip`. The contents inside the archive (CSVs, summary spreadsheets, evidence files) carry the rule, the result, and the cluster identification, but they do **not** carry a column or metadata field that records *when the underlying compliance scan actually ran*.
