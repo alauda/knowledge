@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Container security sensor panics with "Invalid dynamic cluster ID" after upgrade
 ## Issue
 
 After upgrading the StackRox-based Container Security product on ACP (sensor/collector/admission-controller on a secured cluster, central on the management cluster), the sensor pod enters `CrashLoopBackOff`. Its logs show a panic similar to:
