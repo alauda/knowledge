@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Migrating VMware VMs With Raw Device Mapping (RDM) Disks Is Not Supported
 ## Overview
 
 Operators planning a lift-and-shift of virtual machines out of vSphere into the ACP virtualization stack (KubeVirt-based, documented under `virtualization`) sometimes ask whether VMs whose disks are presented as **Raw Device Mapping** (RDM) — i.e. a vSphere construct that lets a guest address a SAN LUN directly, bypassing the VMFS abstraction — can be migrated through the platform's "migrate from VMware" workflow. The short answer is no: RDM-backed disks cannot be carried across by the migration pipeline that the platform exposes for VMware sources.
