@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Hosted Control Plane on KubeVirt Rejects Dual-Stack with "KubeVirt is not one of the supported platforms"
 ## Issue
 
 Provisioning a Hosted Control Plane (HCP) whose worker nodes run as KubeVirt VMs on the hosting cluster, with dual-stack (IPv4 + IPv6) cluster networking, fails at the cluster-network-operator stage. The hosted cluster's Cluster Network Operator refuses the dual-stack config and reports:
