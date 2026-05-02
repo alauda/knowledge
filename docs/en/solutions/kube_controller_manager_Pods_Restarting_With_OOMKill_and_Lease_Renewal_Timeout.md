@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# kube-controller-manager Pods Restarting With OOMKill and Lease Renewal Timeout
 ## Issue
 
 `kube-controller-manager` (KCM) pods on control-plane nodes are restarting repeatedly. The pod list shows a high `restartCount` on every replica, and the pattern for each termination is one of:
