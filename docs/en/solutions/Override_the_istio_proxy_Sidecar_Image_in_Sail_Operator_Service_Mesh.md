@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Override the istio-proxy Sidecar Image in Sail-Operator Service Mesh
 ## Issue
 
 A specific build of the `istio-proxy` sidecar must be deployed across the mesh — for example, an air-gapped registry mirror, a hot-fix tag that has not yet been promoted to a stable release channel, or a downstream-built proxy image hardened for the customer's own image-scanning pipeline. By default, the operator selects the proxy image automatically from the control-plane version, leaving no obvious way to substitute a different one.
