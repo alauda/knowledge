@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# virt-v2v conversion fails with "/lib/modules: No such file or directory" on Linux guest
 ## Issue
 
 Migration of a Linux guest from VMware into the cluster's virtualization stack — using the VM-import / Forklift workflow that delegates conversion to `virt-v2v` — fails during the inspection / conversion phase. The conversion pod logs end with libguestfs reporting the kernel modules tree cannot be found:
