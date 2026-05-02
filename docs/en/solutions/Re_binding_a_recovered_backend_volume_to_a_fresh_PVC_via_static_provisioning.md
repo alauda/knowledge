@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Re-binding a recovered backend volume to a fresh PVC via static provisioning
 ## Issue
 
 A `PersistentVolume` was deleted in the cluster but the underlying volume on the storage backend was preserved (point-in-time snapshot, vendor undelete, retention policy on the array). The data is intact on the array; only the Kubernetes object that pointed to it is gone, so workloads that referenced it are stuck.
