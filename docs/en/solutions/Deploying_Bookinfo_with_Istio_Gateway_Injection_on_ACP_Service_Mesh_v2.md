@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Deploying Bookinfo with Istio Gateway Injection on ACP Service Mesh v2
 ## Issue
 
 A developer wants to stand up the Istio **Bookinfo** sample on an ACP **Service Mesh v2** cluster and reach the product page from outside the cluster. The tricky part — compared to the old `ServiceMeshControlPlane`-driven model — is that gateways are no longer spun up automatically by the mesh operator. The user is responsible for declaring and deploying the ingress gateway, which is normally done through **gateway injection**: the same mechanism that injects the Envoy sidecar next to an application pod is reused to materialise a gateway Deployment from a bare Deployment manifest.
