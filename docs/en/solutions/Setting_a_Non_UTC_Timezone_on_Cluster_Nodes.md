@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Setting a Non-UTC Timezone on Cluster Nodes
 ## Issue
 
 Some operational environments require a node-level timezone other than UTC — typically because legacy log-shipping pipelines, on-call rotation tools, or local compliance reports expect timestamps in regional time. Out of the box, the node OS shipped with ACP is configured for UTC. The question is how to override that for a specific subset of nodes (or for the whole cluster) in a way that survives reboots, image upgrades, and node replacements.
