@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Keep TokenReview and SubjectAccessReview Out of Broad Roles
 ## Issue
 
 Cluster operators sometimes consider granting `create` on `TokenReview`, `SubjectAccessReview` (SAR), or `LocalSubjectAccessReview` (LSAR) to the `system:authenticated` group, or folding those verbs into the built-in `admin` aggregated ClusterRole, so that applications and tenants can self-check their own permissions. The request looks innocuous because the three APIs return "yes/no" answers, not data. They are not innocuous. Broad access to these verbs hands every authenticated identity a cluster-wide introspection surface against the authentication and authorization subsystems.
