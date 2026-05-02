@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# VMs With the Same Name in Different Namespaces Inherit Identical Firmware UUID
 ## Issue
 
 Two VMs created in **different namespaces** but with the **same** `metadata.name` end up with identical firmware UUIDs. A VM cloned from one namespace into another keeps the same UUID that cloud-init sees as the instance-id, and cloud-init consequently treats the new VM as "already initialised" — skipping the user-data / cloud-config steps that were meant to re-apply on the clone:
