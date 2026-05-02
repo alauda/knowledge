@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Migrating Security Profiles Operator from namespace-scoped 0.8.6 to cluster-scoped 0.9.0
 ## Overview
 
 The Security Profiles Operator (SPO) is the upstream `kubernetes-sigs/security-profiles-operator` project that delivers `Seccomp` and `SELinux` profiles as first-class Kubernetes objects (`SeccompProfile`, `SelinuxProfile`, `ProfileBinding`). Versions up to and including `0.8.6` ran the operator in a namespace-scoped configuration: the operator and its CRDs only handled profiles inside the namespace where it was installed.
