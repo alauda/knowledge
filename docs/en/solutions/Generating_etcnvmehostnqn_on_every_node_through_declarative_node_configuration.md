@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Generating /etc/nvme/hostnqn on every node through declarative node configuration
 ## Issue
 
 On a fresh bare-metal node the contents of `/etc/nvme/hostnqn` do not match the value produced by `nvme gen-hostnqn`. Because NVMe-oF and several storage initiators identify the host by the NQN string in that file, a stale or empty file prevents the kernel from initialising the NVMe devices on first boot. The fault is per-host: each node needs its own `hostnqn` regenerated, and the regeneration must persist across reboots without an operator logging into every box.
