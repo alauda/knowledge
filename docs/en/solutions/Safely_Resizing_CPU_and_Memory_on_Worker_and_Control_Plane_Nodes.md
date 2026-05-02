@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Safely Resizing CPU and Memory on Worker and Control-Plane Nodes
 ## Issue
 
 Operators sometimes need to grow (or refresh) the CPU and memory budget allocated to a worker or control-plane node — typically because workload pressure has outgrown the initial node sizing, or because the underlying hypervisor profile has been changed. The naive approach of editing the VM in vCenter while the kubelet is still running risks live workload corruption, half-drained pods, and an indefinite `NotReady` state once the node is powered back on.
