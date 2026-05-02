@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Egress IP works on dual-stack IPv4 + IPv6 with the OVN-based CNI
 ## Overview
 
 The cluster's CNI lets a project / namespace pin its outbound traffic to one or more *egress IPs* — addresses that are used as the source IP for connections leaving the cluster, irrespective of the pod IP they originated from. The most-frequent question on dual-stack clusters is whether egress IP can pin **both** an IPv4 and an IPv6 source for the same namespace. The short answer is yes, on the OVN-based CNI; the longer answer is below.
