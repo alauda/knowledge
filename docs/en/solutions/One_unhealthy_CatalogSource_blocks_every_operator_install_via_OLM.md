@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# One unhealthy CatalogSource blocks every operator install via OLM
 ## Issue
 
 A new operator install (or an existing one's upgrade) fails with `ResolutionFailed` even though the operator the user is installing has nothing to do with the failing catalog. Subscription events look like:
