@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# DiskPressure on Control-Plane When CRI-O Image Garbage Collection Stalls
 ## Issue
 
 Control-plane nodes raise the `DiskPressure` condition, and new workloads begin to pile up in `ContainerCreating`, `CreateContainerError`, or `ImagePullBackOff` states across unrelated namespaces. Symptoms observed on the affected node:
