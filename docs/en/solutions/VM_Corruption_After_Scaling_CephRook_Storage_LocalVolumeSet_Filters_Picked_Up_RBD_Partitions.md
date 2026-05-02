@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# VM Corruption After Scaling Ceph/Rook Storage — LocalVolumeSet Filters Picked Up RBD Partitions
 ## Issue
 
 After adding a new worker node and scaling a Ceph / Rook–backed storage cluster to absorb the new capacity, ACP Virtualization VMs running on the cluster fail to boot, report filesystem corruption on existing disks, or stop serving. The Ceph cluster itself simultaneously reports `slow ops` and reduced data availability. The two symptoms arrive together and are not a coincidence: the same physical blocks underneath are being written to by two independent layers of the stack.
