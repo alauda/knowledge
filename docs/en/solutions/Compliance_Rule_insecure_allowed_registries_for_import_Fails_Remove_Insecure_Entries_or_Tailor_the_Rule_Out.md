@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Compliance Rule `insecure-allowed-registries-for-import` Fails — Remove Insecure Entries or Tailor the Rule Out
 ## Issue
 
 The Compliance Operator's CIS profile reports `insecure-allowed-registries-for-import` as **FAIL**:
