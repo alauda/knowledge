@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Capturing a .NET memory dump from a hardened pod via kubectl debug — TMPDIR through /proc/1/root
 ## Issue
 
 A hardened, self-contained .NET application runs in a pod with the strictest mainstream security context: `runAsNonRoot: true`, `readOnlyRootFilesystem: true`, all Linux capabilities dropped (`drop: ["ALL"]`). Capturing a memory dump for a production memory-leak investigation hits a dead end:
