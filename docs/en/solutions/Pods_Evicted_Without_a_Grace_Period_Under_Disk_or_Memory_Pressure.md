@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Pods Evicted Without a Grace Period Under Disk or Memory Pressure
 ## Issue
 
 When a node approaches disk or memory saturation, kubelet terminates pods immediately with no draining interval. Workloads observe abrupt SIGKILLs, in-flight requests fail, and connections close without a graceful shutdown — despite the pods themselves declaring a `terminationGracePeriodSeconds`.
