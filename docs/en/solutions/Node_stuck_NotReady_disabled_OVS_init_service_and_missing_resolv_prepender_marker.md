@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Node stuck NotReady — disabled OVS init service and missing resolv-prepender marker
 ## Issue
 
 A worker node refuses to come up after a reboot or after the node-OS image is rolled forward. The node is reported `NotReady`; on the host:
