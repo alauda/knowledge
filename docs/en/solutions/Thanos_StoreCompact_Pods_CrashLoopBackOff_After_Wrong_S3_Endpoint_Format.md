@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Thanos Store/Compact Pods CrashLoopBackOff After Wrong S3 Endpoint Format
 ## Issue
 
 Thanos pods that back the long-term metrics store (typically named `observability-thanos-*` or `thanos-store-*` / `thanos-compact-*`) are stuck in `CrashLoopBackOff`. The container log reports that the bucket iteration is failing against the S3 gateway:
