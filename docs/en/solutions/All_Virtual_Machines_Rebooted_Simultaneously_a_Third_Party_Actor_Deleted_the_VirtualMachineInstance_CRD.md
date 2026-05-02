@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# All Virtual Machines Rebooted Simultaneously — a Third-Party Actor Deleted the VirtualMachineInstance CRD
 ## Issue
 
 At a single moment in time every running VM across the cluster shuts down cleanly and restarts, with no node-level symptom to explain it:
