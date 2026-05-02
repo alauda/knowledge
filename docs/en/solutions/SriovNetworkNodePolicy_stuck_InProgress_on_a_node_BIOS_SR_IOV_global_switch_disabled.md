@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# SriovNetworkNodePolicy stuck InProgress on a node — BIOS SR-IOV global switch disabled
 ## Issue
 
 A `SriovNetworkNodePolicy` that targets all worker nodes succeeds on most of them but stays `InProgress` on one (or a small subset). On the affected node:
