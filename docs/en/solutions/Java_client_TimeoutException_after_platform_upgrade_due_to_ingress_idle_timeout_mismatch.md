@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Java client TimeoutException after platform upgrade due to ingress idle-timeout mismatch
 ## Issue
 
 After a platform upgrade, Java microservices that talk to other services
