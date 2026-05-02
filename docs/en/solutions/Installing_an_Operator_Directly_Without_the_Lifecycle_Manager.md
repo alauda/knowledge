@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Installing an Operator Directly Without the Lifecycle Manager
 ## Issue
 
 The cluster needs to install a Kubernetes operator without going through the platform's Operator Lifecycle Manager (OLM). Common reasons include: a vendor only ships raw YAML manifests rather than a bundle/catalog entry; an air-gapped lab where the catalogd image cannot be reached; or an early-bring-up step before the lifecycle layer is ready. The question is whether bypassing the lifecycle manager is supported and, if so, what the minimum set of resources looks like.
