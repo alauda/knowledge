@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Crash Consistency and Failover Sequencing for Ceph-Replicated KubeVirt VMs
 ## Overview
 
 A KubeVirt virtual machine whose disk PVC sits on Ceph RBD or CephFS can be protected by either of the two replication topologies that Ceph supports — synchronous (a single stretched cluster) or asynchronous (RBD-mirror between two clusters). The DR runbook is a sequence with two correctness concerns:
