@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Istio sidecar shows no explicit RuntimeDefault seccomp — false positive in compliance scans
 ## Issue
 
 A compliance scanner flags every pod that carries an `istio-proxy` sidecar as failing the rule *"Do not disable default seccomp profile"*, with severity *critical*. The application container itself is configured correctly:
