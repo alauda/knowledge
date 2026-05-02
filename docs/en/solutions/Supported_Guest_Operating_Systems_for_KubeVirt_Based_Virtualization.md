@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Supported Guest Operating Systems for KubeVirt-Based Virtualization
 ## Overview
 
 The Virtualization area of the platform runs virtual machines on top of KubeVirt, which in turn launches guest workloads inside `qemu-kvm` processes wrapped by `virt-launcher` pods. Because the guest operating system runs on the same QEMU/KVM stack used by mainstream Linux virtualization, almost any OS that boots on `qemu-kvm` will start. "Will boot" is not the same as "is supported", however — only a subset of guest operating systems are validated by the platform and shipped with `virtio` driver paths, machine-type defaults, and support commitments.
