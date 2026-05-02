@@ -6,6 +6,9 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Adding an Additional Client CA to the Kubernetes API Server
+
 ## Issue
 
 An additional trusted Certificate Authority must be added to the cluster's API server so that clients presenting x.509 certificates signed by that CA can authenticate. Typical scenarios:

@@ -7,6 +7,9 @@ ProductsVersion:
    - 4.1.0,4.2.x
 id: KB260500033
 ---
+
+# Pod Pending: `didn't find available persistent volumes to bind` — Local PVs Pin to a Specific Node
+
 ## Issue
 
 A pod (typically a StatefulSet member — Prometheus, database, queue broker) stays Pending. `kubectl describe pod` shows the scheduler found **no** node where both a matching local PV and the pod's own node affinity can coexist:
