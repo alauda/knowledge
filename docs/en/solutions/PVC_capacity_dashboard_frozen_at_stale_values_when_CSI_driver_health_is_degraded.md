@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# PVC capacity dashboard frozen at stale values when CSI driver health is degraded
 ## Issue
 
 The cluster's storage dashboard reports an incorrect used / capacity
