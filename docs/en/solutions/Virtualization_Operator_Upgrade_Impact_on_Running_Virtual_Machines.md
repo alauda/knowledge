@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Virtualization Operator Upgrade Impact on Running Virtual Machines
 ## Issue
 
 Does upgrading the ACP Virtualization Operator, or upgrading ACP itself, shut down or pause virtual machines that are currently running? And does it put applications running inside those VMs at risk?
