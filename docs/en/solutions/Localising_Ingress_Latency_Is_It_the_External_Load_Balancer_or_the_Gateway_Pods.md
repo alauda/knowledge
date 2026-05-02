@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Localising Ingress Latency — Is It the External Load Balancer or the Gateway Pods?
 ## Overview
 
 Requests to an application reachable at `*.apps.<cluster>.example.com` intermittently time out or slow down. The path in front of every exposed application typically has three hops:
