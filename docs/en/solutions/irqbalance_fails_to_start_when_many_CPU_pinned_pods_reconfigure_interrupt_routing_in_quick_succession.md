@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# irqbalance fails to start when many CPU-pinned pods reconfigure interrupt routing in quick succession
 ## Issue
 
 A node hosting many performance-sensitive pods (workloads that opt out of IRQ load balancing through a pod annotation) eventually loses its `irqbalance` daemon entirely. The journald log on the node shows systemd refusing to restart it:
