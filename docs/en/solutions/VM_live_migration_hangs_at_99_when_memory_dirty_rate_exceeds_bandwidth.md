@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# VM live migration hangs at 99% when memory dirty rate exceeds bandwidth
 ## Issue
 
 A live migration of a VirtualMachineInstance on ACP virtualization reports progress but never converges. The migration sits at roughly 99% for an extended period; `DataRemaining` and `MemoryRemaining` oscillate up and down rather than trending towards zero, and the `virt-launcher` source pod eventually logs an abort of the form `Live migration abort detected with reason: Live migration stuck for <N> sec`.
