@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Unused Container Images Are Not Garbage Collected from Nodes
 ## Issue
 
 Unused container images accumulate on worker nodes even after the pods that referenced them are deleted. Disk usage on `/var/lib/containers` (or the equivalent CRI storage path) trends upward until the node eventually enters a `DiskPressure` condition and begins evicting pods.
