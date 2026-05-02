@@ -5,18 +5,21 @@ products:
   - Alauda Container Platform
 ProductsVersion:
   - '4.1.0,4.2.x'
-sourceSHA: c2c607b2fda0ce84091f2834f0c5ae31daa5da9fb8b88745a7c3f5e0da648988
+id: KB260500029
+sourceSHA: 3196e5e02e48beb52330993ff54edb19dee2bfd4aa853deae7b6a4380db0a309
 ---
+
+# 将多个镜像拉取密钥合并为单个 Kubernetes Docker-Config 密钥
 
 ## 问题
 
-一个工作负载需要从多个私有注册表中拉取容器镜像（例如一个公共镜像、一个供应商注册表和一个团队内部的 Harbor）。每个注册表在单独的 `~/.docker/config.json` 风格的文件中暴露其凭据。Kubernetes 默认每个 ServiceAccount 仅接受一个 `imagePullSecrets` 条目，即使列出了多个，提供多个凭据也会增加操作噪音。
+一个工作负载需要从多个私有注册表中拉取容器镜像（例如公共镜像、供应商注册表和团队内部的 Harbor）。每个注册表在单独的 `~/.docker/config.json` 风格的文件中公开其凭据。Kubernetes 每次仅接受一个 `imagePullSecrets` 条目作为 ServiceAccount 的默认值，即使列出了多个，提供多个密钥也会增加操作噪音。
 
-本文描述了如何将两个或多个现有的拉取凭据 JSON 文件合并为一个满足所有注册表的 `kubernetes.io/dockerconfigjson` Secret。
+本文描述了如何将两个或多个现有的拉取密钥 JSON 文件合并为一个满足所有注册表的 `kubernetes.io/dockerconfigjson` 密钥。
 
 ## 根本原因
 
-`dockerconfigjson` Secret 类型是一个简单的 base64 包装的 JSON 文档副本，其结构如下：
+`dockerconfigjson` 密钥类型是一个简单的 base64 包装的 JSON 文档副本，其结构如下：
 
 ```json
 {
@@ -27,13 +30,13 @@ sourceSHA: c2c607b2fda0ce84091f2834f0c5ae31daa5da9fb8b88745a7c3f5e0da648988
 }
 ```
 
-当两个拉取凭据文件包含不重叠的 `auths` 键时，合并纯粹是一个 JSON 联合 — kubelet 拉取器在拉取时查找注册表主机名，任何在 `auths` 下匹配的条目都会被使用。因此，这项工作是客户端的文本操作；不需要 API 更改。
+当两个拉取密钥文件包含不相交的 `auths` 键时，合并纯粹是一个 JSON 联合 — kubelet 镜像拉取器在拉取时查找注册表主机名，任何在 `auths` 下匹配的条目都会被使用。因此，这项工作是客户端的文本操作；不需要 API 更改。
 
 ## 解决方案
 
 ### 步骤
 
-1. 将每个现有的拉取凭据导出为一个普通的 JSON 文件。对于已经存在于集群中的 Secret：
+1. 将每个现有的拉取密钥导出为一个普通的 JSON 文件。对于已经存在于集群中的密钥：
 
    ```bash
    kubectl get secret registry-a-pull -n team-x \
@@ -58,7 +61,7 @@ sourceSHA: c2c607b2fda0ce84091f2834f0c5ae31daa5da9fb8b88745a7c3f5e0da648988
    jq '.auths | keys' /tmp/auth-merged.json
    ```
 
-3. 创建或替换合并后的 Secret：
+3. 创建或替换合并后的密钥：
 
    ```bash
    kubectl create secret generic glean-merged-pull \
@@ -68,7 +71,7 @@ sourceSHA: c2c607b2fda0ce84091f2834f0c5ae31daa5da9fb8b88745a7c3f5e0da648988
      --dry-run=client -o yaml | kubectl apply -f -
    ```
 
-4. 在每个 Pod 上引用合并后的 Secret（或将其附加到命名空间的默认 ServiceAccount，以便 Pods 自动继承）：
+4. 在每个 Pod 上引用合并后的密钥（或将其附加到命名空间的默认 ServiceAccount，以便 Pods 自动继承）：
 
    ```yaml
    apiVersion: v1
@@ -83,7 +86,7 @@ sourceSHA: c2c607b2fda0ce84091f2834f0c5ae31daa5da9fb8b88745a7c3f5e0da648988
          image: registry-a.example.com/foo:1.0
    ```
 
-   或者：
+   或：
 
    ```bash
    kubectl patch serviceaccount default -n team-x \
@@ -94,15 +97,15 @@ sourceSHA: c2c607b2fda0ce84091f2834f0c5ae31daa5da9fb8b88745a7c3f5e0da648988
 
 ## 诊断步骤
 
-如果 Pod 在切换到合并后的 Secret 后仍报告 `ImagePullBackOff`：
+如果 Pod 在切换到合并后的密钥后仍报告 `ImagePullBackOff`：
 
-- 确认 Secret 类型确实是 `kubernetes.io/dockerconfigjson`：
+- 确认密钥类型确实是 `kubernetes.io/dockerconfigjson`：
 
   ```bash
   kubectl get secret glean-merged-pull -n team-x -o jsonpath='{.type}'
   ```
 
-- 解码实时 Secret 以确认注册表主机名出现在 `.auths` 下：
+- 解码实时密钥以确认注册表主机名出现在 `.auths` 下：
 
   ```bash
   kubectl get secret glean-merged-pull -n team-x \

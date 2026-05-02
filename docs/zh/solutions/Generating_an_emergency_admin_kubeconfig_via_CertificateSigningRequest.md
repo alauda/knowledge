@@ -5,22 +5,25 @@ products:
   - Alauda Container Platform
 ProductsVersion:
   - '4.1.0,4.2.x'
-sourceSHA: e94918fcf6fb899a3a628945820af28e051c5d6ec5fec52c8faf96b4ac286301
+id: KB260500014
+sourceSHA: 1633e8b9d09a9ccf6c14106eb7cfe9f416802acfa4d628c6a3e5b5d793ee7238
 ---
+
+# 通过 CertificateSigningRequest 生成紧急管理员 kubeconfig
 
 ## 问题
 
-在安装时生成的原始管理员 kubeconfig 可能会丢失、泄露，或者在控制平面 CA 轮换后出现 `x509: certificate signed by unknown authority` 的错误。当发生这种情况时——并且操作员不再通过 OIDC / OAuth 身份提供者拥有任何有效的集群管理员路径——集群仍然必须可访问。
+安装时生成的原始管理员 kubeconfig 可能会丢失、泄露，或者在控制平面 CA 轮换后出现 `x509: certificate signed by unknown authority` 的错误。当发生这种情况时——并且操作员不再通过 OIDC / OAuth 身份提供者拥有任何有效的集群管理员路径——集群仍然必须可访问。
 
-此操作步骤生成一个新的短期客户端证书，该证书作为常规管理员身份（`CN=system:admin`，组 `system:masters`）进行身份验证，使用标准的 Kubernetes CSR API。这是最后的恢复路径：生成的凭证绕过 IdP，并继承每个符合标准集群附带的完整 `cluster-admin` ClusterRoleBinding。将生成的密钥视为敏感秘密，并在事件结束后立即进行轮换。
+此操作步骤通过标准 Kubernetes CSR API 生成一个新的、短期的客户端证书，该证书作为常规管理员身份（`CN=system:admin`，组 `system:masters`）进行身份验证。这是最后的恢复路径：生成的凭证绕过 IdP，并继承每个符合标准集群附带的完整 `cluster-admin` ClusterRoleBinding。请将生成的密钥视为敏感秘密，并在事件结束后立即进行轮换。
 
-如果有非 CSR 签名路径（自定义 CA 附加到 apiserver 的 `client-ca-file`），请优先使用该路径——其过期时间由操作员自己的 CA 限制，而不是由集群签名者的 14 个月轮换周期限制。
+如果可用非 CSR 签名路径（自定义 CA 附加到 apiserver 的 `client-ca-file`），请优先使用该路径——其有效期由操作员自己的 CA 限制，而不是由集群签名者的 14 个月轮换周期限制。
 
 ## 解决方案
 
 ### 生成密钥 + CSR
 
-创建一个 4096 位 RSA 密钥和一个 PKCS#10 CSR，其主题嵌入恢复身份：
+创建一个 4096 位的 RSA 密钥和一个 PKCS#10 CSR，其主题嵌入恢复身份：
 
 ```bash
 openssl req -new -newkey rsa:4096 -nodes \
@@ -42,7 +45,7 @@ metadata:
   name: admin-recovery
 spec:
   signerName: kubernetes.io/kube-apiserver-client
-  expirationSeconds: 86400          # 1 天；限制为最短可接受的时间
+  expirationSeconds: 86400          # 1 天；限制为最短可接受的
   groups:
     - system:authenticated
   request: <BASE64_OF_admin-recovery.csr>
@@ -57,7 +60,7 @@ REQUEST=$(base64 -w0 admin-recovery.csr)
 sed "s|<BASE64_OF_admin-recovery.csr>|${REQUEST}|" csr.yaml | kubectl apply -f -
 ```
 
-`expirationSeconds` 由 apiserver 尊重，只要所选的签名者接受它；集群的签名 CA 可能进一步限制其生命周期。默认值——当省略时——为一年，大多数平台管理的签名者将单个证书的有效期限制得远低于签名者自己的有效性。
+`expirationSeconds` 由 apiserver 尊重，只要所选签名者接受它；集群的签名 CA 可能会进一步限制有效期。默认情况下——如果省略——为一年，大多数平台管理的签名者将单个证书的有效期限制为远低于签名者自己的有效期。
 
 ### 批准并获取证书
 
@@ -70,11 +73,11 @@ kubectl get csr admin-recovery \
   -o jsonpath='{.status.certificate}' | base64 -d > admin-recovery.crt
 ```
 
-如果没有这样的会话——意味着操作员根本没有有效的管理员路径——恢复将成为节点本地操作：SSH 到控制平面节点，提供指向 `https://localhost:6443` 的 kubeconfig，并使用本地主机提供的 CA 进行批准。该异步路径是平台特定的，应视为最后的后备。
+如果没有这样的会话——意味着操作员根本没有有效的管理员路径——恢复变为节点本地操作：SSH 到控制平面节点，提供一个指向 `https://localhost:6443` 的 kubeconfig，并使用本地 CA 进行批准。该异步路径是平台特定的，应视为最后的后备。
 
 ### 组装恢复 kubeconfig
 
-构建一个新的 kubeconfig，包含新证书、集群的服务 CA 包和选择恢复用户的上下文。从任何系统命名空间中的服务账户令牌秘密中提取 apiserver CA：
+构建一个新的 kubeconfig，其中包含新证书、集群的服务 CA 包和选择恢复用户的上下文。从任何系统命名空间中的服务帐户令牌秘密中提取 apiserver CA：
 
 ```bash
 KUBECTL=kubectl
@@ -84,13 +87,13 @@ $KUBECTL get secret \
   -o jsonpath='{.items[0].data.ca\.crt}' | base64 -d > apiserver-ca.crt
 ```
 
-如果集群使用自定义 CA 签名的证书来前置 apiserver，而这些证书不属于集群内的 CA 包，请将它们附加：
+如果集群使用自定义 CA 签名的证书来前置 apiserver，这些证书不属于集群内的 CA 包，请将它们附加：
 
 ```bash
 cat custom-apiserver-ca.crt >> apiserver-ca.crt
 ```
 
-然后使用三次 `kubectl config` 调用组装 kubeconfig，以便文件以习惯用法布局：
+然后通过三次 `kubectl config` 调用组装 kubeconfig，以便文件以习惯用法布局：
 
 ```bash
 KCFG=/tmp/recovery.kubeconfig
@@ -127,24 +130,24 @@ kubectl --kubeconfig="$KCFG" auth whoami -o yaml
 kubectl --kubeconfig="$KCFG" get nodes
 ```
 
-`auth whoami` 应报告 `username: system:admin` 以及 `system:masters` 和 `system:authenticated` 组成员资格。一旦恢复 kubeconfig 被验证为有效，立即：
+`auth whoami` 应报告 `username: system:admin` 以及 `system:masters` 和 `system:authenticated` 组成员资格。一旦恢复 kubeconfig 验证工作正常，立即：
 
 1. 通过常规 IdP / OAuth 路径重新建立长期管理员身份。
-2. 如果有任何理由相信 apiserver CA 被泄露，则轮换集群签名者。
+2. 如果有任何理由相信 apiserver CA 已被破坏，则轮换集群签名者。
 3. 删除恢复密钥（`shred -u admin-recovery.key`）并撤销 CSR 记录。
 
 ## 诊断步骤
 
-如果 `kubectl certificate approve` 返回 `Forbidden`，则执行身份不具备 `signers/kubernetes.io/kube-apiserver-client` 上的 `approve` 动词。明确检查它：
+如果 `kubectl certificate approve` 返回 `Forbidden`，则执行身份不具有 `signers/kubernetes.io/kube-apiserver-client` 上的 `approve` 动词。明确检查：
 
 ```bash
 kubectl auth can-i approve certificatesigningrequests \
   --subresource=approval
 ```
 
-如果为 false，则无法从该会话进行恢复——升级到节点本地批准路径，或使用文件中存档的长期管理员 kubeconfig 备份。
+如果返回 false，则无法从该会话进行恢复——升级到节点本地批准路径，或使用文件中的长期管理员 kubeconfig 备份（如果有）。
 
-如果生成的 kubeconfig 仍然因 `x509: certificate signed by unknown authority` 而失败，则嵌入的 CA 包不包括签署 apiserver 的服务证书的链。确认 apiserver 实际上提供了什么：
+如果生成的 kubeconfig 仍然因 `x509: certificate signed by unknown authority` 而失败，则嵌入的 CA 包不包括签署 apiserver 服务证书的链。确认 apiserver 实际上提供了什么：
 
 ```bash
 echo Q | openssl s_client -connect "${SERVER#https://}" -showcerts 2>/dev/null \

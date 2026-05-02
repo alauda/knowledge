@@ -5,6 +5,7 @@ products:
    - Alauda Container Platform
 ProductsVersion:
    - 4.1.0,4.2.x
+id: KB260500024
 ---
 
 # Why authenticated users can view the KubeVirt OS-images namespace

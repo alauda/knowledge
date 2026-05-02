@@ -5,6 +5,7 @@ products:
    - Alauda Container Platform
 ProductsVersion:
    - 4.1.0,4.2.x
+id: KB260500023
 ---
 
 # Auto-Approve Pending Node CSRs with a Scheduled Job

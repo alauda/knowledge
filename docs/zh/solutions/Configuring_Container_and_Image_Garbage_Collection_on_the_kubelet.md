@@ -6,19 +6,21 @@ products:
 ProductsVersion:
   - '4.1.0,4.2.x'
 id: KB260500005
-sourceSHA: c96a4f5dffd61a1b9471846d99035def67af4e6effdc921811c4d1e69c0385b9
+sourceSHA: 08b1ae95ff0d393324e1858f0803120ba99009415f0a6c21e9f67126d365f44f
 ---
+
+# 配置 kubelet 上的容器和镜像垃圾回收
 
 ## 概述
 
 每个工作节点上的 kubelet 持续从本地容器运行时回收资源。两个相关机制驱动这一过程：
 
-- **容器垃圾回收** — 定期删除属于已终止或被替换的 Pod 的死容器。
+- **容器垃圾回收** — 定期删除属于已终止或已替换 pod 的死容器。
 - **镜像垃圾回收** — 一旦磁盘压力超过阈值，定期删除未使用的容器镜像。
 
-这两种行为默认启用，并且阈值设置较为保守。运维人员很少需要禁用它们；常见的任务是对它们进行*调优*，以确保节点在频繁变更（频繁发布、批处理作业节点、每天拉取多个标签的开发集群）时不会耗尽磁盘空间。
+这两种行为默认启用，并具有保守的阈值。操作员很少需要禁用它们；常见的任务是 *调整* 它们，以确保节点在频繁变更（频繁发布、批处理作业节点、每天拉取多个标签的开发集群）时不会耗尽磁盘空间。
 
-本文描述了参数、在 Alauda 容器平台上设置它们的位置，以及如何验证更改是否在节点上生效。
+本文描述了参数、在 Alauda 容器平台上设置它们的位置，以及如何验证更改已在节点上生效。
 
 ## 解决方案
 
@@ -27,15 +29,15 @@ sourceSHA: c96a4f5dffd61a1b9471846d99035def67af4e6effdc921811c4d1e69c0385b9
 kubelet 从每个节点上的 YAML 文件读取其配置（大多数发行版为 `/var/lib/kubelet/config.yaml`）。垃圾回收参数与驱逐阈值一起存在：
 
 ```yaml
-# /var/lib/kubelet/config.yaml — 仅相关字段
+# /var/lib/kubelet/config.yaml — 相关字段
 apiVersion: kubelet.config.k8s.io/v1beta1
 kind: KubeletConfiguration
 
 # --- 容器 GC ---
-# 一旦节点上有超过这个数量的已终止容器，kubelet
+# 一旦节点有超过这个数量的已终止容器，kubelet
 # 开始优先删除最旧的容器。
 maxContainersPerPod: 1                 # 过时；使用 maxPerPodContainerCount
-maxPerPodContainerCount: 1             # 每个 Pod 保留的最大死容器数量
+maxPerPodContainerCount: 1             # 每个 pod 保留的最大死容器数量
 maxContainerCount: 100                 # 节点上保留的最大死容器数量
 
 # --- 镜像 GC ---
@@ -43,10 +45,10 @@ maxContainerCount: 100                 # 节点上保留的最大死容器数量
 # 未使用的镜像，直到使用率降到 LowThresholdPercent 以下。
 imageGCHighThresholdPercent: 85        # 默认 85
 imageGCLowThresholdPercent: 80         # 默认 80
-imageMinimumGCAge: 2m                  # 不对小于此年龄的镜像进行 GC
+imageMinimumGCAge: 2m                  # 不对年轻于此的镜像进行 GC
 
 # --- 驱逐（节点压力）---
-# 触发 Pod 驱逐的软阈值和硬阈值；与镜像 GC 一起调优，
+# 触发 pod 驱逐的软阈值和硬阈值；与镜像 GC 一起调整，
 # 以确保节点不会频繁波动。
 evictionHard:
   memory.available:   "100Mi"
@@ -62,7 +64,7 @@ evictionSoftGracePeriod:
   nodefs.available:   "1m30s"
 ```
 
-驱动驱逐子系统的变量映射到运行时测量如下：
+驱动驱逐子系统的变量与运行时测量的映射如下：
 
 ```text
 memory.available    := node.status.capacity[memory] - node.stats.memory.workingSet
@@ -74,13 +76,13 @@ imagefs.inodesFree  := node.stats.runtime.imagefs.inodesFree
 
 ### 如何在节点池中应用更改
 
-在 Alauda 容器平台上，kubelet 配置在节点池级别通过 `configure/clusters/nodes` 管理。编辑相关池的 kubelet 配置文件，设置所需的 GC 和驱逐值，让平台将更改推送到每个成员节点。平台按顺序序列化发布，逐个排空节点，重启 kubelet，并在节点变为 Ready 后再继续下一个。
+在 Alauda 容器平台上，kubelet 配置在节点池级别通过 `configure/clusters/nodes` 管理。编辑相关池的 kubelet 配置文件，设置所需的 GC 和驱逐值，然后让平台将更改应用到每个成员节点。平台会序列化发布，逐个排空节点，重启 kubelet，并在节点变为 Ready 后再进行下一个。
 
 对于没有平台界面的隔离环境或单节点环境，等效的编辑是直接进行：
 
 ```bash
 # 在节点上 — 仅用于记录；上述平台管理的流程
-# 在可用时更为推荐。
+# 在可用时更为优先。
 sudo cp -a /var/lib/kubelet/config.yaml /var/lib/kubelet/config.yaml.bak
 sudo $EDITOR /var/lib/kubelet/config.yaml
 sudo systemctl restart kubelet
@@ -88,14 +90,14 @@ sudo systemctl restart kubelet
 
 重启 kubelet 会暂时使节点从 API 服务器的心跳中掉线 — 请在维护窗口期间安排更改，或使用平台管理的流程，该流程会为您处理排空/封锁。
 
-### 针对工作负载配置的推荐调优
+### 针对工作负载配置的推荐调整
 
 | 工作负载                                            | 显著的 kubelet 设置                                                                                                                     |
 | --------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
-| 长期运行的服务，发布不频繁                          | 默认设置即可。                                                                                                                           |
-| 批处理 / CI 工作负载（许多短暂的 Pod）              | 将 `maxContainerCount` 降至 50，以减少死容器的杂乱；将 `imageMinimumGCAge` 降至 30s，以便快速回收瞬态镜像。 |
-| 拉取多个镜像标签的开发集群                        | 将 `imageGCHighThresholdPercent` 降至 75，将 `imageGCLowThresholdPercent` 降至 70，以确保在长时间工作期间磁盘不会填满。            |
-| 拥有单独 `/var/lib/containers` 分区的节点         | 独立于 `nodefs.available` 调整 `imagefs.available` 驱逐；检查 `crictl info` 以获取运行时报告的 imagefs 路径。          |
+| 长期运行的服务，发布不频繁                         | 默认设置即可。                                                                                                                           |
+| 批处理 / CI 工作负载（许多短期 pod）               | 将 `maxContainerCount` 降至 50，以减少死容器的杂乱；将 `imageMinimumGCAge` 降至 30s，以便快速回收瞬态镜像。                          |
+| 拉取许多镜像标签的开发集群                         | 将 `imageGCHighThresholdPercent` 降至 75 和 `imageGCLowThresholdPercent` 降至 70，以便在长时间工作期间磁盘不会填满。                   |
+| 拥有单独 `/var/lib/containers` 分区的节点         | 独立调整 `imagefs.available` 驱逐，而不是 `nodefs.available`；检查 `crictl info` 以获取运行时报告的 imagefs 路径。                   |
 
 ## 诊断步骤
 
@@ -116,7 +118,7 @@ kubectl debug node/${NODE} -it \
   -- chroot /host sh -c 'grep -E "GC|eviction" /var/lib/kubelet/config.yaml'
 ```
 
-通过尾随 kubelet 日志确认垃圾回收正在工作：
+通过跟踪 kubelet 日志确认垃圾回收正在工作：
 
 ```bash
 kubectl debug node/${NODE} -it \

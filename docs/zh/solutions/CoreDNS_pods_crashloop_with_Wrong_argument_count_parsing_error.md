@@ -5,31 +5,34 @@ products:
   - Alauda Container Platform
 ProductsVersion:
   - '4.1.0,4.2.x'
-sourceSHA: 54f579b2a7686dd74ec89c852f5b886952df879ec02759a5a87be5f4e3d5de45
+id: KB260500017
+sourceSHA: 772e1e800a57356a255a5fdc864e88ada99ac9ef396398cffb32ae5586c6006a
 ---
+
+# CoreDNS Pod 因 "错误的参数数量" 解析错误而崩溃循环
 
 ## 问题
 
-DNS pods 进入 `CrashLoopBackOff`。pod 日志包含 Corefile 解析错误：
+DNS Pod 进入 `CrashLoopBackOff` 状态。Pod 日志包含 Corefile 解析错误：
 
 ```text
 plugin/forward: /etc/coredns/Corefile:19 - Error during parsing:
   Wrong argument count or unexpected line ending after '.'
 ```
 
-Pod 重启时每次都会发出相同的行。在 pods 循环期间，集群 DNS 对所有工作负载不可用，因为集群的 DNS 服务没有健康的后端。
+Pod 重启时每次都会发出相同的日志。由于集群的 DNS 服务没有健康的后端，所有工作负载在 Pod 循环期间无法访问集群 DNS。
 
 ## 根本原因
 
-注入到 pods 中的 CoreDNS 配置包含一个 `forward` 插件块，其段落不完整。DNS Operator（或从声明性配置构建 Corefile 的等效操作员）为操作员的自定义资源声明的每个区域发出一个 `forward` 块——但是如果操作员的 CR 中存在一个区域条目而没有 `forwardPlugin`（没有上游解析器的列表，或格式错误的上游条目），则生成的 Corefile 包含一个没有后续参数的 `forward .`（或 `forward <zone>`）行。
+注入到 Pod 中的 CoreDNS 配置包含一个不完整的 `forward` 插件块。DNS 操作员（或构建 Corefile 的等效操作员）为操作员的自定义资源声明的每个区域发出一个 `forward` 块——但如果操作员的 CR 中存在一个区域条目而没有 `forwardPlugin`（没有上游解析器列表，或格式错误的上游条目），则生成的 Corefile 包含一个没有后续参数的 `forward .`（或 `forward <zone>`）行。
 
-CoreDNS 严格解析 Corefiles。`forward` 指令后必须跟随至少一个上游解析器。没有上游的尾随 `.` 会被拒绝，并产生 `Wrong argument count` 错误，pod 无法启动插件链。pod 退出，kubelet 重启它，循环无限继续。
+CoreDNS 严格解析 Corefiles。`forward` 指令后必须至少跟随一个上游解析器。没有上游的尾随 `.` 会被拒绝，并产生 `Wrong argument count` 错误，导致 Pod 无法启动插件链。Pod 退出，kubelet 重新启动它，循环无限继续。
 
-同样的情况适用于任何从 CR 构建 CoreDNS Corefile 的操作员——一个过时或错误添加的区域条目没有转发器将重现该故障。
+任何从 CR 构建 CoreDNS Corefile 的操作员都适用相同的情况——一个过时或错误添加的没有转发器的区域条目将重现该故障。
 
 ## 解决方案
 
-检查操作员管理的 DNS 配置，或者用有效的 `forwardPlugin` 填充区域，或者完全删除区域条目：
+检查操作员管理的 DNS 配置，填充区域以包含有效的 `forwardPlugin`，或完全删除该区域条目：
 
 ```bash
 kubectl edit dns.operator default
@@ -66,7 +69,7 @@ servers:
       - ABC
 ```
 
-保存并退出。操作员重新生成 Corefile，DNS pods 以有效配置重启，崩溃循环在一次滚动周期内清除。
+保存并退出。操作员将重新生成 Corefile，DNS Pod 将以有效配置重启，崩溃循环将在一次滚动周期内清除。
 
 ### 选项 B — 完成区域配置
 
@@ -82,7 +85,7 @@ servers:
 
 如果该区域是故意添加的，请提供至少一个上游解析器。除非有理由不同，否则使用与现有条目相同的 `policy` 值。
 
-在配置更正后，操作员重新生成 ConfigMap，DNS 部署推出新的 Corefile，pods 离开 `CrashLoopBackOff`。集群 DNS 在新 pods 变为就绪后几秒内恢复。
+在配置更正后，操作员将重新生成 ConfigMap，DNS 部署将推出新的 Corefile，Pod 将离开 `CrashLoopBackOff` 状态。集群 DNS 在新 Pod 变为就绪后几秒内恢复。
 
 ## 诊断步骤
 
@@ -93,7 +96,7 @@ servers:
      | grep -i "Error during parsing"
    ```
 
-2. 检查操作员管理的 ConfigMap 中呈现的 Corefile：
+2. 检查操作员管理的 ConfigMap 中渲染的 Corefile：
 
    ```bash
    kubectl get configmap -n <dns-ns> -o yaml | yq '.items[].data.Corefile'
@@ -101,24 +104,24 @@ servers:
 
    查找没有上游的 `forward .` 或 `forward <zone>` 行。错误消息中报告的行号指向有问题的条目。
 
-3. 检查操作员 CR 中生成破损行的区域条目：
+3. 检查操作员 CR 中产生损坏行的区域条目：
 
    ```bash
    kubectl get dns.operator default -o yaml | yq '.spec.servers'
    ```
 
-4. 应用更正后，观察 pods 恢复：
+4. 应用更正后，观察 Pod 恢复：
 
    ```bash
    kubectl get pods -n <dns-ns> -w
    ```
 
-   新的 pods 达到 `Running` 状态，崩溃循环计数停止递增。
+   新 Pod 达到 `Running` 状态，崩溃循环计数停止增加。
 
-5. 从工作负载 pod 验证集群 DNS 是否正常：
+5. 从工作负载 Pod 验证集群 DNS 是否正常：
 
    ```bash
    kubectl run dnscheck --rm -it --image=busybox -- nslookup kubernetes.default
    ```
 
-   成功的回答确认 DNS 服务恢复到健康的后端。
+   成功的回答确认 DNS 服务恢复了健康的后端。
