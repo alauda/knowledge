@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Setting a Custom Icon on a VM Template via the `iconClass` Annotation
 ## Issue
 
 A VM template offered through the ACP console's catalog should display a custom icon — a vendor logo, an application's own branding, a distinguishing visual for templates that would otherwise blend together — instead of the generic OS icon the catalog picks by default. Editing the template's `spec` has no effect on how it renders in the catalog; the icon is controlled by an annotation on the template's `metadata`, not by any spec field.
