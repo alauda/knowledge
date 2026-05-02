@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# OpenTelemetry Collector logs "Instrument description conflict" for JVM memory metrics
 ## Issue
 
 An OpenTelemetry Collector that ingests metrics from a Java workload and re-exports them to Prometheus emits repeated `info`-level lines about an instrument description conflict for `jvm_memory_used_bytes`:
