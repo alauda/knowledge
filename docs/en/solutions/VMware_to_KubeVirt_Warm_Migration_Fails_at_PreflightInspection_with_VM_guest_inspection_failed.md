@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# VMware-to-KubeVirt Warm Migration Fails at PreflightInspection with "VM guest inspection failed"
 ## Issue
 
 A Windows virtual machine is being migrated from a VMware source into ACP's virtualization platform using the "migrate from VMware" workflow. The migration `Plan` starts, but stops early during the **PreflightInspection** stage with an error surfaced on the plan:
