@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# virt-launcher Pods Stuck Terminating When a Worker Node Goes Unreachable
 ## Issue
 
 A worker node drops off the network (power loss, NIC failure, hypervisor panic) and enters `NotReady` with `Kubelet stopped posting node status`. VirtualMachineInstances that were running on that node do **not** fail over to healthy workers:
