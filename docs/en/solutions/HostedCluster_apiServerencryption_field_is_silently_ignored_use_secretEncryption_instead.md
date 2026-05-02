@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# HostedCluster apiServer.encryption field is silently ignored — use secretEncryption instead
 ## Issue
 
 A `HostedCluster` CR is updated to enable encryption at rest by setting `spec.configuration.apiServer.encryption.type=aescbc`. The CR accepts the change without complaint, the controller reconciles cleanly, and the operator reports the cluster as healthy. But on the hosted control plane itself, secrets remain stored unencrypted in etcd — the field had no functional effect.
