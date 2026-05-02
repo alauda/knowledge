@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# x509 \"certificate has expired\" When the Server Certificate Is Still Valid
 ## Issue
 
 Browsers, `curl`, `openssl`, and `kubectl` all complain that an HTTPS endpoint's certificate has expired:
