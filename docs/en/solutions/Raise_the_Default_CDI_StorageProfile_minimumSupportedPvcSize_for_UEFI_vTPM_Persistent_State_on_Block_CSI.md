@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Raise the Default CDI StorageProfile minimumSupportedPvcSize for UEFI / vTPM Persistent State on Block CSI
 ## Issue
 
 Virtual machines that declare a persistent UEFI-variables store or a persistent vTPM (for example, Windows guests that require Virtualization-Based Security) fail to start on clusters backed by a **block-mode** CSI driver. The symptom shows up in multiple places depending on the entry point:
