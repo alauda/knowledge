@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Pod Scheduling Imbalance on Hosted Control Plane Workers Backed by KubeVirt VMs
 ## Issue
 
 On a Hosted Control Plane cluster whose data-plane nodes are KubeVirt virtual machines, pods pile up unevenly across workers even when resource usage, taints, and tolerations all look correct. The imbalance does not move over time — the same workers stay hot, the same workers stay cold — and reschedule events do not redistribute the load.
