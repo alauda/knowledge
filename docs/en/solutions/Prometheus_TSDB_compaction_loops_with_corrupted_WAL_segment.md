@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Prometheus TSDB compaction loops with corrupted WAL segment
 ## Issue
 
 A monitoring `Prometheus` pod fails to compact its on-disk TSDB. The PersistentVolumeClaim that backs `/prometheus` keeps growing because uncompacted blocks never roll into the regular two-hour blocks. The pod log shows:
