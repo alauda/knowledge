@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Identify the User or Service Account That Created a CronJob Through the API Server Audit Log
 ## Issue
 
 A cluster operator needs to attribute a `CronJob` back to the principal that created it — either a human user authenticated against the cluster's identity provider, or a service account used by a pipeline. The `CronJob` spec itself does not record the creator: `kubectl get cronjob <name> -o yaml` shows the `metadata.creationTimestamp`, labels, and annotations, but no `createdBy` field. The Kubernetes object only carries the identity of the controller that last updated it, which is typically the CronJob controller itself, not the original author.
