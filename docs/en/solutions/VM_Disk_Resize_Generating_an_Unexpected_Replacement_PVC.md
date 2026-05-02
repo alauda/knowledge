@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# VM Disk Resize Generating an Unexpected Replacement PVC
 ## Issue
 
 When growing the size of a virtual machine boot or data disk through the
