@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Container security scanner reports no images for a deployment that never produced pods
 ## Issue
 
 A container-security workload scanner (for example, the StackRox-based Container Security service or any tool that derives image inventory from the desired state of a `Deployment`) reports `No Images` for a particular workload. The same scanner correctly enumerates images for other deployments in the same cluster. Inspecting the Deployment in question shows a fresh revision was rolled out recently, but no pods from that revision are running.
