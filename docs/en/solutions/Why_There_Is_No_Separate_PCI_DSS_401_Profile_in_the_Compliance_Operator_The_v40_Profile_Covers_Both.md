@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Why There Is No Separate PCI-DSS 4.0.1 Profile in the Compliance Operator — The v4.0 Profile Covers Both
 ## Overview
 
 Auditors or internal compliance teams that are aligned against PCI-DSS **4.0.1** sometimes look for a dedicated `pci-dss-4-0-1` profile in the Compliance Operator and do not find one. The catalog stops at `pci-dss-4-0`:
