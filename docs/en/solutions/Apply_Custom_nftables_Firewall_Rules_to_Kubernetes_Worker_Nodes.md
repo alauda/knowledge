@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Apply Custom nftables Firewall Rules to Kubernetes Worker Nodes
 ## Overview
 
 Cluster operators sometimes need additional host-level firewall rules on worker nodes — for example to deny outbound SMTP except from the postfix proxy, to rate-limit ingress on a specific NodePort, or to enforce zone-based policy that does not fit within `NetworkPolicy` (which is Pod-scoped and East-West-only). This article describes the supported pattern for layering custom `nftables` rules on a Kubernetes node without conflicting with the rules managed by the CNI (Kube-OVN), kube-proxy, or container runtime.
