@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Argo CD Application Fails to Sync with \"continue parameter is too old\" — Pagination Timeout Against a Large Resource List
 ## Issue
 
 An Argo CD Application refuses to progress past the sync/refresh step. The Application sits in `Unknown` state in the UI; the application-controller logs repeat an error of the form:
