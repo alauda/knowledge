@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Container Image Scanner Flags Transient TLS Keys Under /proc
 ## Issue
 
 A container image scanner (for example, Prisma Cloud) reports **"Private keys stored in image"** findings against many platform and add-on images. The reported file paths all live under `/proc/<pid>/root/...` rather than inside the image's static layers, for example:
