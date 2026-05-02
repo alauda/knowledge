@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Supported use cases for HTTP and Syslog input receivers on the logging collector
 ## Overview
 
 The log-collection agents that the ACP observability stack uses (Vector and, for legacy pipelines, Fluentd) can accept logs pushed to them from external sources via HTTP and Syslog "input receivers." Operators sometimes want to re-use the same cluster-local collector pool as a general-purpose ingestion endpoint for workloads that are not running as pods on the same cluster — for example, a VM fleet, a legacy appliance, or a sibling cluster's control plane. This article describes the scenarios in which enabling those receivers is the intended design, and the scenarios in which it is outside the collector's supported scope.
