@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# StackRox Collector CrashLoopBackOff Unable to Download Kernel Object for Current Node Kernel
 ## Issue
 
 The StackRox Collector DaemonSet — the per-node runtime-visibility agent that backs the ACP **Container Security** extension (`security-docs`, OSS StackRox lineage) — enters `CrashLoopBackOff` on every node in the cluster. Pod listing shows:
