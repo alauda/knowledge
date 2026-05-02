@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Vertical Pod Autoscaler recommender crashloops with "fatal error: concurrent map writes"
 ## Issue
 
 After a platform upgrade, the Vertical Pod Autoscaler recommender pod
