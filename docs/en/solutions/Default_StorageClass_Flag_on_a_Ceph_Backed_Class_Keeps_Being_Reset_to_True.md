@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Default StorageClass Flag on a Ceph-Backed Class Keeps Being Reset to True
 ## Issue
 
 An operator-managed `StorageClass` (for example a Ceph RBD class provisioned by the ACP `storagesystem_ceph` stack) shows up as the cluster default. Attempts to clear the default flag — patching the `storageclass.kubernetes.io/is-default-class` annotation to `"false"` via `kubectl patch`, editing the object directly, or toggling it from the UI — all appear to succeed momentarily, but within seconds the annotation reverts to `"true"` and the class is again the default.
