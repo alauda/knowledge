@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Service Mesh Control Plane Stays on Old Version After Operator Upgrade
 ## Issue
 
 The Service Mesh operator is upgraded to a newer minor (for example, the operator CSV moves from 2.6.1 to 2.6.4), but the cluster's Service Mesh Control Plane (SMCP) keeps reporting an older version on its `Ready` condition:
