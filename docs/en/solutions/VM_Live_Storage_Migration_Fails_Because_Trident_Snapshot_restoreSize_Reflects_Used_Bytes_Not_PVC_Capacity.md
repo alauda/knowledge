@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# VM Live Storage Migration Fails Because Trident Snapshot restoreSize Reflects Used Bytes, Not PVC Capacity
 ## Issue
 
 A virtual machine is created from an Instance Type or from a VM snapshot whose data source is backed by a **volume snapshot on NetApp Trident**. Trying to relocate that VM's disk to a different StorageClass — either with **Live Storage Migration** in-cluster, or with a cross-cluster migration — fails. Two distinct error shapes appear:
