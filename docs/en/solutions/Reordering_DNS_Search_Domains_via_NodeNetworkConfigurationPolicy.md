@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Reordering DNS Search Domains via NodeNetworkConfigurationPolicy
 ## Issue
 
 Nodes and pods inherit a `search` entry in their `/etc/resolv.conf` that matches the node's FQDN domain (e.g. `node.example.com`). Every short-name DNS lookup inside a pod therefore triggers a probe against that domain before the "real" internal zone is tried. The environment actually uses FQDNs end-to-end, and the unsolicited lookups noticeably inflate DNS query volume against the node-domain resolver.
