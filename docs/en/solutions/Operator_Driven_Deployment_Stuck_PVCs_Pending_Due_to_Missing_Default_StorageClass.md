@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Operator-Driven Deployment Stuck — PVCs Pending Due to Missing Default StorageClass
 ## Issue
 
 An Operator-installed product (an automation platform, a database operator, any CR that transitively creates internal stateful components) does not finish deploying. Its custom resource stays in a pre-ready phase, and the controller continually re-queues. Inspection shows the leaf pods are stuck on `Pending` because their `PersistentVolumeClaims` are also `Pending`.
