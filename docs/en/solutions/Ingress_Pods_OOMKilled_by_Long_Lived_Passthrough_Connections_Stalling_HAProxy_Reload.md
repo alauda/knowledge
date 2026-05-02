@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Ingress Pods OOMKilled by Long-Lived Passthrough Connections Stalling HAProxy Reload
 ## Issue
 
 HAProxy-based ingress pods on infra nodes restart with exit code `137` (`OOMKilled`). The pattern reads:
