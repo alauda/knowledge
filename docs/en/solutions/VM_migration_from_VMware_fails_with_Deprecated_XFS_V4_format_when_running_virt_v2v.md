@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# VM migration from VMware fails with Deprecated XFS V4 format when running virt-v2v
 ## Issue
 
 When migrating a VM from VMware into ACP Virtualization, the virt-v2v conversion step aborts during guest inspection. The guest is an older Linux system whose root filesystem is XFS formatted in the deprecated V4 on-disk layout. The conversion log shows:
