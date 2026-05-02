@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# nfd-master CrashLoopBackOff after upgrade — stale operand image in NFD CR
 ## Issue
 
 After upgrading the platform's Node Feature Discovery (NFD) operator, the `nfd-master` pod enters `CrashLoopBackOff` (or restarts repeatedly with growing restart count). Other NFD components — `nfd-worker` and `nfd-master` from before the upgrade — were healthy until the operator update.
