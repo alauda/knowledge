@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Diagnosing Guest OS Restarts Caused by Storage Fabric Instability
 ## Issue
 
 A virtual machine workload exhibits unexplained guest-OS restarts, freezes lasting tens of seconds, or — for Windows guests — a Blue Screen of Death (BSOD) followed by an automatic reboot. The platform reports the VM as Running, the `virt-launcher` pod has not been evicted or OOM-killed, and `kubectl get vmi` shows no recent live-migration events. Inside the guest, the event log shows symptoms that look like a kernel hang (Linux: `task ... blocked for more than 120 seconds`; Windows: `IO_REQUEST_NOT_SERVICED` in the bugcheck data, often with stop code `0x9C` or `0xCD`).
