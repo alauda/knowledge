@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Exposing Ingress Through a LoadBalancer Service Backed by MetalLB
 ## Issue
 
 On bare-metal, vSphere, or similar clusters that do not have a cloud-provider LoadBalancer, operators need to expose the cluster's ingress tier through a virtual IP rather than on NodePorts or on the host network directly. Two concrete needs arise:
