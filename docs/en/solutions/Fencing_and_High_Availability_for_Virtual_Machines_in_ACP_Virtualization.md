@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Fencing and High Availability for Virtual Machines in ACP Virtualization
 ## Overview
 
 A node running virtual machines on the ACP virtualization stack (`docs/en/virtualization/`, built on KubeVirt) can become unhealthy at any point — kernel lock-up, disk saturation, a kubelet that has wedged on a finalizer, or a full network partition. When that happens, the VMs on the node need to be rescheduled promptly. But for any VM running a workload that assumes *at-most-one* semantics (a SQL primary, a clustered file-system node, a stateful leader in a distributed algorithm), it is equally important that the *old* copy of the VM is confirmed dead before a new copy is started. Two live copies of the same at-most-one VM is worse than zero — split-brain corrupts data, duplicates external side-effects, and breaks the workload's own recovery assumptions.
