@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Change a Node's DNS Servers and /etc/resolv.conf Options via NMState NodeNetworkConfigurationPolicy
 ## Issue
 
 The DNS servers and `/etc/resolv.conf` options on a node need to change — a new internal resolver has been rolled out, the node is being moved onto a different search domain, or options like `rotate` / `attempts` / `timeout` need to be tuned. Editing `/etc/resolv.conf` by hand is not durable: NetworkManager regenerates the file on every reboot (and on every network event), so hand-edits vanish.
