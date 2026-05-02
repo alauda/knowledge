@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Whereabouts reconciler DaemonSet missing after manual NetworkAttachmentDefinition install
 ## Issue
 
 After bringing up secondary networks with the Multus-based stack, no `whereabouts-reconciler` DaemonSet is present. New pods that request a `NetworkAttachmentDefinition` (NAD) using the Whereabouts IPAM plugin get an IP assignment, but stale `IPPool` allocations from deleted pods are never reclaimed and the pool eventually exhausts. This often surfaces after a cluster upgrade where existing NADs created from raw YAML continued to work but the reconciler that backs the IPAM plugin was never deployed.
