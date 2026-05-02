@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Symmetric Routing for MetalLB L2 Services Announced on a Secondary NIC
 ## Issue
 
 A LoadBalancer Service is announced via MetalLB in L2 mode, but the VIP belongs to a subnet that lives on a *secondary* NIC of the announcing node, not on the cluster's primary `br-ex` bridge. From inside the secondary network, clients can reach the VIP. From any external network reached through the **default** gateway, the SYN packets arrive at the node but never receive a SYN-ACK; the connection times out.
