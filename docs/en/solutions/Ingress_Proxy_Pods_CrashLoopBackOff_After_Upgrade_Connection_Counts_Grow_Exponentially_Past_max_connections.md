@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Ingress Proxy Pods CrashLoopBackOff After Upgrade — Connection Counts Grow Exponentially Past max-connections
 ## Issue
 
 After an ingress-proxy version upgrade (the proxy component behind the cluster's default HTTP/HTTPS data-path — nginx-based ingress controller, HAProxy-based ingress controller, or similar), the proxy Deployment enters `CrashLoopBackOff`:
