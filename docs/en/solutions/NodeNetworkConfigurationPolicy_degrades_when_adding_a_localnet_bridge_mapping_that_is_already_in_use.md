@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# NodeNetworkConfigurationPolicy degrades when adding a localnet bridge mapping that is already in use
 ## Issue
 
 A NodeNetworkConfigurationPolicy (NNCP) is updated to add a new VLAN as a localnet bridge-mapping on an OVS bridge that already carries production traffic for KubeVirt VMs. The NNCP transitions to `Degraded`, the corresponding NodeNetworkConfigurationEnactment (NNCE) reports `Failing`, and the kernel logs from `nmstatectl` carry a verification error similar to:
