@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# VMware-to-KubeVirt VM migration fails with destination smaller than source on encrypted Ceph RBD
 ## Issue
 
 A VMware virtual-machine migration into a KubeVirt-backed cluster fails
