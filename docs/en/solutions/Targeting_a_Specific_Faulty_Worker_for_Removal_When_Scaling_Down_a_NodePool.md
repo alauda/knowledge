@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Targeting a Specific Faulty Worker for Removal When Scaling Down a NodePool
 ## Issue
 
 A guest workload cluster is running on a hosted control plane managed by a separate management cluster. One worker has gone bad — flapping kubelet, hardware degradation, or a stuck container runtime — and the operator wants the next NodePool scale-down to *specifically* remove that worker rather than picking an arbitrary replica.
