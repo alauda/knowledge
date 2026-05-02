@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Cross-cluster migration registry crashloops when the S3 endpoint is an internal .svc hostname
 ## Issue
 
 A cross-cluster workload migration is configured with an S3-compatible
