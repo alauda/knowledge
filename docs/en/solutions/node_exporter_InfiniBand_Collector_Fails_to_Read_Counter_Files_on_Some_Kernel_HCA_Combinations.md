@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# node-exporter InfiniBand Collector Fails to Read Counter Files on Some Kernel / HCA Combinations
 ## Issue
 
 On nodes equipped with InfiniBand / RoCE HCAs — typically those running a `qedr`, `mlx5_core`, or similar InfiniBand driver — node-exporter pods log repeated errors when the InfiniBand collector runs. Prometheus then fails to scrape InfiniBand metrics from those nodes, leaving gaps in any `node_infiniband_*` series:
