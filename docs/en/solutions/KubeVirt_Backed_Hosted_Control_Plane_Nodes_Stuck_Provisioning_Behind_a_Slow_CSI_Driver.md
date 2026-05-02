@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# KubeVirt-Backed Hosted Control Plane Nodes Stuck Provisioning Behind a Slow CSI Driver
 ## Issue
 
 A Hosted Control Plane (HCP) cluster whose worker NodePool is realised through KubeVirt VMs gets stuck: the NodePool never reaches its desired replica count because individual VMs sit in `Provisioning` indefinitely. Inspection shows the chain `VirtualMachine → DataVolume → PVC → importer pod`, with the importer pod scheduled but stalled on `unbound immediate PersistentVolumeClaims`, and the underlying PVC stuck in `Pending` while the external CSI provisioner is still working.
