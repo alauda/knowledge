@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# `IPAddressWrongReference` Event / Log Spam from kube-apiserver — Upstream Kubernetes Race Condition
 ## Issue
 
 Cluster-wide Events and the `kube-apiserver` log fill with repeated warnings about `IPAddress` objects whose reference does not match the Service they supposedly belong to:
