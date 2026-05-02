@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# HTTP/2 connection coalescing routes traffic to the wrong workload
 ## Issue
 
 After visiting one HTTPS application, every other ingress hostname covered by the same wildcard server certificate appears to serve content from the first one — or returns `404 / Page Not Found` even though each backend is healthy on its own. Common variants:
