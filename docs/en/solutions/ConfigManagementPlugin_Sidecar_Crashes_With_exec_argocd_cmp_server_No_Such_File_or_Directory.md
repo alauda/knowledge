@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# ConfigManagementPlugin Sidecar Crashes With "exec argocd-cmp-server No Such File or Directory"
 ## Issue
 
 A custom Argo CD `ConfigManagementPlugin` (CMP) — for example a Helm-template wrapper, a Kustomize-with-secrets bootstrapper, or any sidecar that exposes `argocd-cmp-server` to the repo-server — refuses to start. The container terminates immediately, and the logs show:
