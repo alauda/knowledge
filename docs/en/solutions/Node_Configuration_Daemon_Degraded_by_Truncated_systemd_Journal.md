@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Node Configuration Daemon Degraded by Truncated systemd Journal
 ## Issue
 
 The node-configuration daemon on a worker reports a degraded state and stops applying further configuration changes. The daemon log on the affected node repeatedly emits the same parse error:
