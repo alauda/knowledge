@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Cluster Monitoring Stuck Waiting for ThanosRuler updatedReplicas During Upgrade
 ## Issue
 
 A platform upgrade stalls in the monitoring component. The cluster's monitoring operator goes `Available=False / Progressing=True / Degraded=True` and remains there until the rollout times out. The condition message points squarely at the user-workload `ThanosRuler` resource:
