@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Deploying and configuring the Kube Descheduler Operator
 ## Overview
 
 The default Kubernetes scheduler places pods at the moment they are admitted to the cluster. Once a pod is bound to a node, no controller revisits the placement, so over time the pod-to-node distribution drifts away from any policy the operator might want to enforce — for example, after a node has been drained and re-added, after a long-running pod's resource profile changes, or after taints and labels are updated.
