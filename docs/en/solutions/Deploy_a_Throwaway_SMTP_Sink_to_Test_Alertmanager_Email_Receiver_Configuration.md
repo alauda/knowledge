@@ -9,7 +9,6 @@ id: KB260500028
 ---
 
 # Deploy a Throwaway SMTP Sink to Test Alertmanager Email Receiver Configuration
-
 ## Issue
 
 When wiring up an Alertmanager email receiver (`smtp_smarthost`, `smtp_auth_username`, `smtp_from`, `smtp_require_tls`, etc.) the actual delivery path runs through corporate relays, anti-spam filters, and TLS chains that may quarantine, silently drop, or rate-limit the test alert. A failed delivery in any of those layers makes it hard to tell whether the misconfiguration is in Alertmanager, in the relay, or in the recipient mailbox. A disposable in-cluster SMTP sink lets the operator verify the Alertmanager pipeline end-to-end before swapping the smarthost back to the production relay.
@@ -81,7 +80,7 @@ receivers:
         send_resolved: true
 ```
 
-If Alertmanager is managed by the Prometheus Operator, the corresponding `AlertmanagerConfig` CR uses the same `email_configs` shape; if it is configured by a `Secret` named `alertmanager-main` (or similar), edit the Secret's `alertmanager.yaml` payload and restart the Alertmanager Pods.
+If Alertmanager is managed by the Prometheus Operator, the corresponding `AlertmanagerConfig` CR uses the same `email_configs` shape; if it is configured by a `Secret` named `kube-prometheus-alertmanager` (or similar), edit the Secret's `alertmanager.yaml` payload and restart the Alertmanager Pods.
 
 ### Step 3 — Drive a test alert
 
@@ -136,20 +135,20 @@ If the message never reaches mailhog:
 - Check that Alertmanager actually received the alert from Prometheus:
 
   ```bash
-  kubectl -n monitoring exec deploy/alertmanager-main -c alertmanager -- \
+  kubectl -n monitoring exec deploy/kube-prometheus-alertmanager -c alertmanager -- \
     wget -qO- http://localhost:9093/api/v2/alerts | jq '.[].labels.alertname'
   ```
 
 - Tail the Alertmanager log for the SMTP attempt:
 
   ```bash
-  kubectl -n monitoring logs deploy/alertmanager-main -c alertmanager --tail=50 | grep -i smtp
+  kubectl -n monitoring logs deploy/kube-prometheus-alertmanager -c alertmanager --tail=50 | grep -i smtp
   ```
 
 - Confirm Pod-to-Pod DNS resolves the sink Service:
 
   ```bash
-  kubectl -n monitoring exec deploy/alertmanager-main -- \
+  kubectl -n monitoring exec deploy/kube-prometheus-alertmanager -- \
     nslookup mailhog.monitoring.svc.cluster.local
   ```
 

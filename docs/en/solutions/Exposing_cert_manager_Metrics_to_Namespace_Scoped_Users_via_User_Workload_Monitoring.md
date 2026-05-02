@@ -9,7 +9,6 @@ id: KB260500004
 ---
 
 # Exposing cert-manager Metrics to Namespace-Scoped Users via User Workload Monitoring
-
 ## Issue
 
 A namespace-scoped user, granted access only to a single project, cannot view the `certmanager_certificate_expiration_timestamp_seconds` metric (or any other cert-manager metric) even though User Workload Monitoring is enabled on the cluster. The same query works for a cluster-monitoring user.
@@ -95,7 +94,7 @@ After the User Workload Prometheus picks up the new ServiceMonitor (typically wi
 
 ```bash
 kubectl -n cert-manager run curl --image=curlimages/curl --rm -it --restart=Never -- \
-  -sk -G "https://thanos-querier.<monitoring-ns>.svc:9091/api/v1/query" \
+  -sk -G "https://kube-prometheus-thanos-query.<monitoring-ns>.svc:9091/api/v1/query" \
   --data-urlencode 'query=certmanager_certificate_expiration_timestamp_seconds' \
   -H "Authorization: Bearer $(cat /var/run/secrets/kubernetes.io/serviceaccount/token)"
 ```
