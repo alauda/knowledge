@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Argo CD ImageUpdater CRD Silently Aggregates Write Verbs to Default edit/admin Roles
 ## Issue
 
 After installing the Argo CD **ImageUpdater** extension (the component that automatically patches `Application` manifests when a new container image tag appears in a registry), users who are **not** meant to have administrator privileges on the GitOps control plane can create, update, and delete `ImageUpdater` resources. In particular, users whose only grant is the cluster-wide `edit` or `admin` aggregated roles — which most namespace owners and developer identities receive by default — gain full write access to `ImageUpdater` objects without that being an explicit decision by the cluster administrator.
