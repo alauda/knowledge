@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# VM storage migration marked Failed because of an unrelated VM with a missing DataVolume
 ## Issue
 
 A KubeVirt virtual-machine storage migration completes its data copy
