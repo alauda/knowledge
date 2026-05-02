@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Container Security Collector Pods CrashLoopBackOff Due to Expired Scanner TLS
 ## Issue
 
 Collector pods on a Container Security secured cluster enter `CrashLoopBackOff` with very high restart counts. The pod-readiness column shows `2/3` — one container of the three keeps failing to start. Scanner pods report `0/1` running. Sensor logs reveal the underlying chain failure with an expired-certificate error against the Central endpoint:
