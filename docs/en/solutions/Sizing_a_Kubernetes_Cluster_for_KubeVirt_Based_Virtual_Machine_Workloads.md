@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Sizing a Kubernetes Cluster for KubeVirt-Based Virtual Machine Workloads
 ## Overview
 
 Sizing a Kubernetes cluster that hosts KubeVirt virtual machines is fundamentally different from sizing a container-only cluster. Each VM Pod (`virt-launcher`) reserves the guest's full vCPU + memory + a constant overhead, regardless of whether the guest is busy. This article walks through the worked example of a 100-VM workload and pulls out the per-resource-class formulas.
