@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Ingress with TLS Termination Does Not Redirect HTTP Traffic to HTTPS
 ## Issue
 
 A public Ingress (or equivalent ALB rule) terminates TLS at the edge and serves the application over HTTPS, but clients that hit the service over plain HTTP are answered by the application rather than being bumped to the HTTPS URL. `curl -kvL http://<host>` shows a normal 200 response with no `Location:` redirect header — instead of the expected `30x` bounce to `https://<host>`.
