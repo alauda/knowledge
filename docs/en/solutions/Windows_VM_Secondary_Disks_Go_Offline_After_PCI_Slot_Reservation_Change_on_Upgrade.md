@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Windows VM Secondary Disks Go Offline After PCI Slot Reservation Change on Upgrade
 ## Issue
 
 After upgrading ACP Virtualization from a previous minor release to one that introduces PCI-slot reservation for hotplug support, existing VMs experience a one-time disk-layout shuffle on the first guest reboot:
