@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# PrometheusPossibleNarrowSelectors Fires Spuriously on Multi-HCP Virtualization Clusters
 ## Issue
 
 The `PrometheusPossibleNarrowSelectors` alert fires repeatedly on a cluster that:
