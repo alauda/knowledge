@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# CRI-O image pulls hang under signedBy GPG verification (GPGME FD leak)
 ## Issue
 
 On clusters whose container image policy enforces GPG signature verification using the `signedBy` policy type (a `policy.json` / `/etc/containers/policy.json` entry that requires every pull from a given registry to be signature-checked), CRI-O on individual nodes begins hanging indefinitely inside the image-pull step. Symptoms observed on the affected nodes:
