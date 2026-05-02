@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# VM migration fails with out-of-memory kill inside the virt-v2v conversion appliance
 ## Issue
 
 When migrating a VM into ACP Virtualization, the Forklift conversion pod terminates before the disk conversion completes. The pod log shows the kernel OOM killer firing inside the virt-v2v appliance, typically while a guest-side tool such as `xfs_repair` is walking the source filesystem:
