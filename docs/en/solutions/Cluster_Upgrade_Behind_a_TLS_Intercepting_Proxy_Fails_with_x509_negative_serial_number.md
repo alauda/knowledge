@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Cluster Upgrade Behind a TLS-Intercepting Proxy Fails with "x509: negative serial number"
 ## Issue
 
 A cluster is configured with a cluster-wide HTTP/HTTPS proxy that performs TLS interception — the proxy re-signs traffic with a custom CA and presents a proxy-issued leaf certificate to the cluster. After upgrading to a release where the platform components are compiled against a modern Go toolchain, outbound HTTPS calls start failing with a parsing error that did not appear before:
