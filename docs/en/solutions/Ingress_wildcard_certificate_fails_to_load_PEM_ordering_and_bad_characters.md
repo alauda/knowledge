@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Ingress wildcard certificate fails to load — PEM ordering and bad characters
 ## Issue
 
 Right after the cluster's default ingress certificate is replaced with a custom one, components that consume the new bundle start crashing on TLS load. The most visible symptom is the cluster's authentication pods (the OAuth server pods that terminate `*.apps.<cluster>` traffic) entering a `CrashLoopBackOff` with a fatal log line of the form:
