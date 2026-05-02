@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# PipelineRuns Stuck in PipelineRunPending When Triggered Through Pipelines-as-Code
 ## Issue
 
 A PipelineRun created in response to a Git event (push, pull-request open, comment) through Tekton **Pipelines-as-Code (PAC)** lands in the cluster with `spec.status: PipelineRunPending` and never advances. Symptoms:
