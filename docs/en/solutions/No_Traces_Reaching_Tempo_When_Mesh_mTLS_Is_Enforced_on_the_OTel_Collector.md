@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# No Traces Reaching Tempo When Mesh mTLS Is Enforced on the OTel Collector
 ## Issue
 
 On a cluster running ACP Service Mesh together with ACP OpenTelemetry v2 and a Tempo backend, the Jaeger-compatible dashboard that fronts Tempo reports zero services and zero traces, no matter how much traffic is generated inside the mesh. Symptoms:
