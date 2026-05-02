@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# CFS Throttling on a Mostly Idle Container
 ## Issue
 
 A container reports non-zero CPU throttling counters even though the workload appears almost completely idle and the average CPU usage stays well below both `requests.cpu` and `limits.cpu`. The throttle metric (`container_cpu_cfs_throttled_periods_total` in Prometheus) ticks up steadily, while user-visible utilisation remains near zero. Operators see this most often on small sidecars, log shippers, or health-check loops.
