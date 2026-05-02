@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Live Storage Migration Fails When Target Block PV Is Smaller Than Source
 ## Issue
 
 A running VirtualMachine is being migrated between storage classes. Both the source and destination PersistentVolumeClaims request the same capacity, yet the migration fails in QEMU with a size-mismatch error surfaced in the `virt-launcher` pod log:
