@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Windows VM snapshot reports QuiesceFailed under high I/O even though the guest freeze succeeds
 ## Issue
 
 On ACP Virtualization, a `VirtualMachineSnapshot` taken against a Windows VM under heavy disk load reports `QuiesceFailed` in `.status.indications` even though the guest ultimately freezes and the snapshot disk image is usable:
