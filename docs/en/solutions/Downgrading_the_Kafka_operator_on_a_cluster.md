@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Downgrading the Kafka operator on a cluster
 ## Overview
 
 Operator Lifecycle Manager (OLM) is designed around a forward-only upgrade graph and does not support an in-place downgrade of an operator subscription channel to an older release. To roll the Kafka operator (a Strimzi-based distribution) back to an earlier version on a cluster, the operator must be uninstalled and reinstalled at the desired version. The Kafka data plane (`Kafka`, `KafkaTopic`, `KafkaUser`, `KafkaConnect` and related custom resources) survives the operator removal as long as the CRDs and namespace data are not deleted, and the older operator picks the workloads back up after reinstall.
