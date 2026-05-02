@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# ALB / HAProxy router pods OOMKilled with high restart count — remove the deployment limits
 ## Issue
 
 The platform's edge ingress data-plane pods — the HAProxy-based ALB router pods that serve cluster Ingress traffic — restart frequently with `OOMKilled` as the termination reason. Symptoms:
