@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Kiali Dashboard Shows minTLS as N/A on Service Mesh v2 Even After Setting It
 ## Issue
 
 In a v2 service-mesh installation, the Kiali dashboard's mesh-configuration view shows the **minTLS** value as `N/A`. Setting the minimum protocol version on the `ServiceMeshControlPlane` (SMCP) as the docs suggest does not change what Kiali displays:
