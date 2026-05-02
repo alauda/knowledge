@@ -9,7 +9,6 @@ id: KB260500006
 ---
 
 # Protecting Identity Infrastructure From DNS Burst Storms in Cloud-Native Clusters
-
 ## Overview
 
 Migrating workloads from a small fleet of virtual machines to a high-density Kubernetes cluster changes the shape of the DNS traffic an upstream identity / DNS service has to absorb. A steady, low-rate stream of recursive queries is replaced by parallel bursts: a single Deployment that scales out by a few hundred pods, or a node that drains and reschedules its workload, can issue thousands of resolution requests within milliseconds.
@@ -118,10 +117,10 @@ Allow a few minutes for the cache to warm; the upstream should see traffic decli
 
 ### Step 3: Validate End-to-End
 
-Confirm caching is active by issuing two consecutive lookups from a test pod and comparing the latencies:
+Confirm caching is active by issuing two consecutive lookups from a test pod and comparing the latencies. The image must contain `dig`; public images such as `registry.k8s.io/e2e-test-images/jessie-dnsutils:1.7` may not be reachable from isolated clusters — substitute with any in-cluster mirror image that ships `bind-utils` / `dnsutils`:
 
 ```bash
-kubectl run dns-probe --image=registry.k8s.io/e2e-test-images/jessie-dnsutils:1.7 \
+kubectl run dns-probe --image=<image-with-dig> \
   --restart=Never --rm -it -- /bin/sh -c \
   'time dig +short kubernetes.default.svc.cluster.local; time dig +short kubernetes.default.svc.cluster.local'
 ```

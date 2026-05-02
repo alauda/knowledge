@@ -9,7 +9,6 @@ id: KB260500013
 ---
 
 # Configuring chrony / NTP on Cluster Nodes
-
 ## Issue
 
 Cluster nodes need to synchronise their clocks against a specific NTP server set — often an internal time source inside a restricted network, or a hardened NTP pool with Network Time Security (NTS). The default chrony configuration that ships on each node points at public time servers, which is either not reachable (air-gapped / egress-controlled environments), not acceptable by policy, or not trusted (no NTS).
@@ -59,18 +58,18 @@ Regardless of path, verify NTP reachability before changing production traffic o
 
 ## Diagnostic Steps
 
-Confirm the rendered config landed on a sample node from each pool:
+Confirm the rendered config landed on a sample node from each pool. ACP's cluster-level Pod Security Admission rejects `chroot /host`, so read host files via the debug pod's `/host` bind-mount directly. The image must contain the relevant tool (`cat`, `chronyc`, `systemctl`); a vanilla `busybox` image will not have `chronyc` or `systemctl`.
 
 ```bash
 kubectl debug node/<node-name> \
-  --image=busybox:1.36 -- chroot /host cat /etc/chrony.conf
+  --image=<image-with-shell> -- cat /host/etc/chrony.conf
 ```
 
-Check that `chronyd` is active and the sources it is currently tracking:
+Check that `chronyd` is active and the sources it is currently tracking. `systemctl` against the host requires a debug profile that mounts the host's systemd socket, and `chronyc` over the local UNIX socket needs the same:
 
 ```bash
 kubectl debug node/<node-name> \
-  --image=busybox:1.36 -- chroot /host \
+  --image=<image-with-chrony-and-systemd> --profile=sysadmin -- \
     sh -c 'systemctl is-active chronyd && chronyc -n sources -v'
 ```
 
@@ -81,7 +80,8 @@ Look for drift across nodes to catch a configuration that was only partially rol
 ```bash
 for n in $(kubectl get node -o name); do
   echo "== $n =="
-  kubectl debug $n --image=busybox:1.36 -- chroot /host chronyc tracking \
+  kubectl debug $n --image=<image-with-chrony> --profile=sysadmin -- \
+    chronyc tracking \
     | grep -E 'System time|Reference ID|Stratum'
 done
 ```
@@ -92,7 +92,7 @@ When switching to Network Time Security (NTS), the chrony config must use `serve
 
 ```bash
 kubectl debug node/<node-name> \
-  --image=busybox:1.36 -- chroot /host chronyc authdata
+  --image=<image-with-chrony> --profile=sysadmin -- chronyc authdata
 ```
 
 Non-zero `KeyID` and positive `NAK` / `KoD` counters close to zero are the expected signals; a flood of NAKs means the NTS handshake is failing and a normal NTP session has not been established.

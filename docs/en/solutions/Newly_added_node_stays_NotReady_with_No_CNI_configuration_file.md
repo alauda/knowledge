@@ -8,8 +8,7 @@ ProductsVersion:
 id: KB260500026
 ---
 
-# Newly added node stays NotReady with "No CNI configuration file
-
+# Newly added node stays NotReady with "No CNI configuration file"
 ## Issue
 
 A new worker is added to the cluster but the node never transitions from `NotReady` to `Ready`. The kubelet on the affected node reports:
@@ -113,20 +112,20 @@ Look for networking pods in `Pending`/`ContainerCreating` on the affected node:
 kubectl get pod -A -o wide | grep -E "<new-node>.*(Pending|ContainerCreating)"
 ```
 
-Confirm from the node itself that `/etc/cni/net.d/` is empty (proves the CNI conflist was never written, rather than corrupted):
+Confirm from the node itself that `/etc/cni/net.d/` is empty (proves the CNI conflist was never written, rather than corrupted). ACP's cluster PSA rejects `chroot /host`, and public images such as `registry.k8s.io/e2e-test-images/busybox:1.36` may not be reachable from isolated clusters — substitute with any in-cluster mirror image that ships `ls`:
 
 ```bash
 kubectl debug node/<new-node> -it \
-  --image=registry.k8s.io/e2e-test-images/busybox:1.36 \
-  -- chroot /host ls -la /etc/cni/net.d/
+  --image=<image-with-shell> \
+  -- ls -la /host/etc/cni/net.d/
 ```
 
-Sample the kubelet journal on the node for the recurring "No CNI configuration file" error:
+Sample the kubelet journal on the node for the recurring "No CNI configuration file" error. `journalctl --root=/host` reads the host's journal through the debug pod's `/host` bind-mount:
 
 ```bash
 kubectl debug node/<new-node> -it \
-  --image=registry.k8s.io/e2e-test-images/busybox:1.36 \
-  -- chroot /host journalctl -u kubelet --no-pager | tail -100 \
+  --image=<image-with-systemd> --profile=sysadmin \
+  -- journalctl --root=/host -u kubelet --no-pager | tail -100 \
   | grep -E "NetworkPluginNotReady|No CNI configuration file"
 ```
 
