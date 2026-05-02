@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# CPU Manager Config Reverts Because the Node Pool Selector Misses the Target Nodes
 ## Issue
 
 A cluster operator enables the static CPU Manager policy through a declarative kubelet customisation — the resource carries `cpuManagerPolicy: static` and a selector that is meant to target a subset of workers labelled with an extra role (`worker-hp`, `worker-latency-sensitive`, or similar). Immediately after the rollout finishes, affected nodes report `cpumanager: "false"` in their kubelet config and never pin CPUs for Guaranteed pods.
