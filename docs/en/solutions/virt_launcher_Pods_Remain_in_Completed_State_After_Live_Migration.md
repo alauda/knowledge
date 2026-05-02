@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# virt-launcher Pods Remain in Completed State After Live Migration
 ## Overview
 
 After several successive live migrations of a VirtualMachine, the cluster accumulates multiple `virt-launcher-<vm>-<hash>` pods in `Completed` state alongside the single `Running` pod that currently hosts the VM:
