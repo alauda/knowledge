@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Container Fails to Start With Missing Overlay Layer in Container Storage
 ## Issue
 
 A pod (frequently a DaemonSet pod such as `node-exporter`) on a single node refuses to start. The pod sits in `CreateContainerError`, and the namespace event log carries an entry similar to:
