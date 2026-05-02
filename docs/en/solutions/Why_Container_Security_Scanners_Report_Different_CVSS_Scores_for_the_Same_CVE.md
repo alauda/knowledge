@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Why Container Security Scanners Report Different CVSS Scores for the Same CVE
 ## Overview
 
 Container vulnerability scanners on ACP — whether built-in or a third-party product integrated via webhook / API — pull CVE data from multiple upstream sources and present a single score to the operator. The exact score for a given CVE can differ between scanners, or even between two consecutive scans of the same image on the same scanner, because the underlying data sources do not always agree.
