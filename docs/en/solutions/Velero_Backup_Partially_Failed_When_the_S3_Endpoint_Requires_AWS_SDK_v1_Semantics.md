@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Velero Backup Partially Failed When the S3 Endpoint Requires AWS SDK v1 Semantics
 ## Issue
 
 A Velero-based backup reaches the end of the item processing phase but is reported as `PartiallyFailed`. The backup log contains an error that points squarely at the repository component rather than at any individual item:
