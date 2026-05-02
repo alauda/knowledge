@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Argo CD Instance Reports Phase Pending While Every Component Is Running
 ## Issue
 
 After installing the GitOps operator on ACP, the `ArgoCD` custom resource sits with `.status.phase: Pending` indefinitely, even though every sub-component is healthy and the `Reconciled` condition shows `status: "True"`:
