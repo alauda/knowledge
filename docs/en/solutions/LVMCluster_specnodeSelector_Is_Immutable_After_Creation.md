@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# LVMCluster spec.nodeSelector Is Immutable After Creation
 ## Issue
 
 An operator wants to change which nodes are included in an LVM-based local storage cluster after the cluster has been rolled out. Editing the `LVMCluster` CR to add (or remove) a `nodeSelectorTerm` is rejected by the API server:
