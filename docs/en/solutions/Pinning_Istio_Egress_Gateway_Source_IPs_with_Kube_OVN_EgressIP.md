@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Pinning Istio Egress Gateway Source IPs with Kube-OVN EgressIP
 ## Issue
 
 Traffic leaving the cluster through an Istio `egress-gateway` arrives at the upstream service with the **node's** IP as the source address — whichever node happens to be hosting the gateway pod at that moment. Upstream firewalls and partner allow-lists, however, want to see one (or a small, stable set of) source IP(s). Without intervention, every gateway-pod reschedule changes the visible source, and the partner has to allow-list every node in the cluster, which defeats the point of egressing through the gateway in the first place.
