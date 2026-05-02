@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Modifying Volume Performance with VolumeAttributesClass
 ## Overview
 
 A `StorageClass` defines how a new volume is provisioned, but its name is immutable on an existing `PersistentVolumeClaim` — once a PVC is bound, changing the performance tier historically meant deleting the volume, creating a new one, and migrating data. `VolumeAttributesClass` (VAC) is the upstream Kubernetes CSI feature that closes that gap. It carries the driver-level knobs (IOPS, throughput, provider-specific parameters) that can be mutated on a live volume, and the reference on a PVC is mutable. Changing which VAC a PVC points at triggers the CSI driver to reconfigure the underlying volume without detaching the pod.
