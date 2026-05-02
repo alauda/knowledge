@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# VM Migration From vSphere Powers Off the Wrong Source VM When BIOS UUIDs Collide
 ## Issue
 
 A VM migration plan that targets a single source VM in vSphere ends with a *different* VM being powered off. The vCenter audit log records a guest-OS shutdown against an unrelated VM ("ALTERNATEVM") at the time the migration plan transitioned to the `PowerOffSource` phase, while the migration controller's own logs only ever mention the intended source ("ORIGINALVM").
