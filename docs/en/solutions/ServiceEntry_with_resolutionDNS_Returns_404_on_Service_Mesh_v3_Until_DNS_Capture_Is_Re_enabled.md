@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# ServiceEntry with resolution=DNS Returns 404 on Service Mesh v3 Until DNS Capture Is Re-enabled
 ## Issue
 
 After upgrading from Service Mesh v2 to v3, applications that egress to an external host via a `ServiceEntry` with `resolution: DNS` start receiving `HTTP 404` from the internet gateway or the upstream service. The same `ServiceEntry` manifest had been working on v2 unchanged: the hostname, ports, resolution mode, and upstream proxy configuration are all identical.
