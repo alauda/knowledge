@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# PipelineRun started-by Annotation Inherits the Previous User
 ## Issue
 
 Re-triggering a Pipeline through the console action that re-runs the most recent invocation produces a PipelineRun whose `started-by` annotation lists the **previous** invoker rather than the currently logged-in user. The PipelineRun executes correctly and finishes Succeeded, but downstream audit and chargeback that key off that annotation attribute the run to the wrong identity.
