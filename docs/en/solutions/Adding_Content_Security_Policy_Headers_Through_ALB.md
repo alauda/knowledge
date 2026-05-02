@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Adding Content-Security-Policy Headers Through ALB
 ## Issue
 
 A workload exposed through the cluster's ingress layer must return a `Content-Security-Policy` (CSP) response header — and often a related set of security headers (`Strict-Transport-Security`, `X-Content-Type-Options`, `Referrer-Policy`, `Permissions-Policy`). The application itself does not emit them, so the headers must be injected at the load-balancer layer, either globally for every host the load balancer serves or per-host (per-Ingress).
