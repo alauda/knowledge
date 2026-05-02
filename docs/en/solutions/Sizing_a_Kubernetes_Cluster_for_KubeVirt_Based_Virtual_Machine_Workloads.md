@@ -8,120 +8,92 @@ ProductsVersion:
 ---
 ## Overview
 
-Sizing a Kubernetes cluster that will host virtual machine workloads is fundamentally different from sizing one for pure container workloads. Each VM is launched inside a `virt-launcher` pod, and the pod's resource requests must cover not just the guest's CPU and memory but also the QEMU process's overhead, infrastructure components on the node (CNI agent, kubelet, monitoring exporters), and a safety margin so live migration has somewhere to go.
-
-This guide describes a practical methodology for sizing a cluster that will host KubeVirt-based VMs: how to translate VM specs into per-node capacity requirements, how to reserve headroom for migrations and platform agents, and how to validate the sizing under realistic load.
+Sizing a Kubernetes cluster that hosts KubeVirt virtual machines is fundamentally different from sizing a container-only cluster. Each VM Pod (`virt-launcher`) reserves the guest's full vCPU + memory + a constant overhead, regardless of whether the guest is busy. This article walks through the worked example of a 100-VM workload and pulls out the per-resource-class formulas.
 
 ## Resolution
 
-### Step 1: Catalogue the VM Workloads
+### Worked example — assumptions
 
-For each class of VM that will run on the cluster, write down five numbers. Without these, capacity planning is guesswork.
+- 100 virtual machines, average shape 2 vCPU / 4 GiB RAM / 80 GB disk.
+- 80 % VM concurrency at peak (i.e. roughly 80 of the 100 VMs are powered on at once).
+- Block storage on a Ceph RBD `StorageClass` (`volumeMode: Block`, `accessMode: RWX`).
+- Live-migration head-room: maintain enough free memory across nodes to evacuate any single worker.
+- Three control-plane nodes, dedicated; sized for cluster-management overhead only (no VM Pods).
 
-| Field | Meaning | Notes |
-|---|---|---|
-| `vcpu` | Guest virtual CPU count | Maps roughly 1:1 to host CPU when CPU pinning is disabled |
-| `memory_gib` | Guest RAM in GiB | The platform reserves this on the node as a hard floor |
-| `disk_gib` | Total disk capacity (root + data) | Per-VM PVC capacity request |
-| `iops_p99` | Peak IOPS the VM is expected to drive | Drives storage class selection |
-| `count` | How many such VMs will run concurrently | Includes the +1 needed for live-migration headroom |
+### Step 1 — Per-VM resource accounting
 
-Round up everywhere; under-sizing is catastrophic for VM workloads, over-sizing is merely expensive.
+KubeVirt's `virt-launcher` Pod consumes:
 
-### Step 2: Compute Per-VM Resource Footprint
+- vCPU: equal to `.spec.template.spec.domain.cpu.cores * sockets * threads`. Every vCPU is pinned to a logical host CPU. Plan node `allocatable.cpu` against this 1:1.
+- Memory: guest memory + a fixed overhead per VM (typically ~150–250 MiB for the QEMU process + `virt-launcher` agent). For the 4 GiB guest used in the example: ~4.25 GiB Pod memory.
+- Storage: one PVC per disk. The CSI driver provisions the requested capacity from the `StorageClass`.
 
-The pod that hosts a VM consumes more than the guest's nominal resources. For a `vcpu=4, memory_gib=16` VM, plan for:
+For 100 × `2 vCPU / 4 GiB`:
 
-- **CPU:** `vcpu + 0.25` cores → 4.25 cores requested. The 0.25 covers the QEMU emulator thread, KubeVirt's compute container, and brief spikes from the libvirt agent.
-- **Memory:** `memory_gib + max(0.5, memory_gib * 0.05)` → roughly 16.8 GiB requested. The overhead absorbs QEMU memory, KubeVirt's `compute` container, and page-table growth.
-- **Disk:** `disk_gib + 5 GiB` of node-local ephemeral storage for `cloud-init`, container disk caches, and crash dumps.
+| Resource | Per VM | Total at 100 % | Total at 80 % concurrency |
+|---|---|---|---|
+| vCPU | 2 | 200 | 160 |
+| Memory | ~4.25 GiB | 425 GiB | 340 GiB |
+| Disk | 80 GB | 8 TB | 8 TB (always provisioned) |
 
-If you enable dedicated CPU pinning (`spec.template.spec.domain.cpu.dedicatedCpuPlacement: true`), reserve full physical cores per vCPU and budget an additional emulator-thread CPU per VM.
+### Step 2 — Worker node sizing
 
-### Step 3: Determine the Per-Node Capacity Budget
+Aim for a node count that:
 
-A node never gives 100% of its physical resources to VM workloads. The platform-managed daemons take a fixed slice, and live migration requires unallocated headroom.
+- **Accommodates the 80 % concurrent footprint** with comfortable headroom (~70 % of `allocatable`).
+- **Has spare capacity equal to the largest single node** so a node can be drained for live-migration without rejecting pending evacuations.
 
-| Reservation | Typical fraction of node | Reason |
-|---|---|---|
-| Operating system + kernel | 1 vCPU + 2 GiB | Constant overhead |
-| Kubelet + container runtime | 0.5 vCPU + 1 GiB | Per node |
-| CNI agent (Kube-OVN) | 0.5 vCPU + 1 GiB | Per node |
-| Monitoring exporters, log shipper | 0.5 vCPU + 1 GiB | Per node |
-| Live-migration headroom | 25% of remaining | So one node draining can land its VMs elsewhere |
+Two illustrative shapes for the same 100-VM workload:
 
-The remaining capacity is the *VM-allocatable* budget. For a 32-core, 256 GiB worker:
+| Shape | vCPU/node | Mem/node | Worker count | Notes |
+|---|---|---|---|---|
+| Dense | 64 | 256 GiB | 4 | Cheaper hardware density; loss of one node strands 25 % of capacity. |
+| Wide | 32 | 128 GiB | 7 | Smaller blast radius; better fit for live-migration headroom. |
 
-- After daemons: `32 - 2.5 = 29.5` vCPU, `256 - 5 = 251` GiB.
-- After 25% migration headroom: `29.5 * 0.75 = 22.1` vCPU, `251 * 0.75 = 188` GiB available for VMs.
+Either shape covers the 160 vCPU + 340 GiB peak, but the wide layout absorbs a single-node failure without exceeding `allocatable` across the surviving fleet.
 
-### Step 4: Compute the Cluster-Level Total
+### Step 3 — Storage sizing
 
-```
-total_vcpu_required = Σ over VM classes of count_i × vcpu_i × 1.0625      # +6.25% pod overhead
-total_memory_required = Σ over VM classes of count_i × memory_gib_i × 1.05
-node_count = ceil(total_vcpu_required / per_node_vcpu_allocatable)
-node_count = max(node_count, ceil(total_memory_required / per_node_memory_allocatable))
-```
+Block-mode RBD provides RWX for live-migration. Each PVC consumes its full requested capacity in the Ceph pool (thin-provisioning is opt-in via Ceph layer features). For 100 × 80 GB:
 
-Take the larger of the two `node_count` results — VM workloads are usually memory-bound, but CPU-bound mixes do exist.
+- Raw Ceph capacity: `100 × 80 × replica` (typical `replica=3` = 24 TB) or `(k+m)/k` for erasure-coded pools.
+- Add 20 % free-space headroom for snapshots, recovery, and cluster healing on disk loss.
 
-Add at least one extra worker node beyond the calculated minimum so that one node taken down for maintenance does not leave the cluster without migration capacity.
+Match `StorageClass.parameters.imageFeatures` to `layering, exclusive-lock, journaling` if RBD-mirror or snapshots are required.
 
-### Step 5: Storage Sizing
+### Step 4 — Network sizing
 
-PVC capacity adds linearly: total cluster PVC capacity must be at least `Σ disk_gib_i × count_i`, plus 30% headroom for snapshots and clone operations the Virtualization stack performs during day-2 operations.
+VM workloads tend to need richer networking than container workloads:
 
-Match the storage class to the IOPS profile. As a rule of thumb:
+- Each VM has at least one `pod` interface (the standard CNI). For VMs that need a flat L2 network, attach a `multus` secondary interface backed by a `NetworkAttachmentDefinition`.
+- Live-migration traffic flows over the in-cluster network; budget at least 10 Gb/s between any two VM-host workers, and prefer 25 Gb/s if average guest memory is greater than 8 GiB (migration time scales linearly with guest memory).
+- Reserve a routable IP range per `NetworkAttachmentDefinition` per VM tier.
 
-| Workload class | Recommended storage |
-|---|---|
-| OS disks, low-IOPS apps | Distributed-storage RWX class with `volumeMode: Block` |
-| High-IOPS DBs | Local SSD via TopoLVM, sized 1.5× expected DB capacity |
-| Scratch/data disks for stateless guests | Object-backed PVC if available, otherwise NFS RWX |
+### Step 5 — Control plane
 
-### Step 6: Worked Example
+The KubeVirt controllers (`virt-controller`, `virt-api`, `virt-handler` DaemonSet) are lightweight — `virt-handler` runs on every node and consumes ~50 mCPU / ~100 MiB. Plan the control-plane node memory primarily against etcd (which scales with the total object count: VirtualMachine, VirtualMachineInstance, DataVolume, PVC, Pod). For 100 VMs the etcd footprint stays well under 2 GiB; control-plane nodes of `8 vCPU / 16 GiB` are comfortable.
 
-Plan: 30 web app VMs (2 vCPU, 4 GiB, 30 GiB disk), 8 database VMs (8 vCPU, 32 GiB, 200 GiB disk), 4 cache VMs (4 vCPU, 16 GiB, 50 GiB disk).
+### Step 6 — Validate before scale-up
 
-```
-web   total: 30 × 2.125 = 63.75 vCPU, 30 × 4.2  = 126 GiB,  30 × 35  =   1050 GiB disk
-db    total:  8 × 8.25  = 66    vCPU,  8 × 33.6 = 268 GiB,   8 × 205 =   1640 GiB disk
-cache total:  4 × 4.25  = 17    vCPU,  4 × 16.8 = 67.2 GiB,  4 × 55  =    220 GiB disk
-                       = 146.75 vCPU             = 461.2 GiB             = 2910 GiB disk
-```
-
-With 32-core / 256 GiB workers (22.1 vCPU and 188 GiB allocatable each):
-
-- vCPU-bound node count: `ceil(146.75 / 22.1) = 7`
-- Memory-bound node count: `ceil(461.2 / 188) = 3`
-
-Pick 7 + 1 (headroom) = **8 worker nodes**. Storage capacity: `2910 × 1.3 = 3783 GiB`, rounded up to a 4 TiB pool.
+For any new shape, validate with the `kubectl drain --force=false` exercise: drain one worker, watch all its VMs live-migrate, confirm cluster stays under 70 % `allocatable` afterwards. Repeat for memory by deliberately scaling out one extra heavy-RAM VM and confirming no `Pending` Pods remain after a few minutes.
 
 ## Diagnostic Steps
 
-Validate the sizing by inspecting per-node allocations once the cluster is up:
+When a node refuses to schedule additional VMs:
 
 ```bash
-# Aggregate VM-launcher pod requests per node
+kubectl describe node <node> | sed -n '/Allocatable:/,/Allocated resources:/p'
+```
+
+Compare `allocatable.cpu` and `allocatable.memory` against the running `virt-launcher` Pods' requests:
+
+```bash
 kubectl get pods -A -l kubevirt.io=virt-launcher \
-  -o custom-columns=NAME:.metadata.name,NODE:.spec.nodeName,\
-CPU:.spec.containers[0].resources.requests.cpu,\
-MEM:.spec.containers[0].resources.requests.memory \
-  | sort -k2
-
-# Compare against node allocatable
-kubectl describe nodes | grep -A2 "Allocated resources" | head -40
+  -o jsonpath='{range .items[*]}{.spec.nodeName}{"\t"}{.metadata.name}{"\t"}{.spec.containers[0].resources.requests}{"\n"}{end}' | sort
 ```
 
-If allocated CPU on any node is above ~75% of allocatable, that node will not be able to absorb evacuees during a planned migration; rebalance VMs or add a worker before maintenance.
-
-Confirm live migration actually has a target during a drain rehearsal:
+If the sum-of-requests exceeds 70 % of `allocatable`, the cluster is at the headroom limit defined in step 2. Add a worker or rebalance VMs by triggering `migrate` on the densest node:
 
 ```bash
-# Pick a worker, drain it, watch VMI reschedule
-kubectl drain <node> --ignore-daemonsets --delete-emptydir-data --pod-selector='kubevirt.io=virt-launcher' --dry-run=server
+virtctl migrate <vm-name>
 ```
-
-If the dry-run reports VMs that would be evicted and you have not provisioned enough headroom on the remaining nodes, the actual drain will block — the sizing model needs another worker.
-</content>
