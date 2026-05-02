@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# DCGM Exporter ServiceMonitor Not Created — GPU Metrics Missing From Dashboards
 ## Issue
 
 After installing the NVIDIA GPU stack on ACP (Hami / NVIDIA GPU Device Plugin extensions, `docs/en/hardware_accelerator/`) and wiring up the DCGM exporter, the NVIDIA GPU dashboard is empty — none of the `DCGM_FI_*` metrics (`DCGM_FI_DEV_GPU_UTIL`, `DCGM_FI_DEV_FB_USED`, `DCGM_FI_DEV_POWER_USAGE`, etc.) are visible in Prometheus, and the GPU section of the monitoring console stays blank even though GPU pods are running and scheduling on GPU nodes.
