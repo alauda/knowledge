@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Storage-Class Migration of a Running VM Hangs at DirectVolume When workloadUpdateMethods Is Empty
 ## Issue
 
 A storage-class migration that moves a running VM's data to a new StorageClass hangs indefinitely in the DirectVolume phase. The migration controller (Migration Toolkit for Containers / Konveyor-style `MigMigration`) reports that the VM's live migration is `Pending`, and no `VirtualMachineInstanceMigration` (VMIM) object is ever created:
