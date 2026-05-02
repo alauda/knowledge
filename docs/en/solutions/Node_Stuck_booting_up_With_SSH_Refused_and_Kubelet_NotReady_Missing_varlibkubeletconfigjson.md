@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Node Stuck "booting up" With SSH Refused and Kubelet NotReady — Missing `/var/lib/kubelet/config.json`
 ## Issue
 
 A cluster node stops serving workloads and the control plane reports it as `NotReady`. Attempting to SSH to the node to investigate returns a boot-time refusal message instead of a shell prompt:
