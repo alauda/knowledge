@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# VirtIO Disks in VMs Are Missing Stable /dev/disk/by-id Symlinks Until a Serial Is Set
 ## Issue
 
 Inside a VM running on ACP Virtualization (KubeVirt under the hood), applications and system configurations that rely on stable device paths under `/dev/disk/by-id/` — for example, `/etc/fstab` entries keyed by `by-id`, Oracle ASM disk groups, LVM scans with explicit device filters — fail to find their VirtIO disks. The block devices themselves are present (`/dev/vda`, `/dev/vdb`, …), but `/dev/disk/by-id/` either has no entries for them or has only partial ones. `/dev/disk/by-uuid/` works for filesystem-formatted volumes but is not suitable for raw block devices.
