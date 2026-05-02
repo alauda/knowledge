@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# What `OLMConfig.spec.features.disableCopiedCSVs` Does and Does Not Control
 ## Overview
 
 Operator Lifecycle Manager (OLM) keeps the canonical `ClusterServiceVersion` (CSV) for each installed operator in the namespace that owns the `Subscription`. When an operator is installed cluster-wide, OLM also writes a **copy** of that CSV into every other namespace in the cluster so that namespace-local tooling can discover the operator. On a busy cluster, these copies multiply the CSV count by the number of namespaces and can add visible load on the API server and on `kubectl` tooling that lists CSVs cluster-wide.
