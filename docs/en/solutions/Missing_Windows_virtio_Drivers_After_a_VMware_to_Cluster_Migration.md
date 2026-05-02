@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Missing Windows virtio Drivers After a VMware-to-Cluster Migration
 ## Issue
 
 A Windows guest migrated from an external hypervisor into the cluster's KubeVirt-based virtualization stack boots, but Device Manager shows a stack of unknown devices and several virtio drivers (network, balloon, serial) never finish installing. The setupapi log on the guest fingerprints the failure cleanly:
