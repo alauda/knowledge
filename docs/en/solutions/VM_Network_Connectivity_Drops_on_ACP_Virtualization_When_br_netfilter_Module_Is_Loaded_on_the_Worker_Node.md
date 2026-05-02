@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# VM Network Connectivity Drops on ACP Virtualization When br_netfilter Module Is Loaded on the Worker Node
 ## Issue
 
 A VirtualMachine running on ACP Virtualization suddenly loses network connectivity — periodically or permanently — on an interface backed by a `NetworkAttachmentDefinition` of type `bridge` (Linux bridge). Symptoms the administrator typically sees:
