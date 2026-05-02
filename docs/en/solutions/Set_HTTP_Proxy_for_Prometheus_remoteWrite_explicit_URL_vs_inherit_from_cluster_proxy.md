@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Set HTTP Proxy for Prometheus `remoteWrite` — explicit URL vs. inherit from cluster proxy
 ## Issue
 
 A Prometheus instance is configured to push metrics to an external system via `remoteWrite`. The cluster sits behind an HTTP/HTTPS proxy — egress to the internet (where the remote-write receiver lives) must go through the corporate proxy. Without that configuration, the Prometheus pod cannot reach the remote endpoint and the `remoteWrite` queue backs up:
