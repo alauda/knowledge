@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Attaching a Second NIC to Velero Pods Managed by the Backup Operator
 ## Issue
 
 Velero pods deployed by a managed backup operator need a second network interface — typically because the backup target (an S3-compatible object store, an NFS export, or a tape library gateway) is reachable only through a separate physical network rather than the cluster's default pod network. By default the Velero Deployment only carries the primary CNI interface and cannot reach an isolated storage VLAN.
