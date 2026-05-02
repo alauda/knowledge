@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Passthrough Ingress Fails Behind a Layer 7 External Load Balancer
 ## Issue
 
 A client attempting to reach a workload over an `Ingress` (or equivalent route object) configured for TLS **passthrough** receives connection failures — typically `TLS handshake failed`, `unknown SNI`, or an HTTP `404` from the wrong backend — when the cluster sits behind an external Layer-7 load balancer (cloud ALB/NLB in HTTP/HTTPS mode, F5 in "HTTPS" profile, NGINX in reverse-proxy mode, etc.). The same client succeeds when it bypasses the external LB and hits the cluster ingress directly with a `Host:` override, which tells you the path through the cluster itself is fine.
