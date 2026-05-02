@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Hosted Control Planes on a Compact Hub Cluster
 ## Issue
 
 A bare-metal hub cluster is built as a 3-node compact deployment — every node serves both as a control-plane node and as a workload host. The team wants to run **Hosted Control Planes** (HCP) on this hub: each managed cluster's control plane lives in pods on the hub, while its data plane runs elsewhere. Two questions come up:
