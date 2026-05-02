@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Self Node Remediation Pods CrashLoop With "Failed Waiting for Secret Informer to Sync"
 ## Issue
 
 After installing or upgrading the Self Node Remediation (SNR) operator on Alauda Container Platform, the per-node SNR agent pods enter `CrashLoopBackOff`. Their logs end with:
