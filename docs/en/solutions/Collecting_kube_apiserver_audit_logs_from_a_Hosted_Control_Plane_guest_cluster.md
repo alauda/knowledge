@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Collecting kube-apiserver audit logs from a Hosted Control Plane guest cluster
 ## Overview
 
 `kube-apiserver` audit logs for a Hosted Control Plane (HCP) guest cluster do not live on the guest's nodes. The control plane runs as a set of pods inside a dedicated namespace on the **management** cluster, so any tool that scrapes audit logs from the guest's nodes (`must-gather`-style helpers, node-filesystem grabs) returns empty output. The audit files are inside the running `kube-apiserver` pods on the management side, under `/var/log/kube-apiserver/`.
