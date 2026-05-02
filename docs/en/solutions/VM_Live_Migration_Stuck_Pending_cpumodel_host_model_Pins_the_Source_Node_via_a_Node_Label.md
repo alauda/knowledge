@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# VM Live Migration Stuck Pending — `cpu.model: host-model` Pins the Source Node via a Node Label
 ## Issue
 
 A VM live migration queues up a new `virt-launcher` pod on the destination, but the pod never reaches `Running` — it stays in `Pending` with a scheduling failure:
