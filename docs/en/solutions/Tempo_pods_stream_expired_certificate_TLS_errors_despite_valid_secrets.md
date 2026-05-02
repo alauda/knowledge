@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Tempo pods stream "expired certificate" TLS errors despite valid secrets
 ## Issue
 
 A `TempoStack` deployed by the Tempo Operator stops serving traces in the platform's tracing UI. Symptoms:
