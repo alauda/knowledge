@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Operator Manager Pod CrashLoopBackOff Because the Namespace NetworkPolicy Blocks API-Server Egress
 ## Issue
 
 After a default-deny `NetworkPolicy` is applied to a workload namespace, the controller-manager pod for an Operator deployed into that namespace enters `CrashLoopBackOff`. Container logs from the manager pod show a clean startup attempt that times out before the controller can list its watched resources:
