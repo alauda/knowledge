@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Preventing VMs from Scheduling onto Master Nodes — When Master Schedulability Is Allowed and Restricting VMs to Workers
 ## Issue
 
 An administrator wants to know whether VMs scheduled by the virtualization control plane (KubeVirt / CPaaS virtualization) can or should be prevented from running on master (control-plane) nodes, and what mechanism enforces that decision.
