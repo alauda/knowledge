@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Pods Not Spreading Evenly Across Nodes Under topologySpreadConstraints
 ## Issue
 
 A workload declares `topologySpreadConstraints` with the intent that its replicas land on different nodes (or zones), but the scheduler still co-locates two or more pods on the same node. The Deployment looks healthy, the pods are `Running`, and yet the actual placement reported by `kubectl get pod -o wide` violates the operator's expectation of one-pod-per-node spread.
