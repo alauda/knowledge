@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# virtctl memory-dump Fails with No Space Left on Device When the Auto-Created PVC Is Too Small
 ## Issue
 
 On an ACP Virtualization cluster (KubeVirt under the hood), requesting an on-demand memory dump of a running VM fails mid-transfer:
