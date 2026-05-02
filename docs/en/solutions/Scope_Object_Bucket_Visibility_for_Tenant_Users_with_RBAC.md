@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.1.0,4.2.x
 ---
+
+# Scope Object Bucket Visibility for Tenant Users with RBAC
 ## Issue
 
 A tenant developer or namespace admin should only see the `ObjectBucketClaim` resources (and the matching backing `ObjectBucket`s) belonging to their own namespace, plus a few cluster-scoped supporting objects. By default the platform console either shows every bucket cluster-wide (unsafe across tenants) or none (because the user has no access). The goal is to grant a least-privilege bundle of permissions so the bucket browser works for that user without leaking other tenants' buckets.
