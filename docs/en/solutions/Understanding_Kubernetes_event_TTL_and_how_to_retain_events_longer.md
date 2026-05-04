@@ -9,7 +9,6 @@ id: KB260500001
 ---
 
 # Understanding Kubernetes event TTL and how to retain events longer
-
 ## Overview
 
 Kubernetes records every meaningful state change as an `Event` object. An event holds context about who created or mutated a resource, what controller acted on it, and why; together they are the primary breadcrumb trail for debugging scheduling, image pulls, probe failures, OOMs, and reconciliation loops. Because every reconciliation cycle of every controller can emit one or more events, the event volume far outpaces ordinary resource churn — often by an order of magnitude on a busy cluster.
@@ -173,9 +172,12 @@ If leader elections are firing more than once an hour, fix the etcd health (disk
 For a deeper look at event volume over time, the apiserver `apiserver_request_total{resource="events"}` counter shows how many event writes the apiserver is taking — useful to size `--event-ttl` against expected steady-state load:
 
 ```bash
-kubectl -n cpaas-monitoring exec deploy/prometheus-cluster-monitoring -- \
-  promtool query instant http://localhost:9090 \
-  'sum by (verb) (rate(apiserver_request_total{resource="events"}[5m]))'
+# On ACP the Prometheus pod is a StatefulSet replica named
+# prometheus-kube-prometheus-0-0 in cpaas-system; the prometheus
+# container is distroless and has no shell/promtool — query through
+# the apiserver proxy instead.
+kubectl get --raw \
+  '/api/v1/namespaces/cpaas-system/services/kube-prometheus:9090/proxy/api/v1/query?query=sum+by+(verb)+(rate(apiserver_request_total%7Bresource%3D%22events%22%7D%5B5m%5D))'
 ```
 
 If event-creation rate × `--event-ttl` exceeds available etcd headroom, raising the TTL is the wrong fix — fan out to the log store via eventrouter instead.

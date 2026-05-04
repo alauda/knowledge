@@ -9,7 +9,6 @@ id: KB260500021
 ---
 
 # Sending namespace-scoped Prometheus alerts to email via AlertmanagerConfig
-
 ## Issue
 
 A namespace owner has authored a `PrometheusRule` in their own namespace and the rule is firing — `kubectl get prometheusrule` shows the alert in `Firing` state and the user-workload Alertmanager web UI lists it. But the configured email recipient never sees a notification. The cluster's platform-side Alertmanager only forwards alerts whose routing tree has been wired up; alerts from a workload namespace need their own routing tree, exposed through the namespace-scoped `AlertmanagerConfig` CRD that the Prometheus operator stack supports for user-workload monitoring.
@@ -27,13 +26,15 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: cluster-monitoring-config
-  namespace: cpaas-monitoring
+  namespace: cpaas-system
 data:
   config.yaml: |
     enableUserWorkload: true
     alertmanagerMain: {}
     prometheusK8s: {}
 ```
+
+Note: ACP's monitoring stack runs in `cpaas-system` (the platform's `kube-prometheus` chart). On clusters where the user-workload Prometheus is packaged differently, substitute the namespace and ConfigMap name accordingly — `kubectl get prometheus -A` lists the actual instances.
 
 Apply, then confirm the user-workload Prometheus and Alertmanager StatefulSets are scheduled:
 
