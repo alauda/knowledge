@@ -6,10 +6,10 @@ products:
 ProductsVersion:
   - '4.1.0,4.2.x'
 id: KB260500001
-sourceSHA: 938f51d63096c7e6e23267ca336ddac92cd0c49fa15186aaa3ba971e0c46afe4
+sourceSHA: 5f27f5065fa929c902d77a1106ef56ffc768dbc8287810d96c2de7a4feab2414
 ---
 
-# 理解 Kubernetes 事件 TTL 及如何延长事件保留时间
+# 理解 Kubernetes 事件的 TTL 及如何延长事件保留时间
 
 ## 概述
 
@@ -21,7 +21,7 @@ Kubernetes 将每一个重要的状态变化记录为一个 `Event` 对象。事
 
 ### 默认保留时间
 
-控制事件生命周期的 apiserver 标志是 `--event-ttl`。在上游 Kubernetes 中，它的默认值是 **一小时**。许多平台管理的 apiservers 在集群启动期间将其提高到 **三小时**；这种行为——每个事件在创建后大约三小时内静默消失——是大多数集群工程师在实践中观察到的。
+控制事件生命周期的 apiserver 标志是 `--event-ttl`。在上游 Kubernetes 中，其默认值为 **一小时**。许多平台管理的 apiservers 在集群启动期间将其提高到 **三小时**；这种行为——每个事件在创建后大约三小时内静默消失——是大多数集群工程师在实践中观察到的。
 
 确认正在运行的集群上的有效值：
 
@@ -35,10 +35,10 @@ kubectl -n kube-system get pod -l component=kube-apiserver \
 
 ### 调整保留窗口
 
-该标志是一个静态的 apiserver 参数，因此更改它需要重新滚动 apiserver pods。在自管理集群（kubeadm 或类似安装程序）上，在 apiserver 清单中设置该标志，并让 kubelet 重新启动静态 pod：
+该标志是一个静态的 apiserver 参数，因此更改它需要重新滚动 apiserver pods。在自管理集群（kubeadm 或类似安装程序）上，在 apiserver 清单中设置该标志，并让 kubelet 重启静态 pod：
 
 ```yaml
-# /etc/kubernetes/manifests/kube-apiserver.yaml 在每个控制平面节点上
+# 每个控制平面节点上的 /etc/kubernetes/manifests/kube-apiserver.yaml
 spec:
   containers:
     - name: kube-apiserver
@@ -48,21 +48,21 @@ spec:
         # ... 其他标志 ...
 ```
 
-在由操作员管理的 apiserver 的平台上，该值通过操作员的 CR 而不是清单进行暴露。大多数平台管理的 apiservers 下，合法范围是 **5 分钟到 180 分钟（3 小时）**——超过该范围将被拒绝，因为事件数量 × 延长保留时间可能会超出 etcd 压缩预算，并在写入时触发 5xx 响应。
+在由操作员管理的 apiserver 的平台上，该值通过操作员的 CR 而不是清单进行公开。大多数平台管理的 apiservers 下，合法范围为 **5 分钟到 180 分钟（3 小时）**——超过该范围将被拒绝，因为事件数量 × 延长的保留时间可能会超出 etcd 压缩预算，并在写入时触发 5xx 响应。
 
 在提高 `--event-ttl` 之前，相应地调整 etcd 的大小：
 
 - 存储：事件通常在 0.5–2 KiB 范围内；繁忙的集群轻松生成每秒 50 个事件，这意味着将保留时间从 3 小时增加到 9 小时大约增加 1 GiB 的 etcd 负载。
-- 压缩：事件在压缩通过之前保持历史；更长的 TTL 推迟了压缩堆积量，并增加了峰值 `etcd_db_total_size_in_bytes`。
+- 压缩：事件在压缩通过之前保持历史；更长的 TTL 会推迟压缩滞后并增加峰值 `etcd_db_total_size_in_bytes`。
 
 ### 当 3 小时不够时——将事件转发到日志存储
 
-支持的任意长事件历史的模式 **不是** 将事件保留在 etcd 中，而是将它们以与日志相同的方式发送到集群的日志存储。两种常见形式：
+支持的任意长事件历史模式 **不是** 将事件保留在 etcd 中，而是像日志一样将它们发送到集群的日志存储。两种常见的形式：
 
-1. **eventrouter** — 一个小型 Deployment，监视事件 API 并将结构化日志行写入 stdout。将其与集群日志转发器配对，以便其 stdout 最终进入 Loki / Elasticsearch / S3，与容器日志一起。
+1. **eventrouter** — 一个小型的 Deployment，监视事件 API 并将结构化日志行写入 stdout。将其与集群日志转发器配对，以便其 stdout 最终出现在 Loki / Elasticsearch / S3 中，与容器日志一起。
 2. **kube-events-exporter**（或任何写入 Loki 兼容推送 API 的控制器）——直接从事件 API 发送到日志后端。
 
-示例 eventrouter Deployment：
+eventrouter Deployment 示例：
 
 ```yaml
 apiVersion: apps/v1
@@ -120,7 +120,7 @@ roleRef:
   apiGroup: rbac.authorization.k8s.io
 ```
 
-一旦 eventrouter pod 运行，其 stdout 每个 Kubernetes 事件携带一个 JSON 对象；集群日志收集器将其作为 `infrastructure` 日志（或平台将 `cpaas-system` 命名空间路由到的任何流）拾取，并以与平台其他遥测相同的保留策略存储在长期日志存储中。
+一旦 eventrouter pod 运行，其 stdout 每个 Kubernetes 事件携带一个 JSON 对象；集群日志收集器将其视为 `infrastructure` 日志（或平台将 `cpaas-system` 命名空间路由到的任何流），并以与平台其他遥测相同的保留策略存储在长期日志存储中。
 
 ### 手动清除事件
 
@@ -142,7 +142,7 @@ kubectl get events --all-namespaces --sort-by=.lastTimestamp \
     done
 ```
 
-这两种形式都是安全的：删除事件不会对控制器产生副作用；它们仅作为审计历史存在。
+这两种形式都是安全的：删除事件时没有控制器副作用；它们仅作为审计历史存在。
 
 ## 诊断步骤
 
@@ -153,7 +153,7 @@ kubectl -n kube-system get pod -l component=kube-apiserver \
   -o yaml | yq '.items[0].spec.containers[0].command'
 ```
 
-检查当前在 etcd 中存在多少事件，按命名空间分类：
+检查当前在 etcd 中的事件数量，按命名空间划分：
 
 ```bash
 kubectl get events -A --sort-by=.lastTimestamp \
@@ -161,7 +161,7 @@ kubectl get events -A --sort-by=.lastTimestamp \
   | sort | uniq -c | sort -rn | head -20
 ```
 
-不均匀的分布（一个命名空间产生大部分事件）是限制噪声控制器的信号，然后再更改保留时间。
+如果分布不均（一个命名空间产生了大部分事件），则应在更改保留时间之前限制噪声控制器。
 
 如果事件似乎超出了 `--event-ttl`（昨天的事件在重启后仍然可见），则底层 etcd 租约计数器可能没有前进——TTL 是通过 etcd 租约强制执行的，频繁的 etcd 领导者更换会在本地重置租约计数器。查找领导者更换：
 
@@ -169,14 +169,17 @@ kubectl get events -A --sort-by=.lastTimestamp \
 kubectl -n kube-system logs ds/etcd -c etcd --tail=500 | grep -E 'leader|elected'
 ```
 
-如果领导者选举每小时触发超过一次，请在调试事件保留之前修复 etcd 健康（磁盘延迟，心跳预算）。
+如果领导者选举每小时触发超过一次，请在调试事件保留之前修复 etcd 健康（磁盘延迟、心跳预算）。
 
-要深入了解事件数量随时间的变化，apiserver 的 `apiserver_request_total{resource="events"}` 计数器显示 apiserver 正在处理多少事件写入——这对于根据预期的稳态负载调整 `--event-ttl` 非常有用：
+要深入了解事件数量随时间的变化，apiserver 的 `apiserver_request_total{resource="events"}` 计数器显示 apiserver 接收了多少事件写入——这对于根据预期的稳态负载调整 `--event-ttl` 非常有用：
 
 ```bash
-kubectl -n cpaas-monitoring exec deploy/prometheus-cluster-monitoring -- \
-  promtool query instant http://localhost:9090 \
-  'sum by (verb) (rate(apiserver_request_total{resource="events"}[5m]))'
+# 在 ACP 上，Prometheus pod 是一个名为
+# prometheus-kube-prometheus-0-0 的 StatefulSet 副本，位于 cpaas-system 中；prometheus
+# 容器是无壳的，并且没有 shell/promtool——通过
+# apiserver 代理进行查询。
+kubectl get --raw \
+  '/api/v1/namespaces/cpaas-system/services/kube-prometheus:9090/proxy/api/v1/query?query=sum+by+(verb)+(rate(apiserver_request_total%7Bresource%3D%22events%22%7D%5B5m%5D))'
 ```
 
-如果事件创建速率 × `--event-ttl` 超过可用的 etcd 头部空间，则提高 TTL 是错误的修复——而是通过 eventrouter 将其转发到日志存储。
+如果事件创建速率 × `--event-ttl` 超过可用的 etcd 头部空间，增加 TTL 不是正确的修复——而是通过 eventrouter 将事件转发到日志存储。
