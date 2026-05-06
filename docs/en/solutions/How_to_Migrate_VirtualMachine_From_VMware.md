@@ -33,6 +33,7 @@ ESXi Version: >= 6.7.0
   - The ESXi hostname must be resolvable (via DNS or CoreDNS override).
   - The SSH service must be enabled on the ESXi host.
   - VMware Tools must be installed in the guest VM.
+  - Network connectivity: TCP ports **443** and **902** must be open on the VMware side to allow access from KubeVirt (ACP cluster nodes). Port 443 is used for the vCenter/ESXi API (SDK, NBDSSL disk transport) and port 902 is used for NBD disk transport to ESXi.
 - **Mechanism Note**: Forklift builds migration pods using ESXi hostnames to construct the `V2V_libvirtURL` and connects via `esx://` over SSH to retrieve disk images.
 
 ## Terminology

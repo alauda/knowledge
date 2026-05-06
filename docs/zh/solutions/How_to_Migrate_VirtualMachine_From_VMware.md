@@ -6,7 +6,7 @@ products:
 ProductsVersion:
   - 4.2.x
 id: KB260100011
-sourceSHA: 5b1dc55fae4516a6851fd14d0f3a264348f5c8ef1c8d0d6c0bf62626147f70fa
+sourceSHA: 5475b2fa63cd603660007fb15debd934d52bcb854a295cbf51702e4dd190ddaf
 ---
 
 # 将 VMware 虚拟机迁移到 Alauda 容器平台虚拟化
@@ -34,6 +34,7 @@ ESXi 版本：>= 6.7.0
   - ESXi 主机名必须可解析（通过 DNS 或 CoreDNS 覆盖）。
   - ESXi 主机上必须启用 SSH 服务。
   - 客户端虚拟机中必须安装 VMware Tools。
+  - 网络连通性：VMware 侧必须开放 TCP 端口 **443** 和 **902**，以允许来自 KubeVirt（ACP 集群节点）的访问。443 用于 vCenter/ESXi API（SDK、磁盘传输 NBDSSL），902 用于 ESXi 的 NBD 磁盘传输。
 - **机制说明**：Forklift 使用 ESXi 主机名构建迁移 Pod，以构造 `V2V_libvirtURL`，并通过 SSH 以 `esx://` 连接以检索磁盘映像。
 
 ## 术语
