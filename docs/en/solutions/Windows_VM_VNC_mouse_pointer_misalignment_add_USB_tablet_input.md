@@ -5,6 +5,7 @@ products:
   - Alauda Container Platform
 ProductsVersion:
   - 4.1.0,4.2.x
+id: KB260500048
 ---
 
 # Windows VM mouse pointer misalignment in the VNC console — add a USB tablet input device

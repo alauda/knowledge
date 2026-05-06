@@ -4,39 +4,41 @@ kind:
 products:
   - Alauda Container Platform
 ProductsVersion:
-  - 4.1.0,4.2.x
+  - '4.1.0,4.2.x'
+id: KB260500048
+sourceSHA: 2ae2eaaddbc12628294aa90241653fe781f4a2c181c9d770977cdae56579bf01
 ---
 
-# Windows 虚拟机通过 VNC 控制台访问时鼠标错位 — 添加 USB tablet 输入设备
+# Windows 虚拟机在 VNC 控制台中的鼠标指针不对齐 — 添加 USB 平板输入设备
 
 ## 问题
 
-通过 ACP 虚拟化创建的 Windows 客户机可以正常打开 Web VNC 控制台，但鼠标无法准确定位到界面元素。常见症状：
+通过 ACP 虚拟化创建的 Windows 客户端在 Web VNC 控制台中正常打开，但鼠标指针无法准确对准 UI 元素。通常观察到的症状包括：
 
-- 主机端光标与客户机端光标偏移 — 点击屏幕上看到的按钮，实际点击落在其他位置。
-- 光标"卡"在某个角落，或每次移动相对主机被放大 / 反向。
-- 拖拽、滚轮、右键行为不一致；在安装向导、对话框、Windows 登录界面中几乎无法完成精确操作。
+- 主机光标和客户机光标之间漂移 — 点击屏幕上的按钮实际上落在其他地方。
+- 指针“卡住”在一个角落，或者每次移动相对于主机都被放大/反转。
+- 拖动、滚动和右键单击行为不一致；在安装程序、RDP 风格的对话框或 Windows 登录屏幕中的精确操作几乎不可能。
 
-同一台 VM 通过 RDP 或支持 SPICE 的客户端连接时一切正常。鼠标错位仅出现在 VNC 通道上。
+当通过 RDP 或 SPICE 兼容客户端连接时，同一虚拟机表现正常。此不对齐问题特定于 VNC 通道。
 
 ## 根本原因
 
-KubeVirt VirtualMachine 默认向客户机暴露一个 **PS/2 模拟鼠标**。PS/2 鼠标发送的是 *相对* 偏移量（Δx, Δy），客户机操作系统负责跟踪绝对指针位置。VNC 客户端发送的始终是 *绝对* 坐标（用户在帧缓冲区中点击的位置），因此宿主机必须先把绝对坐标转换成一连串相对偏移再交给客户机。客户机再从这些偏移中重新推导出绝对位置。
+默认情况下，KubeVirt 虚拟机向客户机暴露一个 **PS/2 风格的模拟鼠标**。PS/2 鼠标发送 *相对* 增量 (Δx, Δy)，客户操作系统负责跟踪绝对指针位置。在 VNC 上，客户端仅发送 *绝对* 坐标（用户在帧缓冲区上点击的位置），因此主机必须将这些转换为一系列相对增量，然后再交给客户机。客户机随后从这些增量重新推导出绝对位置。
 
-这条链路在 Windows 上有两处会出问题：
+在 Windows 上，这个链条出现了两个问题：
 
-1. **缺少双向指针同步。** Linux 客户机由 X / Wayland 输入层在每次移动事件时重新同步光标，掩盖了偏移问题。Windows 指针子系统信任自己的内部坐标，只是周期性地校正，因此移动几次后客户机认为的"光标位置"就和 VNC 客户端的认知背离。
-2. **Windows 默认开启"提高指针精确度"指针加速。** 这条非线性加速曲线会作用于 hypervisor 注入的相对偏移量，于是宿主机移动 10 像素并不会变成客户机的 10 像素。误差会累积，产生用户看到的发散性偏移。
+1. **没有双向指针同步。** Linux 客户机运行一个 X/Wayland 输入层，在每个运动事件上重新同步光标，掩盖了漂移。Windows 指针子系统信任其内部坐标，并且仅定期进行协调，因此客户机对“光标位置”的理解与 VNC 客户端的理解在几次移动后就会偏离。
+2. **指针加速（“增强指针精度”）在 Windows 中默认开启。** 非线性加速曲线应用于虚拟机监控程序注入的相对增量，因此 10 像素的主机移动并不会变成 10 像素的客户机移动。错误累积，导致用户看到的漂移。
 
-切换为 **USB tablet** 输入设备可以绕开整条链路。tablet 原生上报 *绝对* 坐标，VNC 客户端的"用户点击在 (x, y)"会被直接传递给客户机为"指针在 (x, y)" — 不再需要相对偏移转换、不再有加速曲线、不再产生偏移。Windows 内置 HID 兼容 tablet 驱动，无需额外安装即可识别该设备。
+切换到 **USB 平板** 输入设备可以绕过整个链条。平板本地报告 *绝对* 坐标，因此 VNC 客户端的“用户点击了 (x, y)”将作为“指针位于 (x, y)”传递给客户机 — 无需相对增量转换，无需加速曲线，无需漂移。Windows 自带一个符合 HID 的平板驱动程序，因此该设备在没有额外安装的情况下被识别。
 
-这是 KubeVirt 的一个已知设计问题，上游跟踪在 [kubevirt/kubevirt#2392](https://github.com/kubevirt/kubevirt/issues/2392)。OpenShift Virtualization 的 Windows 模板基于同样的原因默认带 USB tablet；ACP 的模板目前还没有，这就是新创建的 Windows VM 会遇到此问题的原因。
+这是一个已知的 KubeVirt 设计怪癖，在 [kubevirt/kubevirt#2392](https://github.com/kubevirt/kubevirt/issues/2392) 中进行了跟踪。OpenShift 虚拟化的 Windows 虚拟机模板已经默认声明了 USB 平板，原因相同；而 ACP 的模板尚未这样做，这就是新创建的 Windows 虚拟机遇到此问题的原因。
 
 ## 解决方案
 
-在 VM 的 `spec.template.spec.domain.devices.inputs` 列表中添加一个 USB tablet，然后重启 VM 让新设备在下次启动时挂入。
+将 USB 平板添加到虚拟机的 `spec.template.spec.domain.devices.inputs` 列表中，然后重启虚拟机，以便在下次启动时热插拔新设备。
 
-### 修补已存在的 VM
+### 修补现有虚拟机
 
 ```bash
 export VM_NS=<vm-namespace>
@@ -57,19 +59,19 @@ kubectl patch vm "$VM_NAME" -n "$VM_NS" --type=json -p='[
 ]'
 ```
 
-如果 VM 已经存在 `inputs` 数组（例如此前的 tablet 被移除但字段保留为空），上面的 JSON-patch `add` 会整体替换该字段。如果想追加而不是替换，请把 path 改为 `/spec/template/spec/domain/devices/inputs/-`。
+如果虚拟机已经有一个 `inputs` 数组（例如，之前的平板被移除并且键被留空），上述 JSON 补丁 `add` 将替换它。要追加而不是替换，请针对 `/spec/template/spec/domain/devices/inputs/-`。
 
-重启 VM，让新设备被呈现给客户机：
+重启虚拟机，以便将新设备呈现给客户机：
 
 ```bash
 virtctl restart "$VM_NAME" -n "$VM_NS"
 ```
 
-客户机重新启动后，Windows 会自动安装 HID 兼容 tablet 驱动。重新连接 VNC 控制台 — 光标应当与主机指针一比一同步。
+客户机重新启动后，Windows 会自动安装 HID 兼容的平板驱动程序。重新连接 VNC 控制台 — 光标应与主机指针一对一跟踪。
 
-### 为新建 VM 默认带上
+### 将其集成到新虚拟机中
 
-对于通过 YAML 清单创建的 VM，把 tablet 与已有的 disks、interfaces 一起声明。完整的 `devices` 段如下（`inputs` 条目即为新增项）：
+对于从 YAML 清单创建的虚拟机，在现有磁盘和接口旁边声明平板。完整的 `devices` 块如下所示（`inputs` 条目是新增的）：
 
 ```yaml
 spec:
@@ -91,23 +93,23 @@ spec:
               name: default
 ```
 
-对于基于共享模板克隆的 VM，建议直接修改一次模板，使后续所有 Windows VM 都继承 tablet — 这样与 OCP 的默认行为对齐，也避免每次新建 VM 都重新踩坑。
+对于从共享模板克隆的虚拟机，编辑模板一次，以便每个后续的 Windows 虚拟机继承平板 — 这与 OCP 默认值匹配，并防止每个新虚拟机上重复出现此问题。
 
-### 为什么使用 USB 而不是 virtio
+### 为什么选择 USB 而不是 virtio
 
-KubeVirt 输入设备也接受 `bus: virtio`，但 Windows 内置驱动集 **不包含** virtio-input 驱动 — 需要先安装 virtio-win 客户机工具才能识别，而这恰好就是用户因为鼠标不可用而无法完成的引导步骤。`bus: usb` 使用标准 HID 类，在干净安装的 Windows 上即可工作。
+KubeVirt 接受 `bus: virtio` 作为输入设备，但 Windows 自带的驱动程序集中 **不** 包含 virtio-input 驱动程序 — 这需要先安装 virtio-win 客户工具，而这正是用户无法完成的引导步骤，因为鼠标尚未工作。`bus: usb` 使用标准 HID 类，并在干净的 Windows 安装上工作。
 
 ## 诊断步骤
 
-1. 确认正在运行的 domain 是否已有 tablet。检查 VMI（运行实例），而不仅是 VM 模板：
+1. 确认正在运行的域未暴露平板。检查 VMI（实时实例），而不仅仅是虚拟机模板：
 
    ```bash
    kubectl get vmi "$VM_NAME" -n "$VM_NS" -o jsonpath='{.spec.domain.devices.inputs}'
    ```
 
-   输出为空（或字段不存在）表示当前只挂载了默认的 PS/2 鼠标。如果输出中已有 `"type":"tablet"` 条目，说明设备已声明，鼠标错位另有原因（参见步骤 4）。
+   空输出（或缺少键）确认仅附加了默认的 PS/2 鼠标。填充的数组中有 `"type":"tablet"` 表示设备已经声明，且不对齐的原因不同（见第 4 步）。
 
-2. 检查 virt-launcher Pod 中的 libvirt domain XML，查看实际呈现给 QEMU 的 `<input>` 元素：
+2. 检查 virt-launcher pod 内的 libvirt 域 XML，以获取实际呈现给 QEMU 的 `<input>` 元素：
 
    ```bash
    POD=$(kubectl get pod -n "$VM_NS" -l kubevirt.io/domain="$VM_NAME" -o name | head -1)
@@ -115,17 +117,17 @@ KubeVirt 输入设备也接受 `bus: virtio`，但 Windows 内置驱动集 **不
      | grep -A1 '<input'
    ```
 
-   补丁生效后应当看到类似 `<input type='tablet' bus='usb'/>` 的条目。如果只有 `<input type='mouse' bus='ps2'/>`，则仍然是默认配置 — VNC 下会错位。
+   应该在应用补丁后看到类似 `<input type='tablet' bus='usb'/>` 的行。仅有 `<input type='mouse' bus='ps2'/>` 是默认的、针对 VNC 的破损状态。
 
-3. 按"解决方案"中的步骤打补丁并重启 VM。重新执行步骤 2 — 必须先看到 tablet 那一行，再去重新连接 VNC 控制台。
+3. 应用解决方案部分中的补丁并重启虚拟机。重新运行第 2 步 — 在重新连接 VNC 控制台之前，平板行必须出现。
 
-4. 重新连接控制台后如果指针仍然漂移，则原因 *不在* 输入设备：
+4. 重新连接控制台后，如果指针仍然漂移，原因 *不是* 输入设备：
 
-   - 检查 VNC 客户端是否对帧缓冲做了缩放（浏览器缩放级别非 100% 会再次引入错位）。
-   - 在客户机里打开 **设置 → 设备 → 鼠标 → 其他鼠标选项 → 指针选项**，关闭 **提高指针精确度** — 即使挂上了 tablet，操作系统层面的加速偏好仍可能作用于某些代码路径。
-   - 确认 Windows 已识别 tablet：**设备管理器 → 人体学输入设备 → 符合 HID 标准的笔**（或"符合 HID 标准的触摸屏"）应当存在且没有黄色感叹号。如果设备缺失，VM 可能从缓存的配置启动；用 `virtctl stop` 后再 `virtctl start` 强制干净重启。
+   - 检查 VNC 客户端是否在缩放帧缓冲区（浏览器缩放级别不是 100% 可能会重新引入不对齐）。
+   - 在客户机内部，打开 **设置 → 设备 → 鼠标 → 附加鼠标选项 → 指针选项**，并关闭 **增强指针精度** — 即使连接了平板，操作系统偏好仍可能对某些代码路径应用加速。
+   - 确认 Windows 识别了平板：**设备管理器 → 人机接口设备 → HID 兼容笔**（或“HID 兼容触摸屏”）应存在且没有警告图标。如果设备缺失，虚拟机可能正在从缓存配置启动；使用 `virtctl stop` 然后 `virtctl start` 强制进行干净重启。
 
-5. 对于在此修复之前就已存在的存量 VM，列出所有缺少 tablet 输入设备、需要补丁的 Windows VM：
+5. 对于在此修复之前的虚拟机集，列出所有缺少平板输入且需要修补的 Windows 虚拟机：
 
    ```bash
    kubectl get vm -A -o json \
@@ -136,10 +138,10 @@ KubeVirt 输入设备也接受 `bus: virtio`，但 Windows 内置驱动集 **不
               | "\(.metadata.namespace)\t\(.metadata.name)"'
    ```
 
-   如果环境里 Windows VM 带有 OS 标签（例如 `os.template.kubevirt.io/windows*`），可与该 label selector 组合，进一步缩小范围。
+   如果 Windows 虚拟机在您的环境中携带操作系统系列标签，可以结合使用标签选择器（例如，`os.template.kubevirt.io/windows*`）。
 
 ## 相关信息
 
-- 上游 issue：[kubevirt/kubevirt#2392 — Windows 客户机 VNC 鼠标位置不同步](https://github.com/kubevirt/kubevirt/issues/2392)
-- KubeVirt API 参考：`VirtualMachineInstanceSpec` 上的 `Devices.Inputs` 字段。
-- OpenShift Virtualization 的 Windows 模板默认就带 `inputs: [{type: tablet, bus: usb}]`，是 ACP 管理的模板应当对齐的参考行为。
+- 上游问题：[kubevirt/kubevirt#2392 — Windows 客户机的 VNC 鼠标位置未同步](https://github.com/kubevirt/kubevirt/issues/2392)
+- KubeVirt API 参考：`Devices.Inputs` 字段在 `VirtualMachineInstanceSpec` 中。
+- OpenShift 虚拟化 Windows 模板默认提供相同的 `inputs: [{type: tablet, bus: usb}]` 块，这是 ACP 管理模板应趋同的参考行为。
