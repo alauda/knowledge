@@ -3,6 +3,9 @@ products:
   - Alauda Application Services
 kind:
   - Solution
+ProductsVersion:
+  - 3.x
+  - 4.x
 ---
 
 # Cleanup Invalid Redis Cluster Nodes

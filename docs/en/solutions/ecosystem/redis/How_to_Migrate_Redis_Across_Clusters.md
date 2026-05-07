@@ -3,6 +3,8 @@ products:
   - Alauda Application Services
 kind:
   - Solution
+ProductsVersion:
+  - 3.x
 ---
 
 # Migrate Redis Data Across Kubernetes Clusters

@@ -3,6 +3,8 @@ products:
   - Alauda Application Services
 kind:
   - Solution
+ProductsVersion:
+  - 4.x
 ---
 
 # Deploy a Redis Proxy with RedisProxyOperator

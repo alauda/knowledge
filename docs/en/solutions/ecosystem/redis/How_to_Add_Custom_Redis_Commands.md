@@ -3,6 +3,8 @@ products:
   - Alauda Application Services
 kind:
   - Solution
+ProductsVersion:
+  - 3.x
 ---
 
 # How to Add Custom Commands to a Redis Instance

@@ -3,6 +3,9 @@ products:
   - Alauda Application Services
 kind:
   - Solution
+ProductsVersion:
+  - 3.x
+  - 4.x
 ---
 
 # Redis Emergency Response Playbook

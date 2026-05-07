@@ -3,6 +3,8 @@ products:
   - Alauda Application Services
 kind:
   - Solution
+ProductsVersion:
+  - 3.x
 ---
 
 # How to Recover Sentinel Instances That Have Merged Due to IP Recycling

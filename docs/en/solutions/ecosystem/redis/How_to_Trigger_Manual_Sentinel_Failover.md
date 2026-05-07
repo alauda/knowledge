@@ -3,6 +3,9 @@ products:
   - Alauda Application Services
 kind:
   - Solution
+ProductsVersion:
+  - 3.x
+  - 4.x
 ---
 
 # How to Trigger a Manual Sentinel Failover

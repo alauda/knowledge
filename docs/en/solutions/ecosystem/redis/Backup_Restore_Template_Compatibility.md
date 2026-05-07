@@ -3,6 +3,9 @@ products:
   - Alauda Application Services
 kind:
   - Solution
+ProductsVersion:
+  - 3.x
+  - 4.x
 ---
 
 # Backup and Restore Compatibility With Parameter Templates
