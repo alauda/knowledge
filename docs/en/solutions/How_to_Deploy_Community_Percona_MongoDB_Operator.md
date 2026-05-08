@@ -33,13 +33,15 @@ For background on the operator's features, see:
 
 - An ACP 4.x cluster with `cluster-admin` access.
 - `kubectl` configured against the target cluster.
-- A target namespace. Export it once as `NS` and reuse it throughout the guide:
+- A target namespace, a cluster name, and a `StorageClass`. Export them once and reuse them throughout the guide:
 
   ```bash
   export NS=<your-namespace>          # e.g. mongodb
+  export CLUSTER=<your-cluster-name>  # e.g. my-mongo — used as the CR name; derives ${CLUSTER}-secrets, ${CLUSTER}-mongos, ${CLUSTER}-mongos-0
+  export STORAGE_CLASS=<your-sc>      # e.g. topolvm-ext4 — leave empty to use the cluster default
   ```
 
-  All `kubectl` examples below use `"$NS"`. If you open a fresh shell, re-export `NS` before resuming. The cluster-wide install in Step 4 introduces an additional `OPERATOR_NS` variable for users who want the operator and the cluster CR to live in different namespaces; by default it inherits `$NS`.
+  All `kubectl` examples below use `"$NS"`, `"$CLUSTER"`, and `"$STORAGE_CLASS"`. If you open a fresh shell, re-export them before resuming. The cluster-wide install in Step 4 introduces an additional `OPERATOR_NS` variable for users who want the operator and the cluster CR to live in different namespaces; by default it inherits `$NS`.
 - A `StorageClass` with dynamic PVC provisioning. Mark it as the default storage class if you want to omit `storageClassName` from the cluster CR.
 - A private container registry that your cluster nodes can pull from, with credentials to push to it.
 - A workstation with internet access where you can pull from `docker.io` and push to your private registry. Either [`skopeo`](https://github.com/containers/skopeo) or `docker` will work.
@@ -257,7 +259,7 @@ kubectl -n "$NS" apply -f - <<EOF
 apiVersion: v1
 kind: Secret
 metadata:
-  name: my-mongo-secrets
+  name: ${CLUSTER}-secrets
 type: Opaque
 stringData:
   MONGODB_BACKUP_USER: backup
@@ -278,16 +280,19 @@ EOF
 
 ### 5b. Create the cluster CR
 
-Pick the MongoDB image tag for the version you want; substitute `<PRIVATE_REGISTRY>` and `<storage-class>`. If you created an image pull Secret in Step 2, keep the `imagePullSecrets` field; otherwise remove it.
+Pick the MongoDB image tag for the version you want. The heredoc below uses `$CLUSTER`, `$PRIVATE_REGISTRY`, and `$STORAGE_CLASS` from your shell — `$PRIVATE_REGISTRY` was set in Step 1; `$CLUSTER` and `$STORAGE_CLASS` were set in Prerequisites. If you did not create an image pull Secret in Step 2, remove the `imagePullSecrets` block.
 
-```yaml
+```bash
+MONGO_IMAGE_TAG="8.0.19-7"           # or 7.0.30-16 / 6.0.27-21
+
+kubectl -n "$NS" apply -f - <<EOF
 apiVersion: psmdb.percona.com/v1
 kind: PerconaServerMongoDB
 metadata:
-  name: my-mongo
+  name: ${CLUSTER}
 spec:
   crVersion: 1.22.0
-  image: <PRIVATE_REGISTRY>/percona/percona-server-mongodb:8.0.19-7   # or 7.0.30-16 / 6.0.27-21
+  image: ${PRIVATE_REGISTRY}/percona/percona-server-mongodb:${MONGO_IMAGE_TAG}
   imagePullPolicy: IfNotPresent
   imagePullSecrets:
   - name: acp-registry-pull
@@ -297,13 +302,13 @@ spec:
   upgradeOptions:
     apply: disabled
   secrets:
-    users: my-mongo-secrets
+    users: ${CLUSTER}-secrets
   replsets:
   - name: rs0
     size: 1               # production: 3 or more
     volumeSpec:
       persistentVolumeClaim:
-        storageClassName: <storage-class>
+        storageClassName: ${STORAGE_CLASS}
         resources:
           requests:
             storage: 10Gi
@@ -313,7 +318,7 @@ spec:
       size: 1             # production: 3 or more
       volumeSpec:
         persistentVolumeClaim:
-          storageClassName: <storage-class>
+          storageClassName: ${STORAGE_CLASS}
           resources:
             requests:
               storage: 10Gi
@@ -321,10 +326,11 @@ spec:
       size: 1             # production: 2 or more
   backup:
     enabled: false
-    image: <PRIVATE_REGISTRY>/percona/percona-backup-mongodb:2.12.0
+    image: ${PRIVATE_REGISTRY}/percona/percona-backup-mongodb:2.12.0
+EOF
 ```
 
-Apply with `kubectl -n "$NS" apply -f cluster.yaml`.
+If you left `STORAGE_CLASS` empty to fall back to the cluster default, omit both `storageClassName: ${STORAGE_CLASS}` lines from the heredoc.
 
 For the full Custom Resource field reference and all available options (TLS, monitoring, backup, etc.), see the [Percona Operator Custom Resource reference](https://docs.percona.com/percona-operator-for-mongodb/operator.html).
 
@@ -346,10 +352,10 @@ my-mongo   my-mongo-mongos.<NS>.svc.cluster.local:27017        ready    55s
 Retrieve the `userAdmin` password and run a non-interactive smoke test against the mongos router:
 
 ```bash
-PASS=$(kubectl -n "$NS" get secret my-mongo-secrets \
+PASS=$(kubectl -n "$NS" get secret "${CLUSTER}-secrets" \
   -o jsonpath='{.data.MONGODB_USER_ADMIN_PASSWORD}' | base64 -d)
 
-kubectl -n "$NS" exec my-mongo-mongos-0 -c mongos -- mongosh --quiet \
+kubectl -n "$NS" exec "${CLUSTER}-mongos-0" -c mongos -- mongosh --quiet \
   -u userAdmin -p "$PASS" --authenticationDatabase admin \
   --eval 'print(JSON.stringify({version: db.version(), hello: db.hello().msg}))'
 ```
@@ -359,14 +365,14 @@ Expected output: `{"version":"8.0.19-7","hello":"isdbgrid"}` (the `msg` is `isdb
 For an interactive shell:
 
 ```bash
-kubectl -n "$NS" exec -it my-mongo-mongos-0 -c mongos -- \
+kubectl -n "$NS" exec -it "${CLUSTER}-mongos-0" -c mongos -- \
   mongosh -u userAdmin -p "$PASS" --authenticationDatabase admin
 ```
 
 For external client access, port-forward the mongos service:
 
 ```bash
-kubectl -n "$NS" port-forward svc/my-mongo-mongos 27017:27017
+kubectl -n "$NS" port-forward "svc/${CLUSTER}-mongos" 27017:27017
 ```
 
 Then connect with any MongoDB client at `mongodb://userAdmin:<password>@localhost:27017/?authSource=admin`.
@@ -436,7 +442,7 @@ This guide deploys the **upstream community release** of the Percona Server for 
 - **Enabling PVC resize.** Growing `volumeSpec.persistentVolumeClaim.resources.requests.storage` is a **no-op by default**. To let the operator propagate a storage increase to the underlying PVCs, set `spec.enableVolumeExpansion: true` on the `PerconaServerMongoDB` CR. Your StorageClass must also have `allowVolumeExpansion: true`.
 - **PVC retention.** Deleting the `PerconaServerMongoDB` resource does **not** remove its PVCs. To release the storage:
   ```bash
-  kubectl -n "$NS" delete pvc -l app.kubernetes.io/instance=my-mongo
+  kubectl -n "$NS" delete pvc -l "app.kubernetes.io/instance=${CLUSTER}"
   ```
 - **Backup, TLS, and monitoring.** Not covered here; see the [upstream Percona Operator documentation](https://docs.percona.com/percona-operator-for-mongodb/index.html).
 - **Operator upgrades.** Follow the [upstream upgrade guide](https://docs.percona.com/percona-operator-for-mongodb/update.html). Image tags must also be updated in your CR.
