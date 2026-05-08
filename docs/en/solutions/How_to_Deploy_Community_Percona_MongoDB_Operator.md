@@ -33,7 +33,13 @@ For background on the operator's features, see:
 
 - An ACP 4.x cluster with `cluster-admin` access.
 - `kubectl` configured against the target cluster.
-- A target namespace (referred to as `<NS>` below).
+- A target namespace. Export it once as `NS` and reuse it throughout the guide:
+
+  ```bash
+  export NS=<your-namespace>          # e.g. mongodb
+  ```
+
+  All `kubectl` examples below use `"$NS"`. If you open a fresh shell, re-export `NS` before resuming. The cluster-wide install in Step 4 introduces an additional `OPERATOR_NS` variable for users who want the operator and the cluster CR to live in different namespaces; by default it inherits `$NS`.
 - A `StorageClass` with dynamic PVC provisioning. Mark it as the default storage class if you want to omit `storageClassName` from the cluster CR.
 - A private container registry that your cluster nodes can pull from, with credentials to push to it.
 - A workstation with internet access where you can pull from `docker.io` and push to your private registry. Either [`skopeo`](https://github.com/containers/skopeo) or `docker` will work.
@@ -137,7 +143,7 @@ REG_PASS="<registry-password>"
 #   REG_USER=$(kubectl -n cpaas-system get secret registry-admin -o jsonpath='{.data.username}' | base64 -d)
 #   REG_PASS=$(kubectl -n cpaas-system get secret registry-admin -o jsonpath='{.data.password}' | base64 -d)
 
-kubectl -n <NS> create secret docker-registry acp-registry-pull \
+kubectl -n "$NS" create secret docker-registry acp-registry-pull \
   --docker-server="$REGISTRY_SERVER" \
   --docker-username="$REG_USER" \
   --docker-password="$REG_PASS"
@@ -150,7 +156,9 @@ If your registry allows anonymous pulls, skip this step and omit the `imagePullS
 The default `mongod`, `cfg`, and `mongos` pods created by the operator do not satisfy the Kubernetes Pod Security Admission `restricted` profile. Relabel the namespace where the **cluster CR** will live (the namespace where the database pods run) to `baseline` (or looser) before creating the CR:
 
 ```bash
-CLUSTER_NS="<NS>"   # the namespace where your PerconaServerMongoDB CR will be created
+# Defaults to $NS from Prerequisites. Override only if your cluster CR will live
+# in a different namespace from the operator (cluster-wide install — see Step 4).
+CLUSTER_NS="${CLUSTER_NS:-$NS}"
 kubectl label ns "$CLUSTER_NS" \
   pod-security.kubernetes.io/enforce=baseline \
   pod-security.kubernetes.io/audit=baseline \
@@ -186,7 +194,9 @@ Download the bundle you chose, rewrite the operator image to your private regist
 
 ```bash
 PRIVATE_REGISTRY="<your-private-registry>"
-OPERATOR_NS="<NS>"               # the namespace you will install the operator into
+# Defaults to $NS from Prerequisites. Override if you want the operator in a
+# different namespace from the cluster CR (only meaningful with cw-bundle.yaml).
+OPERATOR_NS="${OPERATOR_NS:-$NS}"
 BUNDLE="bundle.yaml"              # or cw-bundle.yaml if you chose cluster-wide above
 
 curl -sL -o "$BUNDLE" \
@@ -226,7 +236,7 @@ kubectl -n "$OPERATOR_NS" rollout status deploy/percona-server-mongodb-operator 
 Verify:
 
 ```bash
-kubectl -n <NS> get pods                # the operator pod should be Running
+kubectl -n "$OPERATOR_NS" get pods      # the operator pod should be Running
 kubectl get crd | grep psmdb            # three CRDs should be present
 ```
 
@@ -243,7 +253,7 @@ Expected CRDs:
 The operator manages five built-in users. Create a Secret containing their credentials; the cluster CR references it by name.
 
 ```bash
-kubectl -n <NS> apply -f - <<EOF
+kubectl -n "$NS" apply -f - <<EOF
 apiVersion: v1
 kind: Secret
 metadata:
@@ -314,14 +324,14 @@ spec:
     image: <PRIVATE_REGISTRY>/percona/percona-backup-mongodb:2.12.0
 ```
 
-Apply with `kubectl -n <NS> apply -f cluster.yaml`.
+Apply with `kubectl -n "$NS" apply -f cluster.yaml`.
 
 For the full Custom Resource field reference and all available options (TLS, monitoring, backup, etc.), see the [Percona Operator Custom Resource reference](https://docs.percona.com/percona-operator-for-mongodb/operator.html).
 
 ### 5c. Wait for the cluster to be ready
 
 ```bash
-kubectl -n <NS> get psmdb -w
+kubectl -n "$NS" get psmdb -w
 ```
 
 Wait for `STATUS=ready`. On healthy storage, the cluster reaches ready within ~60 seconds.
@@ -336,10 +346,10 @@ my-mongo   my-mongo-mongos.<NS>.svc.cluster.local:27017        ready    55s
 Retrieve the `userAdmin` password and run a non-interactive smoke test against the mongos router:
 
 ```bash
-PASS=$(kubectl -n <NS> get secret my-mongo-secrets \
+PASS=$(kubectl -n "$NS" get secret my-mongo-secrets \
   -o jsonpath='{.data.MONGODB_USER_ADMIN_PASSWORD}' | base64 -d)
 
-kubectl -n <NS> exec my-mongo-mongos-0 -c mongos -- mongosh --quiet \
+kubectl -n "$NS" exec my-mongo-mongos-0 -c mongos -- mongosh --quiet \
   -u userAdmin -p "$PASS" --authenticationDatabase admin \
   --eval 'print(JSON.stringify({version: db.version(), hello: db.hello().msg}))'
 ```
@@ -349,14 +359,14 @@ Expected output: `{"version":"8.0.19-7","hello":"isdbgrid"}` (the `msg` is `isdb
 For an interactive shell:
 
 ```bash
-kubectl -n <NS> exec -it my-mongo-mongos-0 -c mongos -- \
+kubectl -n "$NS" exec -it my-mongo-mongos-0 -c mongos -- \
   mongosh -u userAdmin -p "$PASS" --authenticationDatabase admin
 ```
 
 For external client access, port-forward the mongos service:
 
 ```bash
-kubectl -n <NS> port-forward svc/my-mongo-mongos 27017:27017
+kubectl -n "$NS" port-forward svc/my-mongo-mongos 27017:27017
 ```
 
 Then connect with any MongoDB client at `mongodb://userAdmin:<password>@localhost:27017/?authSource=admin`.
@@ -426,7 +436,7 @@ This guide deploys the **upstream community release** of the Percona Server for 
 - **Enabling PVC resize.** Growing `volumeSpec.persistentVolumeClaim.resources.requests.storage` is a **no-op by default**. To let the operator propagate a storage increase to the underlying PVCs, set `spec.enableVolumeExpansion: true` on the `PerconaServerMongoDB` CR. Your StorageClass must also have `allowVolumeExpansion: true`.
 - **PVC retention.** Deleting the `PerconaServerMongoDB` resource does **not** remove its PVCs. To release the storage:
   ```bash
-  kubectl -n <NS> delete pvc -l app.kubernetes.io/instance=my-mongo
+  kubectl -n "$NS" delete pvc -l app.kubernetes.io/instance=my-mongo
   ```
 - **Backup, TLS, and monitoring.** Not covered here; see the [upstream Percona Operator documentation](https://docs.percona.com/percona-operator-for-mongodb/index.html).
 - **Operator upgrades.** Follow the [upstream upgrade guide](https://docs.percona.com/percona-operator-for-mongodb/update.html). Image tags must also be updated in your CR.
