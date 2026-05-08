@@ -14,7 +14,7 @@ id: KB251000012
 
 This solution describes how to build a Harbor disaster recovery solution based on Object Storage and PostgreSQL disaster recovery capabilities. The solution primarily focuses on data disaster recovery processing, and users need to implement their own Harbor access address switching mechanism.
 
-The current design only covers disaster recovery for PostgreSQL and Object Storage. `jobservice`, `trivy`, and `redis` do not have cross-cluster data replication or hot-standby failover configured. As a result, `jobservice` job logs, `trivy` local cache/vulnerability database, and `redis` cache or session-style data may be lost during failover. This does not affect Harbor core functions such as project access, image push, or image pull, because these runtime data sets are rebuilt on demand after the secondary cluster is activated.
+The current design only covers disaster recovery for PostgreSQL and Object Storage. `jobservice`, `trivy`, and `redis` do not have cross-cluster data replication or hot-standby failover configured. As a result, `jobservice` job logs, `trivy` local cache/vulnerability database, and `redis` cache or session-style data may be lost during failover. This does not affect Harbor core functions such as project access, image push, or image pull.
 
 ## Environment
 
@@ -72,7 +72,7 @@ The solution leverages two independent data synchronization mechanisms:
 2. **Deploy Secondary Harbor**: Configure the secondary instance to connect to the secondary PostgreSQL database and use secondary object storage as the registry backend
 3. **Initialize Standby State**: Set replica count of all secondary Harbor components to 0 to prevent unnecessary background operations and resource consumption
 
-With this setup, the persistent DR scope only includes Harbor metadata in PostgreSQL and image artifacts in Object Storage. `jobservice`, `trivy`, and `redis` are treated as runtime components and are reinitialized after the secondary cluster is activated.
+With this setup, the persistent DR scope only includes Harbor metadata in PostgreSQL and image artifacts in Object Storage.
 
 #### Failover Procedure
 
@@ -320,8 +320,6 @@ spec:
 
 5. Test image push and pull to verify that Harbor is working properly.
 6. Switch external access addresses to Secondary Harbor.
-7. Check whether `jobservice`, `trivy`, and `redis` have rebuilt the required runtime state, for example by confirming that new jobs can be queued, the Trivy database is available or updated as expected, and Redis-backed cache connections are healthy.
-
 ### Disaster Recovery
 
 When the primary cluster recovers from a disaster, you can restore the original Primary Harbor to operate as a Secondary Harbor. Follow these steps to perform the recovery:
