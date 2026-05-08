@@ -36,12 +36,13 @@ For background on the operator's features, see:
 - A target namespace, a cluster name, and a `StorageClass`. Export them once and reuse them throughout the guide:
 
   ```bash
-  export NS=<your-namespace>          # e.g. mongodb
-  export CLUSTER=<your-cluster-name>  # e.g. my-mongo — used as the CR name; derives ${CLUSTER}-secrets, ${CLUSTER}-mongos, ${CLUSTER}-mongos-0
-  export STORAGE_CLASS=<your-sc>      # e.g. topolvm-ext4 — leave empty to use the cluster default
+  export NS=<your-namespace>             # e.g. mongodb
+  export CLUSTER=<your-cluster-name>     # e.g. my-mongo — used as the CR name; resources derive from it (e.g. <cluster>-secrets, <cluster>-mongos, <cluster>-mongos-0)
+  export STORAGE_CLASS=<your-sc>         # e.g. topolvm-ext4 — leave empty to use the cluster default
+  export PRIVATE_REGISTRY=<your-registry-with-project>   # e.g. registry.example.com:443/middleware — also used by Step 1 mirror commands
   ```
 
-  All `kubectl` examples below use `"$NS"`, `"$CLUSTER"`, and `"$STORAGE_CLASS"`. If you open a fresh shell, re-export them before resuming. The cluster-wide install in Step 4 introduces an additional `OPERATOR_NS` variable for users who want the operator and the cluster CR to live in different namespaces; by default it inherits `$NS`.
+  All `kubectl` examples below use `"$NS"`, `"$CLUSTER"`, `"$STORAGE_CLASS"`, and `"$PRIVATE_REGISTRY"`. If you open a fresh shell, re-export them before resuming. The cluster-wide install in Step 4 introduces an additional `OPERATOR_NS` variable for users who want the operator and the cluster CR to live in different namespaces; by default it inherits `$NS`.
 - A `StorageClass` with dynamic PVC provisioning. Mark it as the default storage class if you want to omit `storageClassName` from the cluster CR.
 - A private container registry that your cluster nodes can pull from, with credentials to push to it.
 - A workstation with internet access where you can pull from `docker.io` and push to your private registry. Either [`skopeo`](https://github.com/containers/skopeo) or `docker` will work.
@@ -280,7 +281,7 @@ EOF
 
 ### 5b. Create the cluster CR
 
-Pick the MongoDB image tag for the version you want. The heredoc below uses `$CLUSTER`, `$PRIVATE_REGISTRY`, and `$STORAGE_CLASS` from your shell — `$PRIVATE_REGISTRY` was set in Step 1; `$CLUSTER` and `$STORAGE_CLASS` were set in Prerequisites. If you did not create an image pull Secret in Step 2, remove the `imagePullSecrets` block.
+Pick the MongoDB image tag for the version you want. The heredoc below uses `$CLUSTER`, `$PRIVATE_REGISTRY`, and `$STORAGE_CLASS` exported in Prerequisites. If you did not create an image pull Secret in Step 2, remove the `imagePullSecrets` block. The `${STORAGE_CLASS:+...}` form drops both `storageClassName` lines automatically when `STORAGE_CLASS=""`, falling back to the cluster's default StorageClass.
 
 ```bash
 MONGO_IMAGE_TAG="8.0.19-7"           # or 7.0.30-16 / 6.0.27-21
@@ -308,7 +309,7 @@ spec:
     size: 1               # production: 3 or more
     volumeSpec:
       persistentVolumeClaim:
-        storageClassName: ${STORAGE_CLASS}
+        ${STORAGE_CLASS:+storageClassName: ${STORAGE_CLASS}}
         resources:
           requests:
             storage: 10Gi
@@ -318,7 +319,7 @@ spec:
       size: 1             # production: 3 or more
       volumeSpec:
         persistentVolumeClaim:
-          storageClassName: ${STORAGE_CLASS}
+          ${STORAGE_CLASS:+storageClassName: ${STORAGE_CLASS}}
           resources:
             requests:
               storage: 10Gi
@@ -329,8 +330,6 @@ spec:
     image: ${PRIVATE_REGISTRY}/percona/percona-backup-mongodb:2.12.0
 EOF
 ```
-
-If you left `STORAGE_CLASS` empty to fall back to the cluster default, omit both `storageClassName: ${STORAGE_CLASS}` lines from the heredoc.
 
 For the full Custom Resource field reference and all available options (TLS, monitoring, backup, etc.), see the [Percona Operator Custom Resource reference](https://docs.percona.com/percona-operator-for-mongodb/operator.html).
 
@@ -344,8 +343,10 @@ Wait for `STATUS=ready`. On healthy storage, the cluster reaches ready within ~6
 
 ```text
 NAME       ENDPOINT                                            STATUS   AGE
-my-mongo   my-mongo-mongos.<NS>.svc.cluster.local:27017        ready    55s
+my-mongo   my-mongo-mongos.mongodb.svc.cluster.local:27017     ready    55s
 ```
+
+The example above assumes `CLUSTER=my-mongo` and `NS=mongodb`; your output will substitute whatever you exported.
 
 ## Step 6: Access the Cluster
 
