@@ -6,7 +6,7 @@ products:
 ProductsVersion:
   - 4.x
 id: KB251000012
-sourceSHA: f505b4bf1ca71fbde03bd845afe8cdb0d48f456ac817c0e5fa7d4d3045a0bcbc
+sourceSHA: 8876d4fe526cd0f3e1c7915b269c9d47d0ea15829f5d91edc1c62264cb7b02a9
 ---
 
 # 如何为 Harbor 执行灾难恢复
@@ -15,7 +15,7 @@ sourceSHA: f505b4bf1ca71fbde03bd845afe8cdb0d48f456ac817c0e5fa7d4d3045a0bcbc
 
 本解决方案描述了如何基于对象存储和 PostgreSQL 灾难恢复能力构建 Harbor 灾难恢复解决方案。该解决方案主要关注数据灾难恢复处理，用户需要实现自己的 Harbor 访问地址切换机制。
 
-当前方案仅覆盖 PostgreSQL 和对象存储的容灾。`jobservice`、`trivy` 和 `redis` 未配置跨集群数据同步或热备切换：`jobservice` 的任务日志、`trivy` 的本地缓存/漏洞数据库以及 `redis` 中的缓存与会话类数据在切换后可能丢失，但 Harbor 的核心功能（如项目访问、镜像推送和拉取）不受影响。
+当前设计仅涵盖 PostgreSQL 和对象存储的灾难恢复。`jobservice`、`trivy` 和 `redis` 没有配置跨集群数据复制或热备份故障转移。因此，`jobservice` 的作业日志、`trivy` 的本地缓存/漏洞数据库以及 `redis` 的缓存或会话式数据在故障转移期间可能会丢失。这不会影响 Harbor 的核心功能，如项目访问、镜像推送或镜像拉取。
 
 ## 环境
 
@@ -26,16 +26,16 @@ Harbor CE Operator: >=v2.12.4
 | 术语                               | 描述                                                                                                                                                                   |
 | ---------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **主 Harbor**                       | 处理正常业务操作和用户请求的活动 Harbor 实例。该实例完全可用，所有组件均在运行。                                                                                      |
-| **备 Harbor**                       | 部署在不同集群/地域的待命 Harbor 实例，副本数为零。在灾难恢复场景中，该实例保持休眠状态，直到被激活。                                                                   |
-| **主 PostgreSQL**                  | 处理所有数据事务的活动 PostgreSQL 数据库集群，并作为数据复制到备数据库的源。                                                                                      |
-| **备 PostgreSQL**                  | 热备 PostgreSQL 数据库，接收来自主数据库的实时数据复制。在故障转移期间可以提升为主角色。                                                                             |
+| **备 Harbor**                       | 部署在不同集群/地域的待命 Harbor 实例，副本数为零。在灾难恢复场景中保持休眠状态，直到被激活。                                                                          |
+| **主 PostgreSQL**                  | 处理所有数据事务的活动 PostgreSQL 数据库集群，并作为数据复制到备份数据库的源。                                                                                      |
+| **备 PostgreSQL**                  | 热备份 PostgreSQL 数据库，接收来自主数据库的实时数据复制。在故障转移期间可以提升为主角色。                                                                          |
 | **主对象存储**                     | 存储所有 Harbor 注册表数据的活动 S3 兼容对象存储系统，并作为存储复制的源。                                                                                          |
-| **备对象存储**                     | 同步备份对象存储系统，接收来自主存储的数据复制。在灾难恢复期间确保数据可用性。                                                                                      |
-| **恢复点目标 (RPO)**              | 在时间上可接受的最大数据丢失量（例如，5 分钟，1 小时）。它定义了在灾难期间可以丢失多少数据，超过这个量就变得不可接受。                                               |
-| **恢复时间目标 (RTO)**            | 在时间上可接受的最大停机时间（例如，15 分钟，2 小时）。它定义了系统在灾难后必须多快恢复。                                                                            |
-| **故障转移**                       | 当主系统不可用或失败时，从主系统切换到备系统的过程。                                                                                                                |
-| **数据同步**                       | 将数据从主系统复制到备系统的持续过程，以保持一致性并启用灾难恢复。                                                                                                |
-| **冷备**                           | 与主系统未持续同步的待命系统，需要手动激活，并在灾难恢复期间可能会导致数据丢失。                                                                                      |
+| **备对象存储**                     | 与主存储同步的备份对象存储系统，接收来自主存储的数据复制。在灾难恢复期间确保数据可用性。                                                                              |
+| **恢复点目标 (RPO)**              | 在时间上可接受的最大数据丢失量（例如，5 分钟、1 小时）。它定义了在灾难期间可以丢失多少数据，直到变得不可接受。                                                        |
+| **恢复时间目标 (RTO)**            | 在时间上可接受的最大停机时间（例如，15 分钟、2 小时）。它定义了系统在灾难后必须多快恢复。                                                                            |
+| **故障转移**                       | 当主系统不可用或故障时，从主系统切换到备系统的过程。                                                                                                                |
+| **数据同步**                       | 从主系统到备系统持续复制数据的过程，以保持一致性并启用灾难恢复。                                                                                                    |
+| **冷备份**                         | 与主系统未持续同步的待命系统，需要手动激活，并在灾难恢复期间可能会有数据丢失。                                                                                        |
 
 ## 架构
 
@@ -43,29 +43,29 @@ Harbor CE Operator: >=v2.12.4
 
 ### 架构概述
 
-Harbor 灾难恢复解决方案实现了 Harbor 服务的 **冷备架构** 和 **热备数据库复制**。这种混合方法通过实时数据库同步和手动 Harbor 服务故障转移程序提供灾难恢复能力。该架构由两个部署在不同集群或地域的 Harbor 实例组成，备 Harbor 实例在灾难场景中保持休眠状态，数据库层保持持续同步。
+Harbor 灾难恢复解决方案实现了 Harbor 服务的 **冷备份架构** 和 **热备份数据库复制**。这种混合方法通过实时数据库同步和手动 Harbor 服务故障转移程序提供灾难恢复能力。该架构由两个部署在不同集群或地域的 Harbor 实例组成，备 Harbor 实例在灾难场景中保持休眠状态，数据库层保持持续同步。
 
 #### 核心组件
 
 - **主 Harbor**：处理正常业务操作和用户请求的活动实例
 - **备 Harbor**：副本数为零的待命实例，准备进行故障转移场景
 - **主 PostgreSQL**：处理所有数据事务的活动数据库
-- **备 PostgreSQL**：具有实时数据复制的热备数据库
+- **备 PostgreSQL**：具有实时数据复制的热备份数据库
 - **主对象存储**：用于注册表数据的活动 S3 兼容存储
-- **备对象存储**：具有数据复制的同步备份存储
+- **备对象存储**：与数据复制的同步备份存储
 
 #### 数据同步策略
 
-该解决方案利用两个独立的数据同步机制：
+该解决方案利用两种独立的数据同步机制：
 
 1. **数据库层**：PostgreSQL 流复制确保主数据库和备数据库之间的实时事务日志同步
 2. **存储层**：对象存储复制保持主存储和备存储系统之间的数据一致性
 
-#### 未纳入容灾同步的组件
+#### 不在 DR 同步范围内的组件
 
-- **jobservice**：未同步任务执行状态与历史任务日志。故障转移后，正在执行或尚未落库的任务状态可能丢失，但可重新触发任务，不影响 Harbor 对外服务。
-- **trivy**：未同步本地漏洞数据库和扫描缓存。故障转移后需要在备集群重新下载或重建相关数据，可能影响首次扫描时延，但不影响镜像推送和拉取。
-- **redis**：未同步缓存、会话和队列类临时数据。故障转移后这部分内存数据会丢失，但 Harbor 会在新主集群重新建立运行时状态。
+- **jobservice**：作业执行状态和历史作业日志未同步。故障转移后，正在进行的作业或未持久化的日志可能会丢失，但作业可以重新触发，Harbor 服务的可用性不受影响。
+- **trivy**：本地漏洞数据库和扫描缓存未同步。故障转移后，备集群必须重新下载或重建它们，这可能会影响第一次扫描的延迟，但不会影响镜像推送或拉取。
+- **redis**：缓存、会话和队列式瞬态数据未同步。此内存状态在故障转移后会丢失，但 Harbor 会在新的主集群上重建运行时状态。
 
 #### 灾难恢复配置
 
@@ -73,37 +73,37 @@ Harbor 灾难恢复解决方案实现了 Harbor 服务的 **冷备架构** 和 *
 2. **部署备 Harbor**：配置备实例以连接到备 PostgreSQL 数据库，并使用备对象存储作为注册表后端
 3. **初始化待命状态**：将所有备 Harbor 组件的副本数设置为 0，以防止不必要的后台操作和资源消耗
 
-在该配置下，Harbor 的持久化容灾范围仅包括 PostgreSQL 中的元数据和对象存储中的镜像制品。
+通过此设置，持久的 DR 范围仅包括 PostgreSQL 中的 Harbor 元数据和对象存储中的镜像工件。
 
 #### 故障转移程序
 
 当发生灾难时，以下步骤确保切换到备环境：
 
 1. **验证主故障**：确认所有主 Harbor 组件均不可用
-2. **提升数据库**：使用数据库故障转移程序将备 PostgreSQL 提升为主角色（由于热备，不会丢失数据）
+2. **提升数据库**：使用数据库故障转移程序将备 PostgreSQL 提升为主角色（由于热备份，不会丢失数据）
 3. **提升存储**：将备对象存储激活为主存储系统
 4. **激活 Harbor**：通过将副本数设置为大于 0 来扩展备 Harbor 组件
 5. **更新路由**：切换外部访问地址以指向备 Harbor 实例
 
-## 使用 `Alauda Build of Rook-Ceph` 和 `Alauda support for PostgreSQL` 设置 Harbor 灾难恢复
+## 使用 `Alauda Build of Rook-Ceph` 和 `Alauda 支持 PostgreSQL` 设置 Harbor 灾难恢复
 
 ### 先决条件
 
-1. 事先准备一个主集群和一个灾难恢复集群（或包含不同地域的集群）。
-2. 完成 `Alauda Build of Rook-Ceph` 和 `Alauda support for PostgreSQL` 的部署。
-3. 参考 `Alauda Build of Rook-Ceph`、`Alauda support for PostgreSQL` 和 [Harbor 实例部署指南](https://docs.alauda.io/alauda-build-of-harbor/2.12/install/03_harbor_deploy.html) 提前规划所需的系统资源。
+1. 提前准备一个主集群和一个灾难恢复集群（或包含不同地域的集群）。
+2. 完成 `Alauda Build of Rook-Ceph` 和 `Alauda 支持 PostgreSQL` 的部署。
+3. 参考 `Alauda Build of Rook-Ceph`、`Alauda 支持 PostgreSQL` 和 [Harbor 实例部署指南](https://docs.alauda.io/alauda-build-of-harbor/2.12/install/03_harbor_deploy.html) 提前规划所需的系统资源。
 
-### 使用 `Alauda support for PostgreSQL` 构建 PostgreSQL 灾难恢复集群
+### 使用 `Alauda 支持 PostgreSQL` 构建 PostgreSQL 灾难恢复集群
 
-参考 `PostgreSQL Hot Standby Cluster Configuration Guide` 使用 `Alauda support for PostgreSQL` 构建灾难恢复集群。
+参考 `PostgreSQL 热备份集群配置指南` 使用 `Alauda 支持 PostgreSQL` 构建灾难恢复集群。
 
 确保主 PostgreSQL 和备 PostgreSQL 在不同的集群（或不同的地域）中。
 
-您可以在 [Alauda Knowledge](https://cloud.alauda.io/knowledges#/) 上搜索 `PostgreSQL Hot Standby Cluster Configuration Guide` 以获取该文档。
+您可以在 [Alauda 知识](https://cloud.alauda.io/knowledges#/) 上搜索 `PostgreSQL 热备份集群配置指南` 以获取该文档。
 
 :::warning
 
-`PostgreSQL Hot Standby Cluster Configuration Guide` 是一份描述如何使用 `Alauda support for PostgreSQL` 构建灾难恢复集群的文档。请确保在使用此配置时与适当的 ACP 版本兼容。
+`PostgreSQL 热备份集群配置指南` 是一份描述如何使用 `Alauda 支持 PostgreSQL` 构建灾难恢复集群的文档。请确保在使用此配置时与适当的 ACP 版本兼容。
 
 :::
 
@@ -292,9 +292,9 @@ spec:
 
 ### 故障转移
 
-1. 首先确认所有主 Harbor 组件处于非工作状态，否则请先停止所有主 Harbor 组件。
+1. 首先确认所有主 Harbor 组件不在工作状态，否则请先停止所有主 Harbor 组件。
 
-2. 将备 PostgreSQL 提升为主 PostgreSQL。参考 `PostgreSQL Hot Standby Cluster Configuration Guide`，执行切换程序。
+2. 将备 PostgreSQL 提升为主 PostgreSQL。参考 `PostgreSQL 热备份集群配置指南`，执行切换程序。
 
 3. 将备对象存储提升为主对象存储。参考 [Alauda Build of Rook-Ceph 故障转移](https://docs.alauda.io/container_platform/4.1/storage/storagesystem_ceph/how_to/disaster_recovery/dr_object.html#procedures-1)，执行切换程序。
 
@@ -330,14 +330,14 @@ spec:
 当主集群从灾难中恢复时，您可以将原主 Harbor 恢复为备 Harbor。按照以下步骤执行恢复：
 
 1. 将所有 Harbor 组件的副本数设置为 0。
-2. 根据 `PostgreSQL Hot Standby Cluster Configuration Guide` 配置原主 PostgreSQL 作为备 PostgreSQL。
+2. 根据 `PostgreSQL 热备份集群配置指南` 配置原主 PostgreSQL 作为备 PostgreSQL。
 3. 将原主对象存储转换为备对象存储。
 
 ```bash
 # 从恢复的区域中，拉取当前主区域的最新域配置：
 radosgw-admin realm pull --url={url-to-master-zone-gateway} \
                           --access-key={access-key} --secret={secret}
-# 将恢复的区域设为主区域和默认区域：
+# 将恢复的区域设置为主区域和默认区域：
 radosgw-admin zone modify --rgw-realm=<realm-name> --rgw-zonegroup=<zone-group-name> --rgw-zone=<primary-zone-name> --master
 ```
 
@@ -350,7 +350,7 @@ radosgw-admin zone modify --rgw-realm=<realm-name> --rgw-zonegroup=<zone-group-n
 检查对象存储和 PostgreSQL 的同步状态，以确保灾难恢复成功。
 
 - 检查 Ceph 对象存储同步状态：[对象存储灾难恢复](https://docs.alauda.io/container_platform/4.1/storage/storagesystem_ceph/how_to/disaster_recovery/dr_object.html#check-ceph-object-storage-synchronization-status)
-- 检查 PostgreSQL 同步状态：参考 `PostgreSQL Hot Standby Cluster Configuration Guide` 的状态检查部分。
+- 检查 PostgreSQL 同步状态：参考 `PostgreSQL 热备份集群配置指南` 的状态检查部分。
 
 ### 恢复目标
 
@@ -358,58 +358,58 @@ radosgw-admin zone modify --rgw-realm=<realm-name> --rgw-zonegroup=<zone-group-n
 
 RPO 表示在灾难恢复场景中可接受的最大数据丢失量。在此 Harbor 灾难恢复解决方案中：
 
-- **数据库层**：由于 PostgreSQL 热备和流复制，数据丢失接近零
+- **数据库层**：由于 PostgreSQL 热备份和流复制，数据丢失接近零
 - **存储层**：由于同步对象存储复制，数据丢失接近零
-- **jobservice / trivy / redis**：这些组件未做跨集群数据同步，存在少量运行时数据丢失风险
-- **整体 RPO**：对于 Harbor 元数据和镜像制品接近零；对于任务日志、漏洞库缓存和 Redis 临时数据为非零
+- **jobservice / trivy / redis**：这些组件不在跨集群复制范围内，存在小但真实的运行时数据丢失风险
+- **整体 RPO**：对于 Harbor 元数据和镜像工件接近零；对于作业日志、漏洞数据库缓存和 Redis 瞬态数据为非零
 
 **影响 RPO 的因素：**
 
 - 主集群和备集群之间的网络延迟
-- 对象存储的同步复制和一致性模型
+- 对象存储同步复制和一致性模型
 - 数据库复制延迟和提交确认设置
 
 #### 恢复时间目标 (RTO)
 
-RTO 表示在灾难恢复期间可接受的最大停机时间。该解决方案提供：
+RTO 表示在灾难恢复期间可接受的最大停机时间。此解决方案提供：
 
 - **手动组件**：Harbor 服务激活和外部路由更新需要手动干预
-- **典型 RTO**：完整服务恢复需要 5-15 分钟
+- **典型 RTO**：完全服务恢复需要 5-15 分钟
 
-**RTO 分解：**
+**RTO 细分：**
 
 - 数据库故障转移：1-2 分钟（手动）
 - 存储故障转移：1-2 分钟（手动）
-- Harbor 服务激活：2-5 分钟（手动，冷备需要启动时间）
+- Harbor 服务激活：2-5 分钟（手动，冷备份需要启动时间）
 - 外部路由更新：1-5 分钟（手动，取决于 DNS 传播）
 
 ## 使用其他对象存储和 PostgreSQL 构建 Harbor 灾难恢复解决方案
 
-操作步骤与使用 `Alauda Build of Rook-Ceph` 和 `Alauda support for PostgreSQL` 构建 Harbor 灾难恢复解决方案类似。只需将对象存储和 PostgreSQL 替换为其他对象存储和 PostgreSQL 解决方案。
+操作步骤与使用 `Alauda Build of Rook-Ceph` 和 `Alauda 支持 PostgreSQL` 构建 Harbor 灾难恢复解决方案类似。只需将对象存储和 PostgreSQL 替换为其他对象存储和 PostgreSQL 解决方案。
 
 确保对象存储和 PostgreSQL 解决方案支持灾难恢复能力。
 
 ## 灾难恢复实例的自动启动/停止
 
-在主集群和备集群中部署控制程序以及一组脚本，以自动控制 Harbor 实例的启动和停止。
+在主集群和备集群中部署控制程序，以及一组脚本，以自动控制 Harbor 实例的启动和停止。
 
-该机制在发生灾难时启用备 Harbor 实例的自动激活。它通过用户定义的脚本支持自定义检查机制，并提供对 Harbor 依赖配置的控制。
+该机制支持在发生灾难时自动激活备 Harbor 实例。它通过用户定义的脚本支持自定义检查机制，并提供对 Harbor 依赖配置的控制。
 
 ```mermaid
 flowchart TD
   Start[监控程序] --> condition_check_script[执行 condition_check_script]
-  condition_check_script -->|"是 (脚本返回启动)"| StatusBeforeStart[启动前执行状态脚本]
-  StatusBeforeStart -->|"状态 != 启动"| start_script[执行启动脚本]
+  condition_check_script -->|"是 (脚本返回启动)"| StatusBeforeStart[启动前执行 status_script]
+  StatusBeforeStart -->|"状态 != 启动"| start_script[执行 start_script]
   StatusBeforeStart -->|"状态 == 启动"| End1[跳过启动]
-  condition_check_script -->|"否 (脚本返回停止)"| StatusBeforeStop[停止前执行状态脚本]
-  StatusBeforeStop -->|"状态 != 停止"| stop_script[执行停止脚本]
+  condition_check_script -->|"否 (脚本返回停止)"| StatusBeforeStop[停止前执行 status_script]
+  StatusBeforeStop -->|"状态 != 停止"| stop_script[执行 stop_script]
   StatusBeforeStop -->|"状态 == 停止"| End[跳过停止]
 ```
 
 ### 先决条件
 
 - 完成 Harbor 灾难恢复解决方案的主集群和备集群的设置。
-- 下载灾难恢复程序镜像并将其导入集群注册表。
+- 下载灾难恢复程序镜像并将其导入到集群注册表中。
 
   灾难恢复程序镜像适用于不同架构：
 
@@ -426,12 +426,12 @@ flowchart TD
 
   **将镜像导入到您的集群注册表：**
 
-  1. 根据集群的架构（AMD64 或 ARM64）下载相应的镜像归档。
+  1. 根据集群的架构（AMD64 或 ARM64）下载适当的镜像归档。
 
-  2. 加载镜像归档并将其导入到您的集群注册表：
+  2. 加载镜像归档并将其导入到您的集群注册表中：
 
      ```bash
-     # 从归档中加载镜像
+     # 从归档加载镜像
      docker load -i harbor-dr-amd-v2.13.0-g590be78.tgz  # 或者对于 ARM64 使用 harbor-dr-arm-v2.13.0-g590be78.tgz
 
      # 使用您的集群注册表地址标记镜像
@@ -442,7 +442,7 @@ flowchart TD
      docker push <REGISTRY_ADDRESS>/devops/harbor-disaster-recovery:v2.13.0-g590be78
      ```
 
-  3. 在部署 YAML 中更新镜像引用（见下文的部署部分），使用您的集群注册表地址替换 `build-harbor.alauda.cn/devops/harbor-disaster-recovery:v2.13.0-g590be78`。
+  3. 在部署 YAML 中更新镜像引用（请参见下面的部署部分），以使用您的集群注册表地址，而不是 `build-harbor.alauda.cn/devops/harbor-disaster-recovery:v2.13.0-g590be78`。
 
   :::info
   如果您使用的是需要身份验证的私有注册表，请确保您已使用 `docker login` 登录或在 Kubernetes 集群中配置了适当的镜像拉取秘密。
@@ -453,18 +453,18 @@ flowchart TD
 1. 准备配置文件 `config.yaml`：
 
    ```yaml
-   condition_check_script: /path/to/condition_check.sh # 条件检查脚本的路径。定期在 check_interval 间隔执行。返回 "start" 以触发 start_script 或 "stop" 以触发 stop_script。
+   condition_check_script: /path/to/condition_check.sh # 条件检查脚本的路径。定期在 check_interval 间隔执行。返回 "start" 以触发 start_script，或返回 "stop" 以触发 stop_script。
    start_script: /path/to/start.sh # 激活 Harbor 及其依赖项的脚本路径。执行提升 PostgreSQL 为主、激活对象存储和扩展 Harbor 组件等操作。
    stop_script: /path/to/stop.sh # 停止 Harbor 和依赖项的脚本路径（例如，缩减 Harbor 组件，配置依赖项为待命模式）。
    status_script: /path/to/status.sh # 检查系统状态的脚本路径。必须输出 "started"、"stopped" 或 "unknown"。
    check_interval: 30s # 条件检查脚本执行之间的间隔
    failure_threshold: 6 # 触发停止脚本所需的连续失败次数。防止因瞬时网络问题导致的误报。
-   script_timeout: 120s # 每个脚本的最大执行时间。超过此超时的脚本将被终止。
+   script_timeout: 120s # 每个脚本的最大执行时间。超出此超时的脚本将被终止。
    ```
 
 2. 创建相应的脚本文件：
 
-   - **condition_check.sh**：请根据您的实际故障转移决策过程自定义此脚本。该脚本应输出 `start` 如果集群节点应被激活，并输出 `stop` 如果应被停用。如果脚本执行失败，将不会调用任何脚本。以下是一个参考示例——简单的 DNS IP 检查（不建议在生产环境中使用）：
+   - **condition_check.sh**：请根据您的实际故障转移决策过程自定义此脚本。该脚本应输出 `start` 如果集群节点应被激活，并输出 `stop` 如果应被停用。如果脚本执行失败，将不会调用任何脚本。以下是一个参考示例——简单的 DNS IP 检查（不建议在生产中使用）：
 
      ```bash
      set -euo pipefail
@@ -494,12 +494,12 @@ flowchart TD
      HARBOR_NAME="${HARBOR_NAME:-harbor}"
      HARBOR_REPLICAS="${HARBOR_REPLICAS:-1}"
 
-     # 通过健康端点检查 Harbor 健康状态
-     # 如果可用则使用 HTTPS，内部集群通信回退为 HTTP
+     # 通过健康检查端点检查 Harbor 健康状态
+     # 如果可用则使用 HTTPS，内部集群通信时回退到 HTTP
      HARBOR_SVC="${HARBOR_NAME}-core.${HARBOR_NAMESPACE}.svc"
 
      set +e
-     # 使用适当的超时和错误处理检查健康端点
+     # 使用适当的超时和错误处理检查健康检查端点
      HTTP_CODE=$(curl -sf --max-time 10 --connect-timeout 5 \
        -o /dev/null -w "%{http_code}" \
        "http://${HARBOR_SVC}/api/v2.0/health" 2>/dev/null)
@@ -520,7 +520,7 @@ flowchart TD
      # 至少需要 MIN_PODS_REQUIRED 个运行中的 pod（core、portal、jobservice、registry、trivy）
      # 当服务没有端点（pod 未运行）时，curl 将失败，HTTP_CODE 将为空或 "000"
      if [ "$HTTP_CODE" = "200" ] && [ -n "$RUNNING_PODS" ] && [ "$RUNNING_PODS" -ge 5 ]; then
-       # Harbor 健康：HTTP 200 和足够的 pod 正在运行
+       # Harbor 是健康的：HTTP 200 和足够的 pod 正在运行
        echo "started"
      elif ([ -z "$HTTP_CODE" ] || [ "$HTTP_CODE" = "000" ] || [ "$HTTP_CODE" = "" ]) && \
           ([ -z "$RUNNING_PODS" ] || [ "$RUNNING_PODS" -eq 0 ]); then
@@ -579,12 +579,11 @@ flowchart TD
 
      #####################################
      # 在此处添加您的 S3/对象存储停止脚本。
-     # 此脚本应处理停止 Harbor 组件时
-     # 对对象存储的任何必要清理或配置更改。
+     # 此脚本应处理停止 Harbor 组件时的任何必要清理或配置更改。
      #####################################
      ```
 
-3. 将控制程序作为 Deployment 部署到 Harbor 命名空间。注意：这必须在主集群和备集群中都部署，参数根据目标集群进行调整：
+3. 将控制程序作为 Deployment 部署到 Harbor 命名空间中。注意：这必须在主集群和备集群中都部署，参数根据目标集群进行调整：
 
 ```yaml
 ---
@@ -625,13 +624,13 @@ data:
     failure_threshold: 3
     script_timeout: 120s
   check.sh: |
-    # 替换为您自己的脚本，参考前面的部分以满足脚本要求
+    # 替换为您自己的脚本，参考前面的部分以获取脚本要求
   start.sh: |
-    # 替换为您自己的脚本，参考前面的部分以满足脚本要求
+    # 替换为您自己的脚本，参考前面的部分以获取脚本要求
   status.sh: |
-    # 替换为您自己的脚本，参考前面的部分以满足脚本要求
+    # 替换为您自己的脚本，参考前面的部分以获取脚本要求
   stop.sh: |
-    # 替换为您自己的脚本，参考前面的部分以满足脚本要求
+    # 替换为您自己的脚本，参考前面的部分以获取脚本要求
 kind: ConfigMap
 metadata:
   name: disaster-recovery-config
@@ -660,7 +659,7 @@ spec:
         - -c
         - |
           exec /opt/bin/disaster-recovery -config /opt/config/config.yaml
-        image: <disaster-recovery image with monitoring sequence and test script tools> # 替换为您的灾难恢复镜像，包含监控序列和测试脚本工具
+        image: <disaster-recovery image with monitoring sequence and test script tools> # 替换为您的灾难恢复镜像，其中包含监控序列和测试脚本工具
         name: controller
         resources:
           limits:
@@ -685,7 +684,7 @@ spec:
         - -c
         - |
           cp /disaster-recovery /opt/bin/disaster-recovery && chmod +x /opt/bin/disaster-recovery
-        image: harbor-disaster-recovery:v2.13.0-g590be78 # 替换为导入到集群的镜像地址。
+        image: harbor-disaster-recovery:v2.13.0-g590be78 # 替换为导入到集群中的镜像地址。
         imagePullPolicy: Always
         name: copy-binary
         volumeMounts:
@@ -706,7 +705,7 @@ spec:
         name: config
 ```
 
-> **注意**：确保 Deployment 使用的 ServiceAccount 具有操作 Harbor 资源和您自定义脚本控制的任何其他资源（如数据库资源、对象存储配置等）的必要 RBAC 权限。控制程序需要权限修改 Harbor CRD 资源以启动和停止 Harbor 组件，以及自定义启动/停止脚本管理的任何资源的权限。以下是 Harbor 操作所需的权限：
+> **注意**：确保 Deployment 使用的 ServiceAccount 具有必要的 RBAC 权限，以便在目标命名空间中操作 Harbor 资源和任何其他由自定义脚本控制的资源（例如数据库资源、对象存储配置等）。控制程序需要权限修改 Harbor CRD 资源以启动和停止 Harbor 组件，以及自定义启动/停止脚本管理的任何资源的权限。以下是 Harbor 操作所需的权限：
 
 ```yaml
 apiVersion: rbac.authorization.k8s.io/v1
@@ -740,9 +739,9 @@ rules:
   - create
 ```
 
-### `Alauda support for PostgreSQL` 启动/停止脚本示例
+### `Alauda 支持 PostgreSQL` 启动/停止脚本示例
 
-在使用 `Alauda support for PostgreSQL` 解决方案与 `PostgreSQL Hot Standby Cluster Configuration Guide` 配置灾难恢复集群时，您需要在主 PostgreSQL 和备 PostgreSQL 集群中配置复制信息。这确保在自动故障转移期间，您只需修改 `clusterReplication.isReplica` 和 `numberOfInstances` 即可完成切换：
+在使用 `Alauda 支持 PostgreSQL` 解决方案与 `PostgreSQL 热备份集群配置指南` 配置灾难恢复集群时，您需要在主 PostgreSQL 和备 PostgreSQL 集群中配置复制信息。这确保在自动故障转移期间，您只需修改 `clusterReplication.isReplica` 和 `numberOfInstances` 即可完成切换：
 
 **主配置：**
 
@@ -750,13 +749,13 @@ rules:
 clusterReplication:
   enabled: true
   isReplica: false
-  peerHost: < Secondary cluster node IP >  # 备集群节点 IP
-  peerPort: < Secondary cluster NodePort >  # 备集群节点 NodePort
+  peerHost: < 备集群节点 IP >  # 备集群节点 IP
+  peerPort: < 备集群 NodePort >  # 备集群 NodePort
   replSvcType: NodePort
   bootstrapSecret: standby-bootstrap-secret
 ```
 
-`standby-bootstrap-secret` 应根据 `PostgreSQL Hot Standby Cluster Configuration Guide` 中的 `Standby Cluster Configuration` 部分进行配置，使用与备集群相同的值。
+`standby-bootstrap-secret` 应根据 `PostgreSQL 热备份集群配置指南` 中的 `待命集群配置` 部分进行配置，使用与备集群相同的值。
 
 **备配置：**
 
@@ -764,8 +763,8 @@ clusterReplication:
 clusterReplication:
   enabled: true
   isReplica: true
-  peerHost: < Primary cluster node IP >  # 主集群节点 IP
-  peerPort: < Primary cluster NodePort >            # 主集群节点 NodePort
+  peerHost: < 主集群节点 IP >  # 主集群节点 IP
+  peerPort: < 主集群 NodePort >            # 主集群 NodePort
   replSvcType: NodePort
   bootstrapSecret: standby-bootstrap-secret
 ```
@@ -806,7 +805,7 @@ rules:
 
 #### 启动脚本示例
 
-> 注意：以下是示例脚本。请勿直接在生产环境中使用。
+> 注意：以下是示例脚本。请勿直接在生产中使用。
 
 ```bash
 POSTGRES_NAMESPACE="${POSTGRES_NAMESPACE:-pg-namespace}"
@@ -816,7 +815,7 @@ kubectl -n "$POSTGRES_NAMESPACE" patch pg "$POSTGRES_CLUSTER" --type=merge -p '{
 
 #### 停止脚本示例
 
-> 注意：以下是示例脚本。请勿直接在生产环境中使用。
+> 注意：以下是示例脚本。请勿直接在生产中使用。
 
 ```bash
 POSTGRES_NAMESPACE="${POSTGRES_NAMESPACE:-pg-namespace}"
@@ -874,7 +873,7 @@ rules:
   - create
 ```
 
-- **启动脚本示例**：以下是示例脚本。请勿直接在生产环境中使用。根据 [对象存储灾难恢复](https://docs.alauda.io/container_platform/4.1/storage/storagesystem_ceph/how_to/disaster_recovery/dr_object.html) 中的说明自定义脚本。
+- **启动脚本示例**：以下是示例脚本。请勿直接在生产中使用。根据 [对象存储灾难恢复](https://docs.alauda.io/container_platform/4.1/storage/storagesystem_ceph/how_to/disaster_recovery/dr_object.html) 中的说明自定义脚本。
 
   ```bash
   REALM_NAME="${REALM_NAME:-realm}"
