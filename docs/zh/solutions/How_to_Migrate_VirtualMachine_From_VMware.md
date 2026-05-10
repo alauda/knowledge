@@ -216,6 +216,12 @@ EOF
 1. 在 VMware 中转到 **存储** 并选择虚拟机使用的数据存储。
 2. 在详细信息页面中找到 **UUID** 字段（例如，`68b175ce-3432506e-e94c-74867adff816`）。
 
+`spec.map` 是一个数组，每个元素描述一对「源数据存储 → 目标 StorageClass」的映射关系。要迁移的虚拟机所使用的**每一个** VMware 数据存储都必须在该数组中存在对应条目，否则计划校验阶段会报错。
+
+#### 单数据存储
+
+虚拟机的所有磁盘都位于同一个数据存储时，只需一条映射：
+
 ```bash
 export SC_NAME=topolvm
 export VMWARE_DATA_ID=<datastore-uuid>
@@ -241,6 +247,65 @@ spec:
       namespace: konveyor-forklift
 EOF
 ```
+
+#### 多数据存储
+
+如果 VMware 中存在多个数据存储，并且要迁移的虚拟机的磁盘分布在多个数据存储上（例如系统盘在 `datastore-A`、数据盘在 `datastore-B`），则需要在 `spec.map` 中为每个源数据存储分别添加一条映射条目：
+
+- 每个源数据存储（按 UUID/moRef 标识）在 `spec.map` 中**只能出现一次**。
+- 多个源数据存储既可以映射到**不同**的 StorageClass，也可以映射到**同一个** StorageClass。
+- 推荐在 `spec.map` 中覆盖虚拟机用到的全部数据存储；只列出部分会导致计划校验失败。
+
+下面的示例将两个 VMware 数据存储分别映射到不同的 StorageClass：
+
+```bash
+export VMWARE_DATA_ID_A=<datastore-a-uuid>
+export VMWARE_DATA_ID_B=<datastore-b-uuid>
+export SC_NAME_A=topolvm
+export SC_NAME_B=ceph-rbd
+
+kubectl apply -f - <<EOF
+apiVersion: forklift.konveyor.io/v1beta1
+kind: StorageMap
+metadata:
+  name: vmware-storagemap
+  namespace: konveyor-forklift
+spec:
+  map:
+    - source:
+        id: $VMWARE_DATA_ID_A
+      destination:
+        storageClass: $SC_NAME_A
+    - source:
+        id: $VMWARE_DATA_ID_B
+      destination:
+        storageClass: $SC_NAME_B
+  provider:
+    source:
+      name: vmware
+      namespace: konveyor-forklift
+    destination:
+      name: host
+      namespace: konveyor-forklift
+EOF
+```
+
+如果希望将多个数据存储统一迁移到同一个目标 StorageClass，把每条映射条目的 `destination.storageClass` 设置成相同的值即可：
+
+```yaml
+spec:
+  map:
+    - source:
+        id: <datastore-a-uuid>
+      destination:
+        storageClass: topolvm
+    - source:
+        id: <datastore-b-uuid>
+      destination:
+        storageClass: topolvm
+```
+
+要确认虚拟机的磁盘分布在哪些数据存储上，可以在 vCenter 中打开虚拟机 → **编辑设置**，查看每块虚拟磁盘所在的数据存储；或通过 Forklift 的 inventory API 查询该虚拟机的 `disks[*].datastore.id` 字段。
 
 ### 8. 创建迁移计划
 

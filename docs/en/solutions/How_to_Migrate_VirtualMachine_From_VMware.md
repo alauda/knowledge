@@ -215,6 +215,12 @@ To find the Datastore UUID:
 1. Go to **Storage** in VMware and select the datastore used by the VM.
 2. Locate the **UUID** field in the details page (e.g., `68b175ce-3432506e-e94c-74867adff816`).
 
+`spec.map` is an array; each entry describes one *source datastore → destination StorageClass* mapping. **Every** VMware datastore that holds a disk of a VM you intend to migrate must have a corresponding entry, otherwise the Plan validation phase will fail.
+
+#### Single Datastore
+
+When all VM disks live on the same datastore, a single entry is enough:
+
 ```bash
 export SC_NAME=topolvm
 export VMWARE_DATA_ID=<datastore-uuid>
@@ -240,6 +246,65 @@ spec:
       namespace: konveyor-forklift
 EOF
 ```
+
+#### Multiple Datastores
+
+If the source VMware environment exposes multiple datastores and the VM you want to migrate has disks spread across several of them (for example, the OS disk on `datastore-A` and a data disk on `datastore-B`), add one entry per source datastore to `spec.map`:
+
+- Each source datastore (identified by its UUID/moRef) must appear **only once** in `spec.map`.
+- Multiple source datastores can map to **different** StorageClasses, or all of them can map to the **same** StorageClass.
+- It is recommended to cover **every** datastore used by the VM in `spec.map`; listing only a subset will fail Plan validation.
+
+The following example maps two VMware datastores to two different StorageClasses:
+
+```bash
+export VMWARE_DATA_ID_A=<datastore-a-uuid>
+export VMWARE_DATA_ID_B=<datastore-b-uuid>
+export SC_NAME_A=topolvm
+export SC_NAME_B=ceph-rbd
+
+kubectl apply -f - <<EOF
+apiVersion: forklift.konveyor.io/v1beta1
+kind: StorageMap
+metadata:
+  name: vmware-storagemap
+  namespace: konveyor-forklift
+spec:
+  map:
+    - source:
+        id: $VMWARE_DATA_ID_A
+      destination:
+        storageClass: $SC_NAME_A
+    - source:
+        id: $VMWARE_DATA_ID_B
+      destination:
+        storageClass: $SC_NAME_B
+  provider:
+    source:
+      name: vmware
+      namespace: konveyor-forklift
+    destination:
+      name: host
+      namespace: konveyor-forklift
+EOF
+```
+
+To consolidate disks from multiple source datastores into a single target StorageClass, set the same `destination.storageClass` value on each entry:
+
+```yaml
+spec:
+  map:
+    - source:
+        id: <datastore-a-uuid>
+      destination:
+        storageClass: topolvm
+    - source:
+        id: <datastore-b-uuid>
+      destination:
+        storageClass: topolvm
+```
+
+To find out which datastores a VM's disks are placed on, open the VM in vCenter → **Edit Settings** and check the datastore of each virtual disk, or query the VM's `disks[*].datastore.id` field through the Forklift inventory API.
 
 ### 8. Create Migration Plan
 
