@@ -4,7 +4,7 @@ kind:
 products:
   - Alauda Container Platform
 ProductsVersion:
-  - 4.2.x
+  - 4.2.x,4.3.x
 id: KB260100011
 ---
 
@@ -20,7 +20,7 @@ Forklift supports multiple source platforms including VMware, OpenShift Virtuali
 
 Alauda Container Platform: >= 4.2.0
 
-Forklift Version: >= v4.2.1 (get latest from cloud.alauda.io)
+Alauda Build of Forklift Operator Version: >= v4.2.1 (get latest from cloud.alauda.io)
 
 ESXi Version: >= 6.7.0
 
@@ -58,11 +58,11 @@ The migration process is divided into the following steps:
 6.  Execute the Migration Plan
 7.  Post-Migration Configuration
 
-### 1. Upload Forklift Operator Using Violet
+### 1. Upload Alauda Build of Forklift Operator Using Violet
 
 Download the `violet` tool from [cloud.alauda.io](https://cloud.alauda.io).
 
-Use the `violet` tool to upload the Forklift operator artifact to the platform.
+Use the `violet` tool to upload the Alauda Build of Forklift Operator artifact to the platform.
 
 ```bash
 export PLATFORM_URL=https://<platform-address>/
@@ -78,14 +78,14 @@ violet push <forklift-operator-package-name> \
 ### 2. Deploy the Operator
 
 1. Navigate to **Administrator → Marketplace → OperatorHub**.
-2. Locate **forklift-operator**.
+2. Locate **Alauda Build of Forklift Operator**.
 3. Click **Deploy**.
 
 ### 3. Create ForkliftController Instance
 
 Create a `ForkliftController` resource to initialize the system.
 
-1. Navigate to **Deployed Operators → Resource Instances** under the Forklift Operator.
+1. Navigate to **Deployed Operators → Resource Instances** under the Alauda Build of Forklift Operator.
 2. Create the `ForkliftController`.
 
 Verify that all pods are running:
