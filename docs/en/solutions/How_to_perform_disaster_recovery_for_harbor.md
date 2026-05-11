@@ -14,6 +14,8 @@ id: KB251000012
 
 This solution describes how to build a Harbor disaster recovery solution based on Object Storage and PostgreSQL disaster recovery capabilities. The solution primarily focuses on data disaster recovery processing, and users need to implement their own Harbor access address switching mechanism.
 
+The current design only covers disaster recovery for PostgreSQL and Object Storage. `jobservice`, `trivy`, and `redis` do not have cross-cluster data replication or hot-standby failover configured. As a result, `jobservice` job logs, `trivy` local cache/vulnerability database, and `redis` cache or session-style data may be lost during failover. This does not affect Harbor core functions such as project access, image push, or image pull.
+
 ## Environment
 
 Harbor CE Operator: >=v2.12.4
@@ -58,11 +60,19 @@ The solution leverages two independent data synchronization mechanisms:
 1. **Database Layer**: PostgreSQL streaming replication ensures real-time transaction log synchronization between primary and secondary databases
 2. **Storage Layer**: Object storage replication maintains data consistency across primary and secondary storage systems
 
+#### Components Outside the DR Sync Scope
+
+- **jobservice**: Job execution state and historical job logs are not synchronized. After failover, in-flight jobs or logs that were not persisted elsewhere may be lost, but jobs can be retriggered and Harbor service availability is not affected.
+- **trivy**: The local vulnerability database and scan cache are not synchronized. After failover, the secondary cluster must download or rebuild them again, which may affect the latency of the first scan but does not affect image push or pull.
+- **redis**: Cache, session, and queue-like transient data are not synchronized. This in-memory state is lost after failover, but Harbor rebuilds the runtime state on the new primary cluster.
+
 #### Disaster Recovery Configuration
 
 1. **Deploy Primary Harbor**: Configure the primary instance to connect to the primary PostgreSQL database and use primary object storage as the registry backend
 2. **Deploy Secondary Harbor**: Configure the secondary instance to connect to the secondary PostgreSQL database and use secondary object storage as the registry backend
 3. **Initialize Standby State**: Set replica count of all secondary Harbor components to 0 to prevent unnecessary background operations and resource consumption
+
+With this setup, the persistent DR scope only includes Harbor metadata in PostgreSQL and image artifacts in Object Storage.
 
 #### Failover Procedure
 
@@ -310,7 +320,6 @@ spec:
 
 5. Test image push and pull to verify that Harbor is working properly.
 6. Switch external access addresses to Secondary Harbor.
-
 ### Disaster Recovery
 
 When the primary cluster recovers from a disaster, you can restore the original Primary Harbor to operate as a Secondary Harbor. Follow these steps to perform the recovery:
@@ -346,7 +355,8 @@ The RPO represents the maximum acceptable data loss during a disaster recovery s
 
 - **Database Layer**: Near-zero data loss due to PostgreSQL hot standby with streaming replication
 - **Storage Layer**: Near-zero data loss due to synchronous object storage replication
-- **Overall RPO**: Near-zero data loss due to synchronous replication of both database and object storage layers
+- **jobservice / trivy / redis**: These components are outside the cross-cluster replication scope and have a small but real runtime data loss risk
+- **Overall RPO**: Near-zero for Harbor metadata and image artifacts; non-zero for job logs, vulnerability database cache, and Redis transient data
 
 **Factors affecting RPO:**
 
