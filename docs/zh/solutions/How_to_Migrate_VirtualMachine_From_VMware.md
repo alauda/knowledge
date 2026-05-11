@@ -4,9 +4,9 @@ kind:
 products:
   - Alauda Container Platform
 ProductsVersion:
-  - 4.2.x,4.3.x
+  - '4.2.x,4.3.x'
 id: KB260100011
-sourceSHA: 490676927e8b11f7cd35766fc4f048a1853604d73824b0d4964c3c17085ae7f6
+sourceSHA: caa4f197af8de2ff310a74ed515708c09591a9630cc089d291998367432c128f
 ---
 
 # 将 VMware 虚拟机迁移到 Alauda 容器平台虚拟化
@@ -29,17 +29,17 @@ ESXi 版本：>= 6.7.0
 
 - **Alauda 容器平台环境**：一个可用的启用虚拟化的 ACP 集群。
 - **Operator 包**：必须从 Alauda 云下载 Alauda Build of Forklift Operator。
-- **网络插件**：必须安装 Multus（*平台管理 → 集群管理 → 集群插件 → 安装 Multus*）。
+- **网络插件**：必须安装 Multus (*平台管理 → 集群管理 → 集群插件 → 安装 Multus*)。
 - **VMware 环境**：
   - ESXi 主机名必须可解析（通过 DNS 或 CoreDNS 覆盖）。
   - ESXi 主机上必须启用 SSH 服务。
   - 客户端虚拟机中必须安装 VMware Tools。
-  - 网络连接：VMware 侧的 TCP 端口 **443** 和 **902** 必须开放，以允许 KubeVirt（ACP 集群节点）访问。端口 443 用于 vCenter/ESXi API（SDK，NBDSSL 磁盘传输），端口 902 用于 NBD 磁盘传输到 ESXi。
+  - 网络连接：VMware 侧的 TCP 端口 **443** 和 **902** 必须开放，以允许来自 KubeVirt（ACP 集群节点）的访问。端口 443 用于 vCenter/ESXi API（SDK，NBDSSL 磁盘传输），端口 902 用于 NBD 磁盘传输到 ESXi。
 - **机制说明**：Forklift 使用 ESXi 主机名构建迁移 Pod，以构造 `V2V_libvirtURL`，并通过 `esx://` 通过 SSH 连接以检索磁盘映像。
 
 ## 术语
 
-在继续之前，请了解迁移过程中使用的以下关键概念：
+在继续之前，请理解迁移过程中使用的以下关键概念：
 
 - **提供者**：表示源或目标虚拟化平台（例如，`vmware`、`ocp`、`rhv`、`openstack`、`acp`）。为当前 ACP 集群自动创建一个名为 **host** 的默认目标提供者。
 - **StorageMap**：将源环境中使用的存储类映射到目标 ACP 集群中的存储类。
@@ -86,10 +86,10 @@ violet push <forklift-operator-package-name> \
 
 创建一个 `ForkliftController` 资源以初始化系统。
 
-1. 导航到 Alauda Build of Forklift Operator 下的 **已部署的 Operators → 资源实例**。
+1. 导航到 Alauda Build of Forklift Operator 下的 **已部署的 Operator → 资源实例**。
 2. 创建 `ForkliftController`。
 
-验证所有 Pod 是否正在运行：
+验证所有 Pod 是否在运行：
 
 ```bash
 kubectl get pod -n konveyor-forklift
@@ -103,7 +103,7 @@ kubectl get pod -n konveyor-forklift
 - `forklift-validation`
 - `forklift-volume-populator-controller`
 
-*注意：将自动创建一个名为 **host** 的提供者，以表示当前 ACP 集群，专门作为目标。*
+*注意：将自动创建一个名为 **host** 的提供者，以表示当前的 ACP 集群，仅作为目标。*
 
 ### 4. 准备 VDDK 初始化映像
 
@@ -130,7 +130,7 @@ VMware 虚拟磁盘开发工具包 (VDDK) 是磁盘传输所需的。
 
 ### 5. 添加 VMware 提供者
 
-创建一个包含 VMware 凭据的秘密并注册提供者。
+创建一个包含 VMware 凭据的密钥并注册提供者。
 VMware 的 sdkEndpoint 定义了工具如何连接到源或目标环境，`vcenter` 通过 vCenter 连接以管理多个主机，而 `esxi` 直接连接到单个 ESXi 主机。
 
 ```bash
@@ -140,7 +140,7 @@ export VMWARE_PASSWORD=<vmware-password>
 export VDDKIMAGE=registry.example.com/kubev2v/vddk:8.0
 export SDK_ENDPOINT='esxi'
 
-# 创建秘密
+# 创建密钥
 kubectl -n konveyor-forklift create secret generic vmware \
   --from-literal=url=$VMWARE_URL \
   --from-literal=user=$VMWARE_USER \
@@ -180,7 +180,7 @@ EOF
 
 1. 在 VMware 中打开虚拟机 → **编辑设置** → **网络适配器**。
 2. 点击连接的网络。
-3. 观察浏览器 URL（例如，`.../portgroups/HaNetwork-data`）。ID 是最后一个段（例如，`HaNetwork-data`）。
+3. 观察浏览器 URL（例如，`.../portgroups/HaNetwork-data`）。ID 是最后一段（例如，`HaNetwork-data`）。
 
 ```bash
 export VMWARE_NET=HaNetwork-data
@@ -209,16 +209,16 @@ EOF
 
 ### 7. 创建 StorageMap
 
-将源数据存储映射到目标存储类。
+将源数据存储映射到目标 StorageClass。
 
 要查找数据存储 UUID：
 
 1. 在 VMware 中转到 **存储** 并选择虚拟机使用的数据存储。
 2. 在详细信息页面中找到 **UUID** 字段（例如，`68b175ce-3432506e-e94c-74867adff816`）。
 
-`spec.map` 是一个数组；每个条目描述一个 *源数据存储 → 目标存储类* 映射。**每个** 存储虚拟机磁盘的 VMware 数据存储必须有一个对应的条目，否则计划验证阶段将失败。
+`spec.map` 是一个数组；每个条目描述一个 *源数据存储 → 目标 StorageClass* 映射。**每个** 包含您打算迁移的虚拟机磁盘的数据存储必须有一个对应的条目，否则计划验证阶段将失败。
 
-#### 单一数据存储
+#### 单个数据存储
 
 当所有虚拟机磁盘位于同一数据存储时，一个条目就足够了：
 
@@ -250,13 +250,13 @@ EOF
 
 #### 多个数据存储
 
-如果源 VMware 环境暴露多个数据存储，并且您要迁移的虚拟机的磁盘分布在多个数据存储上（例如，操作系统磁盘在 `datastore-A` 上，数据磁盘在 `datastore-B` 上），则在 `spec.map` 中为每个源数据存储添加一个条目：
+如果源 VMware 环境暴露多个数据存储，并且您要迁移的虚拟机的磁盘分布在其中多个数据存储上（例如，操作系统磁盘在 `datastore-A` 上，数据磁盘在 `datastore-B` 上），则为每个源数据存储在 `spec.map` 中添加一个条目：
 
 - 每个源数据存储（通过其 UUID/moRef 识别）必须在 `spec.map` 中 **仅出现一次**。
-- 多个源数据存储可以映射到 **不同** 的存储类，或者它们都可以映射到 **相同** 的存储类。
+- 多个源数据存储可以映射到 **不同** 的 StorageClasses，或者它们都可以映射到 **相同** 的 StorageClass。
 - 建议在 `spec.map` 中覆盖 **每个** 虚拟机使用的数据存储；仅列出子集将导致计划验证失败。
 
-以下示例将两个 VMware 数据存储映射到两个不同的存储类：
+以下示例将两个 VMware 数据存储映射到两个不同的 StorageClasses：
 
 ```bash
 export VMWARE_DATA_ID_A=<datastore-a-uuid>
@@ -290,7 +290,7 @@ spec:
 EOF
 ```
 
-要将来自多个源数据存储的磁盘合并到单个目标存储类中，请在每个条目上设置相同的 `destination.storageClass` 值：
+要将来自多个源数据存储的磁盘合并到单个目标 StorageClass 中，请在每个条目上设置相同的 `destination.storageClass` 值：
 
 ```yaml
 spec:
@@ -347,7 +347,7 @@ spec:
 EOF
 ```
 
-在继续之前，请等待计划状态为 `READY=True`。
+在继续之前，等待计划状态为 `READY=True`。
 
 ### 9. 创建迁移
 
@@ -369,7 +369,7 @@ EOF
 
 **执行切换（用于温迁移）：**
 
-对于温迁移，增量快照每小时运行。当准备切换到目标虚拟机时，设置特定的切换时间戳。系统将在预定时间自动关闭源虚拟机，将最终快照同步到 ACP，然后启动目标虚拟机。
+对于温迁移，增量快照每小时运行一次。当准备切换到目标虚拟机时，设置特定的切换时间戳。系统将在预定时间自动关闭源虚拟机，将最终快照同步到 ACP，然后启动目标虚拟机。
 
 ```bash
 kubectl patch migration example-migration -n konveyor-forklift \
@@ -381,7 +381,7 @@ kubectl patch migration example-migration -n konveyor-forklift \
 
 ### 10. 迁移后配置（添加磁盘标签）
 
-迁移后，标记 PVC 以确保它们在 ACP UI 中正确关联到虚拟机并得到妥善管理。
+迁移后，给 PVC 打标签，以确保它们在 ACP UI 中正确关联到虚拟机并得到妥善管理。
 
 ```bash
 export VM_PVC=<pvc-name>
@@ -390,4 +390,4 @@ kubectl label pvc -n $TARGET_NS $VM_PVC vm.cpaas.io/used-by=$VM_NAME
 kubectl label pvc -n $TARGET_NS $VM_PVC vm.cpaas.io/reclaim-policy=Delete
 ```
 
-一旦标记，虚拟磁盘将在 ACP 的虚拟机详细信息页面中可见。
+一旦打上标签，虚拟磁盘将在 ACP 的虚拟机详细信息页面中可见。
