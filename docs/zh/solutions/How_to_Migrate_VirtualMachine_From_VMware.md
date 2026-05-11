@@ -4,7 +4,7 @@ kind:
 products:
   - Alauda Container Platform
 ProductsVersion:
-  - 4.2.x
+  - 4.2.x,4.3.x
 id: KB260100011
 sourceSHA: 5475b2fa63cd603660007fb15debd934d52bcb854a295cbf51702e4dd190ddaf
 ---
@@ -21,7 +21,7 @@ Forklift 支持多个源平台，包括 VMware、OpenShift 虚拟化 (OCP)、Red
 
 Alauda 容器平台：>= 4.2.0
 
-Forklift 版本：>= v4.2.1（从 cloud.alauda.io 获取最新版本）
+Alauda Build of Forklift Operator 版本：>= v4.2.1（从 cloud.alauda.io 获取最新版本）
 
 ESXi 版本：>= 6.7.0
 
@@ -59,11 +59,11 @@ ESXi 版本：>= 6.7.0
 6. 执行迁移计划
 7. 迁移后配置
 
-### 1. 使用 Violet 上传 Forklift Operator
+### 1. 使用 Violet 上传 Alauda Build of Forklift Operator
 
 从 [cloud.alauda.io](https://cloud.alauda.io) 下载 `violet` 工具。
 
-使用 `violet` 工具将 Forklift operator 工件上传到平台。
+使用 `violet` 工具将 Alauda Build of Forklift Operator 工件上传到平台。
 
 ```bash
 export PLATFORM_URL=https://<platform-address>/
@@ -79,14 +79,14 @@ violet push <forklift-operator-package-name> \
 ### 2. 部署 Operator
 
 1. 导航到 **管理员 → Marketplace → OperatorHub**。
-2. 找到 **forklift-operator**。
+2. 找到 **Alauda Build of Forklift Operator**。
 3. 点击 **部署**。
 
 ### 3. 创建 ForkliftController 实例
 
 创建一个 `ForkliftController` 资源以初始化系统。
 
-1. 在 Forklift Operator 下导航到 **已部署的 Operator → 资源实例**。
+1. 在 Alauda Build of Forklift Operator 下导航到 **已部署的 Operator → 资源实例**。
 2. 创建 `ForkliftController`。
 
 验证所有 Pod 是否正在运行：
