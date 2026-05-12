@@ -18,6 +18,7 @@ The approach uses:
 - NodePort Services for each NameServer
 - NodePort Services for each broker pod
 - broker listener port changes so external clients can reach the correct broker endpoints
+- broker-side external address advertisement so NameServer returns reachable broker endpoints to outside clients
 
 ## Create Shared Broker Configuration
 
@@ -183,9 +184,14 @@ Repeat the pattern for the remaining pods, for example:
 - `broker-1-master` -> `30913`
 - `broker-1-replica-1` -> `30914`
 
-## Update Broker Listener Ports
+## Update Broker Listener Ports and Advertised Address
 
-After creating the Services, update each broker StatefulSet so the broker listens on the same port as the Service `NodePort`.
+After creating the Services, update each broker StatefulSet so the broker both:
+
+- listens on the same port as the Service `NodePort`
+- advertises a reachable external node IP or hostname instead of an in-cluster-only address
+
+Changing the port alone is not enough. RocketMQ clients first contact NameServer and then connect to the broker addresses returned by NameServer metadata. If brokers still advertise pod IPs or other cluster-internal addresses, external clients will still fail.
 
 For example:
 
@@ -193,6 +199,8 @@ For example:
 - `broker-0-replica-1` -> `LISTEN_PORT=30912`
 - `broker-1-master` -> `LISTEN_PORT=30913`
 - `broker-1-replica-1` -> `LISTEN_PORT=30914`
+
+Also set the broker's externally advertised IP or hostname to the node address that clients can actually reach. The exact field or environment variable name depends on the RocketMQ operator and image version in use, so verify it against the workload generated in your cluster before rollout.
 
 If a port is already in use, choose a different port, but keep `port`, `targetPort`, and `nodePort` aligned for that broker.
 

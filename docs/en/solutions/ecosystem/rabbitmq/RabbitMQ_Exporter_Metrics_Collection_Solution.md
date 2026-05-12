@@ -188,6 +188,9 @@ kind: ServiceMonitor
 metadata:
   name: <exporter-name>
   namespace: <namespace>
+  labels:
+    app.kubernetes.io/name: <exporter-name>
+    prometheus: kube-prometheus
 spec:
   selector:
     matchLabels:
@@ -198,6 +201,12 @@ spec:
       interval: 60s
       scrapeTimeout: 30s
 ```
+
+Notes:
+
+- `ServiceMonitor.metadata.labels` must match the Prometheus instance `serviceMonitorSelector`.
+- If your platform Prometheus uses a different selector, adjust the labels accordingly, for example `release: kube-prometheus`.
+- `endpoints[].port` must match the Service port name, which is `metrics`.
 
 ## Verification
 

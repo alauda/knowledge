@@ -55,7 +55,7 @@ metadata:
   name: console
   namespace: dba-demo
 spec:
-  nameServers: demo-nameserver-server-0.dba-demo.svc.cluster.local:9876;demo-nameserver-nodes.dba-demo.svc.cluster.local:9876
+  nameServers: demo-nameserver-server-0.demo-nameserver-nodes.dba-demo.svc.cluster.local:9876;demo-nameserver-server-1.demo-nameserver-nodes.dba-demo.svc.cluster.local:9876
   numberOfInstances: 1
   resources:
     limits:
@@ -105,3 +105,4 @@ http://<node-ip>:<nodeport>
 
 - Make sure the console namespace and the target RocketMQ namespace are aligned unless your environment explicitly supports cross-namespace access.
 - If multiple NameServers are used, separate them with semicolons.
+- When using pod-level NameServer addresses, use the full StatefulSet DNS name, which typically includes the headless service segment: `<pod>.<headless-service>.<namespace>.svc.cluster.local`.
