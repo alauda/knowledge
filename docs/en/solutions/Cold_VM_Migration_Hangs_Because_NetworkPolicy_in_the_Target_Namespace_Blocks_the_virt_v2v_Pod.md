@@ -5,6 +5,7 @@ products:
    - Alauda Container Platform
 ProductsVersion:
    - 4.1.0,4.2.x
+id: KB260500059
 ---
 
 # Cold VM Migration Hangs Because NetworkPolicy in the Target Namespace Blocks the virt-v2v Pod
