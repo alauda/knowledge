@@ -50,8 +50,13 @@ Prepare the following items before starting:
 | S3 access key | Access key for the bucket | `<s3-access-key>` |
 | S3 secret key | Secret key for the bucket | `<s3-secret-key>` |
 | S3 credential Secret name | Kubernetes Secret that stores S3 credentials | `<s3-credential-secret-name>` |
+| Backup Job name | Kubernetes Job used to create a backup | `<backup-job-name>` |
+| Backup CronJob name | Kubernetes CronJob used for scheduled backups | `<backup-cronjob-name>` |
+| Restore Job name | Kubernetes Job used to restore a backup | `<restore-job-name>` |
 
-Set local variables for the commands in this document.
+Set local variables for the commands in this document. If these variables are already exported in your shell, the manifest templates below can be rendered directly with `envsubst`.
+
+Use explicit variable lists with `envsubst`. This prevents runtime variables inside Job scripts, such as `$BACKUP_NAME`, `$COMMAND`, and `$STATUS`, from being replaced on your workstation.
 
 ```bash
 export NAMESPACE="<namespace>"
@@ -67,6 +72,9 @@ export S3_BUCKET="<s3-bucket>"
 export S3_ACCESS_KEY="<s3-access-key>"
 export S3_SECRET_KEY="<s3-secret-key>"
 export S3_SECRET_NAME="<s3-credential-secret-name>"
+export BACKUP_JOB_NAME="<backup-job-name>"
+export BACKUP_CRONJOB_NAME="<backup-cronjob-name>"
+export RESTORE_JOB_NAME="<restore-job-name>"
 ```
 
 Create the S3 bucket before running the backup workflow.
@@ -88,20 +96,18 @@ kubectl -n "$NAMESPACE" create secret generic "$S3_SECRET_NAME" \
 
 ### 4. Deploy ClickHouse with a Backup Sidecar
 
-Create `clickhouse-source.yaml`.
-
-Replace all placeholder values, including `<namespace>`, `<source-clickhouseinstallation-name>`, `<clickhouse-cluster-name>`, `<s3-endpoint>`, `<s3-bucket>`, and `<s3-credential-secret-name>`, with values from your environment.
+Create `clickhouse-source.yaml.tmpl`. The template uses the environment variables defined in the prerequisites section and can be rendered directly with `envsubst`.
 
 ```yaml
 apiVersion: clickhouse.altinity.com/v1
 kind: ClickHouseInstallation
 metadata:
-  name: <source-clickhouseinstallation-name>
-  namespace: <namespace>
+  name: ${SOURCE_CHI}
+  namespace: ${NAMESPACE}
 spec:
   configuration:
     clusters:
-      - name: <clickhouse-cluster-name>
+      - name: ${CLUSTER_NAME}
         layout:
           shardsCount: 1
           replicasCount: 1
@@ -137,20 +143,20 @@ spec:
                 - name: S3_ACL
                   value: private
                 - name: S3_ENDPOINT
-                  value: <s3-endpoint>
+                  value: ${S3_ENDPOINT}
                 - name: S3_BUCKET
-                  value: <s3-bucket>
+                  value: ${S3_BUCKET}
                 - name: S3_PATH
                   value: backup/shard-{shard}
                 - name: S3_ACCESS_KEY
                   valueFrom:
                     secretKeyRef:
-                      name: <s3-credential-secret-name>
+                      name: ${S3_SECRET_NAME}
                       key: access-key
                 - name: S3_SECRET_KEY
                   valueFrom:
                     secretKeyRef:
-                      name: <s3-credential-secret-name>
+                      name: ${S3_SECRET_NAME}
                       key: secret-key
                 - name: S3_FORCE_PATH_STYLE
                   value: "true"
@@ -184,6 +190,9 @@ Notes:
 Apply the manifest and wait for the Pod to become ready.
 
 ```bash
+envsubst '${SOURCE_CHI} ${NAMESPACE} ${CLUSTER_NAME} ${S3_ENDPOINT} ${S3_BUCKET} ${S3_SECRET_NAME}' \
+  < clickhouse-source.yaml.tmpl > clickhouse-source.yaml
+
 kubectl apply -f clickhouse-source.yaml
 kubectl -n "$NAMESPACE" wait --for=condition=Ready pod/"$SOURCE_POD" --timeout=10m
 kubectl -n "$NAMESPACE" get pod "$SOURCE_POD"
@@ -301,16 +310,14 @@ backup/shard-0/<backup-name>/shadow/default/events_local/default_202605_1_1_0.ta
 
 The sidecar exposes `system.backup_actions`. This allows backup automation from a Kubernetes Job that only needs `clickhouse-client` network access to the ClickHouse service.
 
-Create `clickhouse-backup-job.yaml`.
-
-Replace `<namespace>`, `<backup-job-name>`, and `<source-clickhouse-service-name>` before applying the manifest.
+Create `clickhouse-backup-job.yaml.tmpl`. Render only the manifest variables with `envsubst`; do not render runtime variables such as `$BACKUP_NAME`, `$COMMAND`, or `$STATUS` inside the Job script.
 
 ```yaml
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: <backup-job-name>
-  namespace: <namespace>
+  name: ${BACKUP_JOB_NAME}
+  namespace: ${NAMESPACE}
 spec:
   backoffLimit: 1
   template:
@@ -322,7 +329,7 @@ spec:
           imagePullPolicy: IfNotPresent
           env:
             - name: CLICKHOUSE_HOST
-              value: <source-clickhouse-service-name>
+              value: ${SOURCE_SERVICE}
             - name: CLICKHOUSE_PORT
               value: "9000"
           command:
@@ -357,7 +364,8 @@ spec:
 Apply and verify the Job.
 
 ```bash
-export BACKUP_JOB_NAME="<backup-job-name>"
+envsubst '${BACKUP_JOB_NAME} ${NAMESPACE} ${SOURCE_SERVICE}' \
+  < clickhouse-backup-job.yaml.tmpl > clickhouse-backup-job.yaml
 
 kubectl apply -f clickhouse-backup-job.yaml
 kubectl -n "$NAMESPACE" wait --for=condition=complete job/"$BACKUP_JOB_NAME" --timeout=20m
@@ -368,14 +376,14 @@ kubectl -n "$NAMESPACE" logs job/"$BACKUP_JOB_NAME"
 
 After the manual Job succeeds, use the same command body in a CronJob.
 
-Replace `<namespace>`, `<backup-cronjob-name>`, and `<source-clickhouse-service-name>` before applying the manifest.
+Create `clickhouse-backup-cronjob.yaml.tmpl` and render only the manifest variables with `envsubst`.
 
 ```yaml
 apiVersion: batch/v1
 kind: CronJob
 metadata:
-  name: <backup-cronjob-name>
-  namespace: <namespace>
+  name: ${BACKUP_CRONJOB_NAME}
+  namespace: ${NAMESPACE}
 spec:
   schedule: "0 0 * * *"
   concurrencyPolicy: Forbid
@@ -393,7 +401,7 @@ spec:
               imagePullPolicy: IfNotPresent
               env:
                 - name: CLICKHOUSE_HOST
-                  value: <source-clickhouse-service-name>
+                  value: ${SOURCE_SERVICE}
                 - name: CLICKHOUSE_PORT
                   value: "9000"
               command:
@@ -416,23 +424,27 @@ spec:
                   test "$STATUS" = "success"
 ```
 
+Render and apply the CronJob.
+
+```bash
+envsubst '${BACKUP_CRONJOB_NAME} ${NAMESPACE} ${SOURCE_SERVICE}' \
+  < clickhouse-backup-cronjob.yaml.tmpl > clickhouse-backup-cronjob.yaml
+
+kubectl apply -f clickhouse-backup-cronjob.yaml
+```
+
 For multi-shard clusters, run the same command once against one replica service per shard, and use a unique `S3_PATH` or backup name per shard.
 
 ### 9. Create a Restore ClickHouse Instance
 
 Create another ClickHouseInstallation with the same sidecar and S3 configuration. Use a different instance name.
 
-Create `clickhouse-restore.yaml` by copying `clickhouse-source.yaml` and changing the metadata name.
-
-```yaml
-metadata:
-  name: <restore-clickhouseinstallation-name>
-  namespace: <namespace>
-```
-
-Apply it and wait for the restore Pod.
+Create `clickhouse-restore.yaml.tmpl` by copying `clickhouse-source.yaml.tmpl` and changing the metadata name variable from `${SOURCE_CHI}` to `${RESTORE_CHI}`. Then render the template.
 
 ```bash
+envsubst '${RESTORE_CHI} ${NAMESPACE} ${CLUSTER_NAME} ${S3_ENDPOINT} ${S3_BUCKET} ${S3_SECRET_NAME}' \
+  < clickhouse-restore.yaml.tmpl > clickhouse-restore.yaml
+
 kubectl apply -f clickhouse-restore.yaml
 kubectl -n "$NAMESPACE" wait --for=condition=Ready pod/"$RESTORE_POD" --timeout=10m
 ```
@@ -450,16 +462,14 @@ kubectl -n "$NAMESPACE" exec "$RESTORE_POD" -c clickhouse-backup -- \
 
 The same restore can be automated through `system.backup_actions`.
 
-Create `clickhouse-restore-job.yaml`.
-
-Replace `<namespace>`, `<restore-job-name>`, `<restore-clickhouse-service-name>`, and `<backup-name>` before applying the manifest. You can replace `<backup-name>` manually or run `sed -i.bak "s/<backup-name>/${BACKUP_NAME}/g" clickhouse-restore-job.yaml` after setting `BACKUP_NAME`.
+Create `clickhouse-restore-job.yaml.tmpl`. Set `BACKUP_NAME` to the backup created in step 6 or step 7, and render only the manifest variables with `envsubst`.
 
 ```yaml
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: <restore-job-name>
-  namespace: <namespace>
+  name: ${RESTORE_JOB_NAME}
+  namespace: ${NAMESPACE}
 spec:
   backoffLimit: 0
   template:
@@ -471,11 +481,11 @@ spec:
           imagePullPolicy: IfNotPresent
           env:
             - name: CLICKHOUSE_HOST
-              value: <restore-clickhouse-service-name>
+              value: ${RESTORE_SERVICE}
             - name: CLICKHOUSE_PORT
               value: "9000"
             - name: RESTORE_BACKUP
-              value: <backup-name>
+              value: ${BACKUP_NAME}
           command:
             - bash
             - -ec
@@ -498,7 +508,8 @@ spec:
 Apply and verify the restore Job.
 
 ```bash
-export RESTORE_JOB_NAME="<restore-job-name>"
+envsubst '${RESTORE_JOB_NAME} ${NAMESPACE} ${RESTORE_SERVICE} ${BACKUP_NAME}' \
+  < clickhouse-restore-job.yaml.tmpl > clickhouse-restore-job.yaml
 
 kubectl apply -f clickhouse-restore-job.yaml
 kubectl -n "$NAMESPACE" wait --for=condition=complete job/"$RESTORE_JOB_NAME" --timeout=20m
