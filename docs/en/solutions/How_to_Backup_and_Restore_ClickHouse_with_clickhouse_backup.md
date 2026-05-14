@@ -1,45 +1,39 @@
 ---
+kind:
+   - How To
 products:
    - Alauda Container Platform
    - Alauda Application Services
-kind:
-   - Solution
 ProductsVersion:
    - 4.3.x
 ---
 # How to Back Up and Restore ClickHouse with clickhouse-backup
 
-## Issue
+## Purpose
 
-ClickHouse data needs a repeatable backup and restore procedure for disaster recovery, migration validation, and operational recovery. In Alauda Container Platform environments, ClickHouse instances deployed by the ClickHouse Operator can use a `clickhouse-backup` sidecar to create local backups, upload backups to S3-compatible storage, and restore backups into another ClickHouse instance.
+This document explains how to back up and restore a ClickHouse instance deployed by the ClickHouse Operator on Alauda Container Platform by using a `clickhouse-backup` sidecar and S3-compatible object storage.
 
-## Environment
+The procedure covers:
 
-This solution applies to environments with the following components:
-
-- Alauda Container Platform 4.3.x
-- Alauda Application Services ClickHouse Operator 4.3.x
-- ClickHouseInstallation custom resources managed by the ClickHouse Operator
-- S3-compatible object storage, such as MinIO
-- Network connectivity from ClickHouse Pods to the S3 endpoint
-- `kubectl` access to the target cluster
-
-The upstream `clickhouse-backup` tool supports ClickHouse versions later than `1.1.54394`. For older ClickHouse versions, only MergeTree family table engines are supported. Additional table types are supported by newer `clickhouse-server` versions when embedded backup and restore mode is enabled.
+- Deploying ClickHouse with a `clickhouse-backup` sidecar.
+- Creating a remote backup in S3-compatible storage.
+- Running backups from a Kubernetes Job or CronJob.
+- Restoring the backup into a separate ClickHouseInstallation.
+- Verifying that restored tables contain the expected data.
 
 ## Resolution
 
-Deploy the ClickHouse instance with a `clickhouse-backup` sidecar, make the ClickHouse data directory visible to both containers, create a remote backup, and restore that backup into a separate ClickHouse instance.
+### 1. Overview
 
-The critical requirements are:
+`clickhouse-backup` runs as a sidecar in the ClickHouse Pod. It connects to ClickHouse through `localhost:9000`, freezes MergeTree table parts, writes backup metadata, and uploads the backup to S3-compatible storage.
 
-- Keep the main ClickHouse container in the custom Pod template by adding `- name: clickhouse`.
-- Mount the same ClickHouse data volume at `/var/lib/clickhouse` in both `clickhouse` and `clickhouse-backup` containers.
-- Back up data from MergeTree-family local tables. Distributed tables are backed up as schema only.
-- Use a separate restore ClickHouseInstallation for validation.
+For this workflow to back up table data correctly, the sidecar must mount the same ClickHouse data volume as the main `clickhouse` container at `/var/lib/clickhouse`. If the sidecar does not see the ClickHouse data directory, the backup may contain only metadata files.
 
-## Prerequisites
+Distributed tables are backed up as schema only. The actual data is stored in the underlying MergeTree-family local tables, such as `events_local`.
 
-Before starting, collect the following information:
+### 2. Prerequisites
+
+Prepare the following items before starting:
 
 | Item | Description | Example |
 |------|-------------|---------|
@@ -59,15 +53,13 @@ mc alias set backup-s3 http://<minio-host>:<port> <s3-access-key> <s3-secret-key
 mc mb --ignore-existing backup-s3/clickhouse
 ```
 
-## Implementation Steps
-
-### Step 1: Create a namespace
+### 3. Create a Namespace
 
 ```bash
 kubectl create namespace clickhouse-backup-demo
 ```
 
-### Step 2: Create a ClickHouse instance with a backup sidecar
+### 4. Deploy ClickHouse with a Backup Sidecar
 
 Create `clickhouse-source.yaml`.
 
@@ -180,7 +172,7 @@ backup_list
 backup_version
 ```
 
-### Step 3: Insert test data
+### 5. Insert Test Data
 
 Create a local MergeTree table and a Distributed table.
 
@@ -226,9 +218,9 @@ kubectl -n clickhouse-backup-demo exec chi-demo-replicated-0-0-0 -c clickhouse -
   "
 ```
 
-### Step 4: Create and upload a backup
+### 6. Create and Upload a Backup Manually
 
-The simplest verified command is `create_remote`, which creates a local backup and uploads it to the configured remote storage in one step.
+The `create_remote` command creates a local backup and uploads it to the configured remote storage in one step.
 
 ```bash
 BACKUP_NAME="full-$(date +%Y%m%d%H%M%S)"
@@ -266,9 +258,9 @@ backup/shard-0/full-20260514135449/metadata/default/events_local.json
 backup/shard-0/full-20260514135449/shadow/default/events_local/default_202605_1_1_0.tar
 ```
 
-### Step 5: Create a backup Job
+### 7. Run Backup from a Kubernetes Job
 
-The sidecar also exposes `system.backup_actions`. This allows backup automation from a Kubernetes Job that only needs `clickhouse-client` network access to the ClickHouse service.
+The sidecar exposes `system.backup_actions`. This allows backup automation from a Kubernetes Job that only needs `clickhouse-client` network access to the ClickHouse service.
 
 Create `clickhouse-backup-job.yaml`.
 
@@ -329,7 +321,7 @@ kubectl -n clickhouse-backup-demo wait --for=condition=complete job/clickhouse-b
 kubectl -n clickhouse-backup-demo logs job/clickhouse-backup-manual
 ```
 
-### Step 6: Create a scheduled backup CronJob
+### 8. Schedule Backups with a CronJob
 
 After the manual Job succeeds, use the same command body in a CronJob.
 
@@ -381,7 +373,7 @@ spec:
 
 For multi-shard clusters, run the same command once against one replica service per shard, and use a unique `S3_PATH` or backup name per shard.
 
-### Step 7: Create a restore ClickHouse instance
+### 9. Create a Restore ClickHouse Instance
 
 Create another ClickHouseInstallation with the same sidecar and S3 configuration. Use a different instance name.
 
@@ -400,9 +392,9 @@ kubectl apply -f clickhouse-restore.yaml
 kubectl -n clickhouse-backup-demo wait --for=condition=Ready pod/chi-demo-restore-replicated-0-0-0 --timeout=10m
 ```
 
-### Step 8: Restore the backup to the new instance
+### 10. Restore the Backup
 
-Use the backup name from Step 4 or Step 5.
+Use the backup name from step 6 or step 7.
 
 ```bash
 BACKUP_NAME=<backup-name>
@@ -462,7 +454,7 @@ kubectl -n clickhouse-backup-demo wait --for=condition=complete job/clickhouse-b
 kubectl -n clickhouse-backup-demo logs job/clickhouse-backup-restore
 ```
 
-### Step 9: Verify restored data
+### 11. Verify Restored Data
 
 ```bash
 kubectl -n clickhouse-backup-demo exec chi-demo-restore-replicated-0-0-0 -c clickhouse -- \
@@ -482,104 +474,69 @@ events_local
 1000
 ```
 
-## Root Cause
+### 12. Troubleshooting
 
-ClickHouse Operator manages database Pods and services, but it does not provide a complete scheduled backup and restore workflow by itself. `clickhouse-backup` can provide that workflow when it runs as a sidecar that can connect to ClickHouse and read the ClickHouse data directory.
+#### The Pod shows only one container
 
-If the sidecar does not mount the same `/var/lib/clickhouse` volume as the main ClickHouse container, backups may contain only metadata. In that case, `clickhouse-backup` can query table schemas through ClickHouse, but it cannot read the frozen MergeTree parts from the filesystem.
-
-For Distributed tables, `clickhouse-backup` backs up schema only. The actual data is stored in the underlying MergeTree-family local tables, such as `events_local`.
-
-## Diagnostic Steps
-
-### Check whether the Pod has both containers
+If the Pod shows `1/1` and only the `clickhouse-backup` container exists, the custom Pod template replaced the default ClickHouse container. Add the `- name: clickhouse` container entry to the Pod template.
 
 ```bash
 kubectl -n clickhouse-backup-demo get pod chi-demo-replicated-0-0-0
 ```
 
-Expected output:
+#### The backup contains only metadata files
 
-```text
-READY   STATUS
-2/2     Running
-```
-
-If the Pod shows `1/1` and only the `clickhouse-backup` container exists, the custom Pod template replaced the default container. Add the `- name: clickhouse` container entry to the Pod template.
-
-### Check whether both containers mount the data volume
+Check whether both containers mount the same volume at `/var/lib/clickhouse`.
 
 ```bash
 kubectl -n clickhouse-backup-demo get pod chi-demo-replicated-0-0-0 -o jsonpath='{range .spec.containers[*]}{.name}{"\n"}{range .volumeMounts[*]}{.name}{" -> "}{.mountPath}{"\n"}{end}{end}'
 ```
 
-Both containers must mount the same volume at `/var/lib/clickhouse`.
-
-### Check backup integration tables
-
-```bash
-kubectl -n clickhouse-backup-demo exec chi-demo-replicated-0-0-0 -c clickhouse -- \
-  clickhouse-client -q "SHOW TABLES FROM system LIKE 'backup_%'"
-```
-
-Expected tables include:
-
-```text
-backup_actions
-backup_list
-backup_version
-```
-
-If these tables do not exist, check the `clickhouse-backup` logs.
-
-```bash
-kubectl -n clickhouse-backup-demo logs chi-demo-replicated-0-0-0 -c clickhouse-backup --tail=100
-```
-
-### Check whether table data exists
-
-```bash
-kubectl -n clickhouse-backup-demo exec chi-demo-replicated-0-0-0 -c clickhouse -- \
-  clickhouse-client -q "
-    SELECT database, table, sum(rows), sum(bytes_on_disk)
-    FROM system.parts
-    WHERE active
-    GROUP BY database, table
-    ORDER BY database, table
-  "
-```
-
-### Check whether the backup contains data files
+A valid data backup contains `shadow/...tar` objects in S3. A backup that only contains `metadata/*.json` objects is schema-only or cannot see the ClickHouse data directory.
 
 ```bash
 mc find backup-s3/clickhouse/backup/shard-0/<backup-name> --maxdepth 5
 ```
 
-A backup that contains data includes `shadow/...tar` objects. A backup that only contains `metadata/...json` objects is schema-only or cannot see the ClickHouse data directory.
+#### The backup integration tables do not exist
 
-### Common Issues
+Check the `clickhouse-backup` container logs.
 
-| Symptom | Possible cause | Action |
-|---------|----------------|--------|
-| Pod has only one container | The Pod template omitted the `clickhouse` container entry | Add `- name: clickhouse` to the Pod template. |
-| Backup contains only `metadata/*.json` | The sidecar does not mount the same `/var/lib/clickhouse` volume | Mount the ClickHouse data volume into both containers. |
-| `system.backup_actions` does not exist | The sidecar is not running, cannot connect to ClickHouse, or `API_CREATE_INTEGRATION_TABLES` is not enabled | Check sidecar logs and environment variables. |
-| Distributed table data is not backed up | Distributed tables store schema only | Back up the underlying MergeTree local tables. |
-| Backup upload fails | S3 endpoint, bucket, credentials, or network path are incorrect | Verify the S3 configuration and test with `mc ls`. |
-| Restore cannot find backup | The restore instance uses a different `S3_PATH` or backup name | Use `clickhouse-backup list` and S3 object paths to confirm the backup name. |
-| Duplicate rows after restore in a multi-replica cluster | Data restore was run on multiple replicas for the same shard | Restore data once per shard. |
-| CronJob overlaps with a previous run | Backup duration is longer than schedule interval | Use `concurrencyPolicy: Forbid`. |
+```bash
+kubectl -n clickhouse-backup-demo logs chi-demo-replicated-0-0-0 -c clickhouse-backup --tail=100
+```
 
-## Validation Result
+Also confirm that `API_CREATE_INTEGRATION_TABLES` is set to `true`.
 
-The procedure was validated on an Alauda Container Platform 4.3 environment with ClickHouse Operator 4.3 and `altinity/clickhouse-backup:2.6.3`.
+#### Distributed table data is not included
+
+This is expected. Distributed tables are backed up as schema only. Back up and restore the underlying MergeTree-family local tables.
+
+#### Restore cannot find the backup
+
+Confirm that the restore instance uses the same `S3_ENDPOINT`, `S3_BUCKET`, and `S3_PATH` as the source instance.
+
+```bash
+kubectl -n clickhouse-backup-demo exec chi-demo-restore-replicated-0-0-0 -c clickhouse-backup -- \
+  clickhouse-backup list
+```
+
+### 13. Validation Result
+
+This procedure was validated on an Alauda Container Platform 4.3 environment with ClickHouse Operator 4.3 and `altinity/clickhouse-backup:2.6.3`.
 
 Validated results:
 
-- Source Pod ran with two containers: `clickhouse` and `clickhouse-backup`.
+- The source Pod ran with two containers: `clickhouse` and `clickhouse-backup`.
 - Both containers mounted the same `/var/lib/clickhouse` volume.
 - `system.backup_actions`, `system.backup_list`, and `system.backup_version` were created.
 - `clickhouse-backup create_remote` uploaded metadata and MergeTree data part archives to S3.
 - `system.backup_actions` successfully triggered `create_remote <backup-name>`.
 - `clickhouse-backup restore_remote <backup-name>` restored the backup into a separate ClickHouseInstallation.
 - The restored `events_local` and `events` tables both returned `1000` rows.
+
+## Related Information
+
+- `clickhouse-backup` supports backup and restore for MergeTree-family table engines.
+- Use a separate restore ClickHouseInstallation when validating a backup to avoid modifying the source instance.
+- For multi-shard clusters, run backup and restore operations once per shard and avoid restoring the same shard data on multiple replicas.
