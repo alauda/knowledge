@@ -24,6 +24,16 @@ export function normalizeTags(tags: string | string[]): string[] {
   return [tags];
 }
 
+function normalizePostId(id?: string): string {
+  return id?.trim().toLowerCase() || "";
+}
+
+const initialHref = typeof window === "undefined" ? "" : window.location.href;
+
+function getInitialHref(): string {
+  return initialHref || window.location.href;
+}
+
 const Badges = () => {
   const { page } = usePageData();
   const kinds = normalizeTags(
@@ -54,14 +64,20 @@ export default () => {
       return;
     }
 
-    const currentUrl = new URL(window.location.href);
+    const currentUrl = new URL(getInitialHref());
     const postId = currentUrl.searchParams.get("id")?.trim();
+    const normalizedPostId = normalizePostId(postId);
 
-    if (postId) {
+    if (normalizedPostId) {
       const matchedPost =
         postInfos.find(
-          (post) => post.id === postId && post.locale === page.lang
-        ) || postInfos.find((post) => post.id === postId);
+          (post) =>
+            normalizePostId(post.id) === normalizedPostId &&
+            post.locale === page.lang
+        ) ||
+        postInfos.find(
+          (post) => normalizePostId(post.id) === normalizedPostId
+        );
 
       if (matchedPost) {
         const nextUrl = new URL(
