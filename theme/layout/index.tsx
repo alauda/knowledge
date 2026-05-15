@@ -6,6 +6,7 @@ import {
   getCustomMDXComponent,
 } from "@rspress/core/theme-original";
 import { useEffect } from "react";
+import { postInfos } from "virtual-post-data";
 
 import { BreadCrumb } from "../components/BreadCrumb/index.js";
 import { DocID } from "../components/DocID/index.js";
@@ -46,9 +47,45 @@ const Badges = () => {
 };
 
 export default () => {
+  const { page } = usePageData();
+
   useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    const currentUrl = new URL(window.location.href);
+    const postId = currentUrl.searchParams.get("id")?.trim();
+
+    if (postId) {
+      const matchedPost =
+        postInfos.find(
+          (post) => post.id === postId && post.locale === page.lang
+        ) || postInfos.find((post) => post.id === postId);
+
+      if (matchedPost) {
+        const nextUrl = new URL(
+          withBase(
+            matchedPost.route.endsWith(".html")
+              ? matchedPost.route
+              : `${matchedPost.route}.html`
+          ),
+          currentUrl.origin
+        );
+
+        currentUrl.searchParams.delete("id");
+        nextUrl.search = currentUrl.searchParams.toString();
+        nextUrl.hash = currentUrl.hash;
+
+        if (nextUrl.toString() !== currentUrl.toString()) {
+          window.location.replace(nextUrl.toString());
+          return;
+        }
+      }
+    }
+
     window.parent.postMessage(window.location.href, "*");
-  }, []);
+  }, [page.lang]);
 
   return (
     <Layout
