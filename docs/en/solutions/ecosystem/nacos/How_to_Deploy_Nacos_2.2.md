@@ -50,7 +50,7 @@ A working `StorageClass` is required.
 
 ### 3. MySQL
 
-Nacos requires MySQL 5.6.5 or higher. You can use customer-provided MySQL or the Alauda Application Services MySQL Operator.
+The Nacos community lists MySQL 5.6.5 as the absolute minimum, but **this plan requires MySQL 5.7.6 or higher** because the bootstrap SQL below uses `CREATE USER IF NOT EXISTS`, which MySQL 5.6 does not support (the clause was added in 5.7.6). MySQL 5.6 is also community-EOL (since 2021). You can use customer-provided MySQL or the Alauda Application Services MySQL Operator.
 
 > **Known issue — MySQL Router < 8.0.35**: Nacos connecting through MySQL Router prior to 8.0.35 fails with `Couldn't read RSA public key from server`. MySQL Router 8.0.35 fixes this. Alauda Application Services ships MySQL 8.0.36 starting in ACP 3.17 (and back-ported to small versions of 3.14 / 3.16).
 
@@ -87,7 +87,7 @@ FLUSH PRIVILEGES;
 
 #### MySQL Router < 8.0.35
 
-Compatible with MySQL server `8.0.x` (pre-`8.0.35` Router), `5.7.x`, and `5.6.5+` — the user must use the legacy `mysql_native_password` auth plugin to avoid the Router RSA-key handshake bug noted in Prerequisites.
+Compatible with MySQL server `8.0.x` (pre-`8.0.35` Router) and `5.7.6+` — the user must use the legacy `mysql_native_password` auth plugin to avoid the Router RSA-key handshake bug noted in Prerequisites.
 
 ```sql
 CREATE DATABASE IF NOT EXISTS nacos_config;
@@ -127,7 +127,7 @@ Most parameters have sane defaults. The following fields deserve attention:
 | `db.password` | Password matching the user above. |
 
 > **Warning**: Redeploying the Chart wipes the underlying database. Back up first if you intend to re-create the instance.
-
+>
 > **JWT signing key**: Unlike the 2.5 chart, the Alauda 2.2 chart does **not** surface a `JWT signing key` parameter — Nacos 2.2.3 falls back to its built-in default token secret. The default is suitable for inter-namespace traffic on a trusted network but is publicly known, so do not rely on it as a security boundary. If you need a custom key, override `nacos.core.auth.default.token.secret.key` in `application.properties` through the chart's advanced options (and remember the same base64 / decoded-≥-32-bytes rule called out in the 2.5 doc).
 
 ## Verification
