@@ -71,7 +71,7 @@ Sign in to the platform as an administrator, switch to the **Nacos** project and
 
 ### 2. Create the Nacos User and Database in MySQL
 
-Pick the SQL block that matches your MySQL version. If MySQL Router prior to 8.0.35 sits in front of MySQL, use `mysql_native_password` to avoid the RSA-key handshake bug noted in Prerequisites; otherwise prefer `caching_sha2_password`. Replace `<account name>` and `<password>` with the values you intend to configure in the Nacos Chart.
+The block to use depends on whether MySQL Router 8.0.35+ (which fixed the RSA-key handshake bug) is in front of MySQL: pick `mysql_native_password` for Router `< 8.0.35`; otherwise — including direct MySQL connections — prefer `caching_sha2_password`. Replace `<account name>` and `<password>` with the values you intend to configure in the Nacos Chart.
 
 #### MySQL Router ≥ 8.0.35 (or direct connection to MySQL)
 
