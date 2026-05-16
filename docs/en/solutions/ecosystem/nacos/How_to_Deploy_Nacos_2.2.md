@@ -30,10 +30,9 @@ To check whether your application SDK version is compatible with this Nacos vers
 ## Architecture Overview
 
 - Nacos is delivered through a Helm Chart and is installed from the platform App Store.
-- The cluster is fixed at **three nodes** for high availability. The Chart sets Kubernetes readiness/liveness probes by default.
-- External access can be exposed through ALB or Istio Ingress Gateway.
+- The cluster defaults to **three nodes** for high availability and can be scaled to any **odd number ≥ 3** (5, 7, …) to suit larger deployments. The Chart sets Kubernetes readiness/liveness probes by default.
+- External access can be exposed through `NodePort` or `LoadBalancer`. On ACP, **ALB is the LoadBalancer implementation**; the Web-console verification section below uses an ALB listener. An Istio Ingress Gateway is also supported when one is already deployed in the cluster.
 - Monitoring is enabled by default; customers can scrape Nacos metrics with Grafana.
-- MCP and CMDB integrations are **disabled** by default.
 - The plan does **not** cover cross-site DR replication or data migration.
 - Major-version upgrades are achieved by destroying the old cluster and redeploying the new version.
 
@@ -59,7 +58,7 @@ Nacos requires MySQL 5.6.5 or higher. You can use customer-provided MySQL or the
 
 ### 1. Upload the Nacos Material Package
 
-Sign in to Alauda Cloud with a tenant account and download the `violet` artifact from the App Marketplace. Then push the Nacos package into the target business cluster:
+Sign in to Alauda Cloud with a tenant account and download the `nacos` artifact from the App Marketplace. Then push the Nacos package into the target business cluster:
 
 ```bash
 violet push \
@@ -76,7 +75,7 @@ Sign in to the platform as an administrator, switch to the **Nacos** project and
 
 The block to use depends on whether MySQL Router 8.0.35+ (which fixed the RSA-key handshake bug) is in front of MySQL: if you sit behind an older MySQL Router use `mysql_native_password`, otherwise prefer `caching_sha2_password`. Replace `<account name>` and `<password>` with the values you intend to configure in the Nacos Chart.
 
-#### MySQL ≥ 8.0.35
+#### MySQL Router ≥ 8.0.35 (or direct connection to MySQL)
 
 ```sql
 CREATE DATABASE IF NOT EXISTS nacos_config;
@@ -86,7 +85,9 @@ GRANT ALL PRIVILEGES ON nacos_config.* TO '<account name>'@'%';
 FLUSH PRIVILEGES;
 ```
 
-#### MySQL < 8.0.35 (e.g. 8.0.34, 7.x, 6.x, 5.x)
+#### MySQL Router < 8.0.35
+
+Compatible with MySQL server `8.0.x` (pre-`8.0.35` Router), `5.7.x`, and `5.6.5+` — the user must use the legacy `mysql_native_password` auth plugin to avoid the Router RSA-key handshake bug noted in Prerequisites.
 
 ```sql
 CREATE DATABASE IF NOT EXISTS nacos_config;
@@ -126,6 +127,8 @@ Most parameters have sane defaults. The following fields deserve attention:
 | `db.password` | Password matching the user above. |
 
 > **Warning**: Redeploying the Chart wipes the underlying database. Back up first if you intend to re-create the instance.
+
+> **JWT signing key**: Unlike the 2.5 chart, the Alauda 2.2 chart does **not** surface a `JWT signing key` parameter — Nacos 2.2.3 falls back to its built-in default token secret. The default is suitable for inter-namespace traffic on a trusted network but is publicly known, so do not rely on it as a security boundary. If you need a custom key, override `nacos.core.auth.default.token.secret.key` in `application.properties` through the chart's advanced options (and remember the same base64 / decoded-≥-32-bytes rule called out in the 2.5 doc).
 
 ## Verification
 

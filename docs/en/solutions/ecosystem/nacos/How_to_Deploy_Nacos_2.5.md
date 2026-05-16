@@ -28,7 +28,7 @@ To check whether your application SDK version is compatible with this Nacos vers
 ## Architecture Overview
 
 - Nacos is delivered through a Helm Chart and is installed from the platform App Store.
-- The cluster is fixed at **three nodes** for high availability. The Chart sets Kubernetes readiness/liveness probes by default.
+- The cluster defaults to **three nodes** for high availability and can be scaled to any **odd number ≥ 3** (5, 7, …) to suit larger deployments. The Chart sets Kubernetes readiness/liveness probes by default.
 - External access can be exposed through `NodePort` or `LoadBalancer`. On ACP, **ALB is the LoadBalancer implementation**, and the Web-console verification section below uses an ALB listener; if you exposed Nacos via `NodePort` instead, substitute a NodePort Service for the ALB listener.
 - Monitoring is enabled by default; a dedicated Grafana dashboard is provided in this guide.
 - The plan does **not** cover cross-site DR replication or data migration. For cross-site DR, see the companion document on Nacos hot standby.
@@ -73,7 +73,7 @@ Sign in to the platform as an administrator, switch to the **Nacos** project and
 
 Pick the SQL block that matches your MySQL version. If MySQL Router prior to 8.0.35 sits in front of MySQL, use `mysql_native_password` to avoid the RSA-key handshake bug noted in Prerequisites; otherwise prefer `caching_sha2_password`. Replace `<account name>` and `<password>` with the values you intend to configure in the Nacos Chart.
 
-#### MySQL ≥ 8.0.35
+#### MySQL Router ≥ 8.0.35 (or direct connection to MySQL)
 
 ```sql
 CREATE DATABASE IF NOT EXISTS nacos_config;
@@ -83,7 +83,9 @@ GRANT ALL PRIVILEGES ON nacos_config.* TO '<account name>'@'%';
 FLUSH PRIVILEGES;
 ```
 
-#### MySQL < 8.0.35 (e.g. 8.0.34, 7.x, 6.x, 5.x)
+#### MySQL Router < 8.0.35
+
+Compatible with MySQL server `8.0.x` (pre-`8.0.35` Router), `5.7.x`, and `5.6.5+` — the user must use the legacy `mysql_native_password` auth plugin to avoid the Router RSA-key handshake bug noted in Prerequisites.
 
 ```sql
 CREATE DATABASE IF NOT EXISTS nacos_config;
@@ -194,13 +196,15 @@ Open `http://<alb-vip>:<listener-port>/nacos`. The default credentials are `naco
 
 ## Monitoring Dashboard
 
-Apply the dashboard YAML attached to this guide (file: `nacos-dashboard.yaml`, available from the original Confluence attachment of the Nacos 2.5 plan):
+Alauda ships an ACP-native `nacos-dashboard.yaml` (a custom Dashboard resource for ACP's monitoring stack) — ask your Alauda contact for the file and apply it with:
 
 ```bash
 kubectl create -f nacos-dashboard.yaml
 ```
 
 Once applied, find the Nacos dashboard under **Platform Management > Operations Center > Monitoring > Dashboards**.
+
+If you prefer a community alternative, the Nacos team publishes a standard Grafana dashboard (Nacos exposes Prometheus metrics at `/nacos/actuator/prometheus`) — import it from the official Nacos repository (`console/src/main/resources/static/img/nacos_dashboard.json`) into your own Grafana.
 
 ## FAQ
 

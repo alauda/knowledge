@@ -38,22 +38,25 @@ Nacos-server has two reconciliation paths against MySQL:
 
 Practically, a direct write to the underlying database (with the matching timestamp update) propagates to the Nacos-server cache in roughly 30 seconds, and from there to clients via push.
 
-For deeper internals, see the Nacos configuration cache reconciliation analysis used internally by the team.
+For the upstream implementation, see the Nacos source under `console/src/main/java/com/alibaba/nacos/console/controller` and the related dump-task classes in `config/src/main/java/com/alibaba/nacos/config/server/service/dump`.
 
 ## Architecture
 
-```
-                            ┌────────────────────────┐
-            (active)        │   External LB / F5      │
-       ┌───────────────────►│  8848/http  9848/grpc   │◄───────────────────┐
-       │                    └────────────────────────┘                     │
-       │                                                                   │
-┌──────┴──────┐                                                     ┌──────┴──────┐
-│   Nacos A   │                                                     │   Nacos B   │
-│  (primary)  │                                                     │ (standby)   │
-└──────┬──────┘                                                     └──────┬──────┘
-       │                                                                   │
-       └──────────────►   DR-capable MySQL (MGR / equivalent)   ◄───────────┘
+```text
+                           ┌──────────────────────────┐
+                           │    External LB / F5      │
+        (active) ─────────►│  8848/http   9848/grpc   │◄───────── (standby)
+                           └──────────────────────────┘
+                            │                        │
+                            ▼                        ▼
+                    ┌───────────────┐        ┌───────────────┐
+                    │    Nacos A    │        │    Nacos B    │
+                    │   (primary)   │        │   (standby)   │
+                    └───────┬───────┘        └───────┬───────┘
+                            │                        │
+                            └────────────┬───────────┘
+                                         ▼
+                       DR-capable MySQL (MGR / equivalent)
 ```
 
 - Nacos A is the active cluster that clients hit.
