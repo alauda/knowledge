@@ -252,23 +252,23 @@ kubectl -n <namespace> exec deploy/<exporter-name> -- sh -c \
 
 ## Recommended Alerts
 
-```promql
+```text
 rabbitmq_up == 0
 ```
 
-```promql
+```text
 rabbitmq_module_up{module="queue"} == 0
 ```
 
-```promql
+```text
 rabbitmq_queue_state{state="flow"} == 1
 ```
 
-```promql
+```text
 rabbitmq_queue_messages_ready > 0
 ```
 
-```promql
+```text
 rabbitmq_queue_consumers == 0
 ```
 

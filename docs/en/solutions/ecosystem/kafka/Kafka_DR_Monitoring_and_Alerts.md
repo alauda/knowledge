@@ -80,13 +80,13 @@ Use these variables in alert templates:
 
 ## Recommended Alerts
 
-```promql
+```text
 count(kafka_server_replicamanager_leadercount{namespace="$namespace",job="$targetClusterName"})
 ```
 
 Target broker count.
 
-```promql
+```text
 avg(kubelet_volume_stats_used_bytes{namespace="$namespace",persistentvolumeclaim=~"data-$targetClusterName-.*"}) by (persistentvolumeclaim)
 /
 avg(kubelet_volume_stats_capacity_bytes{namespace="$namespace",persistentvolumeclaim=~"data-$targetClusterName-.*"}) by (persistentvolumeclaim)
@@ -94,43 +94,43 @@ avg(kubelet_volume_stats_capacity_bytes{namespace="$namespace",persistentvolumec
 
 Target Kafka PVC usage ratio.
 
-```promql
+```text
 sum(kafka_controller_kafkacontroller_activecontrollercount{job="$targetClusterName",namespace="$namespace"})
 ```
 
 Active controller count. Normally exactly one controller should be active.
 
-```promql
+```text
 sum(kube_pod_container_status_ready{namespace="$namespace",pod=~"$mm2ClusterName-.*"})
 ```
 
 MirrorMaker 2 ready pod count.
 
-```promql
+```text
 max(sum(kafka_consumer_fetch_manager_records_lag{namespace="$namespace",job="$mm2ClusterName",clientid!~"consumer-mirrormaker2-.*"}) by (topic, partition))
 ```
 
 Maximum lag across replicated topics.
 
-```promql
+```text
 max(sum(kafka_connect_mirror_mirrorsourceconnector_replication_latency_ms{namespace="$namespace",job="$mm2ClusterName"}) by (partition, topic))
 ```
 
 Maximum replication latency.
 
-```promql
+```text
 max(sum(kafka_connect_mirror_mirrorsourceconnector_record_age_ms{namespace="$namespace",job="$mm2ClusterName"}) by (partition, topic))
 ```
 
 Maximum record age in MirrorSourceConnector.
 
-```promql
+```text
 sum(rate(container_cpu_usage_seconds_total{namespace="$namespace",pod=~"$mm2ClusterName-mirrormaker2-.+",container="$mm2ClusterName-mirrormaker2"}[5m])) by (pod)
 ```
 
 MirrorMaker 2 CPU usage.
 
-```promql
+```text
 sum without(area)(jvm_memory_bytes_used{namespace="$namespace",job="$mm2ClusterName"})
 ```
 
