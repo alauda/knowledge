@@ -5,6 +5,7 @@ products:
   - Alauda Application Services
 ProductsVersion:
   - 3.18,4.0,4.1
+id: KB260500070
 ---
 
 # How to Configure Nacos Hot Standby for Configuration Disaster Recovery (Shared MySQL)

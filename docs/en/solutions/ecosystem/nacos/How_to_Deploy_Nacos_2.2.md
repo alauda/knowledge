@@ -5,6 +5,7 @@ products:
   - Alauda Application Services
 ProductsVersion:
   - 3.18,4.0,4.1
+id: KB260500071
 ---
 
 # How to Deploy Nacos 2.2
