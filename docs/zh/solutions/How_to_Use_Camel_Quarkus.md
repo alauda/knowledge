@@ -1,39 +1,40 @@
 ---
 kind:
-   - Article
+  - Article
 products:
-   - Alauda Application Services
+  - Alauda Application Services
 ProductsVersion:
-   - 4.x
+  - 4.x
 id: KB260500065
+sourceSHA: 534acd415f1def491762586d8e5af1ff2402d10e3d43d8767def6ea6e7409514
 ---
 
-# How to Use Camel Quarkus
+# 如何使用 Camel Quarkus
 
-## Audience and Scope
+## 受众和范围
 
-This document describes a practical Camel Quarkus implementation that can be built, deployed, and validated on Kubernetes. It is intended for platform users and solution engineers who need a repeatable reference for API aggregation, API orchestration, mock backend deployment, container image build, and Kubernetes validation.
+本文档描述了一个实用的 Camel Quarkus 实现，可以在 Kubernetes 上构建、部署和验证。它旨在为需要可重复参考的 API 聚合、API 编排、模拟后端部署、容器镜像构建和 Kubernetes 验证的平台用户和解决方案工程师提供指导。
 
-The examples use two primary integration patterns:
+示例使用了两种主要的集成模式：
 
-- API aggregation: combine user details and order data into a single response.
-- API orchestration: validate a user, check inventory, create an order, and return a unified result.
+- API 聚合：将用户详细信息和订单数据合并为单个响应。
+- API 编排：验证用户、检查库存、创建订单并返回统一结果。
 
-The document also includes deployment notes learned from real Kubernetes environments, including Quarkus `fast-jar` packaging, container image architecture, Harbor/containerd compatibility, and common runtime issues.
+本文档还包括从实际 Kubernetes 环境中获得的部署注意事项，包括 Quarkus `fast-jar` 打包、容器镜像架构、Harbor/containerd 兼容性和常见运行时问题。
 
-## Prerequisites
+## 先决条件
 
-Required tools:
+所需工具：
 
-| Tool | Recommended Version | Purpose |
-|------|---------------------|---------|
-| JDK | 21 recommended, 17 supported if the project is adjusted | Compile and run the application |
-| Maven | 3.9+ | Build the project |
-| Podman | Recent stable version | Build and push container images |
-| kubectl | Compatible with the target cluster | Deploy and validate Kubernetes resources |
-| curl | Any recent version | API validation |
+| 工具     | 推荐版本                                         | 目的                                    |
+| -------- | ------------------------------------------------ | --------------------------------------- |
+| JDK      | 推荐 21，支持 17（如果项目进行了调整）          | 编译和运行应用程序                      |
+| Maven    | 3.9+                                            | 构建项目                                |
+| Podman   | 最新稳定版本                                    | 构建和推送容器镜像                      |
+| kubectl  | 与目标集群兼容                                  | 部署和验证 Kubernetes 资源              |
+| curl     | 任何近期版本                                    | API 验证                                |
 
-Validate the local environment:
+验证本地环境：
 
 ```bash
 java -version
@@ -43,15 +44,15 @@ kubectl version --client
 kubectl get nodes
 ```
 
-Define a namespace for all Kubernetes commands:
+为所有 Kubernetes 命令定义一个命名空间：
 
 ```bash
 export NS=<your-namespace>
 ```
 
-## Project Creation
+## 项目创建
 
-Create the application with Quarkus CLI:
+使用 Quarkus CLI 创建应用程序：
 
 ```bash
 quarkus create app com.example:camel-quarkus-demo \
@@ -59,15 +60,15 @@ quarkus create app com.example:camel-quarkus-demo \
 cd camel-quarkus-demo
 ```
 
-If the Quarkus CLI is unavailable, generate the project from `https://code.quarkus.io` with:
+如果 Quarkus CLI 不可用，可以从 `https://code.quarkus.io` 生成项目，参数如下：
 
-- Group: `com.example`
-- Artifact: `camel-quarkus-demo`
-- Build tool: Maven
-- Java version: 21
-- Extensions: `camel-quarkus-platform-http`, `camel-quarkus-http`, `camel-quarkus-jackson`, `camel-quarkus-rest`
+- 组：`com.example`
+- 工件：`camel-quarkus-demo`
+- 构建工具：Maven
+- Java 版本：21
+- 扩展：`camel-quarkus-platform-http`、`camel-quarkus-http`、`camel-quarkus-jackson`、`camel-quarkus-rest`
 
-Expected project layout:
+预期的项目布局：
 
 ```text
 camel-quarkus-demo/
@@ -84,9 +85,9 @@ camel-quarkus-demo/
     `-- camel-app.yaml
 ```
 
-## Required Dependencies
+## 所需依赖
 
-The minimal dependency set for the two use cases is:
+这两个用例的最小依赖集为：
 
 ```xml
 <dependencies>
@@ -113,7 +114,7 @@ The minimal dependency set for the two use cases is:
 </dependencies>
 ```
 
-If Kubernetes health probes are used, add:
+如果使用 Kubernetes 健康探针，请添加：
 
 ```xml
 <dependency>
@@ -122,9 +123,9 @@ If Kubernetes health probes are used, add:
 </dependency>
 ```
 
-## Application Configuration
+## 应用程序配置
 
-Use a minimal `src/main/resources/application.properties`:
+使用最小的 `src/main/resources/application.properties`：
 
 ```properties
 quarkus.application.name=camel-quarkus-demo
@@ -132,20 +133,20 @@ quarkus.http.port=8080
 quarkus.log.category."org.apache.camel".level=INFO
 ```
 
-Do not configure `camel.main.routes-discovery-enabled=true` for this project. With Camel Quarkus, CDI-managed `RouteBuilder` classes annotated with `@ApplicationScoped` are automatically registered.
+不要为此项目配置 `camel.main.routes-discovery-enabled=true`。使用 Camel Quarkus，带有 `@ApplicationScoped` 注解的 CDI 管理的 `RouteBuilder` 类会自动注册。
 
-## Use Case 1: API Aggregation
+## 用例 1：API 聚合
 
-### Scenario
+### 场景
 
-The frontend needs a single API that returns:
+前端需要一个返回以下内容的单一 API：
 
-- User information from `GET /user/{userId}`
-- Recent orders from `GET /orders?userId={userId}`
+- 从 `GET /user/{userId}` 获取用户信息
+- 从 `GET /orders?userId={userId}` 获取最近的订单
 
-### Route Implementation
+### 路由实现
 
-Create `src/main/java/com/example/routes/UserOrderAggregatorRoute.java`:
+创建 `src/main/java/com/example/routes/UserOrderAggregatorRoute.java`：
 
 ```java
 package com.example.routes;
@@ -184,27 +185,27 @@ public class UserOrderAggregatorRoute extends RouteBuilder {
 }
 ```
 
-### Key Points
+### 关键点
 
-- `@ApplicationScoped` makes the route a CDI bean so Camel Quarkus can discover it.
-- `platform-http` exposes HTTP endpoints without a servlet container.
-- `multicast().parallelProcessing()` calls both downstream services concurrently.
-- `toD` builds a dynamic endpoint URI from request headers.
+- `@ApplicationScoped` 使路由成为 CDI bean，以便 Camel Quarkus 可以发现它。
+- `platform-http` 在没有 servlet 容器的情况下公开 HTTP 端点。
+- `multicast().parallelProcessing()` 同时调用两个下游服务。
+- `toD` 从请求头构建动态端点 URI。
 
-## Use Case 2: API Orchestration
+## 用例 2：API 编排
 
-### Scenario
+### 场景
 
-The order API must:
+订单 API 必须：
 
-1. Validate the user.
-2. Check inventory.
-3. Create the order.
-4. Return a consistent success or error response.
+1. 验证用户。
+2. 检查库存。
+3. 创建订单。
+4. 返回一致的成功或错误响应。
 
-### Route Implementation
+### 路由实现
 
-Create `src/main/java/com/example/routes/OrderOrchestrationRoute.java`:
+创建 `src/main/java/com/example/routes/OrderOrchestrationRoute.java`：
 
 ```java
 package com.example.routes;
@@ -283,22 +284,22 @@ public class OrderOrchestrationRoute extends RouteBuilder {
 }
 ```
 
-### Key Points
+### 关键点
 
-- The route keeps the original request body in an exchange property before calling downstream services.
-- The implementation reads JSON request fields from a `Map` instead of using `${body[...]}` expressions. This avoids requiring additional Camel language support at runtime.
-- `throwExceptionOnFailure=false` allows the route to handle non-2xx downstream responses explicitly.
+- 路由在调用下游服务之前将原始请求体保存在交换属性中。
+- 实现从 `Map` 中读取 JSON 请求字段，而不是使用 `${body[...]}` 表达式。这避免了在运行时需要额外的 Camel 语言支持。
+- `throwExceptionOnFailure=false` 允许路由显式处理非 2xx 的下游响应。
 
-## Mock Backend Services on Kubernetes
+## 在 Kubernetes 上模拟后端服务
 
-The examples assume two Kubernetes services:
+示例假设有两个 Kubernetes 服务：
 
-- `mock-api`: JSON Server for the aggregation use case.
-- `wiremock-api`: WireMock for the orchestration use case.
+- `mock-api`：用于聚合用例的 JSON 服务器。
+- `wiremock-api`：用于编排用例的 WireMock。
 
-### Deploy Mock Services
+### 部署模拟服务
 
-Prepare `k8s/mock-api.yaml` and `k8s/wiremock-api.yaml`, then deploy:
+准备 `k8s/mock-api.yaml` 和 `k8s/wiremock-api.yaml`，然后部署：
 
 ```bash
 kubectl apply -f k8s/mock-api.yaml -n $NS
@@ -307,9 +308,9 @@ kubectl rollout status deployment/mock-api -n $NS
 kubectl rollout status deployment/wiremock-api -n $NS
 ```
 
-### Validate Mock Services
+### 验证模拟服务
 
-Use port-forward for quick validation:
+使用端口转发进行快速验证：
 
 ```bash
 kubectl port-forward svc/mock-api 8081:80 -n $NS &
@@ -325,23 +326,23 @@ curl -X POST http://localhost:8082/orders \
   -d '{"userId":123,"itemId":"A001"}'
 ```
 
-Expected results:
+预期结果：
 
-- `mock-api /user/1` returns Alice's user profile.
-- `mock-api /orders?userId=1` returns the user's order list.
-- `wiremock-api /users/123` returns HTTP 200.
-- `wiremock-api /inventory/A001` returns stock greater than 0.
-- `wiremock-api /orders` returns a generated order response.
+- `mock-api /user/1` 返回 Alice 的用户资料。
+- `mock-api /orders?userId=1` 返回用户的订单列表。
+- `wiremock-api /users/123` 返回 HTTP 200。
+- `wiremock-api /inventory/A001` 返回库存大于 0。
+- `wiremock-api /orders` 返回生成的订单响应。
 
-## Build and Package the Application
+## 构建和打包应用程序
 
-Run:
+运行：
 
 ```bash
 ./mvnw clean package -DskipTests
 ```
 
-Quarkus produces a `fast-jar` layout by default:
+Quarkus 默认生成 `fast-jar` 布局：
 
 ```text
 target/
@@ -353,11 +354,11 @@ target/
     `-- quarkus-run.jar
 ```
 
-Do not package this application by copying only `target/camel-quarkus-demo-1.0.0.jar`. The runtime needs the full `target/quarkus-app/` directory.
+不要仅通过复制 `target/camel-quarkus-demo-1.0.0.jar` 来打包此应用程序。运行时需要完整的 `target/quarkus-app/` 目录。
 
-## Recommended Containerfile
+## 推荐的 Containerfile
 
-Create `Containerfile` in the project root:
+在项目根目录创建 `Containerfile`：
 
 ```dockerfile
 FROM eclipse-temurin:21-jre-alpine
@@ -374,7 +375,7 @@ EXPOSE 8080
 ENTRYPOINT ["java", "-Dquarkus.http.host=0.0.0.0", "-Djava.util.logging.manager=org.jboss.logmanager.LogManager", "-jar", "/app/quarkus-run.jar"]
 ```
 
-Make sure `.dockerignore` allows the recursive `quarkus-app` directory:
+确保 `.dockerignore` 允许递归的 `quarkus-app` 目录：
 
 ```text
 *
@@ -382,47 +383,47 @@ Make sure `.dockerignore` allows the recursive `quarkus-app` directory:
 !target/quarkus-app/**
 ```
 
-## Build and Push the Container Image
+## 构建和推送容器镜像
 
-Set the target image:
+设置目标镜像：
 
 ```bash
 export IMAGE=<registry>/<project>/camel-quarkus-demo:<tag>
 ```
 
-Build and push:
+构建并推送：
 
 ```bash
 podman build -t $IMAGE -f Containerfile .
 podman push $IMAGE
 ```
 
-For an `amd64` Kubernetes cluster:
+对于 `amd64` Kubernetes 集群：
 
 ```bash
 podman build --platform linux/amd64 -t $IMAGE -f Containerfile .
 podman push $IMAGE
 ```
 
-For an `arm64` Kubernetes cluster:
+对于 `arm64` Kubernetes 集群：
 
 ```bash
 podman build --platform linux/arm64 -t $IMAGE -f Containerfile .
 podman push $IMAGE
 ```
 
-For ARM + containerd environments, OCI format is often a safer choice than forcing Docker format:
+对于 ARM + containerd 环境，OCI 格式通常比强制 Docker 格式更安全：
 
 ```bash
 podman build --platform linux/arm64 --format oci -t $IMAGE -f Containerfile .
 podman push --format oci $IMAGE
 ```
 
-Avoid repeatedly reusing `latest` during troubleshooting. Use a new tag such as `arm64-oci-001` or `amd64-fix-001` so nodes do not reuse stale cached layers.
+在故障排除期间避免重复使用 `latest`。使用新标签，如 `arm64-oci-001` 或 `amd64-fix-001`，以便节点不重用过时的缓存层。
 
-## Kubernetes Application Manifest
+## Kubernetes 应用程序清单
 
-Create `k8s/camel-app.yaml`:
+创建 `k8s/camel-app.yaml`：
 
 ```yaml
 apiVersion: apps/v1
@@ -461,7 +462,7 @@ spec:
       targetPort: 8080
 ```
 
-If `quarkus-smallrye-health` is included, add probes:
+如果包含 `quarkus-smallrye-health`，请添加探针：
 
 ```yaml
 readinessProbe:
@@ -478,7 +479,7 @@ livenessProbe:
   periodSeconds: 10
 ```
 
-Deploy:
+部署：
 
 ```bash
 kubectl apply -f k8s/camel-app.yaml -n $NS
@@ -486,22 +487,22 @@ kubectl rollout status deployment/camel-quarkus-demo -n $NS
 kubectl get pod,svc -n $NS -l app=camel-quarkus-demo
 ```
 
-## Kubernetes Validation
+## Kubernetes 验证
 
-Use port-forward when an external Ingress or NodePort is unavailable:
+当外部 Ingress 或 NodePort 不可用时，使用端口转发：
 
 ```bash
 kubectl port-forward svc/camel-quarkus-demo 8080:80 -n $NS &
 export APP_HOST=http://localhost:8080
 ```
 
-### API Aggregation
+### API 聚合
 
 ```bash
 curl -i "$APP_HOST/aggregate?userId=1"
 ```
 
-Expected response:
+预期响应：
 
 ```json
 {
@@ -517,9 +518,9 @@ Expected response:
 }
 ```
 
-### API Orchestration
+### API 编排
 
-Successful order:
+成功的订单：
 
 ```bash
 curl -i -X POST "$APP_HOST/api/place-order" \
@@ -527,9 +528,9 @@ curl -i -X POST "$APP_HOST/api/place-order" \
   -d '{"userId":123,"itemId":"A001"}'
 ```
 
-Expected: HTTP 201 with a generated `orderId`.
+预期：HTTP 201 和生成的 `orderId`。
 
-Invalid user:
+无效用户：
 
 ```bash
 curl -i -X POST "$APP_HOST/api/place-order" \
@@ -537,13 +538,13 @@ curl -i -X POST "$APP_HOST/api/place-order" \
   -d '{"userId":13,"itemId":"A001"}'
 ```
 
-Expected: HTTP 400 with:
+预期：HTTP 400 和：
 
 ```json
 {"error":"Invalid user"}
 ```
 
-Out of stock:
+缺货：
 
 ```bash
 curl -i -X POST "$APP_HOST/api/place-order" \
@@ -551,128 +552,128 @@ curl -i -X POST "$APP_HOST/api/place-order" \
   -d '{"userId":123,"itemId":"A003"}'
 ```
 
-Expected: HTTP 400 with:
+预期：HTTP 400 和：
 
 ```json
 {"error":"Out of stock"}
 ```
 
-Check logs:
+检查日志：
 
 ```bash
 kubectl logs -n $NS -l app=camel-quarkus-demo --tail=100
 ```
 
-## Troubleshooting
+## 故障排除
 
-### Route Startup Fails with `routesDiscoveryEnabled`
+### 路由启动失败，出现 `routesDiscoveryEnabled`
 
-Symptom:
+症状：
 
 ```text
 Error binding property (camel.main.routesDiscoveryEnabled=true)
 ```
 
-Cause: `camel.main.routes-discovery-enabled` is not valid for the current Camel Quarkus runtime.
+原因：`camel.main.routes-discovery-enabled` 对于当前的 Camel Quarkus 运行时无效。
 
-Fix: remove the property. Use `@ApplicationScoped` on `RouteBuilder` classes.
+修复：删除该属性。在 `RouteBuilder` 类上使用 `@ApplicationScoped`。
 
-### Route Startup Fails with `No language could be found for: bean`
+### 路由启动失败，出现 `No language could be found for: bean`
 
-Symptom:
+症状：
 
 ```text
 No language could be found for: bean
 ```
 
-Cause: expressions such as `${body[userId]}` may require language support that is not present in the runtime.
+原因：表达式如 `${body[userId]}` 可能需要运行时不存在的语言支持。
 
-Fix: read JSON request data from the body as a `Map` inside `.process(...)`, as shown in the orchestration route.
+修复：在 `.process(...)` 中将 JSON 请求数据作为 `Map` 读取，如编排路由所示。
 
-### Pod Cannot Pull Images from Docker Hub
+### Pod 无法从 Docker Hub 拉取镜像
 
-Symptom:
+症状：
 
 ```text
 failed to pull image ... dial tcp ... i/o timeout
 ```
 
-Cause: cluster nodes cannot access Docker Hub or the public registry.
+原因：集群节点无法访问 Docker Hub 或公共注册表。
 
-Fix options:
+修复选项：
 
-- Mirror the image into an internal registry.
-- Configure a registry mirror on cluster nodes.
-- Configure node-level egress/proxy access.
-- Use an approved internal base image.
+- 将镜像镜像到内部注册表。
+- 在集群节点上配置注册表镜像。
+- 配置节点级的出站/代理访问。
+- 使用批准的内部基础镜像。
 
-### Image Push to Harbor Fails with `unauthorized`
+### 向 Harbor 推送镜像失败，出现 `unauthorized`
 
-Symptom:
+症状：
 
 ```text
 unauthorized to access repository, action: push
 ```
 
-Cause: the current Harbor user or robot account has no push permission for the project.
+原因：当前 Harbor 用户或机器人账户没有项目的推送权限。
 
-Fix:
+修复：
 
 ```bash
 podman logout <harbor>
 podman login <harbor>
 ```
 
-Then push to a project where the user has write permission.
+然后推送到用户具有写权限的项目。
 
-### Container Fails with `exec format error`
+### 容器失败，出现 `exec format error`
 
-Symptom:
+症状：
 
 ```text
 exec /opt/java/openjdk/bin/java: exec format error
 ```
 
-Cause: image architecture does not match node architecture.
+原因：镜像架构与节点架构不匹配。
 
-Check node architecture:
+检查节点架构：
 
 ```bash
 kubectl get node -o jsonpath='{range .items[*]}{.metadata.name}{"  "}{.status.nodeInfo.architecture}{"\n"}{end}'
 ```
 
-Rebuild for the correct architecture:
+为正确的架构重新构建：
 
 ```bash
 podman build --platform linux/amd64 -t $IMAGE -f Containerfile .
 podman push $IMAGE
 ```
 
-or:
+或：
 
 ```bash
 podman build --platform linux/arm64 -t $IMAGE -f Containerfile .
 podman push $IMAGE
 ```
 
-Use a new tag to avoid node-side image cache reuse.
+使用新标签以避免节点端镜像缓存重用。
 
-### containerd Pull Fails with `archive/tar: invalid tar header`
+### containerd 拉取失败，出现 `archive/tar: invalid tar header`
 
-Symptom:
+症状：
 
 ```text
 archive/tar: invalid tar header
 ```
 
-Likely causes:
+可能原因：
 
-- Docker image format and containerd/Harbor compatibility issue.
-- Layer content corrupted during push or registry storage.
-- Reused tag points to stale or inconsistent layers.
-- Architecture or base image layer compatibility issue.
+- Docker 镜像格式与 containerd/Harbor 兼容性问题。
+- 在推送或注册表存储期间层内容损坏。
+- 重用的标签指向过时或不一致的层。
+- 架构或基础镜像层兼容性问题。
 
-Recommended test for ARM + containerd:
+针对 ARM + containerd 的推荐测试：
 
 ```bash
 export IMAGE=<harbor>/<project>/camel-quarkus-demo:arm64-oci-001
@@ -681,27 +682,27 @@ podman push --format oci $IMAGE
 nerdctl --namespace k8s.io pull $IMAGE --insecure-registry --debug
 ```
 
-If the problem persists, temporarily switch the base image from:
+如果问题仍然存在，暂时将基础镜像从：
 
 ```dockerfile
 FROM eclipse-temurin:21-jre-alpine
 ```
 
-to:
+更改为：
 
 ```dockerfile
 FROM eclipse-temurin:21-jre
 ```
 
-Then rebuild and test again.
+然后重新构建并再次测试。
 
-### Health Probe Fails
+### 健康探针失败
 
-If probes call `/q/health/ready` and `/q/health/live`, ensure `quarkus-smallrye-health` is included. Otherwise, remove the probes and let the platform use its default readiness policy.
+如果探针调用 `/q/health/ready` 和 `/q/health/live`，确保包含 `quarkus-smallrye-health`。否则，删除探针，让平台使用其默认的就绪策略。
 
-### curl Appears to Return Nothing
+### curl 似乎没有返回任何内容
 
-Use `-i`, `-v`, and a timeout:
+使用 `-i`、`-v` 和超时：
 
 ```bash
 curl -i -v --max-time 15 "$APP_HOST/api/place-order" \
@@ -709,22 +710,22 @@ curl -i -v --max-time 15 "$APP_HOST/api/place-order" \
   -d '{"userId":123,"itemId":"A001"}'
 ```
 
-`curl` prints only the response body by default. If the body is empty, the command can look like it returned nothing even when an HTTP status was returned.
+`curl` 默认只打印响应体。如果响应体为空，该命令看起来可能没有返回任何内容，即使返回了 HTTP 状态。
 
-## Operational Checklist
+## 操作检查清单
 
-Before considering the deployment complete, verify:
+在考虑部署完成之前，请验证：
 
-- `mock-api` deployment is available.
-- `wiremock-api` deployment is available.
-- `camel-quarkus-demo` Pod is `Running` and ready.
-- `/aggregate?userId=1` returns a merged user and orders response.
-- `/api/place-order` returns HTTP 201 for `userId=123,itemId=A001`.
-- `/api/place-order` returns HTTP 400 for an invalid user.
-- `/api/place-order` returns HTTP 400 for out-of-stock inventory.
-- Application logs show Camel route activity.
+- `mock-api` 部署可用。
+- `wiremock-api` 部署可用。
+- `camel-quarkus-demo` Pod 正在运行并准备就绪。
+- `/aggregate?userId=1` 返回合并的用户和订单响应。
+- `/api/place-order` 对 `userId=123,itemId=A001` 返回 HTTP 201。
+- `/api/place-order` 对无效用户返回 HTTP 400。
+- `/api/place-order` 对缺货库存返回 HTTP 400。
+- 应用程序日志显示 Camel 路由活动。
 
-Useful commands:
+有用的命令：
 
 ```bash
 kubectl get all -n $NS
