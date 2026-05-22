@@ -3,6 +3,7 @@ products:
   - Alauda Container Platform
 kind:
   - Solution
+id: KB260500005
 ---
 
 # nevermore Multi-line Log Merging Production Change Plan
