@@ -5,6 +5,7 @@ kind:
   - Solution
 ProductsVersion:
   - 3.x
+id: KB260500135
 ---
 
 # RabbitMQ MetalLB Access

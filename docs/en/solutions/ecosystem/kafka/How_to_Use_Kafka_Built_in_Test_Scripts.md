@@ -5,6 +5,7 @@ kind:
   - Solution
 ProductsVersion:
   - 3.x
+id: KB260500114
 ---
 
 # Use Kafka Built-in Performance Test Scripts

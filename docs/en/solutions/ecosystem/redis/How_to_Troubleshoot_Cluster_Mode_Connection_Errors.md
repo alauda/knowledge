@@ -6,6 +6,7 @@ kind:
 ProductsVersion:
   - 3.x
   - 4.x
+id: KB260500093
 ---
 
 # Troubleshoot Redis Cluster Mode Connection Errors

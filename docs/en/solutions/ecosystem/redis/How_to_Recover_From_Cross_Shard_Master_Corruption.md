@@ -6,6 +6,7 @@ kind:
 ProductsVersion:
   - 3.x
   - 4.x
+id: KB260500090
 ---
 
 # How to Recover From Cross-Shard Primary Corruption in Cluster Mode

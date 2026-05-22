@@ -6,6 +6,7 @@ kind:
 ProductsVersion:
   - 3.x
   - 4.x
+id: KB260500074
 ---
 
 # Connect to a Redis Sentinel Cluster with Navicat

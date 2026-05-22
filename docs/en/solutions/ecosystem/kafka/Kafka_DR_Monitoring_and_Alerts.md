@@ -5,6 +5,7 @@ kind:
   - Solution
 ProductsVersion:
   - 3.x
+id: KB260500119
 ---
 
 # Kafka Disaster Recovery Monitoring and Alerts

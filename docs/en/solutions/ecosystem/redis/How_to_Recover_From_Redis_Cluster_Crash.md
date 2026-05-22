@@ -6,6 +6,7 @@ kind:
 ProductsVersion:
   - 3.x
   - 4.x
+id: KB260500086
 ---
 
 # How to Recover From a Redis Cluster Crash

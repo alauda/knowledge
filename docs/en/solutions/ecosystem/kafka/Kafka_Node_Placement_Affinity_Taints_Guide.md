@@ -5,6 +5,7 @@ kind:
   - Solution
 ProductsVersion:
   - 3.x
+id: KB260500122
 ---
 
 # Schedule Kafka on Dedicated Middleware Nodes with Affinity, Taints, and Tolerations

@@ -6,6 +6,7 @@ kind:
 ProductsVersion:
   - 3.x
   - 4.x
+id: KB260500075
 ---
 
 # Resolve Master-Replica Sync Failure

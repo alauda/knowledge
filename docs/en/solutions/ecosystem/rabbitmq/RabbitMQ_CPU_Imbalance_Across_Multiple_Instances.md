@@ -5,6 +5,7 @@ kind:
   - Solution
 ProductsVersion:
   - 3.x
+id: KB260500137
 ---
 
 # RabbitMQ CPU Imbalance Across Multiple Instances

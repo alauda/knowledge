@@ -5,6 +5,7 @@ kind:
   - Solution
 ProductsVersion:
   - 3.x
+id: KB260500118
 ---
 
 # Kafka 2.4.x Is Not Supported After Upgrading to ACP 3.12

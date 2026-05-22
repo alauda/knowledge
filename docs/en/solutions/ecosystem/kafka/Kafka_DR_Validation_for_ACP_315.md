@@ -5,6 +5,7 @@ kind:
   - Solution
 ProductsVersion:
   - 3.x
+id: KB260500107
 ---
 
 # Kafka Disaster Recovery Validation for ACP 3.15

@@ -6,6 +6,7 @@ kind:
 ProductsVersion:
   - 3.x
   - 4.x
+id: KB260500078
 ---
 
 # Repair Redis Cluster Slot Anomalies

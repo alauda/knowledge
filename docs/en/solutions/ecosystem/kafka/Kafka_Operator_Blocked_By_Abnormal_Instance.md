@@ -5,6 +5,7 @@ kind:
   - Solution
 ProductsVersion:
   - 3.x
+id: KB260500117
 ---
 
 # Kafka Operator Is Blocked by an Abnormal Instance

@@ -5,6 +5,7 @@ kind:
   - Solution
 ProductsVersion:
   - 4.x
+id: KB260500088
 ---
 
 # Redis Best Practices

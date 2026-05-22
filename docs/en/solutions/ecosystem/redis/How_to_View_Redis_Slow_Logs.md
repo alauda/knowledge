@@ -6,6 +6,7 @@ kind:
 ProductsVersion:
   - 3.x
   - 4.x
+id: KB260500084
 ---
 
 # How to View Redis Slow Logs

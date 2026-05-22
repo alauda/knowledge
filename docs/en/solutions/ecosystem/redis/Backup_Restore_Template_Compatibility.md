@@ -6,6 +6,7 @@ kind:
 ProductsVersion:
   - 3.x
   - 4.x
+id: KB260500089
 ---
 
 # Backup and Restore Compatibility With Parameter Templates

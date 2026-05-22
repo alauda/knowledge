@@ -5,6 +5,7 @@ kind:
   - Solution
 ProductsVersion:
   - 3.x
+id: KB260500121
 ---
 
 # Kafka Restarts After Client CA Certificate Expiry on ACP 3.10.2

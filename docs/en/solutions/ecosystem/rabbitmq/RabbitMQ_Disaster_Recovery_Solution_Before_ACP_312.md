@@ -5,6 +5,7 @@ kind:
   - Solution
 ProductsVersion:
   - 3.x
+id: KB260500128
 ---
 
 # RabbitMQ Disaster Recovery Solution Before ACP 3.12

@@ -5,6 +5,7 @@ kind:
   - Solution
 ProductsVersion:
   - 3.x
+id: KB260500099
 ---
 
 # How to Enable External Access for RocketMQ

@@ -5,6 +5,7 @@ kind:
   - Solution
 ProductsVersion:
   - 3.x
+id: KB260500083
 ---
 
 # How to Recover Sentinel Instances That Have Merged Due to IP Recycling

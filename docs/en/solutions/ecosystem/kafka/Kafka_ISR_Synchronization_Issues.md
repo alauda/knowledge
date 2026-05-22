@@ -5,6 +5,7 @@ kind:
   - Solution
 ProductsVersion:
   - 3.x
+id: KB260500106
 ---
 
 # Resolve Kafka ISR Synchronization Issues That Block Broker Restart

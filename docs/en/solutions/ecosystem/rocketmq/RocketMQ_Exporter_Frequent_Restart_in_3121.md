@@ -5,6 +5,7 @@ kind:
   - Solution
 ProductsVersion:
   - 3.x
+id: KB260500102
 ---
 
 # RocketMQ Exporter Frequent Restart in 3.12.1

@@ -5,6 +5,7 @@ kind:
   - Solution
 ProductsVersion:
   - 3.x
+id: KB260500134
 ---
 
 # RabbitMQ Node Placement Affinity and Taints Guide

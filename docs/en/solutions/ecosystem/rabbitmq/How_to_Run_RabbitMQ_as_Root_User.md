@@ -5,6 +5,7 @@ kind:
   - Solution
 ProductsVersion:
   - 3.x
+id: KB260500125
 ---
 
 # How to Run RabbitMQ as Root User

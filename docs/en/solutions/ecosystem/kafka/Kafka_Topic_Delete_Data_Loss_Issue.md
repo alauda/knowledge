@@ -5,6 +5,7 @@ kind:
   - Solution
 ProductsVersion:
   - 3.x
+id: KB260500111
 ---
 
 # Avoid Kafka Topic Data Loss When Deleting an Abnormal Topic CR

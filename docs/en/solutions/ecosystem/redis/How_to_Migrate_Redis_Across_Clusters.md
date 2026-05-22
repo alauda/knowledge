@@ -5,6 +5,7 @@ kind:
   - Solution
 ProductsVersion:
   - 3.x
+id: KB260500095
 ---
 
 # Migrate Redis Data Across Kubernetes Clusters

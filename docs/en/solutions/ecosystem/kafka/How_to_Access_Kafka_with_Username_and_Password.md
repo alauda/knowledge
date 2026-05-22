@@ -5,6 +5,7 @@ kind:
   - Solution
 ProductsVersion:
   - 3.x
+id: KB260500113
 ---
 
 # Access a Kafka Cluster with Username and Password

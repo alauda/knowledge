@@ -5,6 +5,7 @@ kind:
   - Solution
 ProductsVersion:
   - 3.x
+id: KB260500124
 ---
 
 # Kafka Entity Operator Fails to Start Because Container Limits Are Too Small

@@ -5,6 +5,7 @@ kind:
   - Solution
 ProductsVersion:
   - 3.x
+id: KB260500101
 ---
 
 # RocketMQ Deployment Fails with Unvalidated Storage

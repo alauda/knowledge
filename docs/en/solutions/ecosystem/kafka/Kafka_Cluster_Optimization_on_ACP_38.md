@@ -5,6 +5,7 @@ kind:
   - Solution
 ProductsVersion:
   - 3.x
+id: KB260500112
 ---
 
 # Kafka Cluster Optimization on ACP 3.8

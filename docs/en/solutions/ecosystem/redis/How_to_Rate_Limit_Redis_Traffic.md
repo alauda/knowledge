@@ -6,6 +6,7 @@ kind:
 ProductsVersion:
   - 3.x
   - 4.x
+id: KB260500082
 ---
 
 # How to Rate Limit Redis Traffic

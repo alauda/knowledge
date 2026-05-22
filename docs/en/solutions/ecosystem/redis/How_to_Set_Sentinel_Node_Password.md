@@ -5,6 +5,7 @@ kind:
   - Solution
 ProductsVersion:
   - 4.x
+id: KB260500096
 ---
 
 # How to Set a Password on Redis Sentinel Nodes

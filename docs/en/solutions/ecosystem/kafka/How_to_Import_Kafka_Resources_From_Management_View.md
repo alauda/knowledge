@@ -5,6 +5,7 @@ kind:
   - Solution
 ProductsVersion:
   - 3.x
+id: KB260500103
 ---
 
 # Import Kafka Resources Created From the Management View

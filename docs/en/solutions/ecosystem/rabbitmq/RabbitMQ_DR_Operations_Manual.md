@@ -5,6 +5,7 @@ kind:
   - Solution
 ProductsVersion:
   - 3.x
+id: KB260500127
 ---
 
 # RabbitMQ Disaster Recovery Operations Manual

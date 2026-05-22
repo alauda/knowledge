@@ -5,6 +5,7 @@ kind:
   - Solution
 ProductsVersion:
   - 3.x
+id: KB260500110
 ---
 
 # Kafka Disaster Recovery Operations Manual for ACP 3.15

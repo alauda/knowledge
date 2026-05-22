@@ -5,6 +5,7 @@ kind:
   - Solution
 ProductsVersion:
   - 3.x
+id: KB260500109
 ---
 
 # Kafka Disaster Recovery Deployment Guide for ACP 3.15

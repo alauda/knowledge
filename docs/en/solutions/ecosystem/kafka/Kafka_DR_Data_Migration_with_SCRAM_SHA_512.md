@@ -5,6 +5,7 @@ kind:
   - Solution
 ProductsVersion:
   - 3.x
+id: KB260500105
 ---
 
 # Kafka Disaster Recovery and Data Migration with SCRAM-SHA-512

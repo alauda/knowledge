@@ -5,6 +5,7 @@ kind:
   - Solution
 ProductsVersion:
   - 3.x
+id: KB260500108
 ---
 
 # Kafka Operator Startup Exception After ACP 3.14 Upgrade

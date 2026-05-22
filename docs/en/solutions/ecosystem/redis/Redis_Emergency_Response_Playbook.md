@@ -6,6 +6,7 @@ kind:
 ProductsVersion:
   - 3.x
   - 4.x
+id: KB260500077
 ---
 
 # Redis Emergency Response Playbook

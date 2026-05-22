@@ -5,6 +5,7 @@ kind:
   - Solution
 ProductsVersion:
   - 4.x
+id: KB260500087
 ---
 
 # Deploy a Redis Proxy with RedisProxyOperator
