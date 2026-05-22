@@ -1,8 +1,10 @@
 ---
 kind:
-   - Solution
-products: 
-  - Alauda Application Services
+   - Article
+products:
+   - Alauda Application Services
+ProductsVersion:
+   - 4.x
 ---
 
 # How to Use Camel Quarkus
@@ -35,9 +37,8 @@ Validate the local environment:
 ```bash
 java -version
 mvn -version
-mvn -version | grep "Java version"
 podman info
-kubectl version --short
+kubectl version --client
 kubectl get nodes
 ```
 
