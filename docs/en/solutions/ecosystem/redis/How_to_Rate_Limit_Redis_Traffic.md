@@ -42,7 +42,7 @@ For these reasons, **bandwidth-based rate limiting is not recommended**. Use con
 
 In most production workloads, Redis itself rarely becomes the bottleneck:
 
-- Sentinel mode can sustain ~500K QPS, and with read/write splitting, ~1M QPS.
+- Sentinel mode can sustain ~500k QPS, and with read/write splitting, ~1M QPS.
 - For higher throughput, use Cluster mode.
 
 Before adding traffic controls at the Redis layer, evaluate:

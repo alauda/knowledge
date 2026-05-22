@@ -174,18 +174,18 @@ The following table summarizes recommended resource sizing across architectures,
 
 | Architecture | Persistence | Template | Instance size | Replicas | Sentinel | Shards | redis-exporter limits | Sentinel container limits | Redis container limits | Backup container | Total resources | Instance storage | Auto backup storage (7 retained) | Manual backup storage (7 retained) |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| Sentinel | AOF | aof-redis-6.0-sentinel | 2c4g | 1 | 3 | / | 100m / 128Mi | 100m / 200Mi | 2c4g | unlimited (reserve capacity) | 4.5c / 4.8g | sized to write volume | | |
-| Sentinel | AOF | aof-redis-6.0-sentinel | 4c8g | 1 | 3 | / | 100m / 128Mi | 100m / 200Mi | 4c8g | unlimited (reserve capacity) | 8.5c / 8.8g | sized to write volume | | |
-| Sentinel | RDB | rdb-redis-6.0-sentinel | 2c4g | 1 | 3 | / | 100m / 128Mi | 100m / 200Mi | 2c4g | unlimited (reserve capacity) | 4.5c / 4.8g | 8 GB | 28 GB | 28 GB |
-| Sentinel | RDB | rdb-redis-6.0-sentinel | 4c8g | 1 | 3 | / | 100m / 128Mi | 100m / 200Mi | 4c8g | unlimited (reserve capacity) | 8.5c / 8.64g | 16 GB | 56 GB | 56 GB |
-| Sentinel | Diskless | diskless-redis-6.0-sentinel | 2c4g | 1 | 3 | / | 100m / 128Mi | 100m / 200Mi | 2c4g | / | 4.5c / 4.8g | / | 28 GB | 28 GB |
-| Sentinel | Diskless | diskless-redis-6.0-sentinel | 4c8g | 1 | 3 | / | 100m / 128Mi | 100m / 200Mi | 4c8g | / | 8.5c / 8.8g | / | 56 GB | 56 GB |
-| Cluster | AOF | aof-redis-6.0-cluster | 2c4g | / | 3 | / | 100m / 300Mi | / | 2c4g | unlimited (reserve capacity) | 12.6c / 25.8g | sized to write volume | | |
-| Cluster | AOF | aof-redis-6.0-cluster | 4c8g | / | 3 | / | 100m / 300Mi | / | 4c8g | unlimited (reserve capacity) | 24.6c / 49.8g | sized to write volume | | |
-| Cluster | RDB | rdb-redis-6.0-cluster | 2c4g | / | 3 | / | 100m / 300Mi | / | 2c4g | unlimited (reserve capacity) | 12.6c / 25.8g | 24 GB | 84 GB | 84 GB |
-| Cluster | RDB | rdb-redis-6.0-cluster | 4c8g | / | 3 | / | 100m / 300Mi | / | 4c8g | unlimited (reserve capacity) | 24.6c / 49.8g | 48 GB | 168 GB | 168 GB |
-| Cluster | Diskless | diskless-redis-6.0-cluster | 2c4g | / | 3 | / | 100m / 300Mi | / | 2c4g | / | 12.6c / 25.8g | / | 84 GB | 84 GB |
-| Cluster | Diskless | diskless-redis-6.0-cluster | 4c8g | / | 3 | / | 100m / 300Mi | / | 4c8g | / | 24.6c / 49.8g | / | 168 GB | 168 GB |
+| Sentinel | AOF | aof-redis-6.0-sentinel | 2c4g | 1 | 3 | / | 100m / 128Mi | 100m / 200Mi | 2c4g | unlimited (reserve capacity) | 4.5c / 4.8G | sized to write volume | | |
+| Sentinel | AOF | aof-redis-6.0-sentinel | 4c8g | 1 | 3 | / | 100m / 128Mi | 100m / 200Mi | 4c8g | unlimited (reserve capacity) | 8.5c / 8.8G | sized to write volume | | |
+| Sentinel | RDB | rdb-redis-6.0-sentinel | 2c4g | 1 | 3 | / | 100m / 128Mi | 100m / 200Mi | 2c4g | unlimited (reserve capacity) | 4.5c / 4.8G | 8 GB | 28 GB | 28 GB |
+| Sentinel | RDB | rdb-redis-6.0-sentinel | 4c8g | 1 | 3 | / | 100m / 128Mi | 100m / 200Mi | 4c8g | unlimited (reserve capacity) | 8.5c / 8.64G | 16 GB | 56 GB | 56 GB |
+| Sentinel | Diskless | diskless-redis-6.0-sentinel | 2c4g | 1 | 3 | / | 100m / 128Mi | 100m / 200Mi | 2c4g | / | 4.5c / 4.8G | / | 28 GB | 28 GB |
+| Sentinel | Diskless | diskless-redis-6.0-sentinel | 4c8g | 1 | 3 | / | 100m / 128Mi | 100m / 200Mi | 4c8g | / | 8.5c / 8.8G | / | 56 GB | 56 GB |
+| Cluster | AOF | aof-redis-6.0-cluster | 2c4g | / | 3 | / | 100m / 300Mi | / | 2c4g | unlimited (reserve capacity) | 12.6c / 25.8G | sized to write volume | | |
+| Cluster | AOF | aof-redis-6.0-cluster | 4c8g | / | 3 | / | 100m / 300Mi | / | 4c8g | unlimited (reserve capacity) | 24.6c / 49.8G | sized to write volume | | |
+| Cluster | RDB | rdb-redis-6.0-cluster | 2c4g | / | 3 | / | 100m / 300Mi | / | 2c4g | unlimited (reserve capacity) | 12.6c / 25.8G | 24 GB | 84 GB | 84 GB |
+| Cluster | RDB | rdb-redis-6.0-cluster | 4c8g | / | 3 | / | 100m / 300Mi | / | 4c8g | unlimited (reserve capacity) | 24.6c / 49.8G | 48 GB | 168 GB | 168 GB |
+| Cluster | Diskless | diskless-redis-6.0-cluster | 2c4g | / | 3 | / | 100m / 300Mi | / | 2c4g | / | 12.6c / 25.8G | / | 84 GB | 84 GB |
+| Cluster | Diskless | diskless-redis-6.0-cluster | 4c8g | / | 3 | / | 100m / 300Mi | / | 4c8g | / | 24.6c / 49.8G | / | 168 GB | 168 GB |
 
 #### Scheduling and Anti-Affinity
 

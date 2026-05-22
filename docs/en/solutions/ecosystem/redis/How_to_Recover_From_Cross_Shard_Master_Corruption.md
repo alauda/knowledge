@@ -71,10 +71,10 @@ For each shard that is affected:
    - Let `PodB` be a pod (any of them) in the StatefulSet that *should* own this shard but currently has no Primary.
    - Record the Redis cluster node ID of `PodB`. You will use it as `<PodBID>` below.
 
-   ```bash
-   # On PodB:
-   redis-cli -a $REDIS_PASSWORD CLUSTER MYID
-   ```
+     ```bash
+     # On PodB:
+     redis-cli -a $REDIS_PASSWORD CLUSTER MYID
+     ```
 
 2. **Failover to PodB** so that the correct StatefulSet regains a Primary in the shard:
 
