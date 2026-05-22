@@ -375,7 +375,7 @@ ENTRYPOINT ["java", "-Dquarkus.http.host=0.0.0.0", "-Djava.util.logging.manager=
 
 Make sure `.dockerignore` allows the recursive `quarkus-app` directory:
 
-```dockerignore
+```gitignore
 *
 !target/quarkus-app/
 !target/quarkus-app/**
