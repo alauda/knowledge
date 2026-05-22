@@ -5,6 +5,7 @@ products:
   - Alauda Container Platform
 ProductsVersion:
    - 4.3.x and later
+id: KB260500063
 ---
 
 # How to Enable OpenTelemetry for Ingress NGINX
