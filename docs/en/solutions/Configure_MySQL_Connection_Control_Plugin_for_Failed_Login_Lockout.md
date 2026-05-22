@@ -36,15 +36,16 @@ The plugin exposes three variables that govern the delay applied after consecuti
 
 ### 2. Enable the plugin via the `Mysql` CR
 
-Edit the MGR instance YAML and add the plugin entries under `spec.paras.mysqld`. The following example locks out an account after 5 failed attempts and holds each subsequent failure open for at least 5 minutes (300 000 ms):
+Edit the MGR instance YAML and add the plugin entries under `spec.params.mysql.mysqld`. The following example locks out an account after 5 failed attempts and holds each subsequent failure open for at least 5 minutes (300 000 ms):
 
 ```yaml
 spec:
-  paras:
-    mysqld:
-      plugin-load: connection_control.so
-      connection-control-failed-connections-threshold: "5"
-      connection-control-min-connection-delay: "300000"
+  params:
+    mysql:
+      mysqld:
+        plugin_load_add: "connection_control.so"
+        connection_control_failed_connections_threshold: "5"
+        connection_control_min_connection_delay: "300000"
 ```
 
 Apply the change. The operator performs a rolling restart of the MGR pods to load the plugin.
@@ -111,4 +112,4 @@ Each row shows the user/host pair and the number of consecutive failures current
 
 ### 5. Roll back
 
-To disable the lockout, remove the `plugin-load` and `connection-control-*` entries from `spec.paras.mysqld` and re-apply the CR. The operator restarts the pods and the plugin is no longer loaded.
+To disable the lockout, remove the `plugin_load_add` and `connection_control_*` entries from `spec.params.mysql.mysqld` and re-apply the CR. The operator restarts the pods and the plugin is no longer loaded.

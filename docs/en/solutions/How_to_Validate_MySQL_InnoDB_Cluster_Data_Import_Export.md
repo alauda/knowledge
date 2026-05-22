@@ -105,14 +105,15 @@ SELECT @@secure_file_priv, @@local_infile;
 -- +-----------------------+----------------+
 ```
 
-Edit the `Mysql` CR and set the values under `spec.paras.mysqld`:
+Edit the `Mysql` CR and set the values under `spec.params.mysql.mysqld`:
 
 ```yaml
 spec:
-  paras:
-    mysqld:
-      secure_file_priv: ""   # empty string = unrestricted; or set to a directory to scope LOAD DATA / SELECT ... INTO OUTFILE
-      local_infile: "1"       # enable LOAD DATA LOCAL INFILE
+  params:
+    mysql:
+      mysqld:
+        secure_file_priv: ""   # empty string = unrestricted; or set to a directory to scope LOAD DATA / SELECT ... INTO OUTFILE
+        local_infile: "1"       # enable LOAD DATA LOCAL INFILE
 ```
 
 Re-apply the CR. The operator performs a rolling restart. Re-check:
