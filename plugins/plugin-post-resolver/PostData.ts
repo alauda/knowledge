@@ -1,7 +1,7 @@
 import path from "node:path";
 import dayjs from "dayjs";
 import grayMatter from "gray-matter";
-import { PostInfo } from "./types";
+import type { PostInfo } from "./types.js";
 import {
   excerptFilter,
   extractTitle,
@@ -9,7 +9,7 @@ import {
   getGitLastUpdatedTimeStamp,
   normalizeTags,
   transformTime,
-} from "./utils";
+} from "./utils.js";
 
 export const postInfos: PostInfo[] = [];
 export const postProducts: string[] = [];

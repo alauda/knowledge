@@ -1,6 +1,9 @@
 import { defineConfig } from "@alauda/doom/config";
-import { join } from "node:path";
-import { blogPostResolver } from "./plugins/plugin-post-resolver";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { blogPostResolver } from "./plugins/plugin-post-resolver/index.js";
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
 
 export default defineConfig({
   title: "Alauda Knowledge",

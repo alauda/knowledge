@@ -1,8 +1,8 @@
 import { usePageData } from "@rspress/core/runtime";
 import { ReactNode } from "react";
 
-import { HomeBanner } from "../../components/HomeBanner";
-import { HomeContent } from "../../components/HomeContent";
+import { HomeBanner } from "../../components/HomeBanner/index.js";
+import { HomeContent } from "../../components/HomeContent/index.js";
 import React from "react";
 
 const HomeLayout: React.FC<{ children: ReactNode }> = ({ children }) => {

@@ -3,10 +3,10 @@ import { useI18n, usePageData } from "@rspress/core/runtime";
 import { Badge } from "@rspress/core/theme-original";
 import { FC, useMemo } from "react";
 
-import { PostInfo } from "../../../plugins/plugin-post-resolver";
-import { DocID } from "../DocID";
-import EmptyState from "../Empty";
-import { LinkCard } from "../LinkCard";
+import type { PostInfo } from "../../../plugins/plugin-post-resolver/types.js";
+import { DocID } from "../DocID/index.js";
+import EmptyState from "../Empty/index.js";
+import { LinkCard } from "../LinkCard/index.js";
 
 interface PostListProps {
   postList: PostInfo[];
