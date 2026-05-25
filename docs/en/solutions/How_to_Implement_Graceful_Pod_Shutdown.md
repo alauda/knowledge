@@ -5,6 +5,7 @@ products:
   - Alauda Container Platform
 ProductsVersion:
    - 4.x
+id: KB260500140
 ---
 
 # How to Implement Graceful Pod Shutdown
