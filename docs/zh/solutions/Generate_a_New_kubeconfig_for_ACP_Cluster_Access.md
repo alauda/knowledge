@@ -4,20 +4,20 @@ kind:
 products:
   - Alauda Container Platform
 ProductsVersion:
-  - '4.1.0,4.2.x'
+  - '4.1.0,4.2.x,4.3.x'
 id: KB260500027
-sourceSHA: 3079074819fe19007f1552b6d51eeb978eb08570c8a27c0661bcf8e9e28ec7c3
+sourceSHA: 7ae0d106bd32f734d3025790ae6a489d354330ef7e5be82dc67a26c698bfdae1
 ---
 
 # 为 ACP 集群访问生成新的 kubeconfig
 
 ## 问题
 
-平台管理员需要为 Alauda Container Platform 集群生成一个新的 `kubeconfig` —— 用于提供对新自动化系统的访问、替换泄露的文件或轮换长期凭证。直接撤销现有 kubeconfig 的内容是有风险的，因为同一个文件可能被系统组件、CI 作业或其他管理员共享；因此，支持的工作流程是生成一个新的凭证，并以受控的方式退役旧的凭证。
+平台管理员需要为 Alauda Container Platform 集群生成一个新的 `kubeconfig` —— 用于提供对新自动化系统的访问、更换泄露的文件或轮换长期凭证。直接撤销现有 kubeconfig 的内容是有风险的，因为同一个文件可能被系统组件、CI 作业或其他管理员共享；因此，支持的工作流程是生成一个新的凭证，并以受控方式退役旧的凭证。
 
 ## 根本原因
 
-kubeconfig 只是一个 YAML 文档，它将集群端点、用户身份（客户端证书、令牌或 exec 凭证插件）和将两者配对的上下文捆绑在一起。由于同一身份可能嵌入在分发给多个用户的许多 kubeconfig 文件中，因此撤销访问需要使底层身份失效（轮换其证书、删除其 ServiceAccount 令牌 Secret 或移除其 RBAC 绑定）—— 而不是编辑一个本地文件。因此，通过生成一个全新的身份并导出一个引用它的 kubeconfig 来创建新的访问。
+kubeconfig 只是一个 YAML 文档，捆绑了集群端点、用户身份（客户端证书、令牌或 exec 凭证插件）和将两者配对的上下文。由于相同的身份可能嵌入在分发给多个用户的许多 kubeconfig 文件中，移除访问权限需要使底层身份失效（轮换其证书、删除其 ServiceAccount 令牌 Secret 或移除其 RBAC 绑定）—— 而不是编辑一个本地文件。因此，通过生成一个全新的身份并导出引用它的 kubeconfig 来创建新的访问权限。
 
 ## 解决方案
 
@@ -25,7 +25,7 @@ kubeconfig 只是一个 YAML 文档，它将集群端点、用户身份（客户
 
 ### 选项 1 — 长期有效的 ServiceAccount 令牌（推荐用于自动化）
 
-一个手动配置令牌 Secret 的 ServiceAccount 提供了一个稳定的 bearer-token 身份，可以通过删除 Secret 来撤销，而不会影响其他用户。
+手动提供令牌 Secret 的 ServiceAccount 提供了一个稳定的 bearer-token 身份，可以通过删除 Secret 来撤销，而不会影响其他用户。
 
 ```yaml
 apiVersion: v1
@@ -119,7 +119,7 @@ kubectl get csr jane-csr -o jsonpath='{.status.certificate}' \
 
 - ServiceAccount 令牌：`kubectl delete secret <old-token-secret>`。来自旧 kubeconfig 的下一个 API 调用将返回 401。
 - 绑定的 TokenRequest：无需操作——令牌会自行过期。
-- 客户端证书：在您的 CA/PKI 中撤销；在轮换之前，还需删除 RBAC 绑定（`kubectl delete clusterrolebinding <name>`）。
+- 客户端证书：在您的 CA/PKI 中撤销；在轮换之前，还需剥离 RBAC 绑定（`kubectl delete clusterrolebinding <name>`）。
 
 ## 诊断步骤
 
@@ -131,5 +131,5 @@ kubectl --kubeconfig=new-kubeconfig get --raw='/api'
 ```
 
 - 401 → 令牌/证书错误或已被删除。
-- 403 → 身份有效但缺少 RBAC；请仔细检查 `RoleBinding`/`ClusterRoleBinding` 和 `subjects[].name`/`namespace` 是否与您使用的 SA 匹配。
+- 403 → 身份有效但缺少 RBAC；仔细检查 `RoleBinding`/`ClusterRoleBinding` 和 `subjects[].name`/`namespace` 是否与您使用的 SA 匹配。
 - TLS 错误 → 嵌入的 CA 与集群 API 服务器不匹配；从 SA 令牌 Secret 或平台的证书分发机制重新获取 CA。

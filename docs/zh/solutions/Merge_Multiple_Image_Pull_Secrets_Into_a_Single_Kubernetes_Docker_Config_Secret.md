@@ -4,16 +4,16 @@ kind:
 products:
   - Alauda Container Platform
 ProductsVersion:
-  - '4.1.0,4.2.x'
+  - '4.1.0,4.2.x,4.3.x'
 id: KB260500029
-sourceSHA: 3196e5e02e48beb52330993ff54edb19dee2bfd4aa853deae7b6a4380db0a309
+sourceSHA: deb351efc639e7a6a471ea562a428f56675df0bbbb2e933ff2cfadf92c879ec9
 ---
 
 # 将多个镜像拉取密钥合并为单个 Kubernetes Docker-Config 密钥
 
 ## 问题
 
-一个工作负载需要从多个私有注册表中拉取容器镜像（例如公共镜像、供应商注册表和团队内部的 Harbor）。每个注册表在单独的 `~/.docker/config.json` 风格的文件中公开其凭据。Kubernetes 每次仅接受一个 `imagePullSecrets` 条目作为 ServiceAccount 的默认值，即使列出了多个，提供多个密钥也会增加操作噪音。
+一个工作负载需要从多个私有注册表中拉取容器镜像（例如，一个公共镜像、一个供应商注册表和一个团队内部的 Harbor）。每个注册表在单独的 `~/.docker/config.json` 风格文件中公开其凭据。Kubernetes 默认每个 ServiceAccount 仅接受一个 `imagePullSecrets` 条目，即使列出了多个，提供多个密钥也会增加操作噪音。
 
 本文描述了如何将两个或多个现有的拉取密钥 JSON 文件合并为一个满足所有注册表的 `kubernetes.io/dockerconfigjson` 密钥。
 
@@ -30,7 +30,7 @@ sourceSHA: 3196e5e02e48beb52330993ff54edb19dee2bfd4aa853deae7b6a4380db0a309
 }
 ```
 
-当两个拉取密钥文件包含不相交的 `auths` 键时，合并纯粹是一个 JSON 联合 — kubelet 镜像拉取器在拉取时查找注册表主机名，任何在 `auths` 下匹配的条目都会被使用。因此，这项工作是客户端的文本操作；不需要 API 更改。
+当两个拉取密钥文件包含不相交的 `auths` 键时，合并纯粹是一个 JSON 联合——kubelet 镜像拉取器在拉取时查找注册表主机名，任何在 `auths` 下匹配的条目都会被使用。因此，这项工作是客户端的文本操作；不需要 API 更改。
 
 ## 解决方案
 
@@ -48,7 +48,7 @@ sourceSHA: 3196e5e02e48beb52330993ff54edb19dee2bfd4aa853deae7b6a4380db0a309
 
    对于由 `docker login` 生成的 `~/.docker/config.json`，逐字复制该文件。
 
-2. 使用 `jq` 合并 `.auths` 对象。右侧操作数在键冲突时胜出，因此如果同一主机在两个中都出现，则将优先级更高的注册表放在第二位：
+2. 使用 `jq` 合并 `.auths` 对象。右侧操作数在键冲突时胜出，因此如果相同主机在两个中都出现，请将优先级更高的注册表放在第二位：
 
    ```bash
    jq -s '.[0] * .[1] | {auths: .auths}' /tmp/auth-a.json /tmp/auth-b.json \
