@@ -5,6 +5,7 @@ products:
    - Alauda Container Platform
 ProductsVersion:
    - 4.3.x
+id: KB260500154
 ---
 
 # Scraping cert-manager metrics with the ACP Prometheus stack
