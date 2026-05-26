@@ -5,6 +5,7 @@ products:
    - Alauda Container Platform
 ProductsVersion:
    - 4.1.0,4.2.x,4.3.x
+id: KB260500147
 ---
 
 # Cross-namespace ConfigMap and Secret references in Pod specs on ACP

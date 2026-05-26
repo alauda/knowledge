@@ -5,6 +5,7 @@ products:
    - Alauda Container Platform
 ProductsVersion:
    - 4.1.0,4.2.x,4.3.x
+id: KB260500152
 ---
 
 # OLM resolver fails to install operator due to orphan CSV in install namespace

@@ -5,6 +5,7 @@ products:
    - Alauda Container Platform
 ProductsVersion:
    - 4.1.0,4.2.x,4.3.x
+id: KB260500146
 ---
 
 # HPA scale-down behavior does not select which pods are deleted on ACP
