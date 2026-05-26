@@ -4,117 +4,54 @@ kind:
 products:
   - Alauda Container Platform
 ProductsVersion:
-  - '4.1.0,4.2.x'
+  - '4.1.0,4.2.x,4.3.x'
 id: KB260500002
-sourceSHA: 7685081e91c2fe57ec1326364e8c5476dc8654b20828980d85dfb3ed5d65a45f
+sourceSHA: 67b399265d92254a719be3e769c30189ad90c792561069347ae5f15ca886cc60
 ---
 
-# 收集命名空间的完整转储以进行故障排除
+# 使用 kubectl 收集 ACP 上的命名空间资源和 Pod 日志
 
 ## 问题
 
-当单个命名空间中的工作负载出现异常时，支持工程师通常需要该命名空间中每个资源的快照以及所有容器日志，并将其打包成一个文件。集群范围的诊断包（`inspection` 收集器，`kubectl cluster-info dump`）过于粗糙——它使响应者被平台内部信息淹没——而 `kubectl get -A` 又过于狭窄，因为它丢失了非命名空间上下文（事件、RBAC 绑定、存储）。需要的是一个每个命名空间的转储，能够捕获资源清单、最近的事件以及之前和当前的容器日志，全部打包成一个可转移的归档文件。
+在 Alauda Container Platform 上，收集单个命名空间的完整信息以进行诊断意味着需要捕获两件事：该命名空间中每个命名空间资源的清单 \[ev:c3]，以及每个 Pod 中每个容器的日志 \[ev:c5]。高效地做到这一点——而不需要为每种资源类型发出一个 API 请求或错过崩溃容器的先前日志——依赖于一小段可重复的 `kubectl` 调用，而不是临时的逐对象命令。这个方法将收集范围限制在一个命名空间内（可选地扩展到集群范围的对象以获取特权身份）；跨平台组件的集群范围诊断扫描是一个单独的过程，此处不予涵盖 \[ev:c3]。
 
 ## 解决方案
 
-对于应用命名空间的故障排除，运行一个便携式的 shell 循环，遍历每个命名空间的 API 资源和每个 pod 的容器日志，然后压缩结果。该循环仅依赖于 `kubectl` 和集群的发现 API，因此它适用于任何符合标准的集群：
+列举支持列出操作的命名空间资源类型，然后在一个请求中转储它们。可列出的命名空间类型集通过 `api-resources` 生成，并将该以逗号连接的列表直接输入到一个 `get` 调用中 \[ev:c3]。将列举的类型合并为一个 `get` 调用可以将转储限制为一个请求，而不是为每种资源类型发出单独的 `get` 请求 \[ev:c4]。
 
 ```bash
-#!/bin/bash
-# kubectl-nsdump <namespace>
-# 收集一个命名空间的清单、事件和容器日志。
-set -eu
-NS=${1:?用法: $0 <namespace>}
-KCTL="kubectl -n $NS"
-
-if ! kubectl get namespace "$NS" >/dev/null 2>&1; then
-  echo "命名空间 $NS 不存在" >&2
-  exit 1
-fi
-
-if [ "$($KCTL auth can-i get pods)" != "yes" ]; then
-  echo "当前用户无法读取 $NS 中的 pods" >&2
-  exit 1
-fi
-
-DEST="${NS}-$(date +%Y%m%d-%H%M%S).txt.gz"
-echo "正在收集 $NS 的转储到 $DEST"
-
-{
-  set -x
-  date
-  kubectl version --short
-  kubectl whoami 2>/dev/null || $KCTL auth whoami -o yaml
-  $KCTL get all -o wide
-  kubectl get namespace "$NS" -o yaml
-
-  # 遍历发现 API 暴露的每种命名空间资源类型，
-  # 将名称用逗号连接，以便 API 每个动词接收一个请求。
-  RESOURCES=$(kubectl api-resources --namespaced --verbs=list -o name | paste -sd,)
-  $KCTL get --ignore-not-found "$RESOURCES" -o wide
-  $KCTL get --ignore-not-found "$RESOURCES" -o yaml
-
-  # 事件，按绝对时间戳排序，而不是“5分钟前”的相对形式。
-  $KCTL get events -o custom-columns=\
-'LAST:.lastTimestamp,FIRST:.firstTimestamp,COUNT:.count,'\
-'NAME:.metadata.name,KIND:.involvedObject.kind,'\
-'SUBOBJECT:.involvedObject.fieldPath,TYPE:.type,REASON:.reason,'\
-'SOURCE:.source.component,MESSAGE:.message'
-
-  # 每个 pod、每个容器的日志（当前 + 之前的实例，如果有）。
-  for pod in $($KCTL get pod -o name); do
-    for c in $($KCTL get "$pod" \
-      --template='{{range .spec.containers}}{{.name}} {{end}}'); do
-      $KCTL logs "$pod" -c "$c" --timestamps || true
-      $KCTL logs "$pod" -c "$c" --timestamps --previous || true
-    done
-  done
-
-  # 如果调用者具有集群读取权限，还要捕获影响调度和存储的拓扑上下文。
-  if [ "$(kubectl auth can-i get nodes)" = "yes" ]; then
-    kubectl get node -o wide
-    kubectl get node -o yaml
-    kubectl describe node
-    kubectl get clusterrolebinding -o yaml
-    kubectl get storageclass -o wide
-    kubectl get storageclass -o yaml
-    kubectl get pv -o wide
-    kubectl get pv -o yaml
-    kubectl get csr -o wide || true
-    kubectl get pods -A -o wide
-  fi
-  date
-} 2>&1 | gzip > "$DEST"
-
-echo "转储已写入 $DEST"
+NS=<namespace>
+TYPES=$(kubectl api-resources --namespaced=true --verbs=list -o name | paste -sd, -)
+kubectl get "$TYPES" -n "$NS" -o yaml
 ```
 
-以重现问题的相同用户身份运行该脚本，以便 RBAC 错误反映原始故障模式。输出归档是纯文本；`zless`、`zgrep` 和 `zcat` 可以直接在其上工作，而无需扩展到磁盘。
-
-该脚本故意将资源列表批处理为每个动词一个逗号连接的 `kubectl get`——对每种资源类型发出一个请求将消耗数十个 API 调用，并可能触发 apiserver 的速率限制响应。使用 `zgrep '^secret|^kind: Secret'` 搜索压缩输出，而不是用不同的过滤器重新运行脚本。
-
-对于集群范围的问题（apiserver、调度器、入口控制器、CNI），每个命名空间的转储是错误的工具。使用平台内置的 `inspection` 收集器或其等效的诊断包 CR——这些包在一次操作中捆绑节点、etcd、控制平面和 operator 状态。
-
-## 诊断步骤
-
-如果脚本在特定资源类型上中止，请确定哪个类型触发了故障：
+通过列出其 Pods 收集整个命名空间的容器日志，从每个 Pod 的规格中读取每个容器的名称，并按容器提取带时间戳的日志。容器名称来自 `.spec.containers[*].name`，而 `logs --container=<c> --timestamps` 为每个容器输出带有 RFC3339 前缀的行 \[ev:c5]。
 
 ```bash
-kubectl api-resources --namespaced --verbs=list -o name | while read r; do
-  echo "--- $r ---"
-  kubectl -n "$NS" get --ignore-not-found "$r" -o name | head -3
+for pod in $(kubectl get pods -n "$NS" -o name); do
+  for c in $(kubectl get "$pod" -n "$NS" -o jsonpath='{.spec.containers[*].name}'); do
+    kubectl logs "$pod" -n "$NS" --container="$c" --timestamps
+  done
 done
 ```
 
-在特定类型上出现 405 或 403 指向具有受限访问的 CRD；要么授予执行服务帐户 `get`/`list` 权限，要么从循环中移除该资源。
-
-如果生成的归档对于一个长期存在的命名空间意外地小，容器日志可能在最近的 pod 重启时被截断。在重现问题后立即重新运行转储，并使用 `kubectl debug` 固定相关的 pods，如果需要更长的收集窗口。
-
-如果客户无法通过正常渠道发送归档，请将其附加到 `ConfigMap` 中，并让支持通过平台现有的日志导出管道提取它：
+对于已重启的容器，先前终止实例的日志通过 `-p/--previous` 标志单独检索，该标志返回先前运行的日志，而不是当前的日志 \[ev:c6]。
 
 ```bash
-kubectl -n "$NS" create configmap nsdump-$(date +%s) \
-  --from-file="$DEST"
+kubectl logs <pod> -n "$NS" --container=<c> --previous --timestamps
 ```
 
-这避免了带外文件传输，并通过集群的审计日志保留审计轨迹。
+## 诊断步骤
+
+在尝试日志转储之前，确认当前身份被允许在命名空间中读取 Pod 日志。自我 RBAC 检查可以在没有反复试验的情况下回答这个问题 \[ev:c7]。
+
+```bash
+kubectl auth can-i get pods/log -n "$NS"
+```
+
+当身份还持有 cluster-reader 或 cluster-admin 权限时——可以通过对集群范围动词的自我检查来检测——将收集范围扩展到集群范围的对象。在此环境中（Kubernetes `v1.34.5`），`get nodes` 自我检查对这样的身份返回是，并且节点、clusterrolebindings、storageclasses、persistentvolumes 和 csrs 都作为可列出的对象存在于集群中 \[ev:c8]。这些集群范围的类型通常对 cluster-reader/admin 可达；如果您不确定某个特定类型，请在将其添加到转储之前，对其运行相同的 `auth can-i` 检查。
+
+```bash
+kubectl auth can-i get nodes
+kubectl get nodes,clusterrolebindings,storageclasses,persistentvolumes,csr -o yaml
+```

@@ -4,86 +4,46 @@ kind:
 products:
   - Alauda Container Platform
 ProductsVersion:
-  - '4.1.0,4.2.x'
+  - '4.1.0,4.2.x,4.3.x'
 id: KB260500011
-sourceSHA: f16967f251181c5abf31c3ef807ee8f9a7b1490b4b803d9f7dbe888332696c7b
+sourceSHA: 161ac04fd7d795dfc579601b7ae7dd58a9560de730efc4f7b5360243716f08aa
 ---
 
-# 导航 Kubernetes API 的弃用和移除
+# 处理集群升级前后移除的 Kubernetes API 版本
 
-## 概述
+## 问题
 
-Kubernetes 遵循严格的 API 版本控制政策。每个 beta API（`v1beta1`、`v2beta1` 等）在被标记为弃用后，保证支持九个月或三个 Kubernetes 版本——以较长者为准——然后可以完全从服务器中移除。当移除发生时，任何仍然使用旧版本的工作负载、控制器、工具或管道将停止工作。
+Alauda 容器平台运行上游 Kubernetes API 服务器，并遵循上游 API 生命周期，因此随着集群在 Kubernetes 次要版本之间的推进，beta API 版本最终会被移除。在 Kubernetes v1.34.5 的集群中，流量控制组仅提供 GA 版本 `flowcontrol.apiserver.k8s.io/v1`；该组没有提供任何 `v1beta*` 版本，这反映了上游规则，即 beta API 版本在弃用后会在定义的窗口内保留，然后在后续的次要版本中移除 \[ev:c1]。一旦某个版本达到这一点并被移除，仍然针对已移除版本的工作负载、工具或其他组件的请求将开始失败 \[ev:c2]。
 
-上游维护了 [API 弃用政策](https://kubernetes.io/docs/reference/using-api/deprecation-policy/) 和每个版本的 [弃用 API 迁移指南](https://kubernetes.io/docs/reference/using-api/deprecation-guide/) 的规范时间线。管理员应在每次小版本升级时审计其集群中使用的弃用版本，将受影响的清单迁移到新版本，然后在审计清理干净后明确解除升级阻塞。
+```text
+来自服务器的错误 (未找到): 服务器无法找到请求的资源
+```
 
-本文描述了如何在 ACP 集群中识别弃用的 API 使用情况，如何迁移到后续版本，以及集群作为信号暴露的尚未清理的使用情况。
+直接请求已移除版本，如 `flowcontrol.apiserver.k8s.io/v1beta3`，将会被 API 服务器以 HTTP `404 Not Found` 响应，因为该版本不再提供服务 \[ev:c2]。
+
+## 根本原因
+
+提供服务的 API 版本集完全由运行的次要版本的上游 Kubernetes API 机制管理。当集群达到一个版本，其中 beta 版本已过弃用窗口时，该版本将从提供的版本集中移除；在 v1.34.5 时，流量控制组仅暴露 `flowcontrol.apiserver.k8s.io/v1`，任何仍然对已移除的 `v1beta*` 形式发出调用的客户端都没有可用的端点 \[ev:c1]。因此，这些失败并不是集群的错误配置，而是客户端继续使用已升级的 API 服务器不再识别的 API 版本的预期结果 \[ev:c2]。
 
 ## 解决方案
 
-将每次小版本升级视为 API 审计。以下工作流程适用于任何基于 Kubernetes 的平台：
+在跨越发生 API 移除的版本升级集群之前，识别哪些工作负载、清单、控制器和客户端工具仍然针对即将移除的 API 版本，并在升级之前将它们迁移到适当的替代版本 \[ev:c3]。以下命令仅显示 API 服务器当前提供的版本；它们本身并不列出哪些客户端仍在调用给定版本，因此工作负载侧的审查必须通过检查清单、Helm 图表、GitOps 仓库、控制器镜像以及任何其他已知引用弃用版本的 API 流量来源来完成 \[ev:c3]。对于流量控制组，v1.34.5 集群中存活的提供版本是 GA `flowcontrol.apiserver.k8s.io/v1`；清单和客户端应更新为该版本，以便在升级后继续解析 \[ev:c1]。
 
-1. **清点目标版本中所有已移除的 API。** 上游的 [弃用 API 迁移指南](https://kubernetes.io/docs/reference/using-api/deprecation-guide/) 列出了每个小版本中移除的具体 `group/version/kind` 三元组（例如，Kubernetes 1.22 移除了在 1.16 中已弃用的大量 `v1beta1` API）。建立一个目标版本将停止提供的种类列表。
+确认某个组在运行集群上当前提供哪些版本，然后更新资源以针对 GA 版本：
 
-2. **扫描所有存储对象以查找这些种类。** 每个弃用对象有两个维度：`storedVersion`（etcd 保存在磁盘上的内容，通过 `kubectl get --raw /apis/<group>` 返回）和 `served` 版本（客户端和控制器提交的内容）。两者都需要升级：
+```bash
+kubectl api-versions | grep flowcontrol.apiserver.k8s.io
+```
 
-   ```bash
-   # 集群仍然提供哪些版本？
-   kubectl api-resources -o wide
-   kubectl api-versions
-
-   # 每个资源在 etcd 中存储的版本是什么？
-   kubectl get apiservices.apiregistration.k8s.io \
-     -o custom-columns=NAME:.metadata.name,AVAILABLE:.status.conditions[?(@.type=="Available")].status
-   ```
-
-   对于每个弃用的种类，使用 `kubectl get <kind> -A -o yaml` 并查看返回 YAML 中的 `apiVersion`。任何仍绑定到弃用版本的内容将在下次升级中无法存活。
-
-3. **将清单、图表和自动化重写为后续版本。** 典型的迁移包括：
-
-   - `extensions/v1beta1` Ingress → `networking.k8s.io/v1` Ingress
-   - `policy/v1beta1` PodDisruptionBudget → `policy/v1` PodDisruptionBudget
-   - `autoscaling/v2beta2` HorizontalPodAutoscaler → `autoscaling/v2`
-   - `batch/v1beta1` CronJob → `batch/v1`
-   - `apiregistration.k8s.io/v1beta1` APIService → `apiregistration.k8s.io/v1`
-
-   对于 CRD 支持的工作负载，跨整个工具链提升 `apiVersion`：原始清单、Helm 图表、GitOps 应用源、CI 管道固定装置以及任何 admission-webhook 客户端代码。即使有一个生成器仍使用旧版本，下一次 `kubectl apply` 将静默地重新创建一个弃用对象。
-
-4. **重新运行扫描直到清理干净，** 然后继续升级。不要依赖升级后的修复脚本；一旦服务器停止提供旧版本，使用它的现有控制器将开始出错。
-
-5. **尽可能偏好 `apiVersion` 无关的工具。** CRD 上的 `conversion webhooks`、`kustomize` `apiVersion` 补丁和基于运行的 Kubernetes 小版本的 Helm 模板，让您能够在不同版本的集群中推出单一源代码树，而无需为每个服务器版本单独准备清单。
+```yaml
+apiVersion: flowcontrol.apiserver.k8s.io/v1
+kind: FlowSchema
+```
 
 ## 诊断步骤
 
-在运行的集群上，有两个信号可以告诉您是否仍在使用弃用的 API：
+要确定失败是否源于已移除的 API 版本，请检查 API 服务器对受影响请求的响应。已移除的版本返回 `404 Not Found`，并且 API 服务器报告无法找到请求的资源，从而将已移除版本的调用与授权或准入失败区分开来 \[ev:c2]。交叉检查受影响组的提供版本与 v1.34.5 集群上仅 GA 的版本集：这确认了失败请求中命名的版本是否仍在运行的次要版本上提供服务，以及哪个版本仍然是迁移目标 \[ev:c1]。查询报告提供的版本，而不是正在使用的调用者，因此它确认了已移除版本调用的诊断，但并不单独列出仍在发出旧版本请求的每个客户端——该枚举必须通过检查已知发送失败请求的工作负载、清单和工具来完成 \[ev:c1]。
 
 ```bash
-# 每个弃用请求都会增加此计数器。迁移工作完成后，非零速率意味着某个控制器或 cronjob 仍在使用旧版本。
-kubectl get --raw '/metrics' | grep apiserver_requested_deprecated_apis
+kubectl get --raw /apis/flowcontrol.apiserver.k8s.io
 ```
-
-查询 Prometheus 以获取相同计数器，以查看 *哪个* 资源仍在使用：
-
-```text
-sum by (group, version, resource) (
-  rate(apiserver_requested_deprecated_apis[5m])
-)
-```
-
-group/version/resource 标签标识了违规者——通常是尚未升级的控制器或操作员。升级组件（或者，如果是内部开发的，提升其 client-go 依赖）直到计数器降至零。
-
-根据下一个版本的移除列表审计存储资源：
-
-```bash
-for api in \
-  ingresses.extensions \
-  podsecuritypolicies.policy \
-  cronjobs.batch \
-  horizontalpodautoscalers.autoscaling \
-  ; do
-  echo "=== $api ==="
-  kubectl get "$api" -A -o json 2>/dev/null | jq -r '.items[] | "\(.apiVersion) \(.metadata.namespace)/\(.metadata.name)"' | sort -u
-done
-```
-
-任何显示弃用 `apiVersion` 的行都是迁移候选者。以后续版本重新应用对象，以重写 etcd 中的存储副本。一旦输出仅包含后续版本，集群就可以安全地进行移除旧版本的升级。

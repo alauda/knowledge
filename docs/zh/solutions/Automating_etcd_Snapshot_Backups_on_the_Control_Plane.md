@@ -4,150 +4,97 @@ kind:
 products:
   - Alauda Container Platform
 ProductsVersion:
-  - '4.1.0,4.2.x'
+  - '4.1.0,4.2.x,4.3.x'
 id: KB260500016
-sourceSHA: 6a81db54f05fa6df8eb5626a7b1c6e910b2b62533ace77f2b257b0518c5a4ec6
+sourceSHA: 8fb62852c433700b4b156f026d53891752b8fb40e94212e74b31e24d33a48577
 ---
 
-# 在控制平面上自动化 etcd 快照备份
+# 在 ACP 上搭建命名空间、RBAC 范围的定期备份工作负载
 
-## 概述
+## 问题
 
-etcd 是每个 Kubernetes 对象的真实来源。失去它——通过磁盘损坏、同时节点故障或意外删除——而没有最近的备份，将导致整个集群的重建。自动化定期的主机快照是平台可以维护的最便宜和最有效的灾难恢复原语。
-
-在 ACP 上，首选机制是平台在 `configure/backup` 下的备份接口，它协调快照、应用保留策略并将其存储在集群外。当平台管理的备份不可用时（早期启动、隔离实验室或当操作员希望获得额外的本地副本时），在每个控制平面节点上调用 `etcdctl snapshot` 的最小权限 CronJob 是一个合理的后备方案。
+在 Alauda 容器平台 (Kubernetes `v1.34.5`) 上，定期备份工作负载需要一个自包含的家：一个专用命名空间来容纳其 Pods，一个根据所选备份工具要求的 RBAC 身份，以及一个定期触发器。创建一个专用命名空间来容纳备份 Pods，以便将工作负载与其他租户隔离，并可以作为一个单元管理其生命周期 \[ev:c1]。支持的身份以标准 Kubernetes RBAC 表达，在 ACP 上表现相同 \[ev:c2]。
 
 ## 解决方案
 
-### 首选：平台管理的备份
+首先创建专用命名空间；它是一个普通的 Kubernetes `Namespace` 对象 \[ev:c1]：
 
-使用 ACP 的 configure/backup 页面为集群启用控制平面备份。选择一个计划、保留窗口和目标存储位置（与 S3 兼容的对象存储是一个常见选择）。平台处理：
+```bash
+kubectl create namespace acp-etcd-backup
+```
 
-- 在 **每个** 控制平面节点上进行一致的调用，而不仅仅是脚本偶然选择的第一个节点，
-- 目标存储的凭证管理，
-- 保留 / 垃圾回收，
-- 与恢复工具的集成（这是人们常常忘记验证的灾难恢复的一半）。
+将工作负载身份配置为 `ServiceAccount`、`ClusterRole` 和 `ClusterRoleBinding`。这些使用标准的 `rbac.authorization.k8s.io/v1` API 和标准的 RBAC 类型（`ClusterRole`、`ClusterRoleBinding`、`Role`、`RoleBinding`），在 ACP 上保持不变，因此不需要对 RBAC 对象进行平台特定的调整 \[ev:c2]。下面的规则集是示例性框架——它授予对节点的读取访问权限以及对 Pods 和 `pods/log` 的管理权限；将实际的 `resources` 和 `verbs` 限制到所选备份工具所需的确切内容 \[ev:c2]：
 
-平台管理的备份消除了在用户命名空间中需要特权 Pod 的需求；每当可用时，优先选择它。
+```yaml
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: backup-sa
+  namespace: acp-etcd-backup
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: backup-runner
+rules:
+  - apiGroups: [""]
+    resources: ["nodes"]
+    verbs: ["get", "list"]
+  - apiGroups: [""]
+    resources: ["pods", "pods/log"]
+    verbs: ["get", "list", "create", "delete", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: backup-runner
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: backup-runner
+subjects:
+  - kind: ServiceAccount
+    name: backup-sa
+    namespace: acp-etcd-backup
+```
 
-### 后备：定时快照作业
+将工作负载作为 `CronJob` 在 `batch/v1` API 中调度，运行在专用命名空间中的 `backup-sa` ServiceAccount 下 \[ev:c6]。下面的清单提供了通用框架——调度、身份和 Pod shell；用适合目标的备份工具填充容器的 `image` 和 `command` \[ev:c6]：
 
-如果平台接口尚未启用，请运行一个 CronJob，在每个控制平面节点上调用 `etcdctl snapshot save`。保持权限严格：该作业需要读取 etcd TLS 材料并写入每个控制平面节点上的一个已知目录，且不需要其他权限。
+```yaml
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: backup-cronjob
+  namespace: acp-etcd-backup
+spec:
+  schedule: "0 */6 * * *"
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          serviceAccountName: backup-sa
+          restartPolicy: Never
+          containers:
+            - name: backup
+              image: <backup-image>
+              command: ["/bin/sh", "-c", "<backup-command>"]
+```
 
-1. **创建一个专用命名空间和 ServiceAccount。**
-
-   ```bash
-   kubectl create namespace etcd-backup
-   kubectl -n etcd-backup create serviceaccount etcd-backup
-   ```
-
-2. **仅授予作业所需的集群范围读取权限。** 需要节点访问权限以枚举控制平面节点；`kube-system` 上的 `pods/exec` 权限是发出 `etcdctl snapshot` 所必需的。避免任何未列出的特权。
-
-   ```yaml
-   apiVersion: rbac.authorization.k8s.io/v1
-   kind: ClusterRole
-   metadata:
-     name: etcd-backup
-   rules:
-     - apiGroups: [""]
-       resources: ["nodes"]
-       verbs: ["get", "list"]
-     - apiGroups: [""]
-       resources: ["pods"]
-       verbs: ["get", "list"]
-     - apiGroups: [""]
-       resources: ["pods/exec"]
-       verbs: ["create"]
-   ---
-   apiVersion: rbac.authorization.k8s.io/v1
-   kind: ClusterRoleBinding
-   metadata:
-     name: etcd-backup
-   subjects:
-     - kind: ServiceAccount
-       name: etcd-backup
-       namespace: etcd-backup
-   roleRef:
-     apiGroup: rbac.authorization.k8s.io
-     kind: ClusterRole
-     name: etcd-backup
-   ```
-
-3. **安排快照。** 以下作业每天运行一次，遍历每个控制平面 Pod，在 etcd 容器内进行快照，并删除超过 7 天的快照。根据您的 RPO 目标调整计划和保留策略。
-
-   ```yaml
-   apiVersion: batch/v1
-   kind: CronJob
-   metadata:
-     name: etcd-snapshot
-     namespace: etcd-backup
-   spec:
-     schedule: "7 3 * * *"                 # 每天 03:07 UTC
-     concurrencyPolicy: Forbid
-     successfulJobsHistoryLimit: 3
-     failedJobsHistoryLimit: 5
-     jobTemplate:
-       spec:
-         backoffLimit: 0
-         ttlSecondsAfterFinished: 3600
-         template:
-           spec:
-             serviceAccountName: etcd-backup
-             restartPolicy: Never
-             containers:
-               - name: snapshot
-                 image: bitnami/kubectl:1.33
-                 command:
-                   - /bin/bash
-                   - -ec
-                   - |
-                     set -o pipefail
-                     for pod in $(kubectl -n kube-system get pod \
-                         -l component=etcd \
-                         -o jsonpath='{.items[*].metadata.name}'); do
-                       dest="/var/lib/etcd/backup/snapshot-$(date -u +%Y%m%dT%H%M%SZ).db"
-                       echo "===== $pod -> $dest"
-                       kubectl -n kube-system exec "$pod" -c etcd -- sh -c "
-                         mkdir -p \$(dirname $dest) &&
-                         ETCDCTL_API=3 etcdctl \
-                           --endpoints=https://127.0.0.1:2379 \
-                           --cacert=/etc/kubernetes/pki/etcd/ca.crt \
-                           --cert=/etc/kubernetes/pki/etcd/server.crt \
-                           --key=/etc/kubernetes/pki/etcd/server.key \
-                           snapshot save $dest &&
-                         find \$(dirname $dest) -name 'snapshot-*.db' -mtime +7 -delete
-                       "
-                     done
-   ```
-
-4. **将快照传输到集群外。** 仅在控制平面节点上存在的快照无法在其旨在覆盖的故障模式下存活。将 CronJob 与一个侧车或单独的作业配对，上传新的 `snapshot-*.db` 文件到恢复工具可以访问的对象存储——`rclone`、`aws s3 cp`，或一个挂载节点本地路径并流式传输到存储桶的 init-container。
-
-5. **恢复演练。** 从未进行过恢复的备份是猜测。每季度在一个一次性测试集群中进行恢复，并记录运行手册。确切的恢复步骤是平台特定的（它从快照重建 etcd 静态 Pod）；在压力下不要即兴发挥，而是查阅平台的灾难恢复文档。
+上述框架在专用命名空间的默认 Pod 安全配置文件下运行备份容器；`image` 和 `command` 占位符填充为在这些默认设置下运行的备份工具 \[ev:c6]。本文并未主张备份工作负载具有任何提升的 Pod 级权限——如果特定备份工具文档中说明了主机级或特权要求，请确认目标集群的 Pod 安全策略是否允许该级别的权限，因为集群 Pod 安全强制执行可能会拒绝它。
 
 ## 诊断步骤
 
-确认 CronJob 运行并在预期节点上留下了工件：
+通过手动触发 CronJob 并确认生成的 Pod 和 Job 成功完成来验证设置 \[ev:c6]。`batch/v1` API 支持使用 `--from=cronjob/<name>` 标志从现有 CronJob 创建临时 Job，因此不必等待调度 \[ev:c6]：
 
 ```bash
-kubectl -n etcd-backup get jobs --sort-by=.status.startTime | tail -n 10
-kubectl -n etcd-backup logs job/$(kubectl -n etcd-backup get job -o jsonpath='{.items[-1].metadata.name}')
+kubectl create job test-backup \
+  --from=cronjob/backup-cronjob -n acp-etcd-backup
 ```
 
-检查控制平面节点的快照文件。ACP 的集群 PSA 拒绝 `chroot /host`，并且 `registry.k8s.io/...` 可能无法从隔离集群访问——通过任何在集群内的镜像读取调试 Pod 的 `/host` 绑定挂载，确保其包含 `ls`：
+通过检查命名空间中的 Pods、Jobs 和 CronJobs 确认手动触发的运行已完成 \[ev:c6]：
 
 ```bash
-NODE=<control-plane-1>
-kubectl debug node/$NODE -it \
-  --image=<image-with-shell> \
-  -- ls -lh /host/var/lib/etcd/backup/ 2>/dev/null
+kubectl get cronjobs,jobs,pods -n acp-etcd-backup
 ```
 
-在依赖快照之前，检查其完整性：
-
-```bash
-kubectl -n kube-system exec etcd-<host> -c etcd -- \
-  sh -c 'ETCDCTL_API=3 etcdctl snapshot status \
-           /var/lib/etcd/backup/<file.db> -w table'
-```
-
-预期输出列出快照哈希、总键数和总大小——空或截断的快照通常会直接导致状态命令失败。如果 `snapshot save` 返回 `context deadline exceeded`，通过 `--dial-timeout` 和 `--command-timeout` 提高命令超时；健康的 etcd 应该在集群中有几 GB 数据的情况下，在一分钟内完成快照。
+一个已完成的 Job 和一个状态为 `Completed` 的 Pod 表明命名空间、RBAC 和 CronJob 框架已正确连接 \[ev:c6]。

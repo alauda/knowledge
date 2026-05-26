@@ -4,129 +4,114 @@ kind:
 products:
   - Alauda Container Platform
 ProductsVersion:
-  - '4.1.0,4.2.x'
+  - '4.1.0,4.2.x,4.3.x'
 id: KB260500038
-sourceSHA: 3601a61badb74f1bf6cf76b0abc8cf772baff97b1d431bbe89e1408608dae109
+sourceSHA: e268a187c984e981652eef22bba3c80fdfe3c754a67106fc363678f1a06449d7
 ---
 
-# 节点 NotReady，提示 "PLEG is not healthy"
+# ACP 上的节点 NotReady，kubelet 报告 "PLEG is not healthy"
 
 ## 问题
 
-一个或多个集群节点变为 `NotReady`，且 kubelet 状态日志报告类似以下错误：
-
-```text
-container runtime is down, PLEG is not healthy: pleg was last seen active ...
-```
-
-受影响节点上的工作负载停止接收生命周期更新，新 Pods 无法在该节点上调度，如果这种情况持续，控制器管理器将开始将 Pods 驱逐出该节点。节点通常在 kubelet 重启后短暂恢复，然后几分钟后再次出现问题。
+在一个 Alauda 容器平台集群（kube v1.34.5，容器运行时 `containerd://2.2.1-5`）中，一个工作节点变为 `NotReady`，同时 kubelet 在节点的 `Ready` 状态中报告消息 "container runtime is down, PLEG is not healthy"。Ready 状态暴露了标准的上游 `NodeCondition` 字段（`type`、`status`、`reason`、`message`、`lastHeartbeatTime`、`lastTransitionTime`）；在健康节点上 `type=Ready`，`status=True`，`reason=KubeletReady`，消息携带 kubelet 的自由文本。当 kubelet 的 Pod 生命周期事件生成器无法完成其对容器运行时的定期重新列出时，这些字段会显示 PLEG 不健康的文本 \[ev:c1]。
 
 ## 根本原因
 
-Pod 生命周期事件生成器 (PLEG) 是 kubelet 内部的一个组件，它定期向容器运行时请求容器列表及其状态。每次迭代称为一次 "relist"。如果 kubelet 无法在 PLEG 健康窗口（3 分钟）内完成完整的 relist，它将标记节点为 `NotReady`，并显示 `PLEG is not healthy` 的 CRI 级别错误。
+kubelet 的 PLEG 在 CRI 套接字（ACP 上的 `/run/containerd/containerd.sock`）上运行一个持续的重新列出循环，以保持 pod 和容器状态的内存缓存。`kubelet_pleg_last_seen_seconds` 指标是重新列出的心跳——在健康节点上，它大致与墙钟同步，kubelet 在心跳超过重新列出阈值时认为 PLEG 不健康；`kubelet_pleg_discard_events` 计数器跟踪当循环落后时丢弃的事件 \[ev:c2]。
 
-潜在的根本原因可以归纳为四个方面：
+每次重新列出的工作量与节点上的 pod 数量成正比，与主机规格无关：在四个其他相同的节点（相同内核、容器运行时、kube 版本）中，`kubelet_pleg_relist_duration_seconds_sum` 累计计数器在承载更多 pod 的节点上更高（33 个 pod 产生约 8967 秒；48 和 49 个 pod 分别产生约 9501 秒和 10785 秒）。重新列出的间隔本身保持接近 1 秒的上游节奏——扩展的是每次传递的成本，而不是循环频率 \[ev:c3]。
 
-- **容器运行时延迟或挂起。** CRI 端点响应缓慢，卡在死锁的 goroutine 上，或因昂贵操作（例如，删除非常大的容器根文件系统）而被串行化。每次 relist 都排队在其后，导致 PLEG 超时。
-- **Pod 密度过高，超出 relist 窗口。** PLEG 的成本与节点上的容器数量成正比，而不是与主机的 CPU / 内存预算成正比。一个 96 核的主机运行 1,000 个容器时，仍然需要在每次 relist 时遍历每一个容器，并且在较小的主机上有 50 个容器时会更早错过截止时间。
-- **在获取 Pod 状态时的 CNI 问题。** 获取 Pod 网络状态是 relist 路径的一部分；一个挂起的 CNI 调用（网络插件无响应，`cni-bin` 缺少二进制文件，网络策略控制器卡住）会以与运行时挂起相同的方式阻塞 PLEG。
-- **kubelet 自身的资源匮乏。** 没有请求/限制的容器使节点 CPU 资源匮乏，内存压力导致 kubelet 辅助程序的 OOM 杀死，或热 I/O 循环使容器运行时进程的系统调用吞吐量匮乏——所有这些都在 PLEG 边界上显现，因为这是 kubelet 首次错过截止时间的地方。
+运行时延迟、死锁或远程 CRI 请求的超时将重新列出工作推向 kubelet 的 `runtimeRequestTimeout`（实时值 `2m0s`），并在 `kubelet_runtime_operations_errors_total{operation_type=…}` 增量中显现——按 CRI 动词（`container_status`、`exec_sync`、`pull_image`、`run_podsandbox`、`remove_container`、`start_container`）分解。运行时的降级会推动这些计数器上升，并在同一窗口中使重新列出循环陷入饥饿状态 \[ev:c4]。
+
+第二类停滞发生在 CNI 插件链中。该节点使用 Multus 作为元插件（`00-multus.conf`），委托给 `kube-ovn`（`01-kube-ovn.conflist`），并且 kube-ovn 插件在每次 CNI 调用时访问本地套接字 `/run/openvswitch/kube-ovn-daemon.sock`。该守护进程中的错误或停滞会阻塞 CRI 的 `PodSandbox` 网络状态回调，导致 PLEG 不健康 \[ev:c5]。
 
 ## 解决方案
 
-立即的恢复措施是对节点进行隔离和排空，重启运行时和 kubelet，并清理死掉的容器和悬挂的镜像，这些都会给每次 relist 增加不必要的成本。然后解决适用的根本原因。
-
-步骤 1 — 排空节点，以便工作负载能够干净地迁移：
+在处理 kubelet 或运行时之前，先撤离节点。`kubectl drain` 首先对目标节点进行隔离，然后驱逐非 DaemonSet pod。使用 `--ignore-daemonsets`，每个节点代理（CNI、存储、监控）在维护期间保持运行；独立 pod（无控制器）在没有 `--force` 的情况下被拒绝，这作为一个安全门，防止驱逐没有调度程序管理替代品的工作负载 \[ev:c6]：
 
 ```bash
 kubectl cordon <node-name>
 kubectl drain <node-name> --ignore-daemonsets --delete-emptydir-data
 ```
 
-步骤 2 — 在节点主机上，重启运行时和 kubelet。ACP 的集群 PSA 拒绝 `chroot /host`；请改用 `kubectl debug node` 并使用 `--profile=sysadmin`（这会挂载主机的 systemd 套接字和 PID 命名空间）以及一个包含 `systemctl` 的镜像。`busybox` 镜像缺少 `systemctl`：
+节点被排空后，通过 systemd 重启 kubelet 和容器运行时；ACP 节点上的运行时守护进程是 `containerd.service`（已加载、已启用、在实时捕获中处于活动状态），kubelet 单元名称与上游匹配 \[ev:c6]：
 
 ```bash
-kubectl debug node/<node-name> --image=<image-with-systemd> --profile=sysadmin -it -- \
-  sh -c 'systemctl restart crio && systemctl restart kubelet'
+systemctl restart kubelet
+systemctl restart containerd
 ```
 
-步骤 3 — 清除已退出的容器和未标记的镜像。这些在工作负载更替过程中会在节点上累积，并且会增加每次 relist 的开销。镜像必须包含 `crictl`：
+使用 `crictl` 清理已退出的容器。ACP 节点提供与容器运行时无关的 `crictl` CLI，通过 `/etc/crictl.yaml` 连接到 containerd 套接字（`runtime-endpoint: unix:///run/containerd/containerd.sock`）；`crictl version` 报告 `RuntimeName: containerd / RuntimeVersion: v2.2.1-5`。`crictl ps -a --state exited` 列出已退出的容器——金丝雀节点观察到 43 个——并且 `crictl rm` 接受带有上游 `--all` / `--force` / `--keep-logs` 标志的 CONTAINER-IDs \[ev:c8]：
 
 ```bash
-kubectl debug node/<node-name> --image=<image-with-crictl> --profile=sysadmin -it -- \
-  sh -c '
-    crictl ps -a | awk "/Exited/ {print \$1}" | xargs -r crictl rm
-    crictl images | awk "/<none>/ {print \$3}" | xargs -r crictl rmi
-  '
+crictl ps -a --state exited
+crictl ps -a | grep -i Exited | awk '{print $1}' | xargs -r crictl rm
 ```
 
-步骤 4 — 解除节点的隔离：
+以相同方式清理未标记的镜像。`crictl images` 返回标准的 IMAGE / TAG / IMAGE ID / SIZE 列；未标记的镜像显示为 `TAG=<none>`。`crictl rmi` 接受带有 `--all` / `--prune` 的 IMAGE-IDs，因此上游清理形式逐字移植 \[ev:c9]：
+
+```bash
+crictl images
+crictl images | awk '$2=="<none>" {print $3}' | xargs -r crictl rmi
+```
+
+设置工作负载的 `requests` 和 `limits` 以保护节点免受 OOM 和 CPU 饥饿，这会降低节点进程（包括运行时）的性能。标准的 `pod.spec.containers.resources` `ResourceRequirements` 结构暴露了 `requests<map[string]Quantity>` 和 `limits<map[string]Quantity>`。kubelet 的 `evictionHard` 阈值——实时值 `memory.available: 100Mi` 和 `pid.available: 10%`——是翻转节点的 `MemoryPressure` 和 `PIDPressure` 状态的信号；在健康集群中，所有节点报告这两个状态为 `False/KubeletHasSufficientMemory` 和 `False/KubeletHasSufficientPID` \[ev:c10]：
+
+```yaml
+resources:
+  requests:
+    cpu: 100m
+    memory: 256Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi
+```
+
+在 kubelet 和 containerd 恢复后，解除节点的隔离：
 
 ```bash
 kubectl uncordon <node-name>
 ```
 
-如果在此清理后 PLEG 仍然复发，那么它是结构性原因之一，修复不在节点本身：
-
-- **在每个工作负载上设置 `resources.requests` 和 `resources.limits`。** 无限制的 Pods 在负载下会定期使 kubelet 资源匮乏。首先从通过 `kubectl top pod --sort-by=cpu` 和 `--sort-by=memory` 在事件窗口中识别的罪魁祸首开始。
-- **限制 Pod 密度** 在每个节点超过大约 250 个 Pods 的主机上。kubelet 的 `maxPods` 默认值为 110；支持高于该值的设置，但 PLEG 预算会迅速收紧，尤其是在有许多短生命周期容器的情况下。降低受影响池的节点配置中的 `maxPods`，或进行横向扩展。
-- **检查 CNI 健康。** ACP 上的集群 CNI 是 Kube-OVN。在 PLEG 错误发生的同一时间窗口内，观察 Kube-OVN 控制器和守护进程 Pods 是否存在重启循环或卡住的调和：
-
-  ```bash
-  kubectl -n kube-system get pod -l app=kube-ovn-cni -o wide
-  kubectl -n kube-system logs ds/kube-ovn-cni --since=30m | grep -iE 'timeout|deadline|reconcile'
-  ```
-
-  在获取 Pod 状态时 CNI 内部的挂起会在 kubelet 端表现为 PLEG 症状，尽管根本原因在网络栈中。
-- **如果已知的死锁在上游已被修复，则升级运行时。** 节点配置表面（`configure/clusters/nodes`，或 **Immutable Infrastructure** 扩展）是运行时版本被固定的地方；从那里提升运行时是一个声明式的滚动更改，而不是每个节点的 yum 事务。
-
 ## 诊断步骤
 
-确认 PLEG 是节点实际报告的状态（而不是通用的 `KubeletNotReady`）：
+确认节点的 `Ready` 状态是携带 PLEG 消息的表面——标准的上游 NodeCondition 形状适用于 ACP，`type=Ready`，kubelet 的自由文本在 `.message` 中 \[ev:c1]：
 
 ```bash
-kubectl describe node <node-name> | sed -n '/Conditions/,/Addresses/p'
+kubectl get node <node-name> -o jsonpath='{range .status.conditions[*]}{.type}{"\t"}{.status}{"\t"}{.reason}{"\t"}{.message}{"\n"}{end}'
 ```
 
-查看 kubelet 日志，了解何时转变为 `NotReady`，以查看 PLEG 超时时哪个 CRI 调用未完成。`journalctl --root=/host` 通过 `/host` 绑定挂载读取主机的日志目录——无需 chroot：
+通过节点的代理 `/metrics` 端点读取 kubelet 的 PLEG 指标，以验证心跳是否在推进，并观察每次重新列出的延迟分布；在降级节点上，`kubelet_pleg_last_seen_seconds` 将停止跟踪墙钟，`kubelet_pleg_discard_events` 将增加 \[ev:c2]：
 
 ```bash
-kubectl debug node/<node-name> --image=<image-with-systemd> --profile=sysadmin -it -- \
-  journalctl --root=/host -u kubelet --since='30 min ago' \
-    | grep -iE 'pleg|relist|container runtime'
+kubectl get --raw "/api/v1/nodes/<node-name>/proxy/metrics" \
+  | grep -E '^kubelet_pleg_(last_seen_seconds|discard_events|relist_duration_seconds_(sum|count))'
 ```
 
-查看容器运行时日志，了解相同时间窗口内的情况——运行时侧的死锁或异常长的系统调用通常会在这里显示为匹配的停滞：
+将重新列出的负载与每个节点的 pod 密度相关联。更高的 pod 数量会在共享相同硬件配置的节点上产生更高的累计 `kubelet_pleg_relist_duration_seconds_sum`；这是区分大小问题（将 pod 移走）与运行时问题（调查 containerd）的数据点 \[ev:c3]：
 
 ```bash
-kubectl debug node/<node-name> --image=<image-with-systemd> --profile=sysadmin -it -- \
-  journalctl --root=/host -u crio --since='30 min ago' | tail -200
+kubectl get pods -A --field-selector spec.nodeName=<node-name> -o name | wc -l
 ```
 
-计算节点上的容器数量，以排除密度问题。`crictl` 通过其 CRI 套接字与运行时通信，位于 `/run/crio/crio.sock`（或 `/run/containerd/containerd.sock`）；`--profile=sysadmin` 会挂载这些：
+读取实时 kubelet 配置（`/configz` 代理）以获取管理 CRI 调用的运行时参数——`containerRuntimeEndpoint`、`runtimeRequestTimeout`（实时 `2m0s`）、`maxPods`（实时 `255`）——以及 `kubelet_runtime_operations_errors_total{operation_type=…}` 计数器，以查看哪些 CRI 动词失败 \[ev:c4]：
 
 ```bash
-kubectl debug node/<node-name> --image=<image-with-crictl> --profile=sysadmin -it -- \
-  crictl ps -a | wc -l
+kubectl get --raw "/api/v1/nodes/<node-name>/proxy/configz" \
+  | python3 -c "import sys,json; d=json.load(sys.stdin)['kubeletconfig']; \
+                print({k:d[k] for k in ('runtimeRequestTimeout','containerRuntimeEndpoint','maxPods')})"
+kubectl get --raw "/api/v1/nodes/<node-name>/proxy/metrics" \
+  | grep '^kubelet_runtime_operations_errors_total'
 ```
 
-节点上常规超过 300 个活动容器加上尚未回收的已退出容器，处于 PLEG 的危险区。
-
-快速检查未使用的资源，这些资源会增加 relist 成本：
+检查节点上的 CNI 插件链。配置位于 `/etc/cni/net.d/`（`00-multus.conf` + `01-kube-ovn.conflist`）；在 `/run/openvswitch/kube-ovn-daemon.sock` 上的 kube-ovn 守护进程套接字停滞将阻塞 CRI 的 PodSandbox 网络状态回调。在假设 kubelet 本身有问题之前，检查受影响节点上的守护进程 pod 的健康状况 \[ev:c5]：
 
 ```bash
-kubectl debug node/<node-name> --image=<image-with-crictl> --profile=sysadmin -it -- \
-  sh -c 'crictl ps -a | grep -i Exited | wc -l; crictl images | grep -c "<none>"'
+kubectl -n kube-system get pod -l app=kube-ovn-cni -o wide --field-selector spec.nodeName=<node-name>
 ```
 
-如果任一项的数量较大，表明垃圾回收未能跟上——该节点池的周期性 kubelet 容器和镜像 GC 设置可能需要收紧。
-
-从容量角度，结合节点级 Pod 数量与事件期间的集群级顶级 Pods：
+检查节点的压力条件，以决定 `requests`/`limits` 调整是否是修复的一部分。`MemoryPressure=True` 或 `PIDPressure=True` 意味着工作负载已超出驱逐阈值，kubelet 本身正在争夺资源 \[ev:c10]：
 
 ```bash
-kubectl top node
-kubectl top pod -A --sort-by=cpu | head -20
-kubectl top pod -A --sort-by=memory | head -20
+kubectl get nodes -o jsonpath='{range .items[*]}{.metadata.name}{"  "}{range .status.conditions[?(@.type=="MemoryPressure")]}{.type}={.status}{end}{"  "}{range .status.conditions[?(@.type=="PIDPressure")]}{.type}={.status}{end}{"\n"}{end}'
 ```
-
-如果顶级消费者始终是同一节点上无界限的工作负载，并且该节点出现 PLEG，则修复措施是请求/限制（以及 Pod 反亲和性以分散副本），而不是运行时侧的任何内容。

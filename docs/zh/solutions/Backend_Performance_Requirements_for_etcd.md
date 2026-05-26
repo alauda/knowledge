@@ -4,95 +4,65 @@ kind:
 products:
   - Alauda Container Platform
 ProductsVersion:
-  - '4.1.0,4.2.x'
+  - '4.1.0,4.2.x,4.3.x'
 id: KB260500008
-sourceSHA: 80cbc0ebf21caddd392290c4f87c823cf5ceb041841e13769bafcd9bd1459784
+sourceSHA: 49de5652856f85037331f2f961c6f3c6f45d02b34d52aeb8755fad8f6a6329d9
 ---
 
-# etcd 后端性能要求
+# 诊断 etcd 后端性能压力导致的慢只读范围警告
 
 ## 问题
 
-由于存储或网络后端能力不足，etcd 性能下降，产生类似以下的日志消息：
-
-```
-etcdserver: failed to send out heartbeat on time (exceeded the 100ms timeout for xxx ms)
-etcdserver: server is likely overloaded
-etcdserver: read-only range request "key:\"xxxx\"" count_only:true with result "xxxx" took too long (xxx s) to execute
-wal: sync duration of xxxx s, expected less than 1s
-```
-
-这些警告表明存储子系统或网络无法满足 etcd 的延迟要求。
+在 Alauda 容器平台 (Kubernetes v1.34.5, etcd `registry.alauda.cn:60080/tkestack/etcd:v3.5.28-260325`)，etcd 成员作为静态 Pod `etcd-<control-plane-IP>` 运行在 `kube-system` 命名空间中。etcd 二进制文件对其存储和网络后端的性能非常敏感，底层 I/O 的缓慢可能会干扰其操作 \[ev:c1]。当后端无法跟上时，etcd v3.5.28 会在只读范围请求超过上游默认的 `expected-duration` 的 `100ms` 时发出类似 `apply request took too long ... read-only range` 的警告 \[ev:c4]\[ev:c6]。观察到活跃成员记录了此消息，测量的持续时间如 `145.306106ms` 超过了 `expected-duration:"100ms"` \[ev:c4]。
 
 ## 根本原因
 
-etcd 对存储和网络性能高度敏感。后端基础设施中的任何瓶颈——慢磁盘 I/O、高网络延迟、数据包丢失或 CPU 饱和——都会直接影响 etcd 集群处理写入和维持领导者心跳截止时间的能力。请求通常应在 50 毫秒内完成；持续超过 200 毫秒的时长会在日志中触发警告。
+该警告是由后端延迟驱动的，而不是由请求本身引起的：当磁盘或网络 I/O 变慢时，etcd 在应用只读范围请求时所花费的时间超过了其预期阈值，成员记录慢范围以显示后端压力 \[ev:c1]\[ev:c4]。产生这些日志行的相同条件也会降低集群的响应能力，因为每个接触 etcd 的 API 读取都继承了这种减速 \[ev:c1]。上游 etcd v3.5.28 二进制文件在其后端进一步降级时会发出四个相关的警告系列：
 
-## 解决方案
+- `failed to send out heartbeat on time` — 心跳发送延迟超过心跳间隔（etcd 默认 100ms，在此集群中未更改 — etcd Pod 命令行没有携带 `--heartbeat-interval` 重写） \[ev:c2]。
+- `server is likely overloaded` — 与心跳警告同时出现的伴随行，当 raft 循环无法跟上时 \[ev:c3]。
+- `wal: sync duration of X s, expected less than 1s` — WAL fsync 花费的时间超过了上游定义的 1 秒预期 \[ev:c5]。
+- `entries are taking too long to apply` — 平均应用持续时间在最近的采样窗口中超过了上游定义的 \~200ms 阈值 \[ev:c7]。
 
-### 确定瓶颈
-
-etcd 变慢的三种常见原因：
-
-1. **慢存储** — 磁盘 I/O 延迟超过可接受阈值
-2. **CPU 过载** — 控制平面节点超负荷
-3. **数据库大小增长** — etcd 数据文件已超出最佳大小
-
-### 使用 fio 检查存储性能
-
-在每个控制平面节点上运行 I/O 基准测试以验证磁盘性能：
-
-```bash
-fio --name=etcd-io-test --ioengine=sync --bs=4k --numjobs=1 --size=512M \
-    --rw=write --iodepth=1 --fsync=1 --runtime=30 --time_based
-```
-
-99 百分位的 fdatasync 延迟必须低于 **10 毫秒**。
-
-### 监控关键 etcd 指标
-
-使用 Prometheus 跟踪以下指标：
-
-| 指标                                                   | 阈值                  | 意义                    |
-| ------------------------------------------------------ | --------------------- | ----------------------- |
-| `etcd_disk_wal_fsync_duration_seconds_bucket` (p99)      | < 10 ms               | WAL 写入延迟            |
-| `etcd_disk_backend_commit_duration_seconds_bucket` (p99) | < 25 ms               | 后端提交延迟            |
-| `etcd_network_peer_round_trip_time_seconds_bucket` (p99) | < 50 ms               | 点对点网络 RTT         |
-| `etcd_mvcc_db_total_size_in_bytes`                       | < 2 GB (默认配额)     | 数据库大小              |
-
-### 网络健康
-
-etcd 成员之间的高网络延迟或数据包丢失会使集群不稳定。监控网络 RTT，并调查控制平面网络接口上的任何持续数据包丢失。
-
-### 数据库碎片整理
-
-如果数据库大小接近配额，请执行手动碎片整理：
-
-```bash
-kubectl exec -n kube-system etcd-<node-name> -- etcdctl defrag \
-  --endpoints=https://127.0.0.1:2379 \
-  --cacert=/etc/kubernetes/pki/etcd/ca.crt \
-  --cert=/etc/kubernetes/pki/etcd/server.crt \
-  --key=/etc/kubernetes/pki/etcd/server.key
-```
+在这个健康的集群中，etcd 日志的 200 行尾部捕获了 41 条 `apply request took too long` 行（c4 系列，在正常 apiserver 列表负载下触发，`took` 稍微超过 `100ms` 预期），并且没有匹配其他四个警告系列 — 这些仅在后端降级时出现，而我们并未诱发这种情况 \[ev:c2]\[ev:c3]\[ev:c5]\[ev:c7]。
 
 ## 诊断步骤
 
-检查 etcd 日志以获取延迟警告：
+检查受影响的控制平面节点上的 etcd 成员日志以确认慢范围信号。一个受到压力的后端会重复记录 `apply request took too long` 消息，带有 `read-only range` 前缀和一个 `took` 值高于上游 `expected-duration:"100ms"` \[ev:c4]\[ev:c6]：
 
 ```bash
-kubectl logs -n kube-system etcd-<node-name> --tail=100 | grep -E "took too long|heartbeat|overloaded"
+kubectl -n kube-system logs etcd-<control-plane-IP> | grep "apply request took too long"
 ```
 
-通过 Prometheus 端点直接查询 etcd 指标。大多数发行版的 etcd 容器镜像不带 HTTP 客户端，因此在其中执行 `wget`/`curl` 并不可靠。使用 `kubectl port-forward` 转发到 pod，并从工作站查询：
+```text
+"caller":"etcdserver/util.go:170","msg":"apply request took too long","took":"145.306106ms","expected-duration":"100ms","prefix":"read-only range "
+```
+
+为了量化后端，从集群的统一 Prometheus 查询 etcd 自身的服务器端磁盘百分位。etcd 成员绑定 `--listen-metrics-urls=http://127.0.0.1:2381`（仅在 Pod 网络命名空间内的本地主机），因此无法通过 apiserver Pod 代理直接抓取指标；监控堆栈通过 `kube-prometheus-exporter-kube-etcd` ServiceMonitor 收集这些指标（etcd 端口 `2379` 上的 `https-metrics` 端点），并通过统一的 Prometheus CR `cpaas-system/kube-prometheus-0` 暴露这些指标，该 CR 选择所有命名空间的 PrometheusRules 和指标 \[ev:c8]\[ev:c9]\[ev:c10]。与磁盘和成员间网络健康相关的直方图为：
+
+```text
+etcd_disk_backend_commit_duration_seconds_bucket
+etcd_disk_wal_fsync_duration_seconds_bucket
+etcd_network_peer_round_trip_time_seconds_bucket
+```
+
+通过 Prometheus API 查询每个直方图的 p99。例如，通过对 `prometheus-kube-prometheus-0-0` Pod 的只读端口转发到 `:9090`：
 
 ```bash
-# 终端 1: 将指标端口转发到本地端口。
-kubectl port-forward -n kube-system pod/etcd-<node-name> 12381:2381
-
-# 终端 2: 查询并过滤感兴趣的指标。
-curl -s http://127.0.0.1:12381/metrics \
-  | grep -E "^(etcd_disk_wal_fsync|etcd_disk_backend_commit|etcd_mvcc_db_total_size)"
+kubectl -n cpaas-system port-forward pod/prometheus-kube-prometheus-0-0 19191:9090 &
+curl -s --data-urlencode \
+  'query=histogram_quantile(0.99, sum by (le) (rate(etcd_disk_backend_commit_duration_seconds_bucket[5m])))' \
+  http://localhost:19191/api/v1/query
 ```
 
-如果集群有 Prometheus 抓取 etcd，则通过 PromQL 也可以获得相同的指标——通常是在生产环境中最干净的路径。
+## 解决方案
+
+评估每个百分位与上游 etcd v3.5.28 性能目标，以确认后端是否足够快速。对于存储，`etcd_disk_backend_commit_duration_seconds_bucket` 的 p99 应保持在 25ms 以下，而 `etcd_disk_wal_fsync_duration_seconds_bucket` 的 p99 应保持在 10ms 以下 \[ev:c8]\[ev:c9]。对于成员间网络，`etcd_network_peer_round_trip_time_seconds_bucket` 的 p99 应在多成员 etcd 上保持在 50ms 以下 \[ev:c10]。
+
+在这个健康的 ACP 集群中，按上述方式查询的磁盘百分位，读取如下：
+
+- `etcd_disk_backend_commit_duration_seconds_bucket` p99 ≈ **12.4 ms** (`0.012365`)，在 25 ms 目标范围内 \[ev:c8]。
+- `etcd_disk_wal_fsync_duration_seconds_bucket` p99 ≈ **7.4 ms** (`0.007391`)，在 10 ms 目标范围内 \[ev:c9]。
+- `etcd_network_peer_round_trip_time_seconds_bucket` 返回 `ABSENT`（0 系列）。该指标在 etcd v3.5.28 架构中存在，但在这里没有发出系列，因为该集群运行的是单个控制平面 etcd 成员（`etcd_server_has_leader` 返回恰好一个实例，`192.168.135.152:2379`），因此没有对等体可以测量 RTT。在多成员 etcd 中，该系列会发出 le-bucketed 系列，50 ms 目标通常适用 \[ev:c10]。
+
+当磁盘百分位超过其目标时，相应的后端就是瓶颈：高 `backend_commit` 或 `wal_fsync` 百分位指向慢速存储 \[ev:c8]\[ev:c9]。在多成员 etcd 中，高 `peer_round_trip_time` 百分位指向成员间的网络 \[ev:c10]。缓解该瓶颈 — 为存储系列提供更快的磁盘，为对等系列提供更低延迟的链接 — 消除了产生慢只读范围警告、心跳发送失败/服务器过载警告、WAL 同步警告以及条目应用过慢警告的后端压力 \[ev:c1]\[ev:c2]\[ev:c3]\[ev:c4]\[ev:c5]\[ev:c7]。

@@ -4,100 +4,39 @@ kind:
 products:
   - Alauda Container Platform
 ProductsVersion:
-  - '4.1.0,4.2.x'
+  - '4.1.0,4.2.x,4.3.x'
 id: KB260500022
-sourceSHA: 2cc074d6798479db5a2da7c03f28eec8609d7c097932c153de90f4ae994be5f2
+sourceSHA: 8bcf66ed3a34987a8eb88bae880aaee7c447163fb639f2afb631a12f5a0214d8
 ---
 
-# Ceph MDS 慢请求由 SELinux 递归重新标记 CephFS 卷引起
+# 由于大容量持久卷的递归SELinux重新标记导致的Pod启动缓慢
 
 ## 问题
 
-挂载 CephFS PersistentVolume 的 Pods 变为 Ready 的时间非常长，ACP Ceph 存储栈中的 MDS 记录了 `setxattr` 在 `security.selinux` 上的 `slow request` 警告。MDS 的代表性条目如下：
-
-```text
-[WRN] slow request 30.308475 seconds old, received at 2022-10-08 11:24:01.491429:
-client_request(client.898845:3819 setxattr #0x10001d1111d security.selinux ...
-caller_uid=0, caller_gid=0{}) currently submit entry: journal_and_reply
-```
-
-与此同时，MON Pods 将此升级为集群健康警告：
-
-```text
-log_channel(cluster) log [WRN]: Health check failed:
-1 MDSs report slow requests (MDS_SLOW_REQUEST)
-```
-
-受影响的 PVC 是一个 CephFS `ReadWriteMany` 卷，包含大量小文件。
+在Alauda Container Platform (Kubernetes v1.34.5)上，当一个挂载持久卷的Pod包含大量文件时，达到运行状态可能需要很长时间。当创建一个需要卷的Pod时，kubelet指示容器运行时在挂载时使用Pod的SELinux上下文重新标记卷；“递归”重新标记意味着容器运行时会重新标记Pod的所有卷上的每个文件，上游API描述警告这对于大卷可能会很慢 \[ev:c1]。延迟随着持久卷中文件数量的增加而增加，因此包含许多文件的卷受到的影响最大 \[ev:c5]。
 
 ## 根本原因
 
-当 kubelet 将卷挂载到 Pod 中时，容器运行时会要求重新标记整个卷树以匹配 Pod 的 SELinux 上下文。对于包含数十万个文件的 CephFS 子卷，这意味着相应数量的 `setxattr(security.selinux, ...)` 系统调用，每个调用都作为元数据日志操作落在 MDS 上。
-
-由于 MDS 必须在回复之前记录每个 `setxattr`，递归重新标记会使 MDS 元数据 IOPS 饱和，从而使其他客户端无法访问。长时间运行的 `setxattr` 调用会触发 `slow request` 阈值，一旦积累到足够多，MON 会将其提升为 `MDS_SLOW_REQUEST` 集群健康警告。CephFS 越繁忙（文件多，挂载频繁），效果越明显。
+递归重新标记遍历整个卷树，而不仅仅是挂载点：容器运行时会重新标记Pod的所有卷上的每个文件 \[ev:c2]。因此，成本随着卷中文件数量的增加而增加，API描述明确指出“大卷可能会很慢”作为文档行为 \[ev:c5]。Pod的SELinux上下文本身源自标准的core/v1 `spec.securityContext.seLinuxOptions`字段，该字段请求应用于Pod容器的上下文 \[ev:c1]。更深层的每个系统调用机制（无论运行时是否对每个文件发出显式的`setxattr`，通过`-o context`重新挂载进行批处理，还是使用其他原语）是容器运行时的实现细节，并未在Kubernetes API描述中明确；因此，本文保持在文档的“重新标记每个文件，对于大卷较慢”的粒度，而不是命名特定的系统调用。
 
 ## 解决方案
 
-有两个选择。优先选择选项 1；选项 2 是在 Pod 拥有者无法承受任何重新标记成本时的缓解措施。
+Kubernetes API提供了一种条件替代递归重新标记的方法：`seLinuxChangePolicy: MountOption`以`-o context`挂载符合条件的Pod卷，避免对符合条件的卷进行逐文件重新标记；其他卷始终会递归重新标记 \[ev:c6]。此路径是否在给定集群上可用取决于CSI驱动程序：驱动程序必须通过在其`CSIDriver`对象上设置`spec.seLinuxMount: true`来声明支持，而该字段默认为`false`，因此默认情况下没有驱动程序参与 \[ev:c6]。
 
-1. **将 Pod 的安全上下文与卷匹配，以便 kubelet 跳过递归重新标记。**
+检查支持卷的CSI驱动程序是否已经宣布`-o context`支持：
 
-   Kubernetes 尊重为广告 `seLinuxMount: true` 的 CSI 卷提供的 `SELinuxMountReadWriteOncePod` / `SELinuxChangePolicy` 机制。当卷已经标记为 Pod 的 `seLinuxOptions` 请求的类型时，kubelet 会使用正确的上下文挂载，而不遍历树。在 Pod 规范中：
+```bash
+kubectl get csidriver <driver-name> -o jsonpath='{.spec.seLinuxMount}'
+```
 
-   ```yaml
-   apiVersion: v1
-   kind: Pod
-   spec:
-     securityContext:
-       seLinuxOptions:
-         level: "s0:c123,c456"
-         type: container_file_t
-     containers:
-       - name: app
-         image: myapp:latest
-         volumeMounts:
-           - name: data
-             mountPath: /data
-   ```
-
-   在 Pod（或其控制器模板）上设置稳定、明确的 SELinux 级别/类型，并确保 CephFS 子卷预先标记为相同类型。之后，kubelet 使用 `context=` 挂载卷，避免了 `setxattr` 遍历。
-
-2. **通过使用 `SELinuxRelabelPolicy: Recursive` 选择退出模式，或在 CSI 级别以 `context=` 挂载来禁用受影响 Pod 的递归重新标记。**
-
-   对于 CephFS CSI，可以通过在 `CSIDriver` 对象上声明 `seLinuxMount: true` 并在 Pod 上固定一个稳定的标签来避免每个 PV 的重新标记。这是 CSI 驱动程序的集群范围属性；在编辑之前请确认：
-
-   ```bash
-   kubectl get csidriver cephfs.csi.ceph.com -o yaml
-   ```
-
-   如果 CSI 驱动程序已经广告 `seLinuxMount: true` 并且 Pod 设置了 `seLinuxOptions`，则在后续挂载时将不会发生重新标记。通过在 Pod 重启期间观察 MDS `setxattr` 计数来验证这一点。
-
-作为最后的手段，对于无法明确给出 SELinux 上下文的遗留工作负载，将工作负载拆分到较小的子卷上，以便一次性重新标记成本受到限制。不要在节点操作系统上禁用 SELinux — 这会危及其他租户的隔离。
+当命令返回`true`时，符合条件的卷将作为挂载选项应用上下文，而不是逐文件重新标记 \[ev:c6]。当返回`false`（或字段未设置，意味着默认值为`false`）时，驱动程序不参与MountOption，递归重新标记仍然是这些卷的行为 \[ev:c6]。在此验证集群中，唯一存在的CSI驱动程序是`topolvm.cybozu.com`，其报告`seLinuxMount=false`，因此MountOption在这里对topolvm支持的卷不是有效的补救措施——依赖topolvm的操作员应将递归重新标记的成本视为工作行为，并减少受影响卷上的文件数量，而不是期望MountOption生效 \[ev:c6]。
 
 ## 诊断步骤
 
-确认慢请求是 SELinux `setxattr` 而不是其他 Ceph 元数据问题：
+通过读取Pod的`securityContext`确认Pod请求了SELinux上下文；应用于Pod容器的上下文存储在标准的`spec.securityContext.seLinuxOptions`字段中 \[ev:c1]。
 
 ```bash
-kubectl logs -n <ceph-namespace> <mds-pod> | grep -E "slow request|setxattr #.*security.selinux"
+kubectl get pod <pod-name> -o jsonpath='{.spec.securityContext.seLinuxOptions}'
 ```
 
-检查 MON 上的集群健康升级：
-
-```bash
-kubectl logs -n <ceph-namespace> <mon-pod> | grep MDS_SLOW_REQUEST
-```
-
-从已经挂载该子卷的 Pod 中计算问题子卷中的文件数量（一个未受影响的读取者即可）：
-
-```bash
-kubectl exec -n <ns> <reader-pod> -- sh -c 'find /data -xdev | wc -l'
-```
-
-如果该计数在数十万个高位，递归重新标记很可能是触发因素，以上解决步骤适用。将慢请求的峰值与 kubelet 报告的 Pod 启动时间关联：
-
-```bash
-kubectl get events --sort-by=.lastTimestamp | grep -E "FailedMount|SlowMount|Started"
-```
-
-在应用修复后，重启一个消费者 Pod 并观察 MDS 日志 — `setxattr` 风暴不应再出现。
+将Pod启动缓慢与卷大小关联：由于重新标记引起的延迟随着持久卷中文件数量的增加而增加，因此已知包含许多文件的卷是启动时间较长时的预期罪魁祸首 \[ev:c5]。由于递归策略会重新标记Pod卷上的每个文件，因此挂载卷上的文件数量是承载负载的关键，而不是卷的字节大小 \[ev:c2]。
