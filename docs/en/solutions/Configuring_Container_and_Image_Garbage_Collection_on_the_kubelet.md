@@ -4,124 +4,53 @@ kind:
 products:
    - Alauda Container Platform
 ProductsVersion:
-   - 4.1.0,4.2.x
+   - 4.1.0,4.2.x,4.3.x
 id: KB260500005
 ---
 
-# Configuring Container and Image Garbage Collection on the kubelet
-## Overview
+# Default kubelet garbage collection on ACP nodes
 
-The kubelet on every worker node continuously reclaims resources from the local container runtime. Two related mechanisms drive this:
+## Issue
 
-- **Container garbage collection** — periodic deletion of dead containers belonging to terminated or replaced pods.
-- **Image garbage collection** — periodic deletion of unused container images once disk pressure crosses a threshold.
+Cluster operators planning capacity, disk headroom, or eviction policy on Alauda Container Platform nodes need to know what kubelet does by default for image and container garbage collection — whether it runs at all, which signals it watches, and what the inherited thresholds are before any node-side override. Because every ACP node runs the upstream kubelet, garbage collection is enabled out of the box and continues to run unless the node administrator changes it [ev:c1].
 
-Both behaviors are enabled by default with conservative thresholds. Operators rarely need to disable them; the common task is to *tune* them so that nodes do not run out of disk during heavy churn (frequent rollouts, batch-job nodes, dev clusters with many tags pulled per day).
+## Root Cause
 
-This article describes the parameters, where to set them on Alauda Container Platform, and how to verify the change took effect on a node.
+There is no single "GC on/off" switch. The kubelet exposes a fixed set of tunables grouped into image GC (driven by `imageGCHighThresholdPercent` / `imageGCLowThresholdPercent` and the image-age fields) and pod eviction (driven by the `evictionHard` and `evictionSoft` signal maps), and every node inherits the upstream defaults for those fields unless an administrator changes them on the node [ev:c2]. The eviction half of the policy is built around the standard kubelet signal definitions: `memory.available` is derived from the node's memory capacity minus the working set, `nodefs.available` and `nodefs.inodesFree` come from the node filesystem stats, and `imagefs.available` and `imagefs.inodesFree` come from the container-runtime image filesystem stats — exactly the shape the upstream `kubelet.config.k8s.io/v1beta1` KubeletConfiguration declares [ev:c4].
 
 ## Resolution
 
-### Where the Parameters Live
+Treat the inherited defaults as the baseline policy. The set of knobs the kubelet exposes for garbage collection breaks down into three independent groups, any combination of which may be tuned: a soft-eviction policy for containers, a hard-eviction policy for containers, and an image garbage-collection policy keyed off image-filesystem usage [ev:c3]. The standard upstream form for those tunables is the `KubeletConfiguration` struct under `kubelet.config.k8s.io/v1beta1`; on ACP nodes the same struct shape is honored, and any override is applied at the node level (for example, by editing `/var/lib/kubelet/config.yaml` and restarting the kubelet) rather than via a cluster-scoped custom resource [ev:c3].
 
-The kubelet reads its configuration from a YAML file on each node (`/var/lib/kubelet/config.yaml` on most distributions). Garbage-collection parameters live alongside the eviction thresholds:
+A typical edit on a single node, with the fields kept inside the upstream struct shape:
 
 ```yaml
-# /var/lib/kubelet/config.yaml — relevant fields only
 apiVersion: kubelet.config.k8s.io/v1beta1
 kind: KubeletConfiguration
-
-# --- Container GC ---
-# Once a node has more than this many terminated containers, kubelet
-# starts removing the oldest first.
-maxContainersPerPod: 1                 # legacy; use maxPerPodContainerCount
-maxPerPodContainerCount: 1             # max dead containers retained per pod
-maxContainerCount: 100                 # max dead containers retained on the node
-
-# --- Image GC ---
-# Once imagefs usage rises above HighThresholdPercent, kubelet deletes
-# unused images until usage falls below LowThresholdPercent.
-imageGCHighThresholdPercent: 85        # default 85
-imageGCLowThresholdPercent: 80         # default 80
-imageMinimumGCAge: 2m                  # do not GC images younger than this
-
-# --- Eviction (node pressure) ---
-# Soft and hard thresholds that trigger pod eviction; tune in concert
-# with image GC so the node does not flap.
+imageGCHighThresholdPercent: 85
+imageGCLowThresholdPercent: 80
 evictionHard:
-  memory.available:   "100Mi"
-  nodefs.available:   "10%"
-  nodefs.inodesFree:  "5%"
-  imagefs.available:  "15%"
+  memory.available: "100Mi"
+  nodefs.available: "10%"
+  nodefs.inodesFree: "5%"
+  imagefs.available: "15%"
   imagefs.inodesFree: "5%"
-evictionSoft:
-  memory.available:   "200Mi"
-  nodefs.available:   "15%"
-evictionSoftGracePeriod:
-  memory.available:   "1m30s"
-  nodefs.available:   "1m30s"
 ```
-
-The variables that drive the eviction subsystem map to runtime measurements as follows:
-
-```text
-memory.available    := node.status.capacity[memory] - node.stats.memory.workingSet
-nodefs.available    := node.stats.fs.available
-nodefs.inodesFree   := node.stats.fs.inodesFree
-imagefs.available   := node.stats.runtime.imagefs.available
-imagefs.inodesFree  := node.stats.runtime.imagefs.inodesFree
-```
-
-### How to Apply Changes Across a Node Pool
-
-On Alauda Container Platform the kubelet config is managed at the node-pool level through `configure/clusters/nodes`. Edit the relevant pool's kubelet profile, set the desired GC and eviction values, and let the platform roll the change to each member node. The platform serializes the rollout, drains nodes one at a time, restarts the kubelet, and waits for the node to become Ready before proceeding to the next.
-
-For air-gapped or single-node environments where the platform surface is not available, the equivalent edit is direct:
-
-```bash
-# On the node — bookkeeping only; the platform-managed flow above is
-# preferred wherever it is available.
-sudo cp -a /var/lib/kubelet/config.yaml /var/lib/kubelet/config.yaml.bak
-sudo $EDITOR /var/lib/kubelet/config.yaml
-sudo systemctl restart kubelet
-```
-
-Restarting kubelet briefly drops the node from the API server's heartbeat — schedule the change during a maintenance window or use the platform-managed flow which handles drain/cordon for you.
-
-### Recommended Tuning per Workload Profile
-
-| Workload | Notable kubelet settings |
-|---|---|
-| Long-lived services with infrequent rollouts | Defaults are fine. |
-| Batch / CI workloads (many short pods) | Drop `maxContainerCount` to 50 to reduce dead-container clutter; lower `imageMinimumGCAge` to 30s so transient images are reclaimed quickly. |
-| Dev clusters that pull many image tags | Lower `imageGCHighThresholdPercent` to 75 and `imageGCLowThresholdPercent` to 70 so disk does not fill during long working hours. |
-| Nodes with separate `/var/lib/containers` partition | Tune `imagefs.available` eviction independently of `nodefs.available`; check `crictl info` for the runtime's reported imagefs path. |
 
 ## Diagnostic Steps
 
-Inspect the kubelet's *live* configuration (the parsed config it is actually using, not the file on disk — useful when troubleshooting drift):
+Before changing anything, read the live, effective kubelet configuration off the running node — this returns the merged view (upstream defaults plus any node-local override) and includes all the GC and eviction fields described above [ev:c7]:
 
 ```bash
-NODE=<worker-node-name>
-kubectl get --raw "/api/v1/nodes/${NODE}/proxy/configz" | jq .
+kubectl get --raw "/api/v1/nodes/<node>/proxy/configz" \
+  | jq '.kubeletconfig'
 ```
 
-The `kubeletconfig` block in the response contains every default the kubelet has applied, including those the YAML did not set explicitly.
-
-Check the running kubelet process for the GC values. ACP's cluster PSA rejects `chroot /host`, and `registry.k8s.io/...` images may not be pullable from isolated clusters — read the host's `/var/lib/kubelet/config.yaml` through the debug pod's `/host` bind-mount with any in-cluster mirror image that ships `grep`:
+Narrow the projection to the garbage-collection and eviction subset when only those fields are of interest [ev:c7]:
 
 ```bash
-kubectl debug node/${NODE} -it \
-  --image=<image-with-shell> \
-  -- grep -E "GC|eviction" /host/var/lib/kubelet/config.yaml
+kubectl get --raw "/api/v1/nodes/<node>/proxy/configz" \
+  | jq '.kubeletconfig | {imageGCHighThresholdPercent, imageGCLowThresholdPercent, imageMinimumGCAge, imageMaximumGCAge, evictionSoft, evictionHard, evictionPressureTransitionPeriod, evictionMinimumReclaim, kubeReserved, systemReserved}'
 ```
 
-Confirm garbage collection is doing work by tailing the kubelet journal. `journalctl --root=/host` reads the host's journal directory:
-
-```bash
-kubectl debug node/${NODE} -it \
-  --image=<image-with-systemd> --profile=sysadmin \
-  -- journalctl --root=/host -u kubelet --since "10 minutes ago" | grep -iE 'image_gc|container_gc|evict'
-```
-
-A healthy node logs occasional `image_gc_manager` lines reporting how many bytes were reclaimed and which images were removed; recurrent eviction lines suggest the thresholds are too tight for the workload.
+The endpoint is served by the kubelet itself and is independent of any cluster-side configuration delivery; it answers the operator's question "what is this kubelet actually using right now" directly, which is the right diagnostic for verifying both the inherited defaults and the effect of any node-level change [ev:c7]. Cross-checking the same projection on more than one node confirms whether the values are uniform across the cluster or have drifted on a single node [ev:c2].

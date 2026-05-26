@@ -4,152 +4,58 @@ kind:
 products:
    - Alauda Container Platform
 ProductsVersion:
-   - 4.1.0,4.2.x
+   - 4.1.0,4.2.x,4.3.x
 id: KB260500017
 ---
 
-# CoreDNS pods crashloop with "Wrong argument count" parsing error
+# CoreDNS pods crash-loop with a "Wrong argument count" Corefile parse error
+
 ## Issue
 
-DNS pods enter `CrashLoopBackOff`. The pod log includes a Corefile
-parsing error:
+The cluster DNS is served by CoreDNS, which runs as the `coredns` Deployment in the `kube-system` namespace and reads its configuration from a Corefile [ev:c1]. On Alauda Container Platform v4.3.4 the Corefile is supplied by the ConfigMap `kube-system/cpaas-coredns` (data key `Corefile`), mounted into the container at `/etc/coredns` and loaded through the container argument `-conf /etc/coredns/Corefile` [ev:c1]. The DNS pods run CoreDNS 1.14.2 (image `registry.alauda.cn:60080/tkestack/coredns:1.14.2-v4.3.4`) [ev:c1].
 
-```text
-plugin/forward: /etc/coredns/Corefile:19 - Error during parsing:
-  Wrong argument count or unexpected line ending after '.'
-```
-
-Pod restarts emit the same line every time. Cluster DNS is unavailable
-to all workloads while the pods are looping because the cluster's
-DNS Service has no healthy backends.
+When the Corefile contains a `forward` plugin block whose zone is not followed by at least one upstream, CoreDNS fails to parse the Corefile at startup [ev:c3]. The CoreDNS process then exits and the DNS pods enter `CrashLoopBackOff`, with the container terminating with reason `Error` (exit code 1), never reaching `Ready`, and the restart count climbing [ev:c5].
 
 ## Root Cause
 
-The CoreDNS configuration injected into the pods includes a `forward`
-plugin block whose stanza is incomplete. The DNS Operator (or the
-operator-equivalent that builds the Corefile from declarative
-configuration) emits a `forward` block for every zone the operator's
-custom resource declares — but if a zone entry is present in the
-operator's CR with no `forwardPlugin` (no list of upstream resolvers,
-or a malformed upstream entry), the resulting Corefile contains a
-`forward .` (or `forward <zone>`) line with no following arguments.
+A `forward` block declares a FROM zone followed by one or more TO upstreams. A block such as `forward .` that names the zone but lists no upstream is incomplete, and the CoreDNS parser rejects it [ev:c3]. Because the configuration cannot be loaded, the process aborts at startup rather than serving DNS [ev:c5].
 
-CoreDNS parses Corefiles strictly. A `forward` directive must be
-followed by at least one upstream resolver. A trailing `.` with no
-upstream is rejected with the `Wrong argument count` error and the
-pod fails to start the plugin chain. The pod exits, the kubelet
-restarts it, and the cycle continues indefinitely.
+The failure is surfaced in the CoreDNS container log as a parse error that names the `forward` plugin together with the Corefile path and the offending line number [ev:c4]:
 
-The same shape applies to any operator that builds a CoreDNS Corefile
-from a CR — a stale or mistakenly added zone entry without a forwarder
-will reproduce the failure.
+```text
+plugin/forward: /etc/coredns/Corefile:3 - Error during parsing: Wrong argument count or unexpected line ending after '.'
+```
 
 ## Resolution
 
-Inspect the operator-managed DNS configuration and either populate the
-zone with a valid `forwardPlugin` or delete the zone entry entirely:
+Correct the Corefile so that every `forward` block lists at least one upstream after its zone [ev:c8]. For the default zone forwarding to the node resolver, the well-formed block is:
 
-```bash
-kubectl edit dns.operator default
+```text
+.:1053 {
+    errors
+    forward . /etc/resolv.conf
+}
 ```
 
-The CR's `spec.servers` list contains entries of the form:
-
-```yaml
-servers:
-  - name: ABC
-    forwardPlugin:
-      policy: Random
-      upstreams:
-        - 10.0.0.100
-    zones:
-      - ABC
-  - name: XYZ          # <-- this entry has no forwardPlugin
-    zones:
-      - XYZ
-```
-
-Either:
-
-### Option A — remove the orphaned zone entry
-
-```yaml
-servers:
-  - name: ABC
-    forwardPlugin:
-      policy: Random
-      upstreams:
-        - 10.0.0.100
-    zones:
-      - ABC
-```
-
-Save and exit. The operator regenerates the Corefile, the DNS pods
-restart with valid configuration, and the crashloop clears within a
-single rollout cycle.
-
-### Option B — finish the zone configuration
-
-```yaml
-- name: XYZ
-  forwardPlugin:
-    policy: Random
-    upstreams:
-      - 10.0.0.200
-  zones:
-    - XYZ
-```
-
-If the zone was added on purpose, supply at least one upstream
-resolver. Use the same `policy` value as the existing entries unless
-there is a reason to differ.
-
-After the configuration is corrected the operator regenerates the
-ConfigMap, the DNS Deployment rolls out the new Corefile, and the
-pods leave `CrashLoopBackOff`. Cluster DNS resumes within seconds of
-the new pods becoming Ready.
+Once the upstream is present, CoreDNS parses the configuration successfully — the restarted pod logs the `CoreDNS-1.14.2` startup banner with no `Error during parsing` line and returns to a running state (`Running`, ready, restart count 0) [ev:c8].
 
 ## Diagnostic Steps
 
-1. Confirm the failure mode is the Corefile parser, not an unrelated
-   crash:
+Inspect the CoreDNS workload and pods in `kube-system` to confirm they are crash-looping [ev:c1][ev:c5]:
 
-   ```bash
-   kubectl logs -n <dns-ns> <dns-pod> --previous \
-     | grep -i "Error during parsing"
-   ```
+```bash
+kubectl -n kube-system get pods -l k8s-app=kube-dns
+kubectl -n kube-system get deploy coredns -o jsonpath='{.spec.template.spec.containers[0].image}'
+```
 
-2. Inspect the rendered Corefile from the operator-managed ConfigMap:
+Read the CoreDNS container log to find the parse error; it names the `forward` plugin and the Corefile line that is malformed [ev:c4]:
 
-   ```bash
-   kubectl get configmap -n <dns-ns> -o yaml | yq '.items[].data.Corefile'
-   ```
+```bash
+kubectl -n kube-system logs -l k8s-app=kube-dns --tail=30
+```
 
-   Look for `forward .` or `forward <zone>` lines with no upstreams
-   following them. The line number reported in the error message
-   points at the offending entry.
+Examine the Corefile to locate the `forward` block that has no upstream after its zone [ev:c3]:
 
-3. Inspect the operator CR for the zone entry that produced the
-   broken line:
-
-   ```bash
-   kubectl get dns.operator default -o yaml | yq '.spec.servers'
-   ```
-
-4. After applying the correction, watch the pods recover:
-
-   ```bash
-   kubectl get pods -n <dns-ns> -w
-   ```
-
-   The new pods reach `Running` and the crashloop counter stops
-   incrementing.
-
-5. Validate cluster DNS is functional from a workload pod. The image must ship `nslookup` (or `dig`); a vanilla `busybox` image works on clusters that mirror Docker Hub but is often unreachable on isolated ACP clusters — substitute with any in-cluster mirror image that ships `nslookup`:
-
-   ```bash
-   kubectl run dnscheck --rm -it --image=<image-with-nslookup> -- nslookup kubernetes.default
-   ```
-
-   A successful answer confirms the DNS Service is back to having
-   healthy backends.
+```bash
+kubectl -n kube-system get configmap cpaas-coredns -o jsonpath='{.data.Corefile}'
+```
