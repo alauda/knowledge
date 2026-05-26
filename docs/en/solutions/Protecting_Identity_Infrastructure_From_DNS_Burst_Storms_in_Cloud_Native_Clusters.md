@@ -4,144 +4,47 @@ kind:
 products:
    - Alauda Container Platform
 ProductsVersion:
-   - 4.1.0,4.2.x
+   - 4.1.0,4.2.x,4.3.x
 id: KB260500006
 ---
 
-# Protecting Identity Infrastructure From DNS Burst Storms in Cloud-Native Clusters
-## Overview
+# Reducing upstream DNS query load with the CoreDNS cache directive on ACP
 
-Migrating workloads from a small fleet of virtual machines to a high-density Kubernetes cluster changes the shape of the DNS traffic an upstream identity / DNS service has to absorb. A steady, low-rate stream of recursive queries is replaced by parallel bursts: a single Deployment that scales out by a few hundred pods, or a node that drains and reschedules its workload, can issue thousands of resolution requests within milliseconds.
+## Issue
 
-When the upstream resolver is a BIND-backed Identity Management (IdM) service tuned for general-purpose use, the recursive-clients limit is usually the first ceiling that hits. Crossing it does not produce an obvious error: BIND silently drops the oldest waiting query to protect its own memory, the application sees a timeout, the IdM host shows low CPU and RAM, and the operator team is left chasing a phantom network problem.
-
-This article describes a defense-in-depth strategy with two complementary changes:
-
-- raise the recursive-client ceiling on the upstream BIND so that a burst does not trip a hard limit;
-- enable caching on the in-cluster CoreDNS so that the burst never reaches the upstream in the first place.
+On Alauda Container Platform the cluster DNS is provided by CoreDNS, and the built-in CoreDNS `cache` plug-in is the only in-cluster DNS caching layer; the Kubernetes community NodeLocal DNSCache add-on is not present as a separate caching mechanism on this platform [ev:c10]. On install package v4.3.4 the cluster DNS runs from container image `registry.alauda.cn:60080/tkestack/coredns:1.14.2-v4.3.4` in the `kube-system` namespace, with its `cache` behavior defined in the `cpaas-coredns` Corefile [ev:c10]. When caching is tuned conservatively, identical and repeatedly-failing lookups from pods are forwarded to the upstream resolver more often than necessary, raising the query load that the cluster pushes to the external recursive resolver [ev:c9].
 
 ## Root Cause
 
-Each query that reaches the recursive resolver occupies a *recursive client slot* — a memory reservation that persists for the full round-trip through the DNS hierarchy. Under VM workloads the slot count rarely matters; under Kubernetes parallelism it becomes a hard ceiling.
-
-The amplifier that makes it worse on a cluster is **search-domain expansion**. When a pod resolves a short name, the cluster resolver walks the search path before returning a positive answer:
-
-```text
-# Pod requests:  myapi
-# Resolver expands through search domains:
-1.  myapi.<namespace>.svc.cluster.local   -> NXDOMAIN  (upstream hit)
-2.  myapi.svc.cluster.local                -> NXDOMAIN  (upstream hit)
-3.  myapi.cluster.local                    -> NXDOMAIN  (upstream hit)
-4.  myapi.example.com                      -> resolved (positive answer)
-```
-
-If the cluster-side cache is disabled, every pod restart, scale-out, or batch job re-runs that NXDOMAIN sequence and pushes the upstream toward its limit:
-
-```text
-# negativeTTL = 0:    100 pods x 3 NXDOMAIN x 5 services = 1,500 upstream queries
-# negativeTTL = 10s:                              3 x 5  =    15 upstream queries
-```
-
-A 99% reduction in upstream pressure comes from a single cache-side change.
+The CoreDNS `cache` plug-in shapes how long responses are held before a fresh upstream query is issued, and the cache lifetime determines how aggressively repeated lookups are collapsed [ev:c9]. With local caching in effect, identical DNS lookups originating from many pods on the same node are answered from the local cache for the cache lifetime rather than each producing its own upstream query, which reduces the load forwarded to the upstream resolver [ev:c9]. Negative responses are governed separately: when negative caching is disabled, every failed (NXDOMAIN) lookup produces a fresh query to the upstream resolver instead of being served locally [ev:c5].
 
 ## Resolution
 
-### Step 1: Lift the BIND Recursive-Client Ceiling
-
-On the upstream IdM / BIND server, raise `recursive-clients` from the conservative default to a value that matches the cluster's parallelism:
+On ACP the cache behavior is controlled through the `cache` directive in the `cpaas-coredns` Corefile rather than through named positive/negative TTL fields [ev:c4]. The directive carries a single positional TTL value and uses `disable` sub-directives to turn caching off per response class and per zone; the standard form caches for the positional TTL while disabling both success and denial caching for the in-cluster zone [ev:c4]. The Corefile fragment follows this shape [ev:c4]:
 
 ```text
-# /etc/named.conf  (or /etc/named/options.conf on IdM)
-options {
-    recursive-clients 10000;
-};
+cache 30 {
+    disable success cluster.local
+    disable denial cluster.local
+}
 ```
 
-A jump from 900 to 10,000 concurrent recursive clients costs roughly 50 MB of additional RAM on a modern resolver — under 1% of a 6 GB host. Reload `named` after the change and confirm the new limit took effect by inspecting the server's runtime statistics.
-
-This step protects the upstream from being knocked over while the cluster-side cache is being rolled out. It is not a substitute for caching.
-
-### Step 2: Enable Caching on the In-Cluster CoreDNS
-
-The cluster runs CoreDNS as a DaemonSet — one resolver pod per worker node, handling all DNS for pods on that node. The `cache` plugin is loaded but, by default, both positive and negative TTLs are 0, which makes the local resolver behave as a pure pass-through.
-
-The two parameters that matter:
-
-- **positiveTTL** — how long a successful answer (a domain that resolves to an IP) is cached. The default of 0 defers to the TTL on the record itself, which for short-TTL internal services offers little protection during bursts.
-- **negativeTTL** — how long an NXDOMAIN response is cached. This is the higher-leverage parameter, because the search-domain expansion above turns every short-name lookup into several NXDOMAIN queries.
-
-A typical starting point is a 30–60 second positive TTL and a 10–30 second negative TTL. Tighten the positive TTL if your applications expect rapid record changes; loosen the negative TTL for read-heavy workloads.
-
-Edit the CoreDNS Corefile via its ConfigMap and reload:
-
-```yaml
-# kubectl -n kube-system edit configmap coredns
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: coredns
-  namespace: kube-system
-data:
-  Corefile: |
-    .:53 {
-        errors
-        health { lameduck 5s }
-        ready
-        kubernetes cluster.local in-addr.arpa ip6.arpa {
-            pods insecure
-            fallthrough in-addr.arpa ip6.arpa
-            ttl 30
-        }
-        prometheus :9153
-        forward . /etc/resolv.conf {
-            max_concurrent 1000
-        }
-        cache {
-            success 9984 30
-            denial 9984 15
-        }
-        loop
-        reload
-        loadbalance
-    }
-```
-
-After saving, restart the CoreDNS pods so they pick up the new Corefile:
-
-```bash
-kubectl -n kube-system rollout restart deployment coredns
-kubectl -n kube-system rollout status deployment coredns --timeout=2m
-```
-
-Allow a few minutes for the cache to warm; the upstream should see traffic decline immediately and asymptote toward a small steady-state.
-
-### Step 3: Validate End-to-End
-
-Confirm caching is active by issuing two consecutive lookups from a test pod and comparing the latencies. The image must contain `dig`; public images such as `registry.k8s.io/e2e-test-images/jessie-dnsutils:1.7` may not be reachable from isolated clusters — substitute with any in-cluster mirror image that ships `bind-utils` / `dnsutils`:
-
-```bash
-kubectl run dns-probe --image=<image-with-dig> \
-  --restart=Never --rm -it -- /bin/sh -c \
-  'time dig +short kubernetes.default.svc.cluster.local; time dig +short kubernetes.default.svc.cluster.local'
-```
-
-The second query should complete in under a millisecond — proof the local cache served it. On the upstream side, BIND's `rndc stats` (or equivalent metrics) should show recursive client high-water mark well below the new ceiling.
+Caching of negative (NXDOMAIN) responses is controlled by the `disable denial` sub-directive on a per-zone basis [ev:c4]. In the shipped Corefile the only zone listed is `cluster.local`, so negative caching is turned off for the in-cluster zone and each failed lookup for `cluster.local` produces a fresh upstream query rather than being served from the local cache [ev:c5]. For a zone that is left out of `disable denial`, negative responses would instead be held by the `cache` plug-in for the positional cache lifetime; the general CoreDNS rationale for keeping negative caching on is that repeated failed lookups within the cache window can be answered locally instead of going upstream, but note that the running configuration does not exercise this for `cluster.local` — it disables it [ev:c5].
 
 ## Diagnostic Steps
 
-Inspect the live Corefile to confirm caching directives are present:
+Confirm which caching layer is in effect: CoreDNS is the cluster DNS and the built-in `cache` plug-in is the only caching layer, with no separate node-local DNS cache DaemonSet present cluster-wide [ev:c10]. Inspect the running CoreDNS configuration to read the active `cache` directive [ev:c10]:
 
 ```bash
-kubectl -n kube-system get configmap coredns -o jsonpath='{.data.Corefile}' | grep -A2 cache
+kubectl get configmap cpaas-coredns -n kube-system \
+  -o jsonpath='{.data.Corefile}'
 ```
 
-Watch CoreDNS metrics for cache hit ratio:
+Read the cluster DNS image tag to confirm the running version [ev:c10]:
 
 ```bash
-kubectl -n kube-system port-forward svc/kube-dns 9153:9153 &
-curl -s http://localhost:9153/metrics | grep coredns_cache
+kubectl get deploy coredns -n kube-system \
+  -o jsonpath='{.spec.template.spec.containers[0].image}'
 ```
 
-A healthy deployment will show `coredns_cache_hits_total` increasing significantly faster than `coredns_cache_misses_total`. If the cache is cold (just deployed, or restarted) the ratio improves over the first several minutes; if it stays low, confirm that the `cache` block is loaded and that CoreDNS pods picked up the ConfigMap change.
-
-When the upstream resolver still trips its client ceiling despite caching being enabled, profile a representative pod's `/etc/resolv.conf` for an unusually large `search` list — every additional search-domain entry multiplies the NXDOMAIN amplifier by another factor.
+The running configuration sets the positional TTL to `30` on the `cache` directive, so positive responses are held for that lifetime; the live Corefile shows `cache 30`, not `cache 0`, so behavior under a `0` TTL is not exercised here and is not asserted for this cluster [ev:c4]. Inspect whether negative responses are being cached by checking the zones listed under `disable denial`: a zone present there is not negatively cached, so failed lookups for it reach the upstream resolver on every attempt [ev:c5].

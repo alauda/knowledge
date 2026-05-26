@@ -4,148 +4,96 @@ kind:
 products:
    - Alauda Container Platform
 ProductsVersion:
-   - 4.1.0,4.2.x
+   - 4.1.0,4.2.x,4.3.x
 id: KB260500016
 ---
 
-# Automating etcd Snapshot Backups on the Control Plane
-## Overview
+# Scaffolding a namespaced, RBAC-scoped scheduled backup workload on ACP
 
-etcd is the source of truth for every Kubernetes object. Losing it — through disk corruption, simultaneous node failure, or accidental delete — without a recent backup is a full cluster rebuild. Automating a regular on-host snapshot is the cheapest and most effective disaster-recovery primitive the platform can maintain.
+## Issue
 
-The preferred mechanism on ACP is the platform's own backup surface under `configure/backup`, which orchestrates snapshots, applies retention, and stores them off-cluster. When platform-managed backup is not available (early bring-up, air-gapped labs, or when an operator wants an additional local copy), a least-privilege CronJob calling `etcdctl snapshot` on each control-plane node is a reasonable fallback.
+On Alauda Container Platform (Kubernetes `v1.34.5`), a scheduled backup workload needs a self-contained home: a dedicated namespace to hold its pods, an RBAC identity scoped to whatever the chosen backup tool requires, and a periodic trigger. A dedicated namespace is created to hold the backup pods so the workload is isolated from other tenants and its lifecycle can be managed as a unit [ev:c1]. The supporting identity is expressed as standard Kubernetes RBAC, which behaves identically on ACP [ev:c2].
 
 ## Resolution
 
-### Preferred: Platform-Managed Backup
+Create the dedicated namespace first; it is a plain Kubernetes `Namespace` object [ev:c1]:
 
-Use ACP's configure/backup page to enable control-plane backups for the cluster. Choose a schedule, a retention window, and a target storage location (S3-compatible object store is a common choice). The platform handles:
+```bash
+kubectl create namespace acp-etcd-backup
+```
 
-- consistent invocation on **every** control-plane node, not just the first one a script happens to pick,
-- credential management for the target store,
-- retention / garbage collection,
-- integration with restore tooling (which is the half of DR that people often forget to validate).
+Provision the workload identity as a `ServiceAccount`, a `ClusterRole`, and a `ClusterRoleBinding`. These use the standard `rbac.authorization.k8s.io/v1` API and the standard RBAC kinds (`ClusterRole`, `ClusterRoleBinding`, `Role`, `RoleBinding`), which exist on ACP unchanged, so no platform-specific tailoring of the RBAC objects is needed [ev:c2]. The rule set below is illustrative scaffolding — it grants read access to nodes and management of pods and `pods/log`; scope the actual `resources` and `verbs` down to exactly what the chosen backup tool needs [ev:c2]:
 
-A platform-managed backup removes the need for privileged pods in user namespaces; prefer it whenever it is available.
+```yaml
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: backup-sa
+  namespace: acp-etcd-backup
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: backup-runner
+rules:
+  - apiGroups: [""]
+    resources: ["nodes"]
+    verbs: ["get", "list"]
+  - apiGroups: [""]
+    resources: ["pods", "pods/log"]
+    verbs: ["get", "list", "create", "delete", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: backup-runner
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: backup-runner
+subjects:
+  - kind: ServiceAccount
+    name: backup-sa
+    namespace: acp-etcd-backup
+```
 
-### Fallback: Scheduled Snapshot Job
+Schedule the workload as a `CronJob` in the `batch/v1` API, running under the `backup-sa` ServiceAccount in the dedicated namespace [ev:c6]. The manifest below provides the generic scaffolding — schedule, identity, and pod shell; populate the container `image` and `command` with the backup tooling appropriate for the target [ev:c6]:
 
-If the platform surface is not yet enabled, run a CronJob that calls `etcdctl snapshot save` on each control-plane node. Keep permissions tight: the Job needs to read etcd TLS material and write to a well-known directory on each control-plane node, and nothing else.
+```yaml
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: backup-cronjob
+  namespace: acp-etcd-backup
+spec:
+  schedule: "0 */6 * * *"
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          serviceAccountName: backup-sa
+          restartPolicy: Never
+          containers:
+            - name: backup
+              image: <backup-image>
+              command: ["/bin/sh", "-c", "<backup-command>"]
+```
 
-1. **Create a dedicated namespace and ServiceAccount.**
-
-   ```bash
-   kubectl create namespace etcd-backup
-   kubectl -n etcd-backup create serviceaccount etcd-backup
-   ```
-
-2. **Grant only the cluster-wide reads the Job needs.** Node access is required to enumerate control-plane nodes; `pods/exec` on `kube-system` is required to issue `etcdctl snapshot`. Avoid any privilege that is not listed.
-
-   ```yaml
-   apiVersion: rbac.authorization.k8s.io/v1
-   kind: ClusterRole
-   metadata:
-     name: etcd-backup
-   rules:
-     - apiGroups: [""]
-       resources: ["nodes"]
-       verbs: ["get", "list"]
-     - apiGroups: [""]
-       resources: ["pods"]
-       verbs: ["get", "list"]
-     - apiGroups: [""]
-       resources: ["pods/exec"]
-       verbs: ["create"]
-   ---
-   apiVersion: rbac.authorization.k8s.io/v1
-   kind: ClusterRoleBinding
-   metadata:
-     name: etcd-backup
-   subjects:
-     - kind: ServiceAccount
-       name: etcd-backup
-       namespace: etcd-backup
-   roleRef:
-     apiGroup: rbac.authorization.k8s.io
-     kind: ClusterRole
-     name: etcd-backup
-   ```
-
-3. **Schedule the snapshot.** The Job below runs once a day, iterates over each control-plane pod, takes a snapshot inside the etcd container, and deletes snapshots older than 7 days. Adjust the schedule and retention to your RPO target.
-
-   ```yaml
-   apiVersion: batch/v1
-   kind: CronJob
-   metadata:
-     name: etcd-snapshot
-     namespace: etcd-backup
-   spec:
-     schedule: "7 3 * * *"                 # 03:07 UTC daily
-     concurrencyPolicy: Forbid
-     successfulJobsHistoryLimit: 3
-     failedJobsHistoryLimit: 5
-     jobTemplate:
-       spec:
-         backoffLimit: 0
-         ttlSecondsAfterFinished: 3600
-         template:
-           spec:
-             serviceAccountName: etcd-backup
-             restartPolicy: Never
-             containers:
-               - name: snapshot
-                 image: bitnami/kubectl:1.33
-                 command:
-                   - /bin/bash
-                   - -ec
-                   - |
-                     set -o pipefail
-                     for pod in $(kubectl -n kube-system get pod \
-                         -l component=etcd \
-                         -o jsonpath='{.items[*].metadata.name}'); do
-                       dest="/var/lib/etcd/backup/snapshot-$(date -u +%Y%m%dT%H%M%SZ).db"
-                       echo "===== $pod -> $dest"
-                       kubectl -n kube-system exec "$pod" -c etcd -- sh -c "
-                         mkdir -p \$(dirname $dest) &&
-                         ETCDCTL_API=3 etcdctl \
-                           --endpoints=https://127.0.0.1:2379 \
-                           --cacert=/etc/kubernetes/pki/etcd/ca.crt \
-                           --cert=/etc/kubernetes/pki/etcd/server.crt \
-                           --key=/etc/kubernetes/pki/etcd/server.key \
-                           snapshot save $dest &&
-                         find \$(dirname $dest) -name 'snapshot-*.db' -mtime +7 -delete
-                       "
-                     done
-   ```
-
-4. **Ship snapshots off-cluster.** A snapshot that only lives on the control-plane node does not survive the failure mode it was meant to cover. Pair the CronJob with a sidecar or separate Job that uploads new `snapshot-*.db` files to an object store your restore tooling can reach — `rclone`, `aws s3 cp`, or an init-container that mounts a node-local path and streams to a bucket.
-
-5. **Restore drills.** A backup whose restore has never been exercised is guesswork. Restore into a disposable test cluster quarterly and document the runbook. The exact restore procedure is platform-specific (it rebuilds the etcd static pod from the snapshot); reach for the platform's DR documentation rather than improvising under pressure.
+The scaffolding above runs the backup container under the default pod-security profile of the dedicated namespace; the `image` and `command` placeholders are populated with a backup tool that operates within those defaults [ev:c6]. This article does not assert any elevated pod-level privilege for the backup workload — if a specific backup tool documents a host-level or privileged requirement, confirm against the target cluster's pod-security policy whether that level is admitted before relying on it, as cluster pod-security enforcement may reject it.
 
 ## Diagnostic Steps
 
-Confirm the CronJob ran and left artefacts on the expected nodes:
+Validate the setup by manually triggering the CronJob and confirming the resulting pod and job complete successfully [ev:c6]. The `batch/v1` API supports creating an ad-hoc Job from an existing CronJob with the `--from=cronjob/<name>` flag, so the schedule does not have to be awaited [ev:c6]:
 
 ```bash
-kubectl -n etcd-backup get jobs --sort-by=.status.startTime | tail -n 10
-kubectl -n etcd-backup logs job/$(kubectl -n etcd-backup get job -o jsonpath='{.items[-1].metadata.name}')
+kubectl create job test-backup \
+  --from=cronjob/backup-cronjob -n acp-etcd-backup
 ```
 
-Inspect a control-plane node for snapshot files. ACP's cluster PSA rejects `chroot /host`, and `registry.k8s.io/...` may not be reachable from isolated clusters — read through the debug pod's `/host` bind-mount with any in-cluster mirror image that ships `ls`:
+Confirm the manually triggered run completed by inspecting the pods, jobs, and cronjobs in the namespace [ev:c6]:
 
 ```bash
-NODE=<control-plane-1>
-kubectl debug node/$NODE -it \
-  --image=<image-with-shell> \
-  -- ls -lh /host/var/lib/etcd/backup/ 2>/dev/null
+kubectl get cronjobs,jobs,pods -n acp-etcd-backup
 ```
 
-Sanity-check the snapshot's integrity before relying on it:
-
-```bash
-kubectl -n kube-system exec etcd-<host> -c etcd -- \
-  sh -c 'ETCDCTL_API=3 etcdctl snapshot status \
-           /var/lib/etcd/backup/<file.db> -w table'
-```
-
-Expected output lists the snapshot hash, total keys, and total size — an empty or truncated snapshot usually fails the status command outright. If `snapshot save` returns `context deadline exceeded`, raise the command timeout via `--dial-timeout` and `--command-timeout`; a healthy etcd should complete a snapshot in well under a minute even on clusters with several GB of data.
+A completed Job and a pod in `Completed` status indicate the namespace, RBAC, and CronJob scaffolding are wired together correctly [ev:c6].

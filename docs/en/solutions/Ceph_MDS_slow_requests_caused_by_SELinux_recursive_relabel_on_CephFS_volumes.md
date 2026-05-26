@@ -4,99 +4,38 @@ kind:
 products:
    - Alauda Container Platform
 ProductsVersion:
-   - 4.1.0,4.2.x
+   - 4.1.0,4.2.x,4.3.x
 id: KB260500022
 ---
 
-# Ceph MDS slow requests caused by SELinux recursive relabel on CephFS volumes
+# Slow pod start from recursive SELinux relabeling of large persistent volumes
 
 ## Issue
 
-Pods that mount a CephFS PersistentVolume take a very long time to become Ready, and the MDS in the ACP Ceph storage stack records `slow request` warnings for `setxattr` on `security.selinux`. Representative entries from the MDS:
-
-```text
-[WRN] slow request 30.308475 seconds old, received at 2022-10-08 11:24:01.491429:
-client_request(client.898845:3819 setxattr #0x10001d1111d security.selinux ...
-caller_uid=0, caller_gid=0{}) currently submit entry: journal_and_reply
-```
-
-Meanwhile the MON pods escalate this to cluster-health warnings:
-
-```text
-log_channel(cluster) log [WRN]: Health check failed:
-1 MDSs report slow requests (MDS_SLOW_REQUEST)
-```
-
-The affected PVC is a CephFS `ReadWriteMany` volume with a large number of small files.
+On Alauda Container Platform (Kubernetes v1.34.5) a pod that mounts a persistent volume can take a long time to reach a running state when the volume holds a large number of files. When a pod requiring a volume is created, kubelet instructs the container runtime to relabel the volume with the pod's SELinux context on mount; "Recursive" relabeling means the container runtime relabels every file on all of the pod's volumes, and the upstream API description warns that this may be slow for large volumes [ev:c1]. The delay grows with the number of files in the persistent volume, so volumes containing many files are the most affected [ev:c5].
 
 ## Root Cause
 
-When kubelet mounts a volume into a pod, the container runtime is asked to relabel the entire volume tree to match the pod's SELinux context. For a CephFS subvolume that contains hundreds of thousands of files, this means an equivalent number of `setxattr(security.selinux, ...)` syscalls, each of which lands on the MDS as a metadata journal operation.
-
-Because the MDS must journal every `setxattr` before reply, a recursive relabel saturates the MDS metadata IOPS and starves other clients. Long-running `setxattr` calls then trip the `slow request` threshold and, once enough pile up, the MON promotes them to `MDS_SLOW_REQUEST` cluster health warnings. The hotter the CephFS (many files, frequent mounts), the more visible the effect.
+The recursive relabel walks the entire volume tree rather than only the mount point: the container runtime relabels every file on all of the pod's Pod volumes [ev:c2]. Cost therefore scales with the size of the volume's file population, and the API description explicitly anchors "may be slow for large volumes" as the documented behavior [ev:c5]. The pod's SELinux context itself derives from the standard core/v1 `spec.securityContext.seLinuxOptions` field that requests the context applied to the pod's containers [ev:c1]. The deeper per-syscall mechanism (whether the runtime issues an explicit `setxattr` per file, batches via an `-o context` remount, or uses another primitive) is an implementation detail of the container runtime and is not asserted by the Kubernetes API description; this article therefore stays at the documented "relabels every file, slow for large volumes" granularity rather than naming the specific syscall.
 
 ## Resolution
 
-There are two levers. Prefer option 1; option 2 is a mitigation when the pod owner cannot tolerate any relabel cost at all.
+The Kubernetes API offers a conditional alternative to recursive relabel: `seLinuxChangePolicy: MountOption` mounts eligible Pod volumes with the `-o context` mount option, avoiding the per-file relabel walk on the volumes that qualify; other volumes are always re-labelled recursively [ev:c6]. Whether this path is available on a given cluster depends on the CSI driver: a driver must advertise support by setting `spec.seLinuxMount: true` on its `CSIDriver` object, and the field defaults to `false`, so by default no driver participates [ev:c6].
 
-1. **Match the pod security context to the volume so kubelet skips the recursive relabel.**
+Inspect whether the CSI driver backing the volume already announces `-o context` support:
 
-   Kubernetes honours the `SELinuxMountReadWriteOncePod` / `SELinuxChangePolicy` mechanism for CSI volumes that advertise `seLinuxMount: true`. When the volume is already labelled with a type that the pod's `seLinuxOptions` requests, kubelet mounts with the correct context and does not walk the tree. In the pod spec:
+```bash
+kubectl get csidriver <driver-name> -o jsonpath='{.spec.seLinuxMount}'
+```
 
-   ```yaml
-   apiVersion: v1
-   kind: Pod
-   spec:
-     securityContext:
-       seLinuxOptions:
-         level: "s0:c123,c456"
-         type: container_file_t
-     containers:
-       - name: app
-         image: myapp:latest
-         volumeMounts:
-           - name: data
-             mountPath: /data
-   ```
-
-   Set a stable, explicit SELinux level/type on the pod (or its controller template) and ensure the CephFS subvolume is pre-labelled to the same type. After this, kubelet mounts the volume with `context=` and avoids the `setxattr` walk.
-
-2. **Disable the recursive relabel for the affected pod by using `SELinuxRelabelPolicy: Recursive` opt-out patterns, or by mounting with `context=` at the CSI level.**
-
-   For CephFS CSI, the relabel can be avoided per-PV by declaring `seLinuxMount: true` on the `CSIDriver` object and pinning a stable label on the pod. This is a cluster-wide property of the CSI driver; confirm before editing:
-
-   ```bash
-   kubectl get csidriver cephfs.csi.ceph.com -o yaml
-   ```
-
-   If the CSI driver already advertises `seLinuxMount: true` and the pod has `seLinuxOptions` set, the relabel will not happen on subsequent mounts. Validate this by watching MDS `setxattr` counts during a pod restart.
-
-As a last resort for legacy workloads that cannot be given an explicit SELinux context, split the workload onto a smaller subvolume so the one-time relabel cost is bounded. Do not disable SELinux on the node OS — it compromises isolation for other tenants.
+When the command returns `true`, eligible volumes are mounted with the context applied as a mount option rather than relabeled file-by-file [ev:c6]. When it returns `false` (or the field is unset, which means the default `false`), the driver does not participate in MountOption and recursive relabel remains the behavior for those volumes [ev:c6]. On this verification cluster the only CSI driver present is `topolvm.cybozu.com`, which reports `seLinuxMount=false`, so MountOption is not an effective remedy for topolvm-backed volumes here — operators relying on topolvm should treat the recursive-relabel cost as the working behavior and reduce file counts on affected volumes rather than expect MountOption to apply [ev:c6].
 
 ## Diagnostic Steps
 
-Confirm the slow requests are SELinux `setxattr` and not another Ceph metadata problem:
+Confirm the pod requests an SELinux context by reading its `securityContext`; the context applied to the pod's containers is carried in the standard `spec.securityContext.seLinuxOptions` field [ev:c1].
 
 ```bash
-kubectl logs -n <ceph-namespace> <mds-pod> | grep -E "slow request|setxattr #.*security.selinux"
+kubectl get pod <pod-name> -o jsonpath='{.spec.securityContext.seLinuxOptions}'
 ```
 
-Check the cluster-health escalation on the MONs:
-
-```bash
-kubectl logs -n <ceph-namespace> <mon-pod> | grep MDS_SLOW_REQUEST
-```
-
-Count the files in the problem subvolume from a pod that already has it mounted (an unaffected reader is fine):
-
-```bash
-kubectl exec -n <ns> <reader-pod> -- sh -c 'find /data -xdev | wc -l'
-```
-
-If that count is in the high hundreds of thousands, the recursive relabel is the likely trigger and the resolution steps above apply. Correlate the slow-request spikes with pod start times reported by the kubelet:
-
-```bash
-kubectl get events --sort-by=.lastTimestamp | grep -E "FailedMount|SlowMount|Started"
-```
-
-After applying the fix, restart one consumer pod and watch the MDS logs — the `setxattr` storm should not reappear.
+Correlate slow pod start with volume size: the relabel-induced delay grows with the number of files in the persistent volume, so a volume known to hold many files is the expected culprit when start time is high [ev:c5]. Because the recursive policy relabels every file on the Pod's volumes, file count on the mounted volume is the load-bearing quantity rather than the volume's byte size [ev:c2].

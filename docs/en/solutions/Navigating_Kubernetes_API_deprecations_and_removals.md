@@ -4,87 +4,45 @@ kind:
 products:
    - Alauda Container Platform
 ProductsVersion:
-   - 4.1.0,4.2.x
+   - 4.1.0,4.2.x,4.3.x
 id: KB260500011
 ---
 
-# Navigating Kubernetes API deprecations and removals
+# Handling removed Kubernetes API versions before and after a cluster upgrade
 
-## Overview
+## Issue
 
-Kubernetes follows a strict API versioning policy. Every beta API (`v1beta1`, `v2beta1`, and so on) is guaranteed to be supported for nine months or three Kubernetes releases — whichever is longer — after it is marked deprecated, and is then free to be removed from the server entirely. When that removal happens, any workload, controller, tool or pipeline that still talks to the old version stops working.
+Alauda Container Platform runs the upstream Kubernetes API server and follows the upstream API lifecycle, so beta API versions are eventually removed as the cluster advances across Kubernetes minor releases. On a cluster at Kubernetes v1.34.5, the flow-control group serves only the GA version `flowcontrol.apiserver.k8s.io/v1`; no `v1beta*` versions of that group are served, reflecting the upstream rule that a beta API version is retained for a defined window after deprecation and then removed in a later minor release [ev:c1]. Once a version reaches that point and is dropped, requests from workloads, tools, or other components that still target the removed version begin to fail [ev:c2].
 
-Upstream maintains the canonical timeline in the [API deprecation policy](https://kubernetes.io/docs/reference/using-api/deprecation-policy/) and the per-release [deprecated API migration guide](https://kubernetes.io/docs/reference/using-api/deprecation-guide/). Administrators should expect to audit their clusters for deprecated versions in use at every minor-version upgrade, migrate affected manifests to the new version, and then unblock the upgrade explicitly once the audit is clean.
+```text
+Error from server (NotFound): the server could not find the requested resource
+```
 
-This article describes how to identify deprecated API usage on an ACP cluster, how to migrate to the successor versions, and what the cluster exposes as signals that usage has not yet been cleaned up.
+A direct request against a removed version such as `flowcontrol.apiserver.k8s.io/v1beta3` is answered with HTTP `404 Not Found` by the API server, because that version is no longer served [ev:c2].
+
+## Root Cause
+
+The set of served API versions is governed entirely by the upstream Kubernetes API machinery for the running minor version. When the cluster reaches a release in which a beta version has aged past its deprecation window, that version is removed from the served set; at v1.34.5 the flow-control group exposes only `flowcontrol.apiserver.k8s.io/v1`, and any client still issuing calls against a removed `v1beta*` form has no served endpoint to reach [ev:c1]. The failures are therefore not a misconfiguration of the cluster but the expected result of a client continuing to use an API version that the upgraded API server no longer recognizes [ev:c2].
 
 ## Resolution
 
-Treat every minor-version upgrade as an API audit. The workflow below generalises across any Kubernetes-based platform:
+Before upgrading a cluster across a release where API removals occur, identify which workloads, manifests, controllers, and client tools still target the soon-to-be-removed API versions, and migrate them to the appropriate replacement version ahead of the upgrade [ev:c3]. The commands below show only which versions the API server currently serves; they do not by themselves list which clients are still calling a given version, so the workload-side review must be done by inspecting manifests, Helm charts, GitOps repos, controller images, and any other sources of API traffic that are known to reference the deprecated version [ev:c3]. For the flow-control group, the surviving served version on a v1.34.5 cluster is the GA `flowcontrol.apiserver.k8s.io/v1`; manifests and clients should be updated to that version so they continue to resolve after the upgrade [ev:c1].
 
-1. **Inventory every removed API in the target release.** The upstream [deprecated API migration guide](https://kubernetes.io/docs/reference/using-api/deprecation-guide/) lists exactly which `group/version/kind` triples are removed in each minor release (for example, Kubernetes 1.22 removed a large batch of `v1beta1` APIs that had been deprecated in 1.16). Build a list of the kinds that the target release will stop serving.
+Confirm which versions a group currently serves on the running cluster, then update resources to target the GA version:
 
-2. **Scan all stored objects for those kinds.** Every deprecated object has two dimensions: the `storedVersion` (what etcd keeps on disk, returned by `kubectl get --raw /apis/<group>`) and the `served` version (what clients and controllers submit). Both need to be upgraded:
+```bash
+kubectl api-versions | grep flowcontrol.apiserver.k8s.io
+```
 
-   ```bash
-   # Which versions does the cluster still serve?
-   kubectl api-resources -o wide
-   kubectl api-versions
-
-   # What versions are stored in etcd per resource?
-   kubectl get apiservices.apiregistration.k8s.io \
-     -o custom-columns=NAME:.metadata.name,AVAILABLE:.status.conditions[?(@.type=="Available")].status
-   ```
-
-   Use `kubectl get <kind> -A -o yaml` for each deprecated kind and look at the `apiVersion` in the returned YAML. Anything still bound to the deprecated version will not survive the next upgrade.
-
-3. **Rewrite manifests, charts, and automation to the successor version.** Typical migrations include:
-
-   - `extensions/v1beta1` Ingress → `networking.k8s.io/v1` Ingress
-   - `policy/v1beta1` PodDisruptionBudget → `policy/v1` PodDisruptionBudget
-   - `autoscaling/v2beta2` HorizontalPodAutoscaler → `autoscaling/v2`
-   - `batch/v1beta1` CronJob → `batch/v1`
-   - `apiregistration.k8s.io/v1beta1` APIService → `apiregistration.k8s.io/v1`
-
-   For CRD-backed workloads, bump `apiVersion` across the whole toolchain: raw manifests, Helm charts, GitOps application source, CI pipeline fixtures, and any admission-webhook client code. Leaving even one generator on the old version means the next `kubectl apply` will silently recreate a deprecated object.
-
-4. **Re-run the scan until it is clean,** then proceed with the upgrade. Do not rely on post-upgrade repair scripts; once the server stops serving the old version, existing controllers that use it simply begin to error.
-
-5. **Prefer `apiVersion`-agnostic tooling** when possible. `conversion webhooks` on CRDs, `kustomize` `apiVersion` patches, and Helm templates keyed off the running Kubernetes minor version let you roll out a single source tree across a fleet of clusters on different versions without a separate manifest per server version.
+```yaml
+apiVersion: flowcontrol.apiserver.k8s.io/v1
+kind: FlowSchema
+```
 
 ## Diagnostic Steps
 
-On a running cluster, two signals tell you whether deprecated API usage is still in play:
+To identify whether a failure stems from a removed API version, inspect the API server response to the affected request. A removed version returns `404 Not Found` and the API server reports that it could not find the requested resource, distinguishing a removed-version call from an authorization or admission failure [ev:c2]. Cross-check the served versions for the affected group against the GA-only set present on the v1.34.5 cluster: this confirms whether the version named in the failing request is still served on the running minor and which version remains as the migration target [ev:c1]. The query reports served versions, not in-use callers, so it confirms the diagnosis of a removed-version call but does not by itself enumerate every client still issuing the old version — that enumeration has to come from inspecting the workloads, manifests, and tools known to send the failing request [ev:c1].
 
 ```bash
-# Every deprecated request bumps this counter. A non-zero rate after
-# migration work is complete means some controller or cronjob is still
-# dragging on the old version.
-kubectl get --raw '/metrics' | grep apiserver_requested_deprecated_apis
+kubectl get --raw /apis/flowcontrol.apiserver.k8s.io
 ```
-
-Query Prometheus for the same counter to see *which* resource is still being used:
-
-```text
-sum by (group, version, resource) (
-  rate(apiserver_requested_deprecated_apis[5m])
-)
-```
-
-The group/version/resource labels identify the offender — often a controller or operator that has not been upgraded. Upgrade the component (or, if it is in-house, bump its client-go dependency) until the counter drops to zero.
-
-Audit stored resources against the removed list for the next release:
-
-```bash
-for api in \
-  ingresses.extensions \
-  podsecuritypolicies.policy \
-  cronjobs.batch \
-  horizontalpodautoscalers.autoscaling \
-  ; do
-  echo "=== $api ==="
-  kubectl get "$api" -A -o json 2>/dev/null | jq -r '.items[] | "\(.apiVersion) \(.metadata.namespace)/\(.metadata.name)"' | sort -u
-done
-```
-
-Any line showing a deprecated `apiVersion` is a migration candidate. Re-apply the object in the successor version to rewrite the stored copy in etcd. Once the output only contains successor versions, the cluster is safe for the upgrade that removes the old ones.
