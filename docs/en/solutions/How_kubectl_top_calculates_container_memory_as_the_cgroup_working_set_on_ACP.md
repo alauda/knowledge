@@ -5,6 +5,7 @@ products:
    - Alauda Container Platform
 ProductsVersion:
    - 4.1.0,4.2.x
+id: KB260500217
 ---
 
 # How kubectl top calculates container memory as the cgroup working set on ACP

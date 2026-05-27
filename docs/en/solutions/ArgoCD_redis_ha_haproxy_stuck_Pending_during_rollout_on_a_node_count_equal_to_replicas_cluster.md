@@ -5,6 +5,7 @@ products:
    - Alauda Container Platform
 ProductsVersion:
    - 4.1.0,4.2.x
+id: KB260500231
 ---
 
 # ArgoCD redis-ha-haproxy stuck Pending during rollout on a node-count-equal-to-replicas cluster

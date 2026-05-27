@@ -5,6 +5,7 @@ products:
    - Alauda Container Platform
 ProductsVersion:
    - 4.1.0,4.2.x
+id: KB260500236
 ---
 
 # Collecting Node Performance Metrics with sar and iostat on ACP

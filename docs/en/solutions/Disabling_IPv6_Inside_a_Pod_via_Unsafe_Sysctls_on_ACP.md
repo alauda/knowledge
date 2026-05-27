@@ -5,6 +5,7 @@ products:
    - Alauda Container Platform
 ProductsVersion:
    - 4.1.0,4.2.x
+id: KB260500247
 ---
 
 # Disabling IPv6 Inside a Pod via Unsafe Sysctls on ACP

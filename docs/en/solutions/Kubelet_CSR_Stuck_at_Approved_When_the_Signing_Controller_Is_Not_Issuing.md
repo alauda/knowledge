@@ -5,6 +5,7 @@ products:
    - Alauda Container Platform
 ProductsVersion:
    - 4.1.0,4.2.x
+id: KB260500248
 ---
 
 # Kubelet CSR Stuck at Approved When the Signing Controller Is Not Issuing

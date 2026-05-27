@@ -5,6 +5,7 @@ products:
    - Alauda Container Platform
 ProductsVersion:
    - 4.1.0,4.2.x
+id: KB260500239
 ---
 
 # Running VMs during a KubeVirt operator or cluster upgrade on ACP
