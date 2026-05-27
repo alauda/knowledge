@@ -5,6 +5,7 @@ products:
    - Alauda Container Platform
 ProductsVersion:
    - 4.3.x
+id: KB260500160
 ---
 
 # Configuring chrony to use a custom NTP server on ACP nodes

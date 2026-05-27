@@ -5,6 +5,7 @@ products:
    - Alauda Container Platform
 ProductsVersion:
    - 4.1.0,4.2.x
+id: KB260500165
 ---
 
 # Recovering virt-launcher pods stuck Terminating on a NotReady ACP node

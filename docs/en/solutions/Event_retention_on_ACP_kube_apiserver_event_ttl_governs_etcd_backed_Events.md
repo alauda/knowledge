@@ -5,6 +5,7 @@ products:
    - Alauda Container Platform
 ProductsVersion:
    - 4.3.x
+id: KB260500158
 ---
 
 # Event retention on ACP — kube-apiserver event-ttl governs etcd-backed Events

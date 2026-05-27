@@ -5,6 +5,7 @@ products:
    - Alauda Container Platform
 ProductsVersion:
    - 4.1.0,4.2.x
+id: KB260500194
 ---
 
 # Misleading istiod webhook UPDATE errors when the control plane runs more than one replica

@@ -5,6 +5,7 @@ products:
    - Alauda Container Platform
 ProductsVersion:
    - 4.1.0,4.2.x
+id: KB260500172
 ---
 
 # Recovering a node DaemonSet pod stuck on a missing container image layer

@@ -5,6 +5,7 @@ products:
    - Alauda Container Platform
 ProductsVersion:
    - 4.1.0,4.2.x,4.3.x
+id: KB260500163
 ---
 
 # Moving PVs and PVCs between StorageClasses on ACP

@@ -5,6 +5,7 @@ products:
    - Alauda Container Platform
 ProductsVersion:
    - 4.1.0,4.2.x
+id: KB260500201
 ---
 
 # virt-launcher Sync VMI loop on KubeVirt VMs with multiple secondary networks on ACP

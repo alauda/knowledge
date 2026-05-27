@@ -5,6 +5,7 @@ products:
    - Alauda Container Platform
 ProductsVersion:
    - 4.1.0,4.2.x
+id: KB260500200
 ---
 
 # Argo CD UI returns Application is not available on ACP due to empty argocd-gitops-server Endpoints

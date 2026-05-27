@@ -5,6 +5,7 @@ products:
    - Alauda Container Platform
 ProductsVersion:
    - 4.1.0,4.2.x
+id: KB260500182
 ---
 
 # Recovering an OLM Subscription stuck on listing bundles on ACP

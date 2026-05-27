@@ -5,6 +5,7 @@ products:
    - Alauda Container Platform
 ProductsVersion:
    - 4.1.0,4.2.x
+id: KB260500196
 ---
 
 # Resize an ACP virtualization VM disk in place by expanding its backing PVC

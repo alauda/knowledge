@@ -5,6 +5,7 @@ products:
    - Alauda Container Platform
 ProductsVersion:
    - 4.1.0,4.2.x
+id: KB260500203
 ---
 
 # Per-user API request-count rate limiting is not a kube-apiserver primitive on ACP

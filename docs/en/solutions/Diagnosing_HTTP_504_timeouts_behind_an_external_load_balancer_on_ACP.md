@@ -5,6 +5,7 @@ products:
    - Alauda Container Platform
 ProductsVersion:
    - 4.1.0,4.2.x
+id: KB260500168
 ---
 
 # Diagnosing HTTP 504 timeouts behind an external load balancer on ACP

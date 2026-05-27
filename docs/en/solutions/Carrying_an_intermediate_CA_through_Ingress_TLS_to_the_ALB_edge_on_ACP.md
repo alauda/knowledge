@@ -5,6 +5,7 @@ products:
    - Alauda Container Platform
 ProductsVersion:
    - 4.1.0,4.2.x
+id: KB260500187
 ---
 
 # Carrying an intermediate CA through Ingress TLS to the ALB edge on ACP
