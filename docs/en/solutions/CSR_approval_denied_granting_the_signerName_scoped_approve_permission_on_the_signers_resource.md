@@ -5,6 +5,7 @@ products:
    - Alauda Container Platform
 ProductsVersion:
    - 4.1.0,4.2.x
+id: KB260500325
 ---
 
 # CSR approval denied — granting the signerName-scoped approve permission on the signers resource

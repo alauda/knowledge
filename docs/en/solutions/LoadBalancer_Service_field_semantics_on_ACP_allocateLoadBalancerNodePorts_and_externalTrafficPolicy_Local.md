@@ -5,6 +5,7 @@ products:
    - Alauda Container Platform
 ProductsVersion:
    - 4.1.0,4.2.x
+id: KB260500278
 ---
 
 # LoadBalancer Service field semantics on ACP — allocateLoadBalancerNodePorts and externalTrafficPolicy Local

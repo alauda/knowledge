@@ -5,6 +5,7 @@ products:
    - Alauda Container Platform
 ProductsVersion:
    - 4.1.0,4.2.x
+id: KB260500350
 ---
 
 # Defining Istio Gateway and VirtualService ingress routing resources on ACP

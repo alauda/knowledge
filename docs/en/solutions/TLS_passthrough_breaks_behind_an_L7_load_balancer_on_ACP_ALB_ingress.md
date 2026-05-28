@@ -5,6 +5,7 @@ products:
    - Alauda Container Platform
 ProductsVersion:
    - 4.1.0,4.2.x
+id: KB260500308
 ---
 
 # TLS passthrough breaks behind an L7 load balancer on ACP ALB ingress

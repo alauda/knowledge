@@ -5,6 +5,7 @@ products:
    - Alauda Container Platform
 ProductsVersion:
    - 4.1.0,4.2.x
+id: KB260500285
 ---
 
 # Fibre Channel collector enabled by default on ACP node-exporter

@@ -5,6 +5,7 @@ products:
    - Alauda Container Platform
 ProductsVersion:
    - 4.1.0,4.2.x
+id: KB260500282
 ---
 
 # Identifying the principal that created a CronJob from the kube-apiserver audit log

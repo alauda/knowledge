@@ -5,6 +5,7 @@ products:
    - Alauda Container Platform
 ProductsVersion:
    - 4.1.0,4.2.x
+id: KB260500332
 ---
 
 # Granting a non-admin user pod log access in a namespace with RBAC

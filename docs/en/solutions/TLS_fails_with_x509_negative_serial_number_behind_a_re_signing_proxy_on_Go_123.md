@@ -5,6 +5,7 @@ products:
    - Alauda Container Platform
 ProductsVersion:
    - 4.1.0,4.2.x
+id: KB260500343
 ---
 
 # TLS fails with x509 negative serial number behind a re-signing proxy on Go 1.23+

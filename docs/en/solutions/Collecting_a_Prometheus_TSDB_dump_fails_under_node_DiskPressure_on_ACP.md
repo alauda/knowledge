@@ -5,6 +5,7 @@ products:
    - Alauda Container Platform
 ProductsVersion:
    - 4.1.0,4.2.x
+id: KB260500347
 ---
 
 # Collecting a Prometheus TSDB dump fails under node DiskPressure on ACP

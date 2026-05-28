@@ -5,6 +5,7 @@ products:
    - Alauda Container Platform
 ProductsVersion:
    - 4.1.0,4.2.x
+id: KB260500275
 ---
 
 # Automating ingress TLS certificate renewal with cert-manager and an internal CA on ACP

@@ -5,6 +5,7 @@ products:
    - Alauda Container Platform
 ProductsVersion:
    - 4.1.0,4.2.x
+id: KB260500307
 ---
 
 # kube-controller-manager restarts from leader-election lease-renewal misses driven by a misconfigured HPA

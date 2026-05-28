@@ -5,6 +5,7 @@ products:
    - Alauda Container Platform
 ProductsVersion:
    - 4.1.0,4.2.x
+id: KB260500263
 ---
 
 # Diagnosing ImagePullBackOff on CDI image-import pods on ACP Virtualization

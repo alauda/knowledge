@@ -5,6 +5,7 @@ products:
    - Alauda Container Platform
 ProductsVersion:
    - 4.1.0,4.2.x
+id: KB260500281
 ---
 
 # HTTP requests are not redirected to HTTPS on a TLS-terminating ALB Ingress on ACP

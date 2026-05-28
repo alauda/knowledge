@@ -5,6 +5,7 @@ products:
    - Alauda Container Platform
 ProductsVersion:
    - 4.1.0,4.2.x
+id: KB260500267
 ---
 
 # Diagnosing "x509 certificate has expired" caused by an expired CA in the chain
