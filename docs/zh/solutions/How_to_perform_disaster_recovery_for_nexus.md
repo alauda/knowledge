@@ -17,7 +17,7 @@ sourceSHA: 3470ad902e70f1155c7256fa71c7b6f8ea7f401295fc82a6c58a5fcf69bcd3a6
 
 ## 环境
 
-Nexus Operator: >=v3.81.1
+Nexus Operator: >=v3.76.11
 
 ## 术语
 

@@ -16,7 +16,7 @@ This solution describes how to build a Nexus disaster recovery solution based on
 
 ## Environment
 
-Nexus Operator: >=v3.81.1
+Nexus Operator: >=v3.76.11
 
 ## Terminology
 
