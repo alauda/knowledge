@@ -4,6 +4,8 @@ products:
    - Alauda Container Platform
 kind:
    - Solution
+tags:
+  - LB
 ---
 # Alauda LoadBalancer with MetalLB
 

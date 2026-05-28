@@ -6,6 +6,8 @@ products:
 ProductsVersion:
    - 4.2.x and later
 id: KB260500056
+tags:
+  - LB
 ---
 
 # How to Add Dashboards for EnvoyGateway
