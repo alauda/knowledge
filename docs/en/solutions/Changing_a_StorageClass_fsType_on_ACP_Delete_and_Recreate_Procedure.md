@@ -5,6 +5,7 @@ products:
    - Alauda Container Platform
 ProductsVersion:
    - 4.1.0,4.2.x
+id: KB260500376
 ---
 
 # Changing a StorageClass fsType on ACP — Delete-and-Recreate Procedure

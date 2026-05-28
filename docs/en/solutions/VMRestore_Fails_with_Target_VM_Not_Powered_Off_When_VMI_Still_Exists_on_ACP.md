@@ -5,6 +5,7 @@ products:
    - Alauda Container Platform
 ProductsVersion:
    - 4.1.0,4.2.x
+id: KB260500361
 ---
 
 # VMRestore Fails with "Target VM Not Powered Off" When VMI Still Exists on ACP

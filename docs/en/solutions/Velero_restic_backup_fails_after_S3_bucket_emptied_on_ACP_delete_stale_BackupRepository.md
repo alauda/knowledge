@@ -5,6 +5,7 @@ products:
    - Alauda Container Platform
 ProductsVersion:
    - 4.1.0,4.2.x
+id: KB260500389
 ---
 
 # Velero restic backup fails after S3 bucket emptied on ACP — delete stale BackupRepository

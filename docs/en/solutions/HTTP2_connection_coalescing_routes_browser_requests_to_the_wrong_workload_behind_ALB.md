@@ -5,6 +5,7 @@ products:
    - Alauda Container Platform
 ProductsVersion:
    - 4.1.0,4.2.x
+id: KB260500402
 ---
 
 # HTTP/2 connection coalescing routes browser requests to the wrong workload behind ALB
