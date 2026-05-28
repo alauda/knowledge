@@ -6,7 +6,9 @@ products:
 ProductsVersion:
   - 4.2.x and later
 id: KB260500056
-sourceSHA: b957c01ea041f6dcd01e9bda8142ac02b56a9a3262172966ddcbffb68798c0eb
+tags:
+  - LB
+sourceSHA: 100e0e79e5a099038791c7f82a3561520357dd9485b5fb22319ec77cc46e3d0f
 ---
 
 # 如何为 EnvoyGateway 添加监控面板
@@ -17,10 +19,10 @@ sourceSHA: b957c01ea041f6dcd01e9bda8142ac02b56a9a3262172966ddcbffb68798c0eb
 
 该操作步骤创建以下资源：
 
-- `envoygateway-adminspace-control-panel-dashboard`: EnvoyGateway 控制平面指标的监控面板。
-- `envoygateway-adminspace-data-panel-dashboard`: Envoy 代理数据平面指标的监控面板。
-- `envoy-gateway-controlplane-monitoring`: 用于收集 EnvoyGateway 控制平面指标的 PodMonitor。
-- `envoy-gateway-proxy-monitoring`: 用于收集 Envoy 代理数据平面指标的 PodMonitor。
+- `envoygateway-adminspace-control-panel-dashboard`：用于 EnvoyGateway 控制平面指标的监控面板。
+- `envoygateway-adminspace-data-panel-dashboard`：用于 Envoy 代理数据平面指标的监控面板。
+- `envoy-gateway-controlplane-monitoring`：用于收集 EnvoyGateway 控制平面指标的 PodMonitor。
+- `envoy-gateway-proxy-monitoring`：用于收集 Envoy 代理数据平面指标的 PodMonitor。
 
 ## 环境信息
 
@@ -157,7 +159,7 @@ spec:
           - expr: sum by(kind) (status_update_total{namespace=~"$namespace"})
             legendFormat: '{{.kind}}'
             refId: total
-        title: 按类型更新状态
+        title: 按类型的状态更新
         type: timeseries
       - fieldConfig:
           defaults:
@@ -190,7 +192,7 @@ spec:
           - expr: sum by(status) (status_update_total{namespace=~"$namespace"})
             legendFormat: '{{.status}}'
             refId: status
-        title: 按状态更新状态
+        title: 按状态的状态更新
         type: timeseries
       - fieldConfig:
           defaults:
@@ -390,7 +392,7 @@ spec:
           - expr: sum by(status) (resource_apply_total{namespace=~"$namespace"})
             legendFormat: '{{.status}}'
             refId: status
-        title: 应用资源状态
+        title: 应用的资源状态
         type: timeseries
       - fieldConfig:
           defaults:
@@ -463,7 +465,7 @@ spec:
           - expr: sum by(controller) (rate(controller_runtime_reconcile_errors_total{job=~".*/envoy-gateway-controlplane-monitoring",namespace=~"$namespace"}[2m]))
             legendFormat: 'envoy-gateway/{{.controller}}'
             refId: envoy-gateway-errors
-        title: 调和错误
+        title: 解决错误
         type: timeseries
       - fieldConfig:
           defaults:
@@ -661,7 +663,7 @@ spec:
             instant: true
             legendFormat: live
             refId: live
-        title: 活跃服务器
+        title: 活动服务器
         type: gauge
       - fieldConfig:
           defaults:
@@ -689,7 +691,7 @@ spec:
             instant: true
             legendFormat: '{{.pod}}'
             refId: uptime
-        title: 平均运行时间
+        title: 平均正常运行时间
         type: stat
       - fieldConfig:
           defaults:
@@ -845,10 +847,10 @@ spec:
             sort: desc
         targets:
           - expr: 'sum by(gateway_namespace,gateway,pod) (container_network_receive_bytes_total_irate5m{pod=~"envoy-.*"} * on(namespace,pod) group_left(gateway_namespace,gateway) envoy_server_live{gateway_namespace="$gateway_ns",gateway="$gateway_name"})'
-            legendFormat: '{{.pod}} 接收'
+            legendFormat: '{{.pod}} receive'
             refId: rx
           - expr: 'sum by(gateway_namespace,gateway,pod) (container_network_transmit_bytes_total_irate5m{pod=~"envoy-.*"} * on(namespace,pod) group_left(gateway_namespace,gateway) envoy_server_live{gateway_namespace="$gateway_ns",gateway="$gateway_name"})'
-            legendFormat: '{{.pod}} 发送'
+            legendFormat: '{{.pod}} transmit'
             refId: tx
         title: 网络接收/发送
         type: timeseries
@@ -1067,7 +1069,7 @@ spec:
           - expr: sum by(envoy_cluster_name) (envoy_cluster_upstream_cx_active{gateway_namespace="$gateway_ns",gateway="$gateway_name",envoy_cluster_name=~"$route"})
             legendFormat: '{{.envoy_cluster_name}}'
             refId: cx
-        title: 上游活跃连接数（路由）
+        title: 上游活动连接数（路由）
         type: timeseries
       # --- 响应代码（路由级别） ---
       - fieldConfig:
@@ -1414,7 +1416,7 @@ kubectl -n cpaas-system get podmonitor \
 
 该命令应返回两个 `PodMonitor` 资源。
 
-### 在 Web 控制台中验证监控面板
+### 验证 Web 控制台中的监控面板
 
 从 **平台管理**，转到 **操作中心** > **监控** > **监控面板**。在 `container-platform` 文件夹中，验证以下监控面板是否显示：
 

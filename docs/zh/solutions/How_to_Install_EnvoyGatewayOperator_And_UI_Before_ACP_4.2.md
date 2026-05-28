@@ -6,18 +6,20 @@ products:
 ProductsVersion:
   - 4.x
 id: KB251200023
-sourceSHA: ad6e1154aa86fde7b6b89ef8860b229084e5390660ab1f2c9d703d0767617dc9
+tags:
+  - LB
+sourceSHA: 80842ddb38905f8949fdd38853b830267724553cffaa87898986196baeb35a42
 ---
 
 # 如何在 ACP 4.2 之前安装 Envoy Gateway Operator 和 UI
 
 ## 概述
 
-本指南解释了如何手动安装适用于 ACP 版本 4.2 之前的 Envoy Gateway Operator 和 GatewayAPI UI。
+本指南解释了如何手动安装适用于 ACP 4.2 之前版本的 Envoy Gateway Operator 和 GatewayAPI UI。
 
 **注意：**
 
-- **ACP 4.2+**：Envoy Gateway Operator 可以直接在 OperatorHub 中获取。您可以跳过“安装 Operator”部分。
+- **ACP 4.2+**：Envoy Gateway Operator 可直接在 OperatorHub 中获取。您可以跳过“安装 Operator”部分。
 - **ACP 4.3+**：GatewayAPI UI 包已预安装。您可以跳过“安装 GatewayAPI UI”部分。
 
 ## 安装 Operator
@@ -46,17 +48,17 @@ sourceSHA: ad6e1154aa86fde7b6b89ef8860b229084e5390660ab1f2c9d703d0767617dc9
 4. 在 **安装 Alauda 版本的 Envoy Gateway** 对话框中，点击 **安装**
 5. 点击 **确认** 完成安装
 
-安装完成后，状态将在 OperatorHub 页面上更改为 **已安装**。
+安装完成后，OperatorHub 页面上的状态将更改为 **已安装**。
 
 #### 步骤 2：创建 EnvoyGatewayCtl 实例
 
 1. 在 OperatorHub 页面，点击 **Alauda 版本的 Envoy Gateway** 打开其详细信息页面
 2. 导航到 **所有实例** 标签
-3. 点击 **创建** 创建一个新实例
+3. 点击 **创建** 创建新实例
 4. 选择 **EnvoyGatewayCtl** 作为实例类型，然后点击 **创建**
 5. 在大多数情况下，默认配置即可。点击 **创建** 完成设置。
 
-##### 如何为 Operator 添加 Taint Tolerations
+##### 如何为 Operator 添加污点容忍
 
 ```bash
 kubectl -n envoy-gateway-operator patch subscription envoy-gateway-operator  \
@@ -82,15 +84,15 @@ kubectl -n envoy-gateway-operator patch subscription envoy-gateway-operator  \
 kubectl get pods -n envoy-gateway-operator
 ```
 
-当以下条件满足时，Operator 正在正常运行：
+当以下条件满足时，Operator 正常运行：
 
-- `envoy-gateway-operator` 命名空间中的所有 pod 均处于 **Running** 状态
+- `envoy-gateway-operator` 命名空间中的所有 pod 都处于 **Running** 状态
 
 ## 安装 GatewayAPI UI
 
 ### 重要说明
 
-- **ACP 版本 4.2 之前**：只有平台管理员可以通过 UI 创建网关。其他用户角色在尝试创建网关时将遇到错误。
+- **ACP 4.2 之前版本**：只有平台管理员可以通过 UI 创建网关。其他用户角色在尝试创建网关时会遇到错误。
 
 - **ACP 4.2**：如果您在 ACP 4.2 中安装 GatewayAPI UI 插件，可以通过运行以下命令隐藏旧的 UI 页面：
 
@@ -119,4 +121,4 @@ kubectl get pods -n envoy-gateway-operator
 1. 导航到 **管理员** > **Marketplace** > **集群插件**
 2. 切换到 `global` 集群
 3. 找到并安装 **Alauda Container Platform GatewayAPI 插件**
-4. 安装完成后，**Container Platform** > **Network** 下将出现新的 **Gateway** 菜单项
+4. 安装完成后，在 **Container Platform** > **Network** 下将出现新的 **Gateway** 菜单项

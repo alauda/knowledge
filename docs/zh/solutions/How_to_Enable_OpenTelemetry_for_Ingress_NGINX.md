@@ -5,19 +5,21 @@ products:
   - Alauda Container Platform
 ProductsVersion:
   - 4.3.x and later
+tags:
+  - LB
 id: KB260500063
-sourceSHA: 28022ffbcbd9f40a406bdf43fe0282cdecad0ac5e617c0563fd97558c4127f07
+sourceSHA: 7199a5f59c7c02d0fde131d61f62f8211c72c4bf52bff41d88740c77dbc69fe6
 ---
 
 # 如何为 Ingress NGINX 启用 OpenTelemetry
 
 ## 概述
 
-本文档描述了如何在 Alauda Container Platform (ACP) 4.3.x 及更高版本上为 Ingress NGINX 启用 OpenTelemetry 跟踪。
+本文档描述了如何在 Alauda 容器平台 (ACP) 4.3.x 及更高版本上为 Ingress NGINX 启用 OpenTelemetry 跟踪。
 
 Ingress NGINX 由 `IngressNginx` 自定义资源管理。必须通过 `IngressNginx` 资源配置 OpenTelemetry。请勿手动编辑生成的控制器 ConfigMap，因为它是由操作员从 `IngressNginx` 资源进行协调的。
 
-随 ACP 4.3.x 及更高版本交付的 Ingress NGINX 控制器镜像包含 NGINX OpenTelemetry 模块。启用 OpenTelemetry 后，Ingress NGINX 控制器将 OpenTelemetry 设置渲染到生成的 ConfigMap 中，重新加载 NGINX，并加载 `otel_ngx_module.so` 模块。
+随 ACP 4.3.x 及更高版本提供的 Ingress NGINX 控制器镜像包含 NGINX OpenTelemetry 模块。在启用 OpenTelemetry 后，Ingress NGINX 控制器将 OpenTelemetry 设置渲染到生成的 ConfigMap 中，重新加载 NGINX，并加载 `otel_ngx_module.so` 模块。
 
 ## 先决条件
 
@@ -82,7 +84,7 @@ kubectl patch ingressnginxes.ingress-nginx.alauda.io "${INGRESS_NGINX_NAME}" \
 #### 字段描述
 
 - `enable-opentelemetry`：在 Ingress NGINX 控制器配置中启用 OpenTelemetry。
-- `otlp-collector-host`：OTLP gRPC 收集器主机。仅使用主机名或 IP 地址，不带 `http://` 或 `https://`。
+- `otlp-collector-host`：OTLP gRPC 收集器主机。仅使用主机名或 IP 地址，不要包含 `http://` 或 `https://`。
 - `otlp-collector-port`：OTLP gRPC 收集器端口。默认 OTLP gRPC 端口为 `4317`。
 - `otel-service-name`：写入生成的跨度中的服务名称。
 - `otel-sampler`：OpenTelemetry 模块使用的采样器。常见值为 `AlwaysOn`、`AlwaysOff` 和 `TraceIdRatioBased`。
@@ -161,7 +163,7 @@ opentelemetry on;
 
 ## 第 3 章 禁用 OpenTelemetry
 
-要禁用 OpenTelemetry，再次修补 `IngressNginx` 资源：
+要禁用 OpenTelemetry，请再次修补 `IngressNginx` 资源：
 
 ```bash
 kubectl patch ingressnginxes.ingress-nginx.alauda.io "${INGRESS_NGINX_NAME}" \

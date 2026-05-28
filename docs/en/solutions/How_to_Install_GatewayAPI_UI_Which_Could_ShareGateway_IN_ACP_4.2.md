@@ -7,6 +7,7 @@ ProductsVersion:
   - 4.2
 tags:
   - LB
+id: KB260500355
 ---
 # How to Install the GatewayAPI UI Plugin for Shared Gateways in ACP 4.2
 

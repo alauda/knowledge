@@ -4,29 +4,31 @@ products:
   - Alauda Container Platform
 kind:
   - Solution
-sourceSHA: 020cab4dbe43490320604b113451472bdf7a844c48f4099ac0419c50de7522f1
+tags:
+  - LB
+sourceSHA: 2b43ac0d628fb19714809958ef3c35c0d0c5345ea7a67a14f53c4996854afef4
 ---
 
-# Alauda LoadBalancer 与 MetalLB
+# Alauda 负载均衡器与 MetalLB
 
-## Overview
+## 概述
 
-MetalLB 提供了一个网络负载均衡器（Service 类型为 LoadBalancer）在本地 Kubernetes 集群中的实现。它提供一个外部可访问的 IP 地址，客户端可以将流量发送到集群中对应的 Pods。该外部可访问的 IP 通过标准的 ARP/NAD 请求或 BGP 协议进行公告，以实现快速故障切换或高可用性。
+MetalLB 为本地 Kubernetes 集群提供了网络负载均衡器（LoadBalancer 类型的服务）的实现。它提供了一个可供外部访问的 IP 地址，客户端可以将流量发送到集群中相应的 Pods。该可外部访问的 IP 通过标准的 ARP/NAD 请求或 BGP 协议进行公告，以实现快速故障转移或高可用性。
 
-## Prerequisites
+## 先决条件
 
 1. 由 ACP 管理的 Kubernetes 集群。
-2. L2 网络段中可用的一段 IPv4 地址。
-3. 节点之间必须允许 7946 端口（TCP 和 UDP）的流量。
+2. L2 段中可用的 IPv4 地址范围。
+3. 节点之间必须允许在端口 7946（TCP 和 UDP）上的流量。
 
-## Installation
+## 安装
 
-执行以下命令安装 MetalLB 插件：
+执行以下命令以安装 MetalLB 插件：
 
 ```bash
 export KUBECONFIG="/etc/kubernetes/admin.conf"
 
-# install MetalLB plugin
+# 安装 MetalLB 插件
 cat <<EOF | kubectl apply -f -
 apiVersion: cluster.alauda.io/v1alpha1
 kind: ClusterPluginInstance
@@ -43,16 +45,16 @@ spec:
   pluginName: metallb
 EOF
 
-# wait for the MetalLB plugin to be ready
+# 等待 MetalLB 插件准备就绪
 
 kubectl -n cpaas-system wait --for=condition=Health=true ars/metallb
 ```
 
-## Chapter 1. 配置地址池
+## 第 1 章. 配置地址池
 
-作为集群管理员，您可以向集群添加地址池，以控制分配给类型为 `LoadBalancer` 的 Service 的 IP 地址。
+作为集群管理员，您可以向集群添加地址池，以控制分配给 `LoadBalancer` 类型服务的 IP 地址。
 
-### Step 1: 创建 IP 地址池
+### 步骤 1: 创建 IP 地址池
 
 使用以下命令创建一个 IP 地址池。
 
@@ -72,14 +74,14 @@ spec:
 EOF
 ```
 
-#### 字段说明
+#### 字段描述
 
-- `spec.addresses`：MetalLB 有权限管理的 IP 地址范围列表。您可以在单个地址池中列出多个范围，它们将共享相同的设置。每个范围可以是 CIDR 前缀，也可以是明确的起始-结束 IP 范围。
-- `spec.autoAssign`：AutoAssign 标志，用于防止 MetalLB 自动从该地址池分配 IP。
+- `spec.addresses`: MetalLB 有权管理的 IP 地址范围列表。您可以在一个池中列出多个范围，它们将共享相同的设置。每个范围可以是 CIDR 前缀或显式的起始-结束 IP 范围。
+- `spec.autoAssign`: 自动分配标志，用于防止 MetalLB 对池进行自动分配。
 
-### Step 2. 创建 L2 广告
+### 步骤 2. 创建 L2 广告
 
-为了广告来自 `IPAddressPool` 的 IP，必须将一个 `L2Advertisement` 实例与该 `IPAddressPool` 关联。使用以下命令创建一个 `L2Advertisement`。
+为了宣传来自 `IPAddressPool` 的 IP，必须将一个 `L2Advertisement` 实例与 `IPAddressPool` 关联。使用以下命令创建一个 `L2 广告`。
 
 ```bash
 cat <<EOF | kubectl apply -f -
@@ -99,19 +101,19 @@ spec:
 EOF
 ```
 
-#### 字段说明
+#### 字段描述
 
-- `spec.ipAddressPools`：通过此广告公告的 IPAddressPools 列表，按名称选择。
-- `spec.nodeSelectors`：NodeSelectors 用于限制作为 LoadBalancer IP 下一跳公告的节点。当为空时，所有节点都会被公告为下一跳。
-- `spec.interfaces`：公告的接口列表。LB IP 仅从这些接口进行公告。如果未设置此字段，则从主机上的所有接口进行公告。
+- `spec.ipAddressPools`: 通过此广告宣传的 IPAddressPools 列表，按名称选择。
+- `spec.nodeSelectors`: NodeSelectors 允许限制节点作为负载均衡器 IP 的下一跳进行公告。当为空时，所有节点都被公告为下一跳。
+- `spec.interfaces`: 要进行公告的接口列表。负载均衡器 IP 仅从这些接口进行公告。如果未设置该字段，则从主机上的所有接口进行公告。
 
-## Chapter 2. 配置 Service 使用 MetalLB
+## 第 2 章. 配置服务以使用 MetalLB
 
-### Step 1: 创建一个随机 IP 的 Service
+### 步骤 1: 创建一个随机 IP 的服务
 
-默认情况下，地址池配置为允许自动分配。MetalLB 会从这些地址池中分配 IP 地址。
+默认情况下，地址池配置为允许自动分配。MetalLB 从这些地址池中分配一个 IP 地址。
 
-要接受任何配置为自动分配的地址池中的任意 IP 地址，无需特殊注解或配置。您只需将 Service 的类型设置为 `LoadBalancer`。
+要接受来自任何配置为自动分配的池的任何 IP 地址，无需特殊注释或配置。您需要做的唯一事情是将服务的类型设置为 `LoadBalancer`。
 
 ```bash
 apiVersion: v1
@@ -126,9 +128,9 @@ spec:
   type: LoadBalancer
 ```
 
-### Step 2: 创建一个指定 IP 的 Service
+### 步骤 2: 创建一个具有特定 IP 的服务
 
-要为 Service 分配地址池中的特定 IP 地址，可以使用 `metallb.universe.tf/loadBalancerIPs` 注解。
+要将 IP 地址分配给服务中的地址池，您可以使用 `metallb.universe.tf/loadBalancerIPs` 注释。
 
 ```yaml
 apiVersion: v1
@@ -146,9 +148,9 @@ spec:
   type: LoadBalancer
 ```
 
-### Step 3: 创建一个指定地址池的 Service
+### 步骤 3: 创建一个具有特定池的服务
 
-要从特定地址池分配 IP 地址，但不关心具体的 IP 地址，可以使用 `metallb.universe.tf/address-pool` 注解。
+要从特定地址池中分配 IP 地址，但您不关心特定的 IP 地址，您可以使用 `metallb.universe.tf/address-pool` 注释。
 
 ```yaml
 apiVersion: v1
