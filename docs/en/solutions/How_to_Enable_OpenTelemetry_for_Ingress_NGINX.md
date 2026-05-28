@@ -5,6 +5,8 @@ products:
   - Alauda Container Platform
 ProductsVersion:
    - 4.3.x and later
+tags:
+  - LB
 id: KB260500063
 ---
 
