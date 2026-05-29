@@ -5,6 +5,7 @@ products:
    - Alauda Container Platform
 ProductsVersion:
    - 4.1.0,4.2.x
+id: KB260500761
 ---
 
 # Mount an ISO image to a KubeVirt VM via a PVC-backed CD-ROM on ACP

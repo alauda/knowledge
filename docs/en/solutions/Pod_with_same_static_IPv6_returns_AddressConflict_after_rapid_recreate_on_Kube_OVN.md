@@ -5,6 +5,7 @@ products:
    - Alauda Container Platform
 ProductsVersion:
    - 4.1.0,4.2.x
+id: KB260500666
 ---
 
 # Pod with same static IPv6 returns AddressConflict after rapid recreate on Kube-OVN

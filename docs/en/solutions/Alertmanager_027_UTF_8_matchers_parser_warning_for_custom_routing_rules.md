@@ -5,6 +5,7 @@ products:
    - Alauda Container Platform
 ProductsVersion:
    - 4.1.0,4.2.x
+id: KB260500689
 ---
 
 # Alertmanager 0.27+ UTF-8 matchers parser warning for custom routing rules

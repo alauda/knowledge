@@ -5,6 +5,7 @@ products:
    - Alauda Container Platform
 ProductsVersion:
    - 4.1.0,4.2.x
+id: KB260500780
 ---
 
 # VMI and virt-launcher pod not removed when a runStrategy:Manual VirtualMachine is shut down from the guest OS (CNV-71224) on ACP

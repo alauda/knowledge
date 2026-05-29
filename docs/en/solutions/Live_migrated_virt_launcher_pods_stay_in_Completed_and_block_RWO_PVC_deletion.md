@@ -5,6 +5,7 @@ products:
    - Alauda Container Platform
 ProductsVersion:
    - 4.1.0,4.2.x
+id: KB260500659
 ---
 
 # Live-migrated virt-launcher pods stay in Completed and block RWO PVC deletion

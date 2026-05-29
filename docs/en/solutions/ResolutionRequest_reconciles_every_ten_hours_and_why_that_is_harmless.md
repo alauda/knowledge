@@ -5,6 +5,7 @@ products:
    - Alauda Container Platform
 ProductsVersion:
    - 4.1.0,4.2.x
+id: KB260500860
 ---
 
 # ResolutionRequest reconciles every ten hours and why that is harmless

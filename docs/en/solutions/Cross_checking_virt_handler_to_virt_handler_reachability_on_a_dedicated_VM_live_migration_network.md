@@ -5,6 +5,7 @@ products:
    - Alauda Container Platform
 ProductsVersion:
    - 4.1.0,4.2.x
+id: KB260500810
 ---
 
 # Cross-checking virt-handler-to-virt-handler reachability on a dedicated VM live-migration network

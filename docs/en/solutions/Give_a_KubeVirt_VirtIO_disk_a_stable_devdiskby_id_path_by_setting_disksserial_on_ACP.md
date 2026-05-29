@@ -5,6 +5,7 @@ products:
    - Alauda Container Platform
 ProductsVersion:
    - 4.1.0,4.2.x
+id: KB260500717
 ---
 
 # Give a KubeVirt VirtIO disk a stable /dev/disk/by-id path by setting disks[].serial on ACP

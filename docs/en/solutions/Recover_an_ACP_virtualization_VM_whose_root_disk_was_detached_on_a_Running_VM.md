@@ -5,6 +5,7 @@ products:
    - Alauda Container Platform
 ProductsVersion:
    - 4.1.0,4.2.x
+id: KB260500695
 ---
 
 # Recover an ACP virtualization VM whose root disk was detached on a Running VM

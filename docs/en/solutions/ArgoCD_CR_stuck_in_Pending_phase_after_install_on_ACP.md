@@ -5,6 +5,7 @@ products:
    - Alauda Container Platform
 ProductsVersion:
    - 4.1.0,4.2.x
+id: KB260500710
 ---
 
 # ArgoCD CR stuck in Pending phase after install on ACP

@@ -5,6 +5,7 @@ products:
    - Alauda Container Platform
 ProductsVersion:
    - 4.1.0,4.2.x
+id: KB260500795
 ---
 
 # VM live migration hangs at 99 percent when guest dirty rate exceeds migration bandwidth

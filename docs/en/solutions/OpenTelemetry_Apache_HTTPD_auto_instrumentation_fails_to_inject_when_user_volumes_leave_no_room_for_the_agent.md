@@ -5,6 +5,7 @@ products:
    - Alauda Container Platform
 ProductsVersion:
    - 4.1.0,4.2.x
+id: KB260500844
 ---
 
 # OpenTelemetry Apache HTTPD auto-instrumentation fails to inject when user volumes leave no room for the agent

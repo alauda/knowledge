@@ -5,6 +5,7 @@ products:
    - Alauda Container Platform
 ProductsVersion:
    - 4.1.0,4.2.x
+id: KB260500759
 ---
 
 # TektonConfig stuck Not Ready after Tekton operator upgrade on ACP

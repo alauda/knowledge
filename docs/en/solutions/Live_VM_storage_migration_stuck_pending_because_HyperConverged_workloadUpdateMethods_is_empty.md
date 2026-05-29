@@ -5,6 +5,7 @@ products:
    - Alauda Container Platform
 ProductsVersion:
    - 4.1.0,4.2.x
+id: KB260500742
 ---
 
 # Live VM storage migration stuck pending because HyperConverged workloadUpdateMethods is empty

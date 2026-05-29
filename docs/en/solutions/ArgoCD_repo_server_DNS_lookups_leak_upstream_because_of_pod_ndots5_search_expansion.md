@@ -5,6 +5,7 @@ products:
    - Alauda Container Platform
 ProductsVersion:
    - 4.1.0,4.2.x
+id: KB260500728
 ---
 
 # ArgoCD repo-server DNS lookups leak upstream because of pod ndots:5 search expansion

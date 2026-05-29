@@ -5,6 +5,7 @@ products:
    - Alauda Container Platform
 ProductsVersion:
    - 4.1.0,4.2.x
+id: KB260500818
 ---
 
 # KubeVirt VM Loses Bridge Network Connectivity When br_netfilter Is Loaded on the Worker

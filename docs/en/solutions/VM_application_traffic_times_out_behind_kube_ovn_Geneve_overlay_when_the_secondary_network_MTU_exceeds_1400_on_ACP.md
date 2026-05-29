@@ -5,6 +5,7 @@ products:
    - Alauda Container Platform
 ProductsVersion:
    - 4.1.0,4.2.x
+id: KB260500863
 ---
 
 # VM application traffic times out behind kube-ovn Geneve overlay when the secondary-network MTU exceeds 1400 on ACP

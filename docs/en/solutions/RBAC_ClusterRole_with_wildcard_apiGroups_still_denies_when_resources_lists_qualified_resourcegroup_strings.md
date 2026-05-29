@@ -5,6 +5,7 @@ products:
    - Alauda Container Platform
 ProductsVersion:
    - 4.1.0,4.2.x
+id: KB260500774
 ---
 
 # RBAC ClusterRole with wildcard apiGroups still denies when resources lists qualified resource.group strings

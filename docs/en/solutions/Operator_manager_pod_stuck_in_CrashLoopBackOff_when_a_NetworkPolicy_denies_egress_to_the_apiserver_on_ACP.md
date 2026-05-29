@@ -5,6 +5,7 @@ products:
    - Alauda Container Platform
 ProductsVersion:
    - 4.1.0,4.2.x
+id: KB260500714
 ---
 
 # Operator manager pod stuck in CrashLoopBackOff when a NetworkPolicy denies egress to the apiserver on ACP
