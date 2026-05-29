@@ -5,6 +5,7 @@ products:
    - Alauda Container Platform
 ProductsVersion:
    - 4.1.0,4.2.x
+id: KB260500464
 ---
 
 # Re-driving a stalled operator install or upgrade on ACP via OLM Subscription

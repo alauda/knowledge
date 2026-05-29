@@ -5,6 +5,7 @@ products:
    - Alauda Container Platform
 ProductsVersion:
    - 4.1.0,4.2.x
+id: KB260500429
 ---
 
 # Diagnosing a node that reports NotReady on Alauda Container Platform

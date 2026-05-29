@@ -5,6 +5,7 @@ products:
    - Alauda Container Platform
 ProductsVersion:
    - 4.1.0,4.2.x
+id: KB260500430
 ---
 
 # Node reports NotReady after missing /var/lib/kubelet/config.json on ACP

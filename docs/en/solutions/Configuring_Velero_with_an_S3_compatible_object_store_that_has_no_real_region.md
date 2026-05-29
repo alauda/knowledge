@@ -5,6 +5,7 @@ products:
    - Alauda Container Platform
 ProductsVersion:
    - 4.1.0,4.2.x
+id: KB260500462
 ---
 
 # Configuring Velero with an S3-compatible object store that has no real region

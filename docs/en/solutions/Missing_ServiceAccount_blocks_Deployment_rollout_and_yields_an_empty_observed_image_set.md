@@ -5,6 +5,7 @@ products:
    - Alauda Container Platform
 ProductsVersion:
    - 4.1.0,4.2.x
+id: KB260500449
 ---
 
 # Missing ServiceAccount blocks Deployment rollout and yields an empty observed image set

@@ -5,6 +5,7 @@ products:
    - Alauda Container Platform
 ProductsVersion:
    - 4.1.0,4.2.x
+id: KB260500459
 ---
 
 # Java pod PKIX SSL handshake failure due to custom JKS truststore missing intermediate CA on ACP

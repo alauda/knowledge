@@ -5,6 +5,7 @@ products:
    - Alauda Container Platform
 ProductsVersion:
    - 4.1.0,4.2.x
+id: KB260500424
 ---
 
 # kube-apiserver Secret watch-cache LIST fails with gRPC ResourceExhausted when cumulative Secret bytes exceed the apiserver-etcd message size on ACP

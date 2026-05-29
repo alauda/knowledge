@@ -5,6 +5,7 @@ products:
    - Alauda Container Platform
 ProductsVersion:
    - 4.1.0,4.2.x
+id: KB260500527
 ---
 
 # Restarting OVN/OVS containers does not reload host NIC configuration changes on ACP

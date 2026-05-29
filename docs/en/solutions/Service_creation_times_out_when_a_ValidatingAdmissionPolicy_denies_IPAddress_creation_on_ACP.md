@@ -5,6 +5,7 @@ products:
    - Alauda Container Platform
 ProductsVersion:
    - 4.1.0,4.2.x
+id: KB260500458
 ---
 
 # Service creation times out when a ValidatingAdmissionPolicy denies IPAddress creation on ACP

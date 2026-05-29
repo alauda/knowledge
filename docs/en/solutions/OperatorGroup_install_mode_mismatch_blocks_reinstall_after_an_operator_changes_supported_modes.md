@@ -5,6 +5,7 @@ products:
    - Alauda Container Platform
 ProductsVersion:
    - 4.1.0,4.2.x
+id: KB260500466
 ---
 
 # OperatorGroup install-mode mismatch blocks reinstall after an operator changes supported modes

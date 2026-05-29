@@ -5,6 +5,7 @@ products:
    - Alauda Container Platform
 ProductsVersion:
    - 4.1.0,4.2.x
+id: KB260500540
 ---
 
 # Disabling the istio-proxy sidecar startupProbe on Alauda Service Mesh v2

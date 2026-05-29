@@ -5,6 +5,7 @@ products:
    - Alauda Container Platform
 ProductsVersion:
    - 4.1.0,4.2.x
+id: KB260500542
 ---
 
 # All KubeVirt VMs simultaneously power off after the VirtualMachineInstance CRD is deleted by a cluster-admin third-party service account on ACP

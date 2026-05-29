@@ -5,6 +5,7 @@ products:
    - Alauda Container Platform
 ProductsVersion:
    - 4.1.0,4.2.x
+id: KB260500485
 ---
 
 # Operator upgrade blocked by a newly required CRD field on OLM

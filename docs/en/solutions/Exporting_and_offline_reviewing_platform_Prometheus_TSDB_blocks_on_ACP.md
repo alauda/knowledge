@@ -5,6 +5,7 @@ products:
    - Alauda Container Platform
 ProductsVersion:
    - 4.1.0,4.2.x
+id: KB260500516
 ---
 
 # Exporting and offline-reviewing platform Prometheus TSDB blocks on ACP
