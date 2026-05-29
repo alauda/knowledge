@@ -5,6 +5,7 @@ products:
    - Alauda Container Platform
 ProductsVersion:
    - 4.1.0,4.2.x
+id: KB260500627
 ---
 
 # VM persistent-state PVC for vTPM/EFI stays on source storage after storage migration

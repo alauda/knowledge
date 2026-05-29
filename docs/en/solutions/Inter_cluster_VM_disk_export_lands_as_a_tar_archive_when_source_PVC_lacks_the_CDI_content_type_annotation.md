@@ -5,6 +5,7 @@ products:
    - Alauda Container Platform
 ProductsVersion:
    - 4.1.0,4.2.x
+id: KB260500583
 ---
 
 # Inter-cluster VM disk export lands as a tar archive when source PVC lacks the CDI content-type annotation

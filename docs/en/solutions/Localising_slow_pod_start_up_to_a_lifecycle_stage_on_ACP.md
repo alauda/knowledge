@@ -5,6 +5,7 @@ products:
    - Alauda Container Platform
 ProductsVersion:
    - 4.1.0,4.2.x
+id: KB260500639
 ---
 
 # Localising slow pod start-up to a lifecycle stage on ACP

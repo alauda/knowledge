@@ -5,6 +5,7 @@ products:
    - Alauda Container Platform
 ProductsVersion:
    - 4.1.0,4.2.x
+id: KB260500642
 ---
 
 # Admission webhook calls dropped by a NetworkPolicy that omits host-network ingress on ACP

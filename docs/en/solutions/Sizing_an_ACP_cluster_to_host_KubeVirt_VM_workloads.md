@@ -5,6 +5,7 @@ products:
    - Alauda Container Platform
 ProductsVersion:
    - 4.1.0,4.2.x
+id: KB260500557
 ---
 
 # Sizing an ACP cluster to host KubeVirt VM workloads

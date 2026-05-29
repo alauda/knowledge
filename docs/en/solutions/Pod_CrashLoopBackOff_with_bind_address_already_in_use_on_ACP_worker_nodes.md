@@ -5,6 +5,7 @@ products:
    - Alauda Container Platform
 ProductsVersion:
    - 4.1.0,4.2.x
+id: KB260500587
 ---
 
 # Pod CrashLoopBackOff with bind address already in use on ACP worker nodes

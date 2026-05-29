@@ -5,6 +5,7 @@ products:
    - Alauda Container Platform
 ProductsVersion:
    - 4.1.0,4.2.x
+id: KB260500598
 ---
 
 # Configuring Alertmanager notification receivers on ACP and recovering from a bad config

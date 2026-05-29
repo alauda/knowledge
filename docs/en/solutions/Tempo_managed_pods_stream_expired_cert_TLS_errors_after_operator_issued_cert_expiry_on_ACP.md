@@ -5,6 +5,7 @@ products:
    - Alauda Container Platform
 ProductsVersion:
    - 4.1.0,4.2.x
+id: KB260500621
 ---
 
 # Tempo-managed pods stream expired-cert TLS errors after operator-issued cert expiry on ACP

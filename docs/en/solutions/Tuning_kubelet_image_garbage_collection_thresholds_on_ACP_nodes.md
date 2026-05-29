@@ -5,6 +5,7 @@ products:
    - Alauda Container Platform
 ProductsVersion:
    - 4.1.0,4.2.x
+id: KB260500579
 ---
 
 # Tuning kubelet image garbage collection thresholds on ACP nodes

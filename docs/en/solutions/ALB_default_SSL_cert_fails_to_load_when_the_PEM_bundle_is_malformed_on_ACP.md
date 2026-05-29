@@ -5,6 +5,7 @@ products:
    - Alauda Container Platform
 ProductsVersion:
    - 4.1.0,4.2.x
+id: KB260500589
 ---
 
 # ALB default SSL cert fails to load when the PEM bundle is malformed on ACP

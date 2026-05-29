@@ -5,6 +5,7 @@ products:
    - Alauda Container Platform
 ProductsVersion:
    - 4.1.0,4.2.x
+id: KB260500637
 ---
 
 # Refreshing virt-launcher-bound device definitions on KubeVirt VMs after an ACP virtualization update

@@ -5,6 +5,7 @@ products:
    - Alauda Container Platform
 ProductsVersion:
    - 4.1.0,4.2.x
+id: KB260500563
 ---
 
 # Recovering a PostgreSQL StatefulSet pod blocked by wrong data-directory ownership

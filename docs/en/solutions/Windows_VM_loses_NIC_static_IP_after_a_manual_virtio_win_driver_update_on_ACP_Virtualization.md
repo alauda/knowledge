@@ -5,6 +5,7 @@ products:
    - Alauda Container Platform
 ProductsVersion:
    - 4.1.0,4.2.x
+id: KB260500636
 ---
 
 # Windows VM loses NIC static IP after a manual virtio-win driver update on ACP Virtualization

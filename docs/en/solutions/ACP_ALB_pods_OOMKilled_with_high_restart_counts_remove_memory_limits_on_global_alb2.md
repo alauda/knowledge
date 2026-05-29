@@ -5,6 +5,7 @@ products:
    - Alauda Container Platform
 ProductsVersion:
    - 4.1.0,4.2.x
+id: KB260500625
 ---
 
 # ACP ALB pods OOMKilled with high restart counts — remove memory limits on global-alb2
