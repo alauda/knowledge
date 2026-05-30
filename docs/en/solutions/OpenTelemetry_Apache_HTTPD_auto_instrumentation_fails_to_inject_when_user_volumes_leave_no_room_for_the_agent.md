@@ -60,7 +60,11 @@ If those four names are absent from the merged spec, the webhook did not inject 
 
 ## Resolution
 
-Add a non-conflicting `volumeMount` path (e.g. `/tmp/.otel-instr-fix`) backed by a new `emptyDir` volume to the user's Deployment. This gives the OTel mutating webhook the headroom it needs to complete the Apache HTTPD instrumentation preparation steps so the merged layout is consistent. After the mitigation, the Apache HTTPD container no longer emits `No such file or directory` on startup and the OTel auto-instrumentation injection succeeds.
+The resolution has two parts; do both in order, because step 1 addresses the root cause and step 2 is an empirical mitigation whose mechanism is not fully understood.
+
+**Step 1 — remove the actual conflict (root cause).** Inspect the merged pod spec from the diagnostic above and identify any user `volumeMount` whose `mountPath` overlaps the webhook-injected paths `/opt/opentelemetry-webserver/agent` or `/usr/local/apache2/conf` (subpath mounts under those directories count). Either rename the user mount to a different path, or drop it and provide the same content through a different mechanism (e.g. bake the file into the image, or use a sidecar). With no overlap remaining, the next pod admission cycle lets the webhook lay down its volumes cleanly and the Apache HTTPD container starts without `No such file or directory`.
+
+**Step 2 — extra `emptyDir` workaround (empirical mitigation).** When step 1 does not visibly apply — the merged pod spec shows no overlap with the OTel-injected paths but the injection still fails on this workload — adding a non-conflicting `volumeMount` path (e.g. `/tmp/.otel-instr-fix`) backed by a new `emptyDir` volume has been observed to unblock the webhook in practice. The precise mechanism is not characterised here; treat it as a workaround for cases where the merged pod inspection does not reveal an obvious conflict, and revisit if the upstream OTel operator fixes the underlying admission interaction. After the mitigation, the Apache HTTPD container no longer emits `No such file or directory` on startup and the OTel auto-instrumentation injection succeeds.
 
 First, ensure the `Instrumentation` CR for Apache HTTPD exists in the workload's namespace. The `apacheHttpd` block selects the agent image and the in-container Apache configuration directory:
 

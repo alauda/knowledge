@@ -110,16 +110,3 @@ done
 ```
 
 A sweep that succeeds up to `~1372` bytes (`1400 − 28` for the ICMP+IP header) and fails from `~1473` onward localises the break point to the kube-ovn 1400 overlay ceiling, not to the upstream network. Combined with the node-side and pod-side readings above, that is sufficient to attribute the failure to an MTU misconfiguration at one of the three layers — NAD CNI-JSON `mtu`, `Subnet.spec.mtu`, or the node interface MTU — and to point at which one to lower.
-
- phase2 ev10 (lab-base / global)
- phase4 ev2 (lab-base) + phase2 ev2/ev7/ev8 (global)
- phase5 ev7 (lab-base) — `--network-type=geneve`, `--encap-checksum=true`
- phase5 ev5 + ev6 (lab-base) — pod eth0 mtu 1400 / node eth0 mtu 1500
- phase5 ev6 (lab-base) — 23 veth host-ends all mtu 1400
- phase2 ev11 (mechanism) + phase5 ev5/ev6/ev7 (lab-base ceiling proved)
- phase2 ev11 (generic Geneve/TCP/PMTU behavior)
- phase2 ev11 (generic TCP retransmit capture shape)
- phase4 ev3 (lab-base) — KubeVirt Deployed
- phase4 ev3 (lab-base) — KubeVirt Deployed
- phase2 ev3 (NAD CRD on global) — note: on lab-base Multus is not installed, see phase4 ev4
- phase5 ev8 (lab-base) — `subnet.spec.mtu` CRD field

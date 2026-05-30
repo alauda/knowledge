@@ -82,3 +82,7 @@ kubectl -n cpaas-system exec alertmanager-kube-prometheus-0 -c alertmanager -- \
 ```
 
 A `SUCCESS` line with no preceding `parse.go:176 WARN` indicates the configuration is fully compliant with the UTF-8 matchers parser; a `SUCCESS` line preceded by one or more `parse.go:176 WARN` lines means the configuration is currently accepted only because of the classic-parser fallback and must be updated before the next Alertmanager upgrade.
+
+## See Also
+
+- `Custom matchers with whitespace trigger Alertmanager UTF-8 parser fallback warning` — same root cause, walks through the unquoted-whitespace example explicitly.

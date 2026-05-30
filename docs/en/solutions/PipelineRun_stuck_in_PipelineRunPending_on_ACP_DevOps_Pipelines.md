@@ -69,9 +69,9 @@ After the JSON-patch (or after manually re-submitting), re-run the same `get pip
 - The pending-gate mechanism (`spec.status: PipelineRunPending`) and the JSON-patch recovery (`--type=json -p='[{"op":"remove","path":"/spec/status"}]'`) are upstream Tekton and work the same on the ACP operator bundle — `tektoncd-operator.v4.2.0`, `TektonConfig` at `v0.76.0-c46274a` — as they do on a vanilla Tekton install.
 - This article covers the generic Pending-PipelineRun recovery. It does not cover Git-event-trigger watchers or per-repository queue managers that submit PipelineRuns with the pending gate on the user's behalf — those components are not part of the default `TektonConfig` install profile on the bundle tested here, and any queue-level "unsticking" behavior they may add belongs to that component's documentation rather than to the generic PipelineRun gate.
 
-## Evidence
+## Verification
 
-- ev:c1 — A PipelineRun created with `spec.status: PipelineRunPending` on the ACP DevOps Pipelines operator stays paused: `.spec.status` remains `PipelineRunPending`; `.status.conditions[*].reason=PipelineRunPending`; `.status.conditions[*].message='PipelineRun "pending-test" is pending'`.
-- ev:c3 — While the gate is in place, `kubectl get taskrun -n <ns>` returns `No resources found`, and the only events emitted for the PipelineRun are `Started` and `FinalizerUpdate` — no scheduling or pod events.
-- ev:c6 — A re-submitted PipelineRun (no `spec.status`) ran to a terminal state and produced a TaskRun; the parallel original PipelineRun with `spec.status=PipelineRunPending` stayed paused with no TaskRun.
-- ev:c7 — `kubectl patch pipelinerun pending-test --type=json -p='[{"op":"remove","path":"/spec/status"}]'` cleared the gate; `.spec.status` became empty, `.status.conditions[*].reason` flipped to `Running`, and a TaskRun `pending-test-hello` was created within 5s.
+- A PipelineRun created with `spec.status: PipelineRunPending` stays paused: `.spec.status` remains `PipelineRunPending`; `.status.conditions[*].reason=PipelineRunPending`; `.status.conditions[*].message='PipelineRun "<name>" is pending'`.
+- While the gate is in place, `kubectl get taskrun -n <ns>` returns `No resources found`, and the only events emitted for the PipelineRun are `Started` and `FinalizerUpdate` — no scheduling or pod events.
+- A re-submitted PipelineRun without `spec.status` runs to a terminal state and produces a TaskRun, while the parallel original PipelineRun with `spec.status=PipelineRunPending` stays paused with no TaskRun.
+- After `kubectl patch pipelinerun <name> --type=json -p='[{"op":"remove","path":"/spec/status"}]'` the gate clears: `.spec.status` becomes empty, `.status.conditions[*].reason` flips to `Running`, and a TaskRun appears within a few seconds.
