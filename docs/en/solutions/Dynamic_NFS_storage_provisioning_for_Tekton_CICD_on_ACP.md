@@ -14,7 +14,7 @@ id: KB260500817
 
 CI/CD tooling such as Tekton needs persistent storage that survives pod restarts so successive tasks in a pipeline can hand workspace data to each other. The conventional pattern is dynamic provisioning: a Pod or PipelineRun references a PersistentVolumeClaim, the PVC names a StorageClass, and an external provisioner watches the PVC and creates a PersistentVolume on demand. Many on-prem deployments back this with NFS so a single export can serve `ReadWriteMany` pipeline workspaces and per-PVC subdirectories.
 
-On Alauda Container Platform (Kubernetes `v1.34.5`, cluster `glean-lab-base-0529`), the upstream `nfs-subdir-external-provisioner` Helm chart is not part of the artifacts catalog and there is no first-party packaging for it. The cluster ships a different NFS dynamic-provisioning driver instead: the `nfs` ModulePlugin (`chart-csi-driver-nfs`, default channel `v4.4.0-beta.7`, repository `acp/chart-csi-driver-nfs`), which installs the upstream `kubernetes-csi/csi-driver-nfs` CSI driver. The driver registers under `nfs.csi.k8s.io` and plays the same dynamic-provisioning role through a CSI flange instead of the sig-storage-lib external-provisioner pod that the article-style chart uses.
+On Alauda Container Platform (Kubernetes `v1.34.5`), the upstream `nfs-subdir-external-provisioner` Helm chart is not part of the artifacts catalog and there is no first-party packaging for it. The cluster ships a different NFS dynamic-provisioning driver instead: the `nfs` ModulePlugin (`chart-csi-driver-nfs`, default channel `v4.4.0-beta.7`, repository `acp/chart-csi-driver-nfs`), which installs the upstream `kubernetes-csi/csi-driver-nfs` CSI driver. The driver registers under `nfs.csi.k8s.io` and plays the same dynamic-provisioning role through a CSI flange instead of the sig-storage-lib external-provisioner pod that the article-style chart uses.
 
 ## Resolution
 
@@ -105,7 +105,7 @@ spec:
       claimName: pipeline-shared
 ```
 
-Under the NFS CSI driver the PVC can request `ReadWriteMany`, so tasks scheduled on different nodes can mount the same workspace concurrently. Backing the same workspace with the default `topolvm-hdd` SC works too, but topolvm is a local-volume provisioner and only allows `ReadWriteOnce`; for sequential tasks Tekton handles that by scheduling an affinity-assistant StatefulSet to colocate the pods. This pattern was verified on `glean-lab-base-0529`: a two-task pipeline (`write` then `read`) sharing a `topolvm-hdd`-backed PVC workspace ran to `SUCCEEDED`, with the `read` task printing the file the `write` task wrote.
+Under the NFS CSI driver the PVC can request `ReadWriteMany`, so tasks scheduled on different nodes can mount the same workspace concurrently. Backing the same workspace with the default `topolvm-hdd` SC works too, but topolvm is a local-volume provisioner and only allows `ReadWriteOnce`; for sequential tasks Tekton handles that by scheduling an affinity-assistant StatefulSet to colocate the pods. The fallback was verified on a stock ACP cluster: a two-task pipeline (`write` then `read`) sharing a `topolvm-hdd`-backed PVC workspace ran to `SUCCEEDED`, with the `read` task printing the file the `write` task wrote.
 
 ## Diagnostic Steps
 

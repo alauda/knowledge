@@ -57,14 +57,34 @@ The Pipelines-as-Code component specifically is exposed as the cluster-scoped CR
 
 Two recovery paths apply, depending on whether the wedge is generic (an installer set whose finalizer cannot be removed by its owner) or component-specific (the operator's reconcile loop for one component is failing).
 
-**Force-remove a stalled `TektonInstallerSet` finalizer.** When a `TektonInstallerSet` is marked for deletion but the owning component controller cannot drop its finalizer, the resource sits with a `deletionTimestamp` set and a single finalizer entry `tektoninstallersets.operator.tekton.dev`. Patching the finalizer list to `null` releases the API server-side delete:
+**Re-create the stuck installer set first (preferred).** Re-creating the installer set is the operator-aware path: when its owning component controller is healthy it will lay the resource down again from its embedded manifests. Try this before patching finalizers, because force-removing a finalizer on a resource whose owner is still actively reconciling can orphan operator-managed children.
+
+```bash
+# Identify the failing component, then delete its installer set(s)
+kubectl get tektoninstallerset \
+  -l operator.tekton.dev/created-by=<ComponentName>
+kubectl delete tektoninstallerset <names>
+```
+
+If the delete completes cleanly the owner controller recreates the set within a few seconds.
+
+**Force-remove a stalled `TektonInstallerSet` finalizer (last resort).** Only use this when the delete is genuinely stuck — meaning the resource carries a `deletionTimestamp` for more than a minute, the owning component reconcile is failing (operator pod logs show repeated errors against that component), and re-creation per the previous step is not unblocking the wedge.
+
+Confirm preconditions before patching:
+
+- The resource has a `deletionTimestamp` set: `kubectl get tektoninstallerset <name> -o jsonpath='{.metadata.deletionTimestamp}'` returns a non-empty timestamp.
+- The only finalizer is the controller's own `tektoninstallersets.operator.tekton.dev`. If extra finalizers are present, investigate them first.
+- Capture the current spec before patching: `kubectl get tektoninstallerset <name> -o yaml > /tmp/<name>.yaml`, so you can recover any operator-managed children if the operator does not lay them down again automatically.
+- Confirm with the customer that the installer-set's owning manifests can be lost — the owner controller normally re-creates them, but a still-reconciling owner may not.
+
+Then issue the patch; the resource leaves the API server immediately:
 
 ```bash
 kubectl patch tektoninstallerset <name> \
   --type=merge -p '{"metadata":{"finalizers":null}}'
 ```
 
-On the running operator the finalizer pattern is exactly that — a single entry that the controller normally drops itself on a clean delete; the `null` patch is the manual override when the controller does not.
+After the patch, watch the owning component re-create the installer set (`kubectl get tektoninstallerset -l operator.tekton.dev/created-by=<ComponentName> -w`). If it does not return within a minute, the owner is still failing — read the operator-pod logs for the underlying error before doing anything else.
 
 **Re-reconcile a stuck Pipelines-as-Code component.** When the failing component is Pipelines-as-Code, list the `TektonInstallerSet`s that belong to the `pac` operand (their names are prefixed with the component, e.g. `openshiftpipelinesascode-main-deployment-*`, `openshiftpipelinesascode-main-static-*`, `openshiftpipelinesascode-post-*`) and delete them; the operator's component controller recreates them from its embedded manifests and the component returns to ready:
 

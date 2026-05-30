@@ -39,6 +39,12 @@ kubectl get volumesnapshotcontent <name> -o yaml | grep -A4 volumeSnapshotRef
 kubectl -n <vs-namespace> get volumesnapshot <vs-name>
 ```
 
+**Destructive operation — read before running.** A `VolumeSnapshotContent` whose `spec.deletionPolicy` is `Delete` (the cluster-default `topolvm-snapshot` class is configured this way) causes the snapshot-controller to issue a CSI `DeleteSnapshot` against the storage backend when the `VolumeSnapshotContent` is removed. That deletes the underlying backend snapshot data and is not recoverable from the cluster side. Before issuing the delete, on every candidate:
+
+- Confirm `spec.deletionPolicy` on the object itself (`kubectl get volumesnapshotcontent <name> -o jsonpath='{.spec.deletionPolicy}'`). If your retention contract requires the backend snapshot to survive, switch the policy to `Retain` first (`kubectl patch volumesnapshotcontent <name> --type=merge -p '{"spec":{"deletionPolicy":"Retain"}}'`) and only then delete the object.
+- Confirm the backing snapshot identity (`spec.source.snapshotHandle`) is not referenced by any external backup or retention pipeline (Velero `Backup` `volumeSnapshotLocations`, customer-side scheduled snapshot retention).
+- Get the customer's explicit acknowledgement that the backend snapshot can be destroyed before running the command.
+
 Then delete the confirmed-stale `VolumeSnapshotContent` objects. With the cluster-default `topolvm-snapshot` `VolumeSnapshotClass` (driver `topolvm.cybozu.com`, deletion policy `Delete`), the snapshot-controller responds to the delete event in real time when its watch is healthy — verified end-to-end on this cluster as the bound `VolumeSnapshotContent` being removed within a few seconds of deleting its parent `VolumeSnapshot`:
 
 ```bash

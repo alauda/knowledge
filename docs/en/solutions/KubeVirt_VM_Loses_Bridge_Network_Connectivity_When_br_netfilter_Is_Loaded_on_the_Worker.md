@@ -63,6 +63,13 @@ kubectl get pods -A -o json \
 
 Restore VM connectivity by removing the workload that loaded `br_netfilter`, unloading the module on the worker, and verifying the bridge sysctls are no longer active. Each step is per-worker, because `br_netfilter` is a per-node kernel state — repeat the procedure on every worker that hosts a KubeVirt VM with a Linux Bridge `NetworkAttachmentDefinition` attachment.
 
+**Disruptive node-level change — read before running.** Unloading `br_netfilter` and clearing the `bridge-nf-call-*` sysctls is a change to the worker's kernel networking layer. Plan it like a maintenance operation:
+
+- Schedule a maintenance window for the worker; do not run during peak traffic.
+- Confirm no platform component on the cluster depends on `br_netfilter` being present. The default ACP CNI is kube-ovn (no iptables-bridge dependency on the host), but third-party agents (security/observability sidecars, on-host iptables rules that match bridged traffic) installed by the customer may rely on the module. Audit any host-level workloads on the affected node before unloading.
+- Capture a rollback path: note the current value of the three `bridge-nf-call-iptables/ip6tables/arptables` sysctls and the loaded-modules list before changing anything, so you can restore the prior state with `modprobe br_netfilter` plus `sysctl -w net.bridge.bridge-nf-call-*=<prior-value>` if the workload regresses.
+- This procedure restores the running kernel state only. After a node reboot the module is not reloaded unless the privileged workload runs again. If the workload that originally loaded `br_netfilter` is reconciled by a controller (DaemonSet, operator), the module will be loaded again on the next pod creation — the durable fix is preventing the workload from running on the affected node (taint/`nodeSelector` exclusion) or removing the privileged `modprobe` call from the workload's startup, not just unloading the module once.
+
 Stop the privileged workload that has the bridge subsystem held — the workload identified in Diagnostic Steps whose `nodeName` is the affected worker and whose container is privileged. The kernel unload step in the next paragraph succeeds only once the holder process exits and the module's reference count drops to 0:
 
 ```bash

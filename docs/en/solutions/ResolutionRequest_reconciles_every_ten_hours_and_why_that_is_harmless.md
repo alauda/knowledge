@@ -22,9 +22,9 @@ The reconcile of an already-resolved `ResolutionRequest` is structurally a no-op
 
 ## Resolution
 
-Leave the ten-hour cadence in place. Because the wake-up of a completed `ResolutionRequest` returns immediately from `ReconcileKind`, the periodic reconcile costs nothing measurable — on lab-base the post-resolution settle reconcile and an annotate-triggered re-reconcile of the same `ResolutionRequest` were observed at `duration=0.000030088` and `duration=0.000122599` (sub-millisecond) respectively, with no API-server write to the object. There is no per-`ResolutionRequest` lifetime knob worth tuning here, and the controller-side knob that would raise the framework default to twenty-four hours is not exposed by the resolvers binary.
+Leave the ten-hour cadence in place. Because the wake-up of a completed `ResolutionRequest` returns immediately from `ReconcileKind`, the periodic reconcile costs nothing measurable — on a stock ACP cluster the post-resolution settle reconcile and an annotate-triggered re-reconcile of the same `ResolutionRequest` were observed at `duration=0.000030088` and `duration=0.000122599` (sub-millisecond) respectively, with no API-server write to the object. There is no per-`ResolutionRequest` lifetime knob worth tuning here, and the controller-side knob that would raise the framework default to twenty-four hours is not exposed by the resolvers binary.
 
-To confirm the no-op shape on a specific cluster, force a fresh reconcile of a completed `ResolutionRequest` by annotating it (so the work-queue picks it up without waiting for the ten-hour resync), then read the resolvers controller log for the same `knative.dev/key`; the `Reconcile succeeded` line for that key should report a sub-millisecond `duration` field on the second and subsequent reconciles, which is the live signature of the `IsDone()` short-circuit on this cluster.
+To confirm the no-op shape on a specific cluster, force a fresh reconcile of a completed `ResolutionRequest` by annotating it (so the work-queue picks it up without waiting for the ten-hour resync), then read the resolvers controller log for the same `knative.dev/key`; the `Reconcile succeeded` line for that key should report a sub-millisecond `duration` field on the second and subsequent reconciles, which is the live signature of the `IsDone()` short-circuit.
 
 ## Diagnostic Steps
 
