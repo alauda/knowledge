@@ -4,7 +4,7 @@ products:
 kind:
   - Solution
 id: KB260400015
-sourceSHA: 4c51e8b6d50b3fcc1ccdc246ca784e32551ffb64f13401f7ecab5089d15a0177
+sourceSHA: 4784dcfcc7648104d2d8e770f0425301ccb2b319d107d948f1508b492216df1b
 ---
 
 # 如何为 Mattermost 部署 Hyperflux Gateway
@@ -18,9 +18,10 @@ sourceSHA: 4c51e8b6d50b3fcc1ccdc246ca784e32551ffb64f13401f7ecab5089d15a0177
 在部署之前，请准备以下内容：
 
 - 可访问的 Mattermost 服务 URL。
-- 具有访问 **系统控制台** 权限的 Mattermost 管理员账户。
+- 拥有访问 **系统控制台** 权限的 Mattermost 管理员账户。
 - 一个正在运行的 Hyperflux 环境。
-- 可以安装 Hyperflux Gateway 的 Kubernetes 集群。
+- 机器人角色必须具有 **编辑自己的帖子 (`edit_post`)** 权限。否则，流式回复（编辑占位符帖子）将失败，答案将停留在“思考中，请稍候...”。请参见 *排查常见问题*。
+- 一个可以安装 Hyperflux Gateway 的 Kubernetes 集群。
 - 包含 `install-k8s.sh`、`uninstall-k8s.sh`、`install.env` 和 `image-metadata.json` 的 Hyperflux Gateway 发布包。
 
 您可以从以下任一 URL 下载当前的发布包：
@@ -28,7 +29,7 @@ sourceSHA: 4c51e8b6d50b3fcc1ccdc246ca784e32551ffb64f13401f7ecab5089d15a0177
 - `https://cloud.alauda.cn/attachments/knowledge/hyperflux-gateway/hyperflux-gateway-v0.1.3.tar.gz`
 - `https://cloud.alauda.io/attachments/knowledge/hyperflux-gateway/hyperflux-gateway-v0.1.3.tar.gz`
 
-如果包中包含 `images/` 目录，请在安装之前导入打包的镜像。
+如果包中包含 `images/` 目录，请在安装之前导入捆绑的镜像。
 
 ```bash
 nerdctl load -i images/hyperflux-gateway-<version>.tar
@@ -93,7 +94,7 @@ IMAGE=<customer-registry>/hyperflux-gateway:<version> ./install-k8s.sh
 令牌描述: hyperflux-gateway
 ```
 
-请立即复制生成的令牌，因为 Mattermost 只会显示一次。
+立即复制生成的令牌，因为 Mattermost 只显示一次。
 
 ### 4. 将机器人添加到目标团队和频道
 
@@ -103,11 +104,11 @@ IMAGE=<customer-registry>/hyperflux-gateway:<version> ./install-k8s.sh
 
 - 直接发送给机器人的消息会被直接处理。
 - 频道消息必须提及机器人，例如 `@system-bot hello`。
-- 当机器人在一个线程中被提及时，Hyperflux Gateway 会重用相同的线程会话。
+- 当在线程中提及机器人时，Hyperflux Gateway 会重用相同的线程会话。
 
 ### 5. 配置 Hyperflux 身份验证
 
-将 Hyperflux Gateway 所需的身份验证设置添加到 `cpaas-system/smart-doc-config` ConfigMap 中。`<hyperflux-api-secret>` 的值必须与稍后在 Hyperflux Gateway 安装期间使用的值匹配。
+将 Hyperflux Gateway 所需的身份验证设置添加到 `cpaas-system/smart-doc-config` ConfigMap 中。`<hyperflux-api-secret>` 的值必须与稍后在 Hyperflux Gateway 安装过程中使用的值匹配。
 
 ```bash
 kubectl -n cpaas-system patch configmap smart-doc-config --type merge -p '{
@@ -126,16 +127,16 @@ kubectl -n cpaas-system rollout status deployment/smart-doc --timeout=180s
 
 ### 6. 准备安装参数
 
-发布包安装程序在包根目录中存在 `install.env` 时会自动读取该文件。填写所需的值：
+发布包安装程序在包根目录存在 `install.env` 文件时会自动读取该文件。填写所需的值：
 
-| 变量                      | 描述                                                    |
-| ------------------------- | ------------------------------------------------------- |
-| `MATTERMOST_URL`          | 不带尾部 `/` 的 Mattermost 服务 URL。                   |
-| `MATTERMOST_BOT_USER_ID`  | Mattermost 机器人用户 ID。                              |
-| `MATTERMOST_BOT_USERNAME` | 不带 `@` 的 Mattermost 机器人用户名。                   |
-| `MATTERMOST_TOKEN`        | 机器人的个人访问令牌。                                 |
-| `HYPERFLUX_API_URL`       | 网关使用的 Hyperflux API 端点。                        |
-| `HYPERFLUX_API_AUTH`      | 在 `smart-doc-config` 中配置的身份验证值。             |
+| 变量                     | 描述                                                     |
+| ------------------------ | -------------------------------------------------------- |
+| `MATTERMOST_URL`         | 不带尾部 `/` 的 Mattermost 服务 URL。                   |
+| `MATTERMOST_BOT_USER_ID` | Mattermost 机器人用户 ID。                              |
+| `MATTERMOST_BOT_USERNAME` | 不带 `@` 的 Mattermost 机器人用户名。                  |
+| `MATTERMOST_TOKEN`       | 机器人个人访问令牌。                                   |
+| `HYPERFLUX_API_URL`      | Gateway 使用的 Hyperflux API 端点。                    |
+| `HYPERFLUX_API_AUTH`     | 在 `smart-doc-config` 中配置的身份验证值。              |
 
 其他参数使用 `install-k8s.sh` 中嵌入的默认值。仅在必要时覆盖它们。
 
@@ -143,10 +144,10 @@ kubectl -n cpaas-system rollout status deployment/smart-doc --timeout=180s
 
 在安装之前，请确认以下内容：
 
-1. `MATTERMOST_URL` 可以从目标环境访问。
-2. `MATTERMOST_TOKEN` 是机器人令牌，而不是常规用户令牌。
+1. `MATTERMOST_URL` 在目标环境中可访问。
+2. `MATTERMOST_TOKEN` 是机器人令牌，而不是普通用户令牌。
 3. `MATTERMOST_BOT_USER_ID` 和 `MATTERMOST_BOT_USERNAME` 属于同一个机器人账户。
-4. `HYPERFLUX_API_AUTH` 与在 Hyperflux 中配置的值匹配。
+4. `HYPERFLUX_API_AUTH` 与 Hyperflux 中配置的值匹配。
 
 ### 8. 安装 Hyperflux Gateway
 
@@ -167,7 +168,7 @@ kubectl -n cpaas-system rollout status deployment/smart-doc --timeout=180s
 
 ### 9. 在需要时覆盖镜像
 
-如果客户环境使用不同的注册表或镜像位置，请在安装期间显式覆盖镜像：
+如果客户环境使用不同的注册表或镜像位置，请在安装过程中显式覆盖镜像：
 
 ```bash
 IMAGE=<your-image-ref> ./install-k8s.sh
@@ -261,7 +262,7 @@ curl https://<gateway-domain>/healthz
 hello
 ```
 
-预期结果：机器人在 DM 对话中直接回复。
+预期结果：机器人直接在 DM 对话中回复。
 
 非提及频道消息：
 
@@ -280,6 +281,40 @@ hello everyone
 ```text
 系统控制台 -> 集成 -> 集成管理 -> 启用机器人账户创建
 ```
+
+**机器人停留在“思考中，请稍候...”且答案从未出现**
+
+症状：用户发送消息后，机器人发布一个占位符（“思考中，请稍候...”），但占位符从未被真实答案替换。
+
+工作程序日志签名：
+
+```text
+POST /api/v4/posts             -> 201 Created    # 占位符已创建
+PUT  /api/v4/posts/{post_id}   -> 403 Forbidden  # 编辑占位符被拒绝
+error id: api.context.permissions.app_error
+```
+
+根本原因：网关通过首先创建一个占位符帖子，然后在答案准备好后编辑该帖子来流式传输答案。在 Mattermost 中，`create_post` 和 `edit_post` 是独立的权限，因此占位符可以成功创建，而编辑返回 403。机器人角色缺少 **编辑自己的帖子 (`edit_post`)** 权限。
+
+> 注意：最近的 Mattermost 版本将“允许用户编辑他们的消息”从 `系统控制台 -> 网站配置 -> 帖子` 移动到权限方案中，因此不再在帖子下找到。
+
+解决方案：在 Mattermost 权限方案中授予机器人角色编辑权限。
+
+1. 打开权限方案（如果有相应的团队覆盖方案，则使用该方案）：
+
+```text
+系统控制台 -> 用户管理 -> 权限 -> 系统方案
+```
+
+2. 在 **帖子 / 管理帖子** 组下，启用：
+
+- **编辑帖子** (`edit_post`，即“编辑自己的帖子”权限) — 这是工作程序可以编辑其自己的占位符帖子的必要条件。
+- **编辑他人帖子 (`edit_others_posts`)** 如果占位符作者与编辑者不同。
+- 确认该权限已为机器人所属角色启用（所有成员、频道管理员等）。
+
+3. 不要将 **编辑时间限制** 设置得太低：较长的模型响应可能会超过限制并导致编辑时出现 403。
+
+验证：手动编辑机器人账户最近的一条消息，然后向机器人发送新消息并确认占位符被最终答案替换。菜单位置在不同的 Mattermost 版本之间略有不同；依赖于“权限方案 / 系统方案 -> 帖子”。参考：[Mattermost 高级权限](https://docs.mattermost.com/administration-guide/onboard/advanced-permissions.html)。
 
 **机器人多次回复**
 
