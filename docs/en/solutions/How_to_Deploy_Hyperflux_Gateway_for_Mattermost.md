@@ -307,7 +307,7 @@ System Console -> User Management -> Permissions -> System Scheme
 
 2. Under the **Posts / Manage Posts** group, enable:
 
-- **Edit Posts (`edit_post`)** — required so the worker can edit its own placeholder post.
+- **Edit Posts** (`edit_post`, the "edit your own posts" permission) — required so the worker can edit its own placeholder post.
 - **Edit Others' Posts (`edit_others_posts`)** if the placeholder author differs from the editor.
 - Confirm the permission is enabled for the role the bot belongs to (All Members, Channel Admin, and so on).
 
