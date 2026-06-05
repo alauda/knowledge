@@ -19,6 +19,7 @@ Prepare the following before deployment:
 - A reachable Mattermost service URL.
 - A Mattermost administrator account with permission to access **System Console**.
 - A running Hyperflux environment.
+- The bot role must have the **Edit Own Posts (`edit_post`)** permission. Otherwise the streaming reply (which edits a placeholder post) fails and the answer stays on "Thinking, please wait…". See *Troubleshoot common issues*.
 - A Kubernetes cluster where Hyperflux Gateway can be installed.
 - The Hyperflux Gateway release bundle that contains `install-k8s.sh`, `uninstall-k8s.sh`, `install.env`, and `image-metadata.json`.
 
@@ -279,6 +280,40 @@ Verify that the following Mattermost setting is enabled:
 ```text
 System Console -> Integrations -> Integration Management -> Enable Bot Account Creation
 ```
+
+**The bot stays on "Thinking, please wait…" and the answer never appears**
+
+Symptom: after a user sends a message, the bot posts a placeholder ("Thinking, please wait…"), but the placeholder is never replaced with the real answer.
+
+Worker log signature:
+
+```text
+POST /api/v4/posts             -> 201 Created    # placeholder created
+PUT  /api/v4/posts/{post_id}   -> 403 Forbidden  # editing the placeholder is rejected
+error id: api.context.permissions.app_error
+```
+
+Root cause: the gateway streams answers by first creating a placeholder post and then editing that post once the answer is ready. In Mattermost, `create_post` and `edit_post` are independent permissions, so the placeholder can be created successfully while the edit returns 403. The bot role is missing the **Edit Own Posts (`edit_post`)** permission.
+
+> Note: recent Mattermost versions moved "Allow users to edit their messages" out of `System Console -> Site Configuration -> Posts` into the permission scheme, so it is no longer found under Posts.
+
+Resolution: grant the edit permission to the bot role in the Mattermost permission scheme.
+
+1. Open the permission scheme (use the corresponding Team Override Scheme if one is in effect):
+
+```text
+System Console -> User Management -> Permissions -> System Scheme
+```
+
+2. Under the **Posts / Manage Posts** group, enable:
+
+- **Edit Posts** (`edit_post`, the "edit your own posts" permission) — required so the worker can edit its own placeholder post.
+- **Edit Others' Posts (`edit_others_posts`)** if the placeholder author differs from the editor.
+- Confirm the permission is enabled for the role the bot belongs to (All Members, Channel Admin, and so on).
+
+3. Do not set **Edit Time Limit** too low: a long model response can exceed the limit and also cause a 403 on edit.
+
+Verification: manually edit one of the bot account's own recent messages, then send a new message to the bot and confirm the placeholder is replaced by the final answer. Menu locations vary slightly between Mattermost versions; rely on "permission scheme / System Scheme -> Posts". Reference: [Mattermost Advanced permissions](https://docs.mattermost.com/administration-guide/onboard/advanced-permissions.html).
 
 **The bot replies multiple times**
 
