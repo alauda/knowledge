@@ -7,6 +7,7 @@ ProductsVersion:
    - 4.3.x and later
 tags:
   - LB
+id: KB260600054
 ---
 
 # How to Disable the Metrics Port for Ingress NGINX

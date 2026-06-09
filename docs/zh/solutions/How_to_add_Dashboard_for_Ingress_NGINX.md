@@ -1,48 +1,49 @@
 ---
 kind:
-   - How To
+  - How To
 products:
   - Alauda Container Platform
 ProductsVersion:
-   - 4.3.x and later
+  - 4.3.x and later
 tags:
   - LB
   - Ingress NGINX
   - MonitorDashboard
 id: KB260600055
+sourceSHA: 02eee2bc2247b3f1c5f32241dc291973831bdb67652bd3da8b9916a0acfeaa38
 ---
 
-# How to Add Dashboards for Ingress NGINX
+# 如何为 Ingress NGINX 添加监控面板
 
-## Overview
+## 概述
 
-This document describes how to add monitoring dashboards for Ingress NGINX after `ingress-nginx-operator` has been installed in a target cluster.
+本文档描述了在目标集群中安装 `ingress-nginx-operator` 后，如何为 Ingress NGINX 添加监控面板。
 
-The procedure creates the following resources:
+该操作步骤创建以下资源：
 
-- `ingress-nginx-controller-dashboard`: the dashboard for Ingress NGINX controller instance metrics.
-- `ingress-nginx-request-handling-performance-dashboard`: the dashboard for Ingress traffic and request handling metrics.
+- `ingress-nginx-controller-dashboard`：Ingress NGINX 控制器实例指标的监控面板。
+- `ingress-nginx-request-handling-performance-dashboard`：Ingress 流量和请求处理指标的监控面板。
 
-Ingress NGINX Operator already generates the metrics Service and `ServiceMonitor` when metrics are enabled in the `IngressNginx` instance. This document only adds the two ACP `MonitorDashboard` resources.
+Ingress NGINX Operator 在启用指标的 `IngressNginx` 实例中已经生成了指标服务和 `ServiceMonitor`。本文档仅添加了两个 ACP `监控面板` 资源。
 
-## Environment Information
+## 环境信息
 
-Applicable Versions: ACP 4.3.x and later
+适用版本：ACP 4.3.x 及更高版本
 
-## Prerequisites
+## 先决条件
 
-Before applying the dashboard manifest, ensure that the following conditions are met:
+在应用监控面板清单之前，请确保满足以下条件：
 
-- Ingress NGINX Operator has been installed in the corresponding cluster.
-- At least one `IngressNginx` instance has metrics enabled.
-- You can access the cluster with `kubectl` and have permission to create `MonitorDashboard` resources in the `cpaas-system` namespace.
-- The platform monitoring stack can scrape the `ServiceMonitor` generated for the `IngressNginx` instance.
+- Ingress NGINX Operator 已在相应集群中安装。
+- 至少一个 `IngressNginx` 实例已启用指标。
+- 您可以使用 `kubectl` 访问集群，并且有权限在 `cpaas-system` 命名空间中创建 `监控面板` 资源。
+- 平台监控堆栈可以抓取为 `IngressNginx` 实例生成的 `ServiceMonitor`。
 
-## Operational Steps
+## 操作步骤
 
-### Step 1: Create the Ingress NGINX dashboard manifest
+### 步骤 1：创建 Ingress NGINX 监控面板清单
 
-Save the following content as `ingress-nginx-dashboards.yaml`:
+将以下内容保存为 `ingress-nginx-dashboards.yaml`：
 
 ```yaml
 apiVersion: ait.alauda.io/v1alpha2
@@ -600,7 +601,7 @@ spec:
         metric: container_memory_usage:sort_desc
         refId: A
         step: 10
-      title: Average Memory Usage
+      title: 平均内存使用
       type: timeseries
     - datasource:
         type: prometheus
@@ -674,7 +675,7 @@ spec:
         metric: container_cpu
         refId: A
         step: 10
-      title: Average CPU Usage
+      title: 平均 CPU 使用
       type: timeseries
     refresh: 5s
     schemaVersion: 39
@@ -729,7 +730,7 @@ spec:
         definition: label_values(nginx_ingress_controller_config_hash{controller_namespace=~"$controller_namespace"}, controller_class)
         hide: 0
         includeAll: false
-        label: Ingress NGINX Instance
+        label: Ingress NGINX 实例
         multi: false
         name: controller_class
         options: []
@@ -770,7 +771,7 @@ spec:
       - 7d
       - 30d
     timezone: browser
-    title: NGINX Ingress Controller Instance
+    title: NGINX Ingress 控制器实例
     uid: nginx
     version: 1
     weekStart: ''
@@ -876,7 +877,6 @@ spec:
               value: null
             - color: '#d44a3a'
               value: 80
-          unit: reqps
         overrides:
         - matcher:
             id: byValue
@@ -923,7 +923,7 @@ spec:
         metric: network
         refId: A
         step: 10
-      title: Ingress Request Volume
+      title: Ingress 请求量
       type: timeseries
     - datasource:
         type: prometheus
@@ -1037,12 +1037,12 @@ spec:
         metric: container_memory_usage:sort_desc
         refId: A
         step: 10
-      title: Ingress Success Rate (non-4|5xx responses)
+      title: Ingress 成功率 (非 4|5xx 响应)
       type: timeseries
     - datasource:
         type: prometheus
         uid: ${DS_PROMETHEUS}
-      description: Summary computed over the last 6 hours.
+      description: 在过去 6 小时内计算的摘要。
       fieldConfig:
         defaults:
           color:
@@ -1077,7 +1077,7 @@ spec:
             options: 'Value #A'
           properties:
           - id: displayName
-            value: P50 Latency
+            value: P50 延迟
           - id: unit
             value: dtdurations
           - id: custom.align
@@ -1086,7 +1086,7 @@ spec:
             options: 'Value #B'
           properties:
           - id: displayName
-            value: P90 Latency
+            value: P90 延迟
           - id: unit
             value: dtdurations
           - id: custom.align
@@ -1095,7 +1095,7 @@ spec:
             options: 'Value #C'
           properties:
           - id: displayName
-            value: P99 Latency
+            value: P99 延迟
           - id: unit
             value: dtdurations
           - id: custom.align
@@ -1213,7 +1213,7 @@ spec:
         intervalFactor: 1
         legendFormat: '{{.ingress}} response bytes'
         refId: E
-      title: Ingress Percentile Response Times and Transfer Rates
+      title: Ingress 百分位响应时间和传输速率
       transformations:
       - id: merge
         options:
@@ -1322,7 +1322,7 @@ spec:
         intervalFactor: 1
         legendFormat: P99
         refId: E
-      title: Ingress Percentile Response Times (Ingress Namespaces)
+      title: Ingress 百分位响应时间 (Ingress 命名空间)
       type: timeseries
     - cards: {}
       color:
@@ -1410,7 +1410,7 @@ spec:
         interval: ''
         legendFormat: '{{.le}}'
         refId: A
-      title: Ingress Request Latency Buckets (Ingress Namespaces)
+      title: Ingress 请求延迟桶 (Ingress 命名空间)
       tooltip:
         show: true
         showHistogram: true
@@ -1509,14 +1509,13 @@ spec:
         refId: A
         step: 1
         instant: true
-      title: Ingress Certificate Expiry
+      title: Ingress 证书到期
       type: table
-      description: Certificate expiry for TLS secrets used by this Ingress NGINX instance. This metric is emitted per host/secret
-        and does not include an ingress label.
+      description: 此 Ingress NGINX 实例使用的 TLS 秘密的证书到期。此指标是按主机/秘密发出的，不包括 ingress 标签。
     - datasource:
         type: prometheus
         uid: ${DS_PROMETHEUS}
-      description: Total time for NGINX and upstream servers to process a request and send a response
+      description: NGINX 和上游服务器处理请求并发送响应的总时间
       fieldConfig:
         defaults:
           color:
@@ -1603,12 +1602,12 @@ spec:
         interval: ''
         legendFormat: '.99'
         refId: A
-      title: Request Latency Percentiles
+      title: 请求延迟百分位
       type: timeseries
     - datasource:
         type: prometheus
         uid: ${DS_PROMETHEUS}
-      description: The time spent on receiving the response from the upstream server
+      description: 从上游服务器接收响应所花费的时间
       fieldConfig:
         defaults:
           color:
@@ -1697,7 +1696,7 @@ spec:
         interval: ''
         legendFormat: '.99'
         refId: A
-      title: Upstream Response Latency Percentiles
+      title: 上游响应延迟百分位
       type: timeseries
     - datasource:
         type: prometheus
@@ -1771,12 +1770,12 @@ spec:
         intervalFactor: 1
         legendFormat: '{{.ingress}} {{.method}} {{.host}}{{.path}}'
         refId: A
-      title: Request Rate by Method and Path
+      title: 按方法和路径的请求速率
       type: timeseries
     - datasource:
         type: prometheus
         uid: ${DS_PROMETHEUS}
-      description: For each path observed, its median upstream response time
+      description: 对于观察到的每个路径，其上游响应时间的中位数
       fieldConfig:
         defaults:
           color:
@@ -1846,12 +1845,12 @@ spec:
         intervalFactor: 1
         legendFormat: '{{.ingress}} {{.method}} {{.host}}{{.path}}'
         refId: A
-      title: Median Upstream Response Time by Method and Path
+      title: 按方法和路径的上游响应时间的中位数
       type: timeseries
     - datasource:
         type: prometheus
         uid: ${DS_PROMETHEUS}
-      description: Percentage of 4xx and 5xx responses among all responses.
+      description: 4xx 和 5xx 响应在所有响应中的百分比。
       fieldConfig:
         defaults:
           color:
@@ -1920,12 +1919,12 @@ spec:
         intervalFactor: 1
         legendFormat: '{{.ingress}} {{.method}} {{.host}}{{.path}}'
         refId: A
-      title: Response Error Rate by Method and Path
+      title: 按方法和路径的响应错误率
       type: timeseries
     - datasource:
         type: prometheus
         uid: ${DS_PROMETHEUS}
-      description: For each path observed, the sum of upstream request time
+      description: 对于观察到的每个路径，上游请求时间的总和
       fieldConfig:
         defaults:
           color:
@@ -1993,7 +1992,7 @@ spec:
         intervalFactor: 1
         legendFormat: '{{.ingress}} {{.method}} {{.host}}{{.path}}'
         refId: A
-      title: Upstream Response Time by Method and Path
+      title: 按方法和路径的上游响应时间
       type: timeseries
     - datasource:
         type: prometheus
@@ -2067,7 +2066,7 @@ spec:
         intervalFactor: 1
         legendFormat: '{{.ingress}} {{.method}} {{.host}}{{.path}} {{.status}}'
         refId: A
-      title: Response Error Rate by Method and Path
+      title: 按方法和路径的响应错误率
       type: timeseries
     - datasource:
         type: prometheus
@@ -2155,7 +2154,7 @@ spec:
         hide: true
         legendFormat: '{{.le}}'
         refId: A
-      title: Average Response Size by Method and Path
+      title: 按方法和路径的平均响应大小
       type: timeseries
     refresh: 30s
     schemaVersion: 39
@@ -2169,7 +2168,7 @@ spec:
           value: ${DS_PROMETHEUS}
         hide: 2
         includeAll: false
-        label: datasource
+        label: 数据源
         multi: false
         name: DS_PROMETHEUS
         options: []
@@ -2186,7 +2185,7 @@ spec:
         definition: label_values(nginx_ingress_controller_config_hash, controller_namespace)
         hide: 0
         includeAll: false
-        label: Controller Namespace
+        label: 控制器命名空间
         multi: false
         name: controller_namespace
         options: []
@@ -2209,7 +2208,7 @@ spec:
         definition: label_values(nginx_ingress_controller_config_hash{controller_namespace=~"$controller_namespace"}, controller_class)
         hide: 0
         includeAll: false
-        label: Ingress NGINX Instance
+        label: Ingress NGINX 实例
         multi: false
         name: controller_class
         options: []
@@ -2233,7 +2232,7 @@ spec:
           exported_namespace)
         hide: 0
         includeAll: true
-        label: Ingress Namespace
+        label: Ingress 命名空间
         multi: true
         name: ingress_namespace
         options: []
@@ -2300,53 +2299,53 @@ spec:
       - 7d
       - 30d
     timezone: browser
-    title: NGINX Ingress Traffic
+    title: NGINX Ingress 流量
     uid: 4GFbkOsZk
     version: 1
     weekStart: ''
 ```
 
-### Step 2: Apply the dashboard manifest
+### 步骤 2：应用仪表板清单
 
-Apply the manifest to the cluster:
+将清单应用到集群：
 
 ```bash
 kubectl apply -f ingress-nginx-dashboards.yaml
 ```
 
-## Dashboard Details
+## 仪表板详情
 
-### NGINX Ingress Controller Instance
+### NGINX Ingress 控制器实例
 
-This dashboard focuses on the Ingress NGINX controller instance. It uses controller-level variables, including controller namespace and Ingress NGINX controller class.
+此仪表板专注于 Ingress NGINX 控制器实例。它使用控制器级变量，包括控制器命名空间和 Ingress NGINX 控制器类。
 
-It contains the following panels:
+它包含以下面板：
 
-- `Controller Request Volume`: request rate handled by the selected controller instance.
-- `Controller Connections`: active NGINX connections.
-- `Controller Success Rate (non-4|5xx responses)`: controller-level success rate.
-- `Config Reloads`: controller configuration reload count.
-- `Last Config Failed`: whether the latest configuration reload failed.
-- `Network I/O pressure`: request and response transfer rate.
-- `Average Memory Usage`: NGINX process memory usage.
-- `Average CPU Usage`: NGINX process CPU usage.
+- `控制器请求量`：所选控制器实例处理的请求速率。
+- `控制器连接数`：活动的 NGINX 连接数。
+- `控制器成功率（非 4|5xx 响应）`：控制器级成功率。
+- `配置重载次数`：控制器配置重载计数。
+- `最后一次配置失败`：最新的配置重载是否失败。
+- `网络 I/O 压力`：请求和响应传输速率。
+- `平均内存使用`：NGINX 进程内存使用情况。
+- `平均 CPU 使用`：NGINX 进程 CPU 使用情况。
 
-### NGINX Ingress Traffic
+### NGINX Ingress 流量
 
-This dashboard focuses on workload Ingress traffic handled by the selected Ingress NGINX instance. It uses controller namespace, controller class, workload Ingress namespace, and workload Ingress variables. The workload Ingress variable supports selecting all Ingress objects in the selected namespace.
+此仪表板专注于所选 Ingress NGINX 实例处理的工作负载 Ingress 流量。它使用控制器命名空间、控制器类、工作负载 Ingress 命名空间和工作负载 Ingress 变量。工作负载 Ingress 变量支持选择所选命名空间中的所有 Ingress 对象。
 
-It contains the following panels:
+它包含以下面板：
 
-- `Ingress Request Volume`: per-Ingress request rate.
-- `Ingress Success Rate (non-4|5xx responses)`: per-Ingress success rate.
-- `Ingress Percentile Response Times and Transfer Rates`: percentile response time and transfer rate summary.
-- `Ingress Certificate Expiry`: TLS certificate expiry by host.
-- `Request Handling Performance`: request handling overview.
-- `Response Latency Heatmap`: request duration bucket distribution.
-- `Request Latency Percentiles`: p50, p95, and p99 request latency.
-- `Upstream Response Latency Percentiles`: p50, p95, and p99 upstream response latency.
-- `Request Rate by Method and Path`: request rate grouped by Ingress, method, host, and path.
-- `Median Upstream Response Time by Method and Path`: median upstream response time grouped by method, host, and path.
-- `Response Error Rate by Method and Path`: response error rate grouped by method, host, path, and status.
-- `Upstream Response Time by Method and Path`: upstream response time grouped by method, host, and path.
-- `Average Response Size by Method and Path`: average response size grouped by method, host, and path.
+- `Ingress 请求量`：每个 Ingress 的请求速率。
+- `Ingress 成功率（非 4|5xx 响应）`：每个 Ingress 的成功率。
+- `Ingress 百分位响应时间和传输速率`：百分位响应时间和传输速率摘要。
+- `Ingress 证书到期`：按主机的 TLS 证书到期。
+- `请求处理性能`：请求处理概述。
+- `响应延迟热图`：请求持续时间桶分布。
+- `请求延迟百分位`：p50、p95 和 p99 请求延迟。
+- `上游响应延迟百分位`：p50、p95 和 p99 上游响应延迟。
+- `按方法和路径的请求速率`：按 Ingress、方法、主机和路径分组的请求速率。
+- `按方法和路径的中位数上游响应时间`：按方法、主机和路径分组的中位数上游响应时间。
+- `按方法和路径的响应错误率`：按方法、主机、路径和状态分组的响应错误率。
+- `按方法和路径的上游响应时间`：按方法、主机和路径分组的上游响应时间。
+- `按方法和路径的平均响应大小`：按方法、主机和路径分组的平均响应大小。
