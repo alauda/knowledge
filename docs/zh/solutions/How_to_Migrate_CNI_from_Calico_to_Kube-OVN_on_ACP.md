@@ -31,7 +31,6 @@ sourceSHA: pending
 2. **Kube-OVN 制品已入库**：chart 和镜像已推送到现场 registry，目标集群节点可正常拉取：
    - chart：`acp/chart-cpaas-kube-ovn`（以现场 ProductBase/artifacts 实际版本为准）
    - image：`acp/kube-ovn`（以现场实际版本为准）
-   - sentry 使用的 registry secret 可用
 3. **已安排维护窗口**：CNI 切换会导致集群网络中断，已有 Pod 不会自动迁移网络，请确保在业务可接受的维护时段内操作。
 
 ## 操作影响
@@ -54,16 +53,14 @@ sourceSHA: pending
 在执行变更前，先从当前 Subnet 中记录网络参数，后续步骤 4 配置 Kube-OVN 时需要用到：
 
 ```bash
-# 记录默认 subnet 的 gateway、excludeIps、cidrBlock
+# 记录默认 subnet 的 gateway、excludeIps
 kubectl get subnet default-ipv4-ippool -o jsonpath='{.spec.gateway}{"\n"}'
 kubectl get subnet default-ipv4-ippool -o jsonpath='{.spec.excludeIps}{"\n"}'
-kubectl get subnet default-ipv4-ippool -o jsonpath='{.spec.cidrBlock}{"\n"}'
 ```
 
 请保存以上输出结果，其中：
 - `gateway` → 步骤 4 的 `<GW>`
 - `excludeIps` → 步骤 4 的 `<EXCLUDE_IPS>`
-- `cidrBlock` → 用于确认 Pod CIDR 范围
 
 ### 步骤 2：清理 Raven 和子网资源
 

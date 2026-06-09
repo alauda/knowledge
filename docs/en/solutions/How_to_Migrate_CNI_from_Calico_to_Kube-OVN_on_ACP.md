@@ -54,16 +54,14 @@ This operation is irreversible. Make sure you have fully assessed the risks and 
 Before making any changes, record the network parameters from the current Subnet. These will be needed when configuring Kube-OVN in Step 4:
 
 ```bash
-# Record gateway, excludeIps, cidrBlock from the default subnet
+# Record gateway and excludeIps from the default subnet
 kubectl get subnet default-ipv4-ippool -o jsonpath='{.spec.gateway}{"\n"}'
 kubectl get subnet default-ipv4-ippool -o jsonpath='{.spec.excludeIps}{"\n"}'
-kubectl get subnet default-ipv4-ippool -o jsonpath='{.spec.cidrBlock}{"\n"}'
 ```
 
 Save the output. You will need:
 - `gateway` → `<GW>` in Step 4
 - `excludeIps` → `<EXCLUDE_IPS>` in Step 4
-- `cidrBlock` → for confirming the Pod CIDR range
 
 ### Step 2: Clean Up Raven and Subnet Resources
 
