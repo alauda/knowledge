@@ -6,20 +6,21 @@ products:
 ProductsVersion:
   - '3.18,4.0,4.1'
 id: KB260600001
+sourceSHA: 7d2f81026c34ec11cd8f74e448e94d2d4409e68bf58983fd1a88823d73755389
 ---
 
 # ZooKeeper 安装指南
 
 ## 概述
 
-ZooKeeper 是一个分布式协调服务，用于维护配置信息、命名、提供分布式同步和组服务。本指南介绍如何在 Alauda 容器平台 (ACP) 上通过 Helm Chart 部署 ZooKeeper 3.8.6 集群。
+ZooKeeper 是一个分布式协调服务，用于维护配置信息、命名、提供分布式同步和组服务。本指南解释了如何使用 Alauda 应用目录中的 Helm Chart 在 Alauda 容器平台 (ACP) 上部署 ZooKeeper 3.8.6 集群。
 
 ## 先决条件
 
-- 支持动态供给的 StorageClass（每个 Pod 需要独立 PVC）
-- 从**应用商店 > 应用入驻**下载与集群版本匹配的 `violet` 工具
+- 支持动态供给的 StorageClass（每个 Pod 需要一个专用 PVC）
+- 从 **应用商店 > 应用入驻** 下载的 `violet` CLI，版本需与您的集群匹配
 
-## 安装步骤
+## 安装
 
 ### 1. 上传材料包
 
@@ -36,15 +37,15 @@ violet push \
 
 ### 2. 部署 Chart
 
-在应用商店中找到 ZooKeeper Chart，点击**部署**。关键参数说明：
+在应用商店中找到 ZooKeeper Chart 并点击 **部署**。关键参数：
 
-| 参数 | 默认值 | 说明 |
-| ---- | ------ | ---- |
-| `zookeeper.replicaCount` | `3` | 副本数，必须为奇数（1、3、5、7）。生产环境至少 3。 |
-| `persistence.size` | `5Gi` | 每个 Pod 的 PVC 容量。 |
-| `persistence.storageClass` | — | StorageClass 名称，空值使用集群默认。 |
-| `env.ZOO_MAX_CLIENT_CNXNS` | `60` | 单 IP 最大客户端连接数。 |
-| `env.ZOO_AUTOPURGE_PURGEINTERVAL` | `0` | 快照自动清理间隔（小时）。生产建议设为 `24`。 |
+| 参数                               | 默认值  | 描述                                                                                 |
+| ---------------------------------- | ------- | ------------------------------------------------------------------------------------ |
+| `zookeeper.replicaCount`           | `3`     | 副本数量。必须为奇数（1, 3, 5, 7）。生产环境至少使用 3 个。                          |
+| `persistence.size`                 | `5Gi`   | 每个 Pod 的 PVC 容量。                                                               |
+| `persistence.storageClass`         | —       | StorageClass 名称。留空以使用集群默认值。                                           |
+| `env.ZOO_MAX_CLIENT_CNXNS`         | `60`    | 每个 IP 的最大客户端连接数。                                                         |
+| `env.ZOO_AUTOPURGE_PURGEINTERVAL`  | `0`     | 快照自动清除间隔（小时）。生产环境设置为 `24`。                                     |
 
 ### 3. 验证部署
 
@@ -54,14 +55,14 @@ violet push \
 kubectl get pods -n <namespace> -l "app=zookeeper,component=server"
 ```
 
-期望：3 个 Pod 均为 `Running`，READY 列为 `2/2`。
+预期：3 个 Pod 处于 `Running` 状态，READY 列显示 `2/2`。
 
 **健康检查**
 
 ```bash
 kubectl exec -n <namespace> <release>-zookeeper-0 -- \
   sh -c "echo ruok | nc 127.0.0.1 2181"
-# 期望输出：imok
+# 预期输出：imok
 ```
 
 **验证集群选举**
@@ -73,7 +74,7 @@ for i in 0 1 2; do
 done
 ```
 
-期望：恰好 1 个 `leader`，2 个 `follower`。
+预期：恰好 1 个 `leader` 和 2 个 `follower`。
 
 **数据读写验证**
 
@@ -93,7 +94,7 @@ kubectl exec -n <namespace> <release>-zookeeper-0 -- \
 
 ## 客户端连接
 
-集群部署完成后，应用通过 ClusterIP Service 访问：
+集群部署完成后，应用程序通过 ClusterIP 服务连接：
 
 ```
 <release>-zookeeper.<namespace>.svc.cluster.local:2181
@@ -101,9 +102,9 @@ kubectl exec -n <namespace> <release>-zookeeper-0 -- \
 
 ## 常见问题
 
-### Q1. 快照目录磁盘持续增长
+### Q1. 快照目录 (/data) 磁盘使用量持续增长
 
-默认关闭自动清理（`ZOO_AUTOPURGE_PURGEINTERVAL=0`）。通过 Helm upgrade 修改：
+默认情况下，自动清除功能是禁用的 (`ZOO_AUTOPURGE_PURGEINTERVAL=0`)。通过 Helm 升级进行更新：
 
 ```yaml
 env:
@@ -111,6 +112,6 @@ env:
   ZOO_AUTOPURGE_SNAPRETAINCOUNT: 5
 ```
 
-### Q2. 节点维护（drain）时 ZooKeeper 不可用
+### Q2. 节点维护（drain）期间 ZooKeeper 无法使用
 
-3 节点集群同时不可用节点超过 1 个会失去法定人数。Chart 已配置 PDB（`maxUnavailable=1`），`kubectl drain` 会自动等待 Pod 恢复后再驱逐下一个，无需额外操作。
+在 3 节点集群中，同时失去超过 1 个 Pod 会破坏法定人数。Chart 附带一个 PodDisruptionBudget（`maxUnavailable=1`），因此 `kubectl drain` 会自动等待每个 Pod 恢复后再驱逐下一个。无需额外操作。
