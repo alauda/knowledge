@@ -62,6 +62,8 @@ Verify connectivity on each node:
 
 ```shell
 ping <dorado-management-ip>
+# ping only checks ICMP reachability; also verify the management API port (8088) is open
+curl -k https://<dorado-management-ip>:8088
 ping <iscsi-portal-ip>
 ping <nfs-portal-ip>
 ```
@@ -143,8 +145,13 @@ docker push <registry>/huawei-csi:4.11.0
 By default, the YAML files in the CSI package reference the official image addresses. Replace them with your cluster image registry address. Run the following in the `manual/esdk/deploy/` directory:
 
 ```shell
-# Replace the default registry address with your registry address
-sed -i 's/<default-registry-address>/<registry>/g' *.yaml
+# First inspect the current image references to identify the default registry prefix
+grep 'image:' *.yaml
+
+# Replace that default prefix with your cluster registry address.
+# Set <default-registry-address> to the prefix shown by the grep above (the part before /huawei-csi).
+# A '#' delimiter is used because registry addresses contain '/'.
+sed -i 's#<default-registry-address>#<registry>#g' *.yaml
 
 # Confirm the replacement result
 grep 'image:' *.yaml
@@ -173,6 +180,8 @@ kubectl apply -f ./crds/backend/
 ```
 
 #### 3.3 Deploy the Snapshot CRD (optional, Kubernetes v1.20+)
+
+`--validate=false` skips client-side schema validation. It is required here because the bundled snapshot CRD manifests may target a different snapshot API version than the one on the cluster.
 
 ```shell
 kubectl apply -f ./crds/snapshot-crds/ --validate=false
@@ -210,7 +219,14 @@ Use the `oceanctl` tool (located in the `bin/` directory of the CSI package) to 
 
 #### 4.1 Backend authentication
 
-The backend account information must first be created as a Kubernetes Secret. Refer to the official documentation for details.
+You do not need to create the credentials Secret manually. When you run `oceanctl create backend` (steps 4.2 and 4.3), it interactively prompts for the storage account user name and password and stores them in a Kubernetes Secret in the `huawei-csi` namespace automatically:
+
+```text
+Please enter this backend user name:
+Please enter this backend password:
+```
+
+Use a Dorado account that has permission to manage the target storage pool.
 
 #### 4.2 Create an iSCSI backend
 
@@ -314,6 +330,8 @@ allowVolumeExpansion: true
 kubectl apply -f sc-nfs.yaml
 ```
 
+> **Note**: `authClient: "*"` allows any NFS client to mount the volume, which is convenient for validation. For production, restrict it to specific client IPs or CIDR ranges (for example, `192.0.2.0/24`).
+
 ### 6. Verification
 
 Create a test PVC to verify that the storage integration works correctly:
@@ -383,7 +401,9 @@ If troubleshooting does not resolve the issue, try restarting the CSI controller
 kubectl delete pod -n huawei-csi -l app=huawei-csi-controller
 ```
 
-Alternatively, temporarily delete the webhook (after deletion, backend creation is no longer validated). The webhook is automatically restored after the controller restarts:
+Alternatively, as a last resort, temporarily delete the webhook (after deletion, backend creation is no longer validated). The webhook is automatically restored after the controller restarts:
+
+> **Warning**: Deleting the webhook disables backend-configuration validation. Use this only for troubleshooting in a non-production environment, and restore it immediately afterward by restarting the controller.
 
 ```shell
 kubectl delete validatingwebhookconfiguration storage-backend-controller.xuanwu.huawei.io
@@ -397,12 +417,14 @@ When a Pod uses `securityContext` to specify a non-root user (for example, `runA
 
 **Solution 1: Set fsPermission in the StorageClass**
 
-Suitable for quickly opening up permissions:
+Suitable for quickly opening up permissions in a development or test environment:
 
 ```yaml
 parameters:
   fsPermission: "777"
 ```
+
+> **Warning**: `fsPermission: "777"` grants full read/write/execute to every user on the node. Avoid it in production; prefer the `fsGroup`-based approaches in Solution 2 or 3.
 
 **Solution 2: Explicitly specify fsType in the StorageClass + use ReadWriteOnce for the PVC**
 
