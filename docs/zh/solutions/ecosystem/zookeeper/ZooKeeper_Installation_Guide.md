@@ -6,7 +6,7 @@ products:
 ProductsVersion:
   - '4.1,4.2,4.3'
 id: KB260600001
-sourceSHA: 7d2f81026c34ec11cd8f74e448e94d2d4409e68bf58983fd1a88823d73755389
+sourceSHA: a7cc54bebdfe6c13c880cb37f8ff3f997de9d70912a737d8a3dab89d2c4a42d5
 ---
 
 # ZooKeeper 安装指南
@@ -33,19 +33,19 @@ violet push \
   zookeeper-v2.2.0.tgz
 ```
 
-登录平台，切换到目标项目和命名空间，确认 ZooKeeper 包在应用商店中可见。
+登录平台，切换到目标项目和命名空间，并确认 ZooKeeper 包在应用商店中可见。
 
 ### 2. 部署 Chart
 
 在应用商店中找到 ZooKeeper Chart 并点击 **部署**。关键参数：
 
-| 参数                               | 默认值  | 描述                                                                                 |
-| ---------------------------------- | ------- | ------------------------------------------------------------------------------------ |
-| `zookeeper.replicaCount`           | `3`     | 副本数量。必须为奇数（1, 3, 5, 7）。生产环境至少使用 3 个。                          |
-| `persistence.size`                 | `5Gi`   | 每个 Pod 的 PVC 容量。                                                               |
-| `persistence.storageClass`         | —       | StorageClass 名称。留空以使用集群默认值。                                           |
-| `env.ZOO_MAX_CLIENT_CNXNS`         | `60`    | 每个 IP 的最大客户端连接数。                                                         |
-| `env.ZOO_AUTOPURGE_PURGEINTERVAL`  | `0`     | 快照自动清除间隔（小时）。生产环境设置为 `24`。                                     |
+| 参数                               | 默认值   | 描述                                                                                  |
+| ---------------------------------- | -------- | ------------------------------------------------------------------------------------- |
+| `zookeeper.replicaCount`           | `3`      | 副本数量。必须为奇数（1, 3, 5, 7）。生产环境至少使用 3 个。                           |
+| `persistence.size`                 | `5Gi`    | 每个 Pod 的 PVC 容量。                                                                |
+| `persistence.storageClass`         | —        | StorageClass 名称。留空以使用集群默认值。                                            |
+| `env.ZOO_MAX_CLIENT_CNXNS`         | `60`     | 每个 IP 的最大客户端连接数。                                                          |
+| `env.ZOO_AUTOPURGE_PURGEINTERVAL`  | `0`      | 快照自动清除间隔（小时）。生产环境设置为 `24`。                                       |
 
 ### 3. 验证部署
 
@@ -102,7 +102,7 @@ kubectl exec -n <namespace> <release>-zookeeper-0 -- \
 
 ## 常见问题
 
-### Q1. 快照目录 (/data) 磁盘使用量持续增长
+### Q1. 快照目录 (/data) 磁盘使用量不断增长
 
 默认情况下，自动清除功能是禁用的 (`ZOO_AUTOPURGE_PURGEINTERVAL=0`)。通过 Helm 升级进行更新：
 
@@ -112,6 +112,6 @@ env:
   ZOO_AUTOPURGE_SNAPRETAINCOUNT: 5
 ```
 
-### Q2. 节点维护（drain）期间 ZooKeeper 无法使用
+### Q2. 节点维护（排空）期间 ZooKeeper 无法使用
 
-在 3 节点集群中，同时失去超过 1 个 Pod 会破坏法定人数。Chart 附带一个 PodDisruptionBudget（`maxUnavailable=1`），因此 `kubectl drain` 会自动等待每个 Pod 恢复后再驱逐下一个。无需额外操作。
+在 3 节点集群中，同时失去超过 1 个 Pod 会破坏法定人数。Chart 附带一个 PodDisruptionBudget（`maxUnavailable=1`），因此 `kubectl drain` 会自动等待每个 Pod 恢复后再逐个驱逐。无需额外操作。
