@@ -13,7 +13,7 @@ sourceSHA: pending
 
 ## 适用场景
 
-集群当前使用 Calico 作为 CNI 插件，因业务需求（如需要固定 IP、多子网、网络策略增强等）需要切换为 Kube-OVN，且不希望重建集群。
+集群当前使用 Calico 作为 CNI 插件，需要切换为 Kube-OVN。
 
 :::warning
 本文档适用于 ACP 3.18 版本。
