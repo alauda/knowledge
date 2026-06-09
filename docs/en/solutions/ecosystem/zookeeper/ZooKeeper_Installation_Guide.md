@@ -29,7 +29,7 @@ violet push \
   --clusters <business-cluster-name> \
   --platform-username <platform-admin-username> \
   --platform-password <platform-admin-password> \
-  zookeeper-v2.2.0.tgz
+  zookeeper-v3.8.x-yyyy.tgz
 ```
 
 Sign in to the platform, switch to the target project and namespace, and confirm that the ZooKeeper package is visible in the App Store.
