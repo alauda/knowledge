@@ -34,13 +34,9 @@ violet push \
   zookeeper-v3.8.x-yyyy.tgz
 ```
 
-Sign in to the platform as an administrator, go to **Marketplace > Chart Repositories > public-charts**, and confirm the ZooKeeper package (chart-zookeeper 3.8.6-xxxxxx) is visible. Note the exact **Chart Version** string — you will need it for the kubectl method below.
+Sign in to the platform as an administrator, go to **Marketplace > Chart Repositories > public-charts**, and confirm the ZooKeeper package (chart-zookeeper 3.8.6-xxxxxx) is visible.
 
-### 2. Deploy ZooKeeper
-
-Two creation methods are supported and produce identical results.
-
-#### Method 1: UI
+### 2. Deploy the Chart
 
 Go to **Marketplace > Chart Repositories > public-charts**, find **chart-zookeeper**, and click **View Details**. Then click **Create** in the top-right corner.
 
@@ -57,7 +53,7 @@ Key parameters:
 | Parameter | Default | Description |
 | --------- | ------- | ----------- |
 | `zookeeper.replicaCount` | `3` | Number of replicas. Must be odd. Use at least 3 for production. |
-| `persistence.size` | `5Gi` | PVC capacity per Pod. |
+| `persistence.size` | `5Gi` | PVC capacity per Pod. Adjust based on data volume. |
 | `persistence.storageClass` | — | StorageClass name. Leave empty for cluster default. |
 | `env.ZOO_MAX_CLIENT_CNXNS` | `60` | Maximum client connections per IP. |
 | `env.ZOO_AUTOPURGE_PURGEINTERVAL` | `0` | Snapshot auto-purge interval (hours). **Set to `24` for production.** |
@@ -65,30 +61,7 @@ Key parameters:
 | `zookeeperExporter.enabled` | `true` | Enable Prometheus Exporter sidecar (port 9141). |
 | `prometheus.serviceMonitor.enabled` | `true` | Create ServiceMonitor for Prometheus auto-discovery. |
 
-Click **Create** to complete the deployment.
-
-#### Method 2: kubectl
-
-The following manifest matches exactly what the UI submits. Replace all `<placeholder>` values before applying. `<chart-version>` is the version string from the chart detail page (e.g. `3.8.6-260609`).
-
-```yaml
-apiVersion: app.k8s.io/v1beta1
-kind: Application
-metadata:
-  name: <instance-name>
-  namespace: <target-namespace>
-  annotations:
-    app.cpaas.io/chart.source: "public-charts/zookeeper"
-    app.cpaas.io/chart.version: "<chart-version>"
-    app.cpaas.io/chart.values: '{"zookeeper":{"replicaCount":3,"resources":{"requests":{"cpu":"250m","memory":"256Mi"},"limits":{"cpu":"1","memory":"1Gi"}}},"persistence":{"enabled":true,"size":"5Gi","storageClass":"<storageClass>"},"env":{"ZOO_MAX_CLIENT_CNXNS":"60","ZOO_AUTOPURGE_PURGEINTERVAL":"24","ZOO_AUTOPURGE_SNAPRETAINCOUNT":"5"},"zookeeperExporter":{"enabled":true},"prometheus":{"serviceMonitor":{"enabled":true,"interval":"30s","scrapeTimeout":"30s"}}}'
-    cpaas.io/display-name: ""
-  labels:
-    sync-from-helmrequest: "true"
-```
-
-```bash
-kubectl apply -f zookeeper.yaml
-```
+Click **Create** to complete the deployment. The ZooKeeper StatefulSet will bring up 3 Pods sequentially, taking approximately 2–3 minutes.
 
 ### 3. Verify the Deployment
 
@@ -164,13 +137,12 @@ kubectl get servicemonitor -n <target-namespace> -l app.kubernetes.io/name=zooke
 
 ### Q1. Snapshot directory (/data) disk usage keeps growing
 
-Auto-purge is disabled by default (`ZOO_AUTOPURGE_PURGEINTERVAL=0`). Edit Values through the UI or update `chart.values` in the Application annotation:
+Auto-purge is disabled by default (`ZOO_AUTOPURGE_PURGEINTERVAL=0`). Edit Values through the UI:
 
-```json
-"env": {
-  "ZOO_AUTOPURGE_PURGEINTERVAL": "24",
-  "ZOO_AUTOPURGE_SNAPRETAINCOUNT": "5"
-}
+```yaml
+env:
+  ZOO_AUTOPURGE_PURGEINTERVAL: "24"
+  ZOO_AUTOPURGE_SNAPRETAINCOUNT: "5"
 ```
 
 ### Q2. ZooKeeper becomes unavailable during node maintenance (drain)
