@@ -152,7 +152,7 @@ kubectl get pod -n kube-system | grep ovn
 | `kube-ovn-controller` | 网络控制器 | ≥1 |
 
 :::warning
-所有组件都 Running 后再继续下一步。如果有 Pod 异常，可通过 `kubectl describe pod <pod-name> -n kube-system` 排查。
+所有组件都 Running 后再继续下一步。
 :::
 
 ### 步骤 6：卸载 Calico 和节点清理

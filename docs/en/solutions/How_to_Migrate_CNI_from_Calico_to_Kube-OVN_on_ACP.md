@@ -153,7 +153,7 @@ The following components should all be in `Running` state:
 | `kube-ovn-controller` | Network controller | ≥1 |
 
 :::warning
-Do not proceed to the next step until all components are Running. If any Pod is abnormal, troubleshoot with `kubectl describe pod <pod-name> -n kube-system`.
+Do not proceed to the next step until all components are Running.
 :::
 
 ### Step 6: Uninstall Calico and Clean Up Nodes
