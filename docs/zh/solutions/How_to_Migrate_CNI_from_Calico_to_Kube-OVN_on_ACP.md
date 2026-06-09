@@ -16,6 +16,10 @@ sourceSHA: pending
 集群当前使用 Calico 作为 CNI 插件，需要切换为 Kube-OVN。
 
 :::warning
+本文档仅适用于业务集群，不支持对 Global 集群进行 CNI 切换。
+:::
+
+:::warning
 本文档适用于 ACP 3.18 版本。
 :::
 
@@ -42,10 +46,6 @@ sourceSHA: pending
 :::
 
 ## 解决方案
-
-:::warning
-**注意集群上下文**：步骤 4 在 **Global 集群**上操作，其余步骤在**业务集群**上操作。操作前请确认当前 kubeconfig 上下文指向正确的集群。
-:::
 
 ### 步骤 1：记录当前网络配置
 

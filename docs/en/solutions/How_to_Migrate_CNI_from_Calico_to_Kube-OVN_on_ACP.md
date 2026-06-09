@@ -16,6 +16,10 @@ sourceSHA: pending
 The cluster currently uses Calico as the CNI plugin and needs to be migrated to Kube-OVN.
 
 :::warning
+This document only applies to business clusters. CNI migration on the Global cluster is not supported.
+:::
+
+:::warning
 This document applies to ACP 3.18.
 :::
 
@@ -42,10 +46,6 @@ This operation is irreversible. Make sure you have fully assessed the risks and 
 :::
 
 ## Solution
-
-:::warning
-**Cluster context**: Step 4 operates on the **Global cluster**, all other steps operate on the **business cluster**. Confirm your kubeconfig context points to the correct cluster before each step.
-:::
 
 ### Step 1: Record Current Network Configuration
 
