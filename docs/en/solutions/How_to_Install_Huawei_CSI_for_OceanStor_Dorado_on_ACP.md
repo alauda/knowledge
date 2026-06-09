@@ -5,6 +5,7 @@ kind:
    - Solution
 ProductsVersion:
    - 4.x
+id: KB260600012
 ---
 
 # How to Install and Configure Huawei CSI for OceanStor Dorado on ACP
