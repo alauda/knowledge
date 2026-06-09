@@ -54,7 +54,10 @@ This operation is irreversible. Make sure you have fully assessed the risks and 
 Before making any changes, record the network parameters from the current Subnet. These will be needed when configuring Kube-OVN in Step 4:
 
 ```bash
-# Record gateway and excludeIps from the default subnet
+# Confirm the subnet name
+kubectl get subnet
+
+# Record gateway and excludeIps from the default subnet (replace default-ipv4-ippool with the actual subnet name)
 kubectl get subnet default-ipv4-ippool -o jsonpath='{.spec.gateway}{"\n"}'
 kubectl get subnet default-ipv4-ippool -o jsonpath='{.spec.excludeIps}{"\n"}'
 ```
@@ -94,8 +97,8 @@ kubectl delete ips --all
 Label the control plane node with the OVN master label. Kube-OVN's central component will be scheduled to this node:
 
 ```bash
-# Replace <control-plane-node> with the actual control plane node name
-kubectl label node <control-plane-node> kube-ovn/role=master --overwrite
+# Label all control plane nodes
+kubectl label --overwrite node -l node-role.kubernetes.io/control-plane kube-ovn/role=master
 ```
 
 :::warning
@@ -226,7 +229,7 @@ kubectl get apprelease -n cpaas-system | grep cni-
 
 Expected output:
 
-```
+```text
 cni-kube-ovn   Synced   Ready    chart synced   94m      95m
 ```
 

@@ -53,7 +53,10 @@ sourceSHA: pending
 在执行变更前，先从当前 Subnet 中记录网络参数，后续步骤 4 配置 Kube-OVN 时需要用到：
 
 ```bash
-# 记录默认 subnet 的 gateway、excludeIps
+# 确认子网名称
+kubectl get subnet
+
+# 记录默认 subnet 的 gateway、excludeIps（以下示例使用 default-ipv4-ippool，请替换为实际子网名称）
 kubectl get subnet default-ipv4-ippool -o jsonpath='{.spec.gateway}{"\n"}'
 kubectl get subnet default-ipv4-ippool -o jsonpath='{.spec.excludeIps}{"\n"}'
 ```
@@ -93,8 +96,8 @@ kubectl delete ips --all
 为控制平面节点打上 OVN master 标签，Kube-OVN 的 central 组件将调度到该节点：
 
 ```bash
-# 替换 <control-plane-node> 为实际的控制平面节点名称
-kubectl label node <control-plane-node> kube-ovn/role=master --overwrite
+# 为所有控制平面节点添加标签
+kubectl label --overwrite node -l node-role.kubernetes.io/control-plane kube-ovn/role=master
 ```
 
 :::warning
@@ -225,7 +228,7 @@ kubectl get apprelease -n cpaas-system | grep cni-
 
 期望输出类似：
 
-```
+```text
 cni-kube-ovn   Synced   Ready    chart synced   94m      95m
 ```
 
