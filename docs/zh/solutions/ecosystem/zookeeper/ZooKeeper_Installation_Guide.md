@@ -4,7 +4,7 @@ kind:
 products:
   - Alauda Application Services
 ProductsVersion:
-  - '3.18,4.0,4.1'
+  - '4.1,4.2,4.3'
 id: KB260600001
 sourceSHA: 7d2f81026c34ec11cd8f74e448e94d2d4409e68bf58983fd1a88823d73755389
 ---
