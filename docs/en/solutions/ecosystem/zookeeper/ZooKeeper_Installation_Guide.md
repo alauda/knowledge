@@ -31,14 +31,14 @@ violet push \
   --clusters <business-cluster-name> \
   --platform-username <platform-admin-username> \
   --platform-password <platform-admin-password> \
-  zookeeper-v3.8.x-yyyy.tgz
+  zookeeper-v3.8.x-<build>.tgz
 ```
 
-Sign in to the platform as an administrator, go to **Marketplace > Chart Repositories > public-charts**, and confirm the ZooKeeper package (chart-zookeeper 3.8.6-xxxxxx) is visible.
+Sign in to the platform as an administrator, go to **Marketplace > Chart Repositories > public-charts**, and confirm the ZooKeeper package (`zookeeper.public-charts` / `3.8.6-<build>`) is visible and that the chart network protocol is **Dual-Stack**. The chart can be selected in IPv4, IPv6, and dual-stack clusters.
 
 ### 2. Deploy the Chart
 
-Go to **Marketplace > Chart Repositories > public-charts**, find **chart-zookeeper**, and click **View Details**. Then click **Create** in the top-right corner.
+Go to **Marketplace > Chart Repositories > public-charts**, find **zookeeper** in `public-charts`, and click **View Details**. Then click **Create** in the top-right corner.
 
 Fill in the basic information:
 
@@ -52,6 +52,7 @@ Key parameters:
 
 | Parameter | Default | Description |
 | --------- | ------- | ----------- |
+| `global.registry.address` | — | Image registry endpoint used by workloads. In multi-cluster ACP environments, explicitly set it to the target business cluster registry. |
 | `zookeeper.replicaCount` | `3` | Number of replicas. Must be odd. Use at least 3 for production. |
 | `persistence.size` | `5Gi` | PVC capacity per Pod. Adjust based on data volume. |
 | `persistence.storageClass` | — | StorageClass name. Leave empty for cluster default. |
@@ -61,17 +62,31 @@ Key parameters:
 | `zookeeperExporter.enabled` | `true` | Enable Prometheus Exporter sidecar (port 9141). |
 | `prometheus.serviceMonitor.enabled` | `true` | Create ServiceMonitor for Prometheus auto-discovery. |
 
+Example custom values for a multi-cluster environment:
+
+```yaml
+global:
+  registry:
+    address: <target-business-cluster-registry>
+zookeeper:
+  replicaCount: 3
+persistence:
+  enabled: true
+  storageClass: <storage-class>
+  size: 5Gi
+```
+
 Click **Create** to complete the deployment. The ZooKeeper StatefulSet will bring up 3 Pods sequentially, taking approximately 2–3 minutes.
 
 ### 3. Verify the Deployment
 
 ```bash
-kubectl get pod -n <target-namespace> -l app.kubernetes.io/name=zookeeper
+kubectl get pod -n <target-namespace> -l app=zookeeper,release=<instance-name>
 # Expected:
 # NAME           READY   STATUS    RESTARTS   AGE
-# zookeeper-0    2/2     Running   0          3m
-# zookeeper-1    2/2     Running   0          2m
-# zookeeper-2    2/2     Running   0          1m
+# <instance-name>-zookeeper-0    2/2     Running   0          3m
+# <instance-name>-zookeeper-1    2/2     Running   0          2m
+# <instance-name>-zookeeper-2    2/2     Running   0          1m
 ```
 
 **Health check**
@@ -94,9 +109,10 @@ done
 **Data read/write**
 
 ```bash
-kubectl exec -n <target-namespace> <instance-name>-zookeeper-0 -- zkCli.sh -server localhost:2181 create /test "hello"
-kubectl exec -n <target-namespace> <instance-name>-zookeeper-0 -- zkCli.sh -server localhost:2181 get /test
-kubectl exec -n <target-namespace> <instance-name>-zookeeper-0 -- zkCli.sh -server localhost:2181 delete /test
+TEST_PATH=/zk-smoke-$(date +%s)
+kubectl exec -n <target-namespace> <instance-name>-zookeeper-0 -- zkCli.sh -server localhost:2181 create ${TEST_PATH} "hello"
+kubectl exec -n <target-namespace> <instance-name>-zookeeper-0 -- zkCli.sh -server localhost:2181 get ${TEST_PATH}
+kubectl exec -n <target-namespace> <instance-name>-zookeeper-0 -- zkCli.sh -server localhost:2181 delete ${TEST_PATH}
 ```
 
 ## Client Connection
@@ -110,7 +126,7 @@ kubectl exec -n <target-namespace> <instance-name>-zookeeper-0 -- zkCli.sh -serv
 **Verify sidecar containers**
 
 ```bash
-kubectl get pod -n <target-namespace> -l app.kubernetes.io/name=zookeeper \
+kubectl get pod -n <target-namespace> -l app=zookeeper,release=<instance-name> \
   -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{range .spec.containers[*]}{.name}{","}{end}{"\n"}{end}'
 # Expected: each Pod shows zookeeper,zookeeper-exporter,
 ```
@@ -130,7 +146,15 @@ curl -s http://localhost:9141/metrics | grep -E "^zk_(up|num_alive_connections|o
 **Verify ServiceMonitor**
 
 ```bash
-kubectl get servicemonitor -n <target-namespace> -l app.kubernetes.io/name=zookeeper
+kubectl get servicemonitor -n <target-namespace> -l app=zookeeper,release=<instance-name>
+```
+
+## Cleanup
+
+If this is a test deployment, delete the application from the platform and then remove the remaining PVCs explicitly:
+
+```bash
+kubectl delete pvc -n <target-namespace> -l app=zookeeper,release=<instance-name>
 ```
 
 ## FAQ
