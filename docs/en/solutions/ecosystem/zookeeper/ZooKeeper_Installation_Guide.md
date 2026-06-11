@@ -83,8 +83,7 @@ persistence:
   enabled: true
   storageClass: <storage-class>
   size: 5Gi
-  datalog:
-    size: 5Gi
+  accessMode: ReadWriteOnce
 metrics:
   enabled: true
   serviceMonitor:
