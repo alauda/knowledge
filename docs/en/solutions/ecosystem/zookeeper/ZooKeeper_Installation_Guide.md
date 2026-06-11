@@ -84,8 +84,9 @@ persistence:
   storageClass: <storage-class>
   size: 5Gi
   accessMode: ReadWriteOnce
-metrics:
+zookeeperExporter:
   enabled: true
+prometheus:
   serviceMonitor:
     enabled: true
 ```
@@ -209,10 +210,10 @@ zk_up 1
 ### 3. Confirm ServiceMonitor
 
 ```bash
-kubectl -n ${NAMESPACE} get servicemonitors.monitoring.coreos.com -l app=zookeeper,release=${INSTANCE}
+kubectl -n ${NAMESPACE} get servicemonitors.monitoring.coreos.com ${INSTANCE}-exporter
 ```
 
-Expected result: a ServiceMonitor exists for the current instance.
+Expected result: the `${INSTANCE}-exporter` ServiceMonitor exists for the current instance.
 
 ## Change Validation
 
