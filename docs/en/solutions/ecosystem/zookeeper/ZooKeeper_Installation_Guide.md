@@ -8,167 +8,242 @@ ProductsVersion:
 id: KB260600001
 ---
 
-# ZooKeeper Installation Guide
+# ZooKeeper 3.8.6 Installation Guide
 
 ## Overview
 
-ZooKeeper is a distributed coordination service used for maintaining configuration information, naming, providing distributed synchronization, and group services. This guide explains how to deploy a ZooKeeper 3.8.6 cluster on Alauda Container Platform (ACP) using the Helm Chart from the Alauda application catalog.
+ZooKeeper is a distributed coordination service used for configuration management, naming, distributed synchronization, and group services. This guide describes how to upload the ZooKeeper 3.8.6 plugin package, create a ZooKeeper instance from the ACP Marketplace, validate the deployment, check monitoring, and clean up test resources.
 
 ## Prerequisites
 
-- A StorageClass that supports dynamic provisioning (each Pod requires a dedicated PVC)
-- The `violet` CLI downloaded from **App Store > App Onboarding**, matching your cluster version
+- A target project and namespace have been created, and the namespace belongs to the target business cluster.
+- A StorageClass that supports dynamic provisioning is available. Each ZooKeeper Pod creates dedicated PVCs.
+- Business cluster nodes can access the platform image registry.
+- The `violet` CLI is downloaded from **App Store > App Onboarding** and matches the target platform version.
 
 ## Installation
 
-### 1. Upload the Material Package
+### 1. Obtain the Plugin Package
 
-Push the ZooKeeper artifact to the target business cluster:
+Download the ZooKeeper 3.8.6 plugin package from Alauda Cloud. The package file name is determined by the Alauda Cloud page and this guide does not depend on a fixed build number.
+
+### 2. Upload the Plugin Package
+
+If ZooKeeper 3.8.6 has not been uploaded to the target platform, use `violet` to push the plugin package to the target platform and business cluster:
 
 ```bash
-violet push \
-  --platform-address <platform-address> \
-  --clusters <business-cluster-name> \
-  --platform-username <platform-admin-username> \
-  --platform-password <platform-admin-password> \
-  zookeeper-v3.8.x-<build>.tgz
+violet push   --platform-address <platform-address>   --clusters <business-cluster-name>   --platform-username <platform-admin-username>   --platform-password <platform-admin-password>   <zookeeper-plugin-package>.tgz
 ```
 
-Sign in to the platform as an administrator, go to **Marketplace > Chart Repositories > public-charts**, and confirm the ZooKeeper package (`zookeeper.public-charts` / `3.8.6-<build>`) is visible and that the chart network protocol is **Dual-Stack**. The chart can be selected in IPv4, IPv6, and dual-stack clusters.
+If the plugin package has already been uploaded, skip this step and continue with the upload confirmation.
 
-### 2. Deploy the Chart
+### 3. Confirm the Upload
 
-Go to **Marketplace > Chart Repositories > public-charts**, find **zookeeper** in `public-charts`, and click **View Details**. Then click **Create** in the top-right corner.
+Sign in to the platform as an administrator. Go to **Marketplace > Chart Repositories > public-charts**, search for ZooKeeper, and confirm that `middleware/zookeeper/chart-zookeeper` is visible. Select the uploaded ZooKeeper 3.8.6 version.
+
+### 4. Prepare Deployment Parameters
+
+| Parameter | Example | Description |
+| --------- | ------- | ----------- |
+| `<project>` | `middleware-project` | Target project. |
+| `<namespace>` | `middleware` | Target namespace in the business cluster. |
+| `<instance>` | `zookeeper` | ZooKeeper instance name. |
+| `<storage-class>` | `topolvm` | Available StorageClass in the target business cluster. |
+| `<registry-address>` | `<platform-registry>` | Registry address used by business Pods to pull images. |
+
+### 5. Confirm Key Values
+
+- `persistence` must be a top-level field. Do not configure it as `zookeeper.persistence`.
+- In multi-cluster environments, explicitly set `global.registry.address` to a registry address reachable from the target business cluster.
+- Keep `zookeeper.replicaCount` odd. Use at least 3 replicas for production.
+- Adjust PVC capacity and resource requests or limits based on business capacity requirements.
+- Confirm the snapshot auto-purge policy before production use to avoid long-term disk growth.
+
+### 6. Create the ZooKeeper Instance
+
+Go to **Marketplace > Chart Repositories > public-charts**, find `middleware/zookeeper/chart-zookeeper`, select the uploaded ZooKeeper 3.8.6 version, and click **Create**.
 
 Fill in the basic information:
 
-- **Name**: instance name, e.g. `zookeeper`
-- **Project / Namespace**: target project and namespace
-- **Chart Version**: select the latest version
+- **Name**: instance name, for example `zookeeper`
+- **Display Name**: usually the same as the instance name
+- **Project**: target project
+- **Namespace**: target namespace in the business cluster
+- **Version**: uploaded ZooKeeper 3.8.6 version
 
-Switch to the **YAML** tab in the **Values** section and enter custom parameters in the **Custom** editor on the left.
-
-Key parameters:
-
-| Parameter | Default | Description |
-| --------- | ------- | ----------- |
-| `global.registry.address` | — | Image registry endpoint used by workloads. In multi-cluster ACP environments, explicitly set it to the target business cluster registry. |
-| `zookeeper.replicaCount` | `3` | Number of replicas. Must be odd. Use at least 3 for production. |
-| `persistence.size` | `5Gi` | PVC capacity per Pod. Adjust based on data volume. |
-| `persistence.storageClass` | — | StorageClass name. Leave empty for cluster default. |
-| `env.ZOO_MAX_CLIENT_CNXNS` | `60` | Maximum client connections per IP. |
-| `env.ZOO_AUTOPURGE_PURGEINTERVAL` | `0` | Snapshot auto-purge interval (hours). **Set to `24` for production.** |
-| `env.ZOO_AUTOPURGE_SNAPRETAINCOUNT` | `3` | Snapshots to retain. Use `5` with auto-purge. |
-| `zookeeperExporter.enabled` | `true` | Enable Prometheus Exporter sidecar (port 9141). |
-| `prometheus.serviceMonitor.enabled` | `true` | Create ServiceMonitor for Prometheus auto-discovery. |
-
-Example custom values for a multi-cluster environment:
+Switch to the **YAML** tab in the **Values** section and replace the Custom values with environment-specific settings:
 
 ```yaml
 global:
   registry:
-    address: <target-business-cluster-registry>
+    address: <registry-address>
 zookeeper:
   replicaCount: 3
 persistence:
   enabled: true
   storageClass: <storage-class>
   size: 5Gi
+  datalog:
+    size: 5Gi
+metrics:
+  enabled: true
+  serviceMonitor:
+    enabled: true
 ```
 
-Click **Create** to complete the deployment. The ZooKeeper StatefulSet will bring up 3 Pods sequentially, taking approximately 2–3 minutes.
+Click **Create**. The platform creates an Application and HelmRequest named `<instance>`. The StatefulSet, Pods, Services, and related resources also use `<instance>` as the resource name prefix, for example `<instance>-0`, `<instance>`, and `<instance>-headless`.
 
-### 3. Verify the Deployment
+The ZooKeeper StatefulSet starts Pods sequentially. A 3-node cluster usually takes about 2 to 5 minutes to become ready. The actual time depends on image pulling, PVC binding, and scheduling.
+
+## Deployment Validation
+
+Set variables for the validation commands:
 
 ```bash
-kubectl get pod -n <target-namespace> -l app=zookeeper,release=<instance-name>
-# Expected:
-# NAME           READY   STATUS    RESTARTS   AGE
-# <instance-name>-zookeeper-0    2/2     Running   0          3m
-# <instance-name>-zookeeper-1    2/2     Running   0          2m
-# <instance-name>-zookeeper-2    2/2     Running   0          1m
+export NAMESPACE=<namespace>
+export INSTANCE=<instance>
 ```
 
-**Health check**
+### 1. Check HelmRequest and Application
 
 ```bash
-kubectl exec -n <target-namespace> <instance-name>-zookeeper-0 -- sh -c "echo ruok | nc 127.0.0.1 2181"
-# Expected: imok
+kubectl -n ${NAMESPACE} get helmrequests.app.alauda.io ${INSTANCE}
+kubectl -n ${NAMESPACE} get applications.app.k8s.io ${INSTANCE} -o jsonpath='{.status.state}{"
+"}'
 ```
 
-**Verify cluster election**
+Expected result:
+
+- The HelmRequest exists and has synced successfully.
+- The Application `status.state` is `Running`.
+
+### 2. Check Pods, Services, and PVCs
+
+```bash
+kubectl -n ${NAMESPACE} get pod,sts,svc,pvc -o wide | grep ${INSTANCE}
+```
+
+Expected result:
+
+- StatefulSet `READY` is `3/3`.
+- `${INSTANCE}-0`, `${INSTANCE}-1`, and `${INSTANCE}-2` are `2/2 Running`.
+- PVCs are `Bound`.
+- Services include `${INSTANCE}` and `${INSTANCE}-headless`.
+
+## Functional Validation
+
+### 1. Health Check
+
+```bash
+kubectl -n ${NAMESPACE} exec ${INSTANCE}-0 -c zookeeper --   sh -c 'echo ruok | nc 127.0.0.1 2181'
+```
+
+Expected output:
+
+```text
+imok
+```
+
+### 2. Verify Cluster Election
 
 ```bash
 for i in 0 1 2; do
-  echo "Pod-${i}: $(kubectl exec -n <target-namespace> <instance-name>-zookeeper-${i} -- \
-    sh -c "echo mntr | nc 127.0.0.1 2181 | grep zk_server_state")"
+  echo "${INSTANCE}-${i}"
+  kubectl -n ${NAMESPACE} exec ${INSTANCE}-${i} -c zookeeper --     sh -c 'echo mntr | nc 127.0.0.1 2181 | grep zk_server_state'
 done
-# Expected: exactly 1 leader and 2 follower
 ```
 
-**Data read/write**
+Expected result: exactly one leader and two followers.
+
+### 3. Verify Data Read and Write
 
 ```bash
 TEST_PATH=/zk-smoke-$(date +%s)
-kubectl exec -n <target-namespace> <instance-name>-zookeeper-0 -- zkCli.sh -server localhost:2181 create ${TEST_PATH} "hello"
-kubectl exec -n <target-namespace> <instance-name>-zookeeper-0 -- zkCli.sh -server localhost:2181 get ${TEST_PATH}
-kubectl exec -n <target-namespace> <instance-name>-zookeeper-0 -- zkCli.sh -server localhost:2181 delete ${TEST_PATH}
+kubectl -n ${NAMESPACE} exec ${INSTANCE}-0 -c zookeeper --   zkCli.sh -server ${INSTANCE}:2181 create ${TEST_PATH} hello
+kubectl -n ${NAMESPACE} exec ${INSTANCE}-0 -c zookeeper --   zkCli.sh -server ${INSTANCE}:2181 get ${TEST_PATH}
+kubectl -n ${NAMESPACE} exec ${INSTANCE}-0 -c zookeeper --   zkCli.sh -server ${INSTANCE}:2181 delete ${TEST_PATH}
 ```
+
+Expected result: create succeeds, get returns `hello`, and delete completes without error.
 
 ## Client Connection
 
-```
-<instance-name>-zookeeper.<target-namespace>.svc.cluster.local:2181
+For clients in the same namespace, use the client Service:
+
+```text
+${INSTANCE}:2181
+${INSTANCE}.${NAMESPACE}.svc.cluster.local:2181
 ```
 
-## Monitoring
+To connect to specific ensemble members, use the headless Service:
 
-**Verify sidecar containers**
+```text
+${INSTANCE}-0.${INSTANCE}-headless.${NAMESPACE}.svc.cluster.local:2181
+${INSTANCE}-1.${INSTANCE}-headless.${NAMESPACE}.svc.cluster.local:2181
+${INSTANCE}-2.${INSTANCE}-headless.${NAMESPACE}.svc.cluster.local:2181
+```
+
+## Monitoring Validation
+
+### 1. Confirm Exporter Sidecar Containers
 
 ```bash
-kubectl get pod -n <target-namespace> -l app=zookeeper,release=<instance-name> \
-  -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{range .spec.containers[*]}{.name}{","}{end}{"\n"}{end}'
-# Expected: each Pod shows zookeeper,zookeeper-exporter,
+kubectl -n ${NAMESPACE} get pod -l app=zookeeper,release=${INSTANCE}   -o jsonpath='{range .items[*]}{.metadata.name}{"	"}{range .spec.containers[*]}{.name}{","}{end}{"
+"}{end}'
 ```
 
-**Query metrics**
+Expected result: each Pod includes `zookeeper` and `zookeeper-exporter` containers.
+
+### 2. Query Exporter Metrics
 
 ```bash
-kubectl port-forward -n <target-namespace> pod/<instance-name>-zookeeper-0 9141:9141 &
-curl -s http://localhost:9141/metrics | grep -E "^zk_(up|num_alive_connections|outstanding_requests|znode_count)"
-# Expected:
-# zk_up 1
-# zk_num_alive_connections 3
-# zk_outstanding_requests 0
-# zk_znode_count 5
+kubectl -n ${NAMESPACE} port-forward pod/${INSTANCE}-0 9141:9141 &
+curl -s http://127.0.0.1:9141/metrics | grep '^zk_up '
 ```
 
-**Verify ServiceMonitor**
+Expected result:
+
+```text
+zk_up 1
+```
+
+### 3. Confirm ServiceMonitor
 
 ```bash
-kubectl get servicemonitor -n <target-namespace> -l app=zookeeper,release=<instance-name>
+kubectl -n ${NAMESPACE} get servicemonitors.monitoring.coreos.com -l app=zookeeper,release=${INSTANCE}
+```
+
+Expected result: a ServiceMonitor exists for the current instance.
+
+## Change Validation
+
+If you need to change the replica count, keep the replica count odd. Validate scaling in a test environment before production use.
+
+After editing Values in the platform UI and saving the application, check the rollout and then repeat the election and data read/write validation:
+
+```bash
+kubectl -n ${NAMESPACE} rollout status statefulset/${INSTANCE} --timeout=15m
+kubectl -n ${NAMESPACE} get pod -l app=zookeeper,release=${INSTANCE}
 ```
 
 ## Cleanup
 
-If this is a test deployment, delete the application from the platform and then remove the remaining PVCs explicitly:
+If this is a test deployment, delete the application from the platform UI. After deletion, confirm that Application, HelmRequest, StatefulSet, Pods, Services, PVCs, and ServiceMonitor have been cleaned up.
 
 ```bash
-kubectl delete pvc -n <target-namespace> -l app=zookeeper,release=<instance-name>
+kubectl -n ${NAMESPACE} get   applications.app.k8s.io,helmrequests.app.alauda.io,sts,pod,svc,pvc,servicemonitors.monitoring.coreos.com   | grep ${INSTANCE}
+
+kubectl -n ${NAMESPACE} delete pvc -l app=zookeeper,release=${INSTANCE}
 ```
 
 ## FAQ
 
-### Q1. Snapshot directory (/data) disk usage keeps growing
+### Snapshot directory keeps growing
 
-Auto-purge is disabled by default (`ZOO_AUTOPURGE_PURGEINTERVAL=0`). Edit Values through the UI:
+ZooKeeper continuously writes transaction logs and snapshots. For production environments, enable auto-purge according to business requirements to avoid filling the data disk.
 
 ```yaml
 env:
   ZOO_AUTOPURGE_PURGEINTERVAL: "24"
   ZOO_AUTOPURGE_SNAPRETAINCOUNT: "5"
 ```
-
-### Q2. ZooKeeper becomes unavailable during node maintenance (drain)
-
-In a 3-node cluster, losing more than 1 Pod simultaneously breaks quorum. The Chart ships with a PodDisruptionBudget (`maxUnavailable=1`), so `kubectl drain` automatically waits for each Pod to recover before evicting the next. If issues occur, uncordon the node first and wait for Pods to recover before retrying.
