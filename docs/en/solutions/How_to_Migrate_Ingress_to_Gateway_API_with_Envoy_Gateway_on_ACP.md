@@ -293,6 +293,7 @@ Do not move annotations blindly. Decide which Gateway API resource owns the beha
 | Client TLS version and cipher settings | `ClientTrafficPolicy.spec.tls` |
 | Backend timeout, retry, and load balancing | `HTTPRoute` rule options or `BackendTrafficPolicy`, depending on required scope |
 | Header-based consistent hash | `BackendTrafficPolicy.spec.loadBalancer` with consistent hash by header, not `HTTPRoute.rules[].sessionPersistence.type: Header` |
+| Headers containing underscores | `ClientTrafficPolicy.spec.withUnderscoresAction` when the old entry accepted such headers and clients still send them |
 | Backend HTTPS re-encrypt | Envoy Gateway `Backend` resource referenced by the `HTTPRoute`; put TLS settings on the `Backend` or attach `BackendTLSPolicy` to that `Backend` when separate policy ownership is needed |
 | Cross-namespace certificate reference | `ReferenceGrant` in the namespace that owns the `Secret` |
 | TLS passthrough | `Gateway` TLS listener with `tls.mode: Passthrough` plus `TLSRoute`, not `HTTPRoute` |
@@ -358,6 +359,47 @@ spec:
         - name: demo-api
           port: 8080
 ```
+
+Example header-based consistent hash:
+
+```yaml
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: BackendTrafficPolicy
+metadata:
+  name: demo-api-header-hash
+  namespace: demo
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      name: demo-api
+  loadBalancer:
+    type: ConsistentHash
+    consistentHash:
+      type: Header
+      header:
+        name: X-Session-Id
+```
+
+This is the correct replacement when the old Ingress or ALB selected upstreams by hashing a request header value, such as ingress-nginx `upstream-hash-by: "$http_x_session_id"`. Do not map that behavior to `HTTPRoute.rules[].sessionPersistence.type: Header`. `HTTPRoute` header session persistence is Envoy stateful session behavior: Envoy writes a session token in a response header, and the client must send that token back so Envoy can try to return to the previous upstream host.
+
+Example policy for headers containing underscores:
+
+```yaml
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: ClientTrafficPolicy
+metadata:
+  name: allow-underscore-headers
+  namespace: project-gateway
+spec:
+  targetRef:
+    group: gateway.networking.k8s.io
+    kind: Gateway
+    name: project-gateway
+  withUnderscoresAction: Allow
+```
+
+Envoy Gateway follows Envoy's default behavior and rejects request headers containing underscores unless this behavior is changed. Use `Allow` only when existing clients require those headers. Use `DropHeader` when the request should continue but the underscored header should not be forwarded.
 
 Example regex capture rewrite with an Envoy Gateway extension:
 
