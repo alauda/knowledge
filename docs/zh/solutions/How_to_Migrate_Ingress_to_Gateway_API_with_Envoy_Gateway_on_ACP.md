@@ -8,14 +8,14 @@ ProductsVersion:
 tags:
   - LB
 id: KB260600056
-sourceSHA: dcb90438d26efca3a37d4e52f1a7735297aad540a9a94316de13b85f83cd6b82
+sourceSHA: 2640af3da000629d99d6d6592f1da25e7575d7bb5e366fa2990b63f0e9bb7e9e
 ---
 
 # 如何在 ACP 上使用 Envoy Gateway 将 Ingress 迁移到 Gateway API
 
 ## 概述
 
-本指南描述了如何将 Kubernetes `Ingress` 流量规则迁移到 Alauda Container Platform 上由 Envoy Gateway 支持的 Gateway API 资源。
+本指南描述了如何将 Kubernetes `Ingress` 流量规则迁移到基于 Envoy Gateway 的 Gateway API 资源，适用于 Alauda 容器平台。
 
 将迁移视为一种保持行为不变的变更，而不是机械地重命名 YAML。Gateway API 模型将流量入口、路由和策略分离为不同的资源：
 
@@ -35,10 +35,10 @@ sourceSHA: dcb90438d26efca3a37d4e52f1a7735297aad540a9a94316de13b85f83cd6b82
 
 - 一个 Ingress 控制器条目映射到一个 `Gateway`。如果旧的流量入口是一个 ingress-nginx 实例或一个 ALB 实例，则创建一个 `Gateway` 来替换该条目。
 - 默认情况下，一个 Kubernetes `Ingress` 映射到一个 `HTTPRoute`。该路由通过 `parentRefs` 附加到替换的 `Gateway`。
-- Ingress 注释不会成为 `Gateway` 上的注释。将它们转换为 `HTTPRoute` 过滤器或与旧 `Ingress` 具有相同范围的 Envoy Gateway 策略和扩展资源。
+- Ingress 注释不会成为 `Gateway` 的注释。将它们转换为 `HTTPRoute` 过滤器或与旧 `Ingress` 具有相同范围的 Envoy Gateway 策略和扩展资源。
 - 后端 `Service` 引用仅在上游协议为普通 HTTP 时保持为 `Service` backendRefs。如果旧 Ingress 使用 HTTPS 的后端协议，则将该上游迁移到 Envoy Gateway `Backend` 资源，并从 `HTTPRoute` 引用该 `Backend`。
 
-此映射保持第一次迁移的可审查性：将一个旧控制器条目与一个新 `Gateway` 进行比较，将每个旧 `Ingress` 与一个新 `HTTPRoute` 进行比较。在验证行为后，路由仍然可以拆分或合并以进行长期所有权。
+这种映射使第一次迁移可审查：将一个旧控制器条目与一个新 `Gateway` 进行比较，将每个旧 `Ingress` 与一个新 `HTTPRoute` 进行比较。在验证行为后，路由仍然可以拆分或合并以实现长期所有权。
 
 ## 先决条件
 
@@ -46,9 +46,9 @@ sourceSHA: dcb90438d26efca3a37d4e52f1a7735297aad540a9a94316de13b85f83cd6b82
 2. 已安装 Envoy Gateway Operator。
 3. 已创建 `EnvoyGatewayCtl`，并接受其生成的 `GatewayClass`。
 4. `kubectl` 可以访问目标集群。
-5. 在迁移之前，现有的 `Ingress`、`Service`、TLS `Secret` 和后端应用程序都是健康的。
-6. 在切换期间可以控制 DNS、外部负载均衡器或 MetalLB VIP 的更改。
-7. 如果前端负载均衡器已经拥有外部 IP，则在迁移之前已知其监听器、后端池、后端端口、健康检查和流量转移方法。
+5. 在迁移之前，现有的 `Ingress`、`Service`、TLS `Secret` 和后端应用程序处于健康状态。
+6. 在切换期间，可以控制 DNS、外部负载均衡器或 MetalLB VIP 的更改。
+7. 如果前端负载均衡器已经拥有外部 IP，则在迁移之前已知其监听器、后端池、后端端口、健康检查和流量切换方法。
 
 ## 推荐目标布局
 
@@ -57,12 +57,12 @@ sourceSHA: dcb90438d26efca3a37d4e52f1a7735297aad540a9a94316de13b85f83cd6b82
 对于 Gateway 数据平面：
 
 - 当集群具有 LoadBalancer 提供者（如 MetalLB）时，优先使用 `EnvoyProxy.spec.provider.kubernetes.envoyService.type: LoadBalancer`。
-- 当 Gateway 需要稳定的 VIP 时，在 `EnvoyProxy` 服务配置上使用 MetalLB 注释。如果希望重用先前的 VIP，请先从旧的 LoadBalancer Service 中释放该 VIP。MetalLB 不能同时将相同的 VIP 分配给旧的入口和新的 Gateway 服务。
-- 对于私有 Gateways，使用 `allowedRoutes.namespaces.from: Same`。
-- 对于共享 Gateways，使用 `allowedRoutes.namespaces.from: Selector`，以便只有预期的项目命名空间可以附加路由。
+- 当 Gateway 需要稳定的 VIP 时，在 `EnvoyProxy` 服务配置中使用 MetalLB 注释。如果您想重用先前的 VIP，请先从旧的 LoadBalancer 服务中释放该 VIP。MetalLB 不能同时将相同的 VIP 分配给旧入口和新 Gateway 服务。
+- 对于私有 Gateway，使用 `allowedRoutes.namespaces.from: Same`。
+- 对于共享 Gateway，使用 `allowedRoutes.namespaces.from: Selector`，以便只有预期的项目命名空间可以附加路由。
 - 仅在没有 LoadBalancer 提供者时使用 `NodePort`，并确保用户访问 NodePort 值，而不是监听器端口。
-- 仅在特殊兼容性或性能情况下使用 `hostNetwork`，并将 Envoy pods 固定到选定的节点以避免端口冲突。
-- 如果前端负载均衡器已经暴露稳定的外部 IP，请将该外部 IP 保留在前端负载均衡器上，仅通过更改其后端目标进行迁移。Gateway 数据平面可以在前端负载均衡器后面使用 `hostNetwork` 或 `NodePort`。
+- 仅在特殊兼容性或性能情况下使用 `hostNetwork`，并将 Envoy pod 固定到选定节点以避免端口冲突。
+- 如果前端负载均衡器已经暴露了稳定的外部 IP，请将该外部 IP 保留在前端负载均衡器上，并通过仅更改其后端目标进行迁移。Gateway 数据平面可以在前端负载均衡器后面使用 `hostNetwork` 或 `NodePort`。
 
 示例共享 Gateway：
 
@@ -146,15 +146,15 @@ kubectl get ingress -n "${APP_NAMESPACE}" -o yaml > ingress-source.yaml
 
 对于每个 Ingress，记录：
 
-| 区域             | 检查内容                                                                                                                                                                                                                                |
-| ---------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 入口            | Ingress 类、外部 VIP、DNS 名称、HTTP 和 HTTPS 端口                                                                                                                                                                                  |
-| TLS              | `spec.tls[].hosts`、`spec.tls[].secretName`、直通或终止行为                                                                                                                                                             |
-| 路由          | 主机名、路径值、`pathType`、后端服务和端口                                                                                                                                                                                 |
-| 注释      | 重写、重定向、超时、CORS、身份验证、头部修改、会话亲和性、速率限制、主体大小、白名单、WAF、自定义片段                                                                                              |
-| 后端协议 | 后端服务端口是否期望 HTTP、HTTPS、gRPC、TCP 或 TLS 直通。将 `nginx.ingress.kubernetes.io/backend-protocol: "HTTPS"` 视为创建 Envoy Gateway `Backend` 的信号，而不是普通的 `Service` backendRef。 |
-| 优先级       | 重叠路径，如 `/`、`/api`、`/api/v1` 和正则表达式风格的路径                                                                                                                                                                      |
-| 测试            | 代表性的 curl 请求、预期状态码、头部、重定向和响应主体                                                                                                                                                 |
+| 区域             | 检查内容                                                                                                                                                                                                                                 |
+| ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 入口            | Ingress 类、外部 VIP、DNS 名称、HTTP 和 HTTPS 端口                                                                                                                                                                                           |
+| TLS              | `spec.tls[].hosts`、`spec.tls[].secretName`、直通或终止行为                                                                                                                                                                                |
+| 路由            | 主机名、路径值、`pathType`、后端服务和端口                                                                                                                                                                                                  |
+| 注释            | 重写、重定向、超时、CORS、身份验证、头部修改、会话亲和性、速率限制、主体大小、白名单、WAF、自定义片段                                                                                                                                        |
+| 后端协议        | 后端服务端口是否期望 HTTP、HTTPS、gRPC、TCP 或 TLS 直通。将 `nginx.ingress.kubernetes.io/backend-protocol: "HTTPS"` 视为创建 Envoy Gateway `Backend` 的信号，而不是普通的 `Service` backendRef。                                   |
+| 优先级          | 重叠路径，如 `/`、`/api`、`/api/v1` 和正则表达式样式路径                                                                                                                                                                                 |
+| 测试            | 代表性的 curl 请求、预期状态码、头部、重定向和响应主体                                                                                                                                                                                    |
 
 在转换任何内容之前保存一个简单的请求测试列表：
 
@@ -194,10 +194,10 @@ ingress2gateway print \
   --output=yaml > gateway-draft.yaml
 ```
 
-仔细检查命令输出和 `gateway-draft.yaml`。`ingress2gateway` 对于初始草稿非常有用，但它不是完整的兼容性检查器：
+仔细检查命令输出和 `gateway-draft.yaml`。`ingress2gateway` 对于初步草稿非常有用，但它不是完整的兼容性检查器：
 
 - 它报告未翻译的字段或不支持的功能。
-- 它不打算直接将 Ingress 注释复制到 Gateway API。
+- 它不打算将 Ingress 注释直接复制到 Gateway API。
 - 仅当可以通过 Gateway API 或受支持的发射器表示时，才支持特定于提供者的行为。
 - 对于 ACP Envoy Gateway，您仍然需要将生成的资源与集群中使用的目标 `GatewayClass`、`Gateway`、`EnvoyProxy` 和策略布局对齐。
 
@@ -209,16 +209,16 @@ ingress2gateway print \
 | -------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
 | `spec.ingressClassName` 或 `kubernetes.io/ingress.class`                   | `Gateway.spec.gatewayClassName`                                                                                                                |
 | `spec.rules[].host`                                                        | `Gateway.spec.listeners[].hostname` 和 `HTTPRoute.spec.hostnames`                                                                             |
-| HTTP 监听器                                                              | `Gateway` 监听器，`protocol: HTTP`，通常为端口 `80`                                                                                    |
-| 带 TLS 终止的 HTTPS 监听器                                        | `Gateway` 监听器，`protocol: HTTPS`，端口 `443`，`tls.mode: Terminate`                                                               |
+| HTTP 监听器                                                              | `Gateway` 监听器，协议为 `HTTP`，通常为端口 `80`                                                                                               |
+| 带 TLS 终止的 HTTPS 监听器                                                | `Gateway` 监听器，协议为 `HTTPS`，端口 `443`，并且 `tls.mode: Terminate`                                                                      |
 | `spec.tls[].secretName`                                                    | `Gateway.spec.listeners[].tls.certificateRefs[]`                                                                                               |
 | `spec.rules[].http.paths[].path`                                           | `HTTPRoute.spec.rules[].matches[].path.value`                                                                                                  |
 | `pathType: Exact`                                                          | `HTTPRoute` 路径匹配 `type: Exact`                                                                                                           |
 | `pathType: Prefix`                                                         | `HTTPRoute` 路径匹配 `type: PathPrefix`                                                                                                      |
-| `pathType: ImplementationSpecific`                                         | 手动审核。仅在确认旧控制器行为后使用 `PathPrefix`、`Exact` 或 `RegularExpression`。                          |
-| `backend.service.name` 和 `backend.service.port` 与普通 HTTP 上游 | `HTTPRoute.spec.rules[].backendRefs[]` 指向 `Service`                                                                               |
-| `backend.service.name` 和 `backend.service.port` 与 HTTPS 上游      | Envoy Gateway `Backend` 资源从 `HTTPRoute.spec.rules[].backendRefs[]` 引用；不要将其留作普通 HTTP `Service` 后端 |
-| `defaultBackend`                                                           | 一个捕获所有的 `HTTPRoute`，通常为 `PathPrefix /`，附加到没有主机名的监听器                                                       |
+| `pathType: ImplementationSpecific`                                         | 手动审核。仅在确认旧控制器行为后使用 `PathPrefix`、`Exact` 或 `RegularExpression`。                                                              |
+| `backend.service.name` 和 `backend.service.port` 使用普通 HTTP 上游      | `HTTPRoute.spec.rules[].backendRefs[]` 指向 `Service`                                                                                       |
+| `backend.service.name` 和 `backend.service.port` 使用 HTTPS 上游         | Envoy Gateway `Backend` 资源从 `HTTPRoute.spec.rules[].backendRefs[]` 引用；不要将其留作普通 HTTP `Service` 后端。                             |
+| `defaultBackend`                                                           | 一个捕获所有的 `HTTPRoute`，通常为 `PathPrefix /`，附加到没有主机名的监听器上                                                                     |
 
 示例 `HTTPRoute`：
 
@@ -287,14 +287,15 @@ kubectl get httproute -n demo demo-web -o yaml
 | HTTP 到 HTTPS 重定向或路径重定向            | `HTTPRoute.rules[].filters[].requestRedirect`                                                                                                                                             |                                                                                                                                                                                                                                                                                                      |
 | 简单前缀重写                              | `HTTPRoute.rules[].filters[].urlRewrite` 使用 `ReplacePrefixMatch`                                                                                                                        |                                                                                                                                                                                                                                                                                                      |
 | 全路径重写                                  | `HTTPRoute.rules[].filters[].urlRewrite` 使用 `ReplaceFullPath`                                                                                                                           |                                                                                                                                                                                                                                                                                                      |
-| 正则表达式捕获重写，例如 \`/shop(/            | $)(.\*)`到`/$2\`                                                                                                                                                                          | 手动审核。标准 `HTTPRoute` `URLRewrite` 仅支持 `ReplaceFullPath` 和 `ReplacePrefixMatch`；无法表达任意捕获替换。当需要该行为时，使用 Envoy Gateway 扩展或策略资源，例如带有 `ReplaceRegexMatch` 的 `HTTPRouteFilter`。 |
+| 正则捕获重写，例如 \`/shop(/            | $)(.\*)`到`/$2\`                                                                                                                                                                          | 手动审核。标准 `HTTPRoute` `URLRewrite` 仅支持 `ReplaceFullPath` 和 `ReplacePrefixMatch`；它无法表达任意捕获替换。当需要该行为时，使用 Envoy Gateway 扩展或策略资源，例如 `HTTPRouteFilter`，与 `ReplaceRegexMatch`。 |
 | Cookie 到头部或其他动态值提取 | `EnvoyExtensionPolicy`，通常附加到选定的 `HTTPRoute` 对象，而不是整个 `Gateway`                                                                                         |                                                                                                                                                                                                                                                                                                      |
-| CORS                                               | `SecurityPolicy.spec.cors` 或 `HTTPRoute` CORS 过滤器（在支持的情况下）                                                                                                                     |                                                                                                                                                                                                                                                                                                      |
+| CORS                                               | `SecurityPolicy.spec.cors` 或 `HTTPRoute` CORS 过滤器（如支持）                                                                                                                     |                                                                                                                                                                                                                                                                                                      |
 | API 密钥身份验证                             | `SecurityPolicy.spec.apiKeyAuth`                                                                                                                                                          |                                                                                                                                                                                                                                                                                                      |
 | 客户端 TLS 版本和密码设置             | `ClientTrafficPolicy.spec.tls`                                                                                                                                                            |                                                                                                                                                                                                                                                                                                      |
 | 后端超时、重试和负载均衡         | `HTTPRoute` 规则选项或 `BackendTrafficPolicy`，具体取决于所需范围                                                                                                           |                                                                                                                                                                                                                                                                                                      |
-| 基于头部的一致哈希                       | `BackendTrafficPolicy.spec.loadBalancer` 通过头部进行一致哈希，而不是 `HTTPRoute.rules[].sessionPersistence.type: Header`                                                          |                                                                                                                                                                                                                                                                                                      |
-| 后端 HTTPS 重新加密                           | Envoy Gateway `Backend` 资源从 `HTTPRoute` 引用；在需要单独策略所有权时，将 TLS 设置放在 `Backend` 上或将 `BackendTLSPolicy` 附加到该 `Backend` |                                                                                                                                                                                                                                                                                                      |
+| 基于头部的一致哈希                       | `BackendTrafficPolicy.spec.loadBalancer` 通过头部的一致哈希，而不是 `HTTPRoute.rules[].sessionPersistence.type: Header`                                                          |                                                                                                                                                                                                                                                                                                      |
+| 包含下划线的头部                     | `ClientTrafficPolicy.spec.withUnderscoresAction` 当旧条目接受此类头部且客户端仍然发送它们时                                                                     |                                                                                                                                                                                                                                                                                                      |
+| 后端 HTTPS 重新加密                           | Envoy Gateway `Backend` 资源由 `HTTPRoute` 引用；在 `Backend` 上放置 TLS 设置或将 `BackendTLSPolicy` 附加到该 `Backend` 当需要单独的策略所有权时 |                                                                                                                                                                                                                                                                                                      |
 | 跨命名空间证书引用              | 在拥有 `Secret` 的命名空间中使用 `ReferenceGrant`                                                                                                                                  |                                                                                                                                                                                                                                                                                                      |
 | TLS 直通                                    | `Gateway` TLS 监听器，`tls.mode: Passthrough` 加上 `TLSRoute`，而不是 `HTTPRoute`                                                                                                      |                                                                                                                                                                                                                                                                                                      |
 
@@ -360,7 +361,48 @@ spec:
           port: 8080
 ```
 
-示例带有 Envoy Gateway 扩展的正则表达式捕获重写：
+示例基于头部的一致哈希：
+
+```yaml
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: BackendTrafficPolicy
+metadata:
+  name: demo-api-header-hash
+  namespace: demo
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      name: demo-api
+  loadBalancer:
+    type: ConsistentHash
+    consistentHash:
+      type: Header
+      header:
+        name: X-Session-Id
+```
+
+这是正确的替代方案，当旧 Ingress 或 ALB 根据请求头值进行哈希选择上游时，例如 ingress-nginx `upstream-hash-by: "$http_x_session_id"`。不要将该行为映射到 `HTTPRoute.rules[].sessionPersistence.type: Header`。`HTTPRoute` 头部会话持久性是 Envoy 有状态会话行为：Envoy 在响应头中写入会话令牌，客户端必须将该令牌发送回去，以便 Envoy 尝试返回到先前的上游主机。
+
+示例用于包含下划线的头部的策略：
+
+```yaml
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: ClientTrafficPolicy
+metadata:
+  name: allow-underscore-headers
+  namespace: project-gateway
+spec:
+  targetRef:
+    group: gateway.networking.k8s.io
+    kind: Gateway
+    name: project-gateway
+  withUnderscoresAction: Allow
+```
+
+Envoy Gateway 遵循 Envoy 的默认行为，并拒绝包含下划线的请求头，除非更改此行为。仅在现有客户端需要这些头部时使用 `Allow`。当请求应继续但不应转发下划线头部时，使用 `DropHeader`。
+
+示例带有正则捕获重写的 Envoy Gateway 扩展：
 
 ```yaml
 apiVersion: gateway.envoyproxy.io/v1alpha1
@@ -406,7 +448,7 @@ spec:
           port: 8080
 ```
 
-示例带有 Envoy Gateway `Backend` 资源的 HTTPS 后端：
+示例 HTTPS 后端与 Envoy Gateway `Backend` 资源：
 
 ```yaml
 apiVersion: envoy-gateway.alauda.io/v1
@@ -463,7 +505,7 @@ spec:
           name: secure-api
 ```
 
-`Backend.tls.caCertificateRefs` 引用的 CA 对象必须在键 `ca.crt` 中包含 CA 证书。仅在明确接受风险的情况下，在后端证书验证故意禁用的环境中使用 `insecureSkipVerify: true`。
+`Backend.tls.caCertificateRefs` 引用的 CA 对象必须在键 `ca.crt` 中包含 CA 证书。仅在明确接受风险的环境中使用 `insecureSkipVerify: true`，其中后端证书验证故意禁用。
 
 ## 第 5 章. 处理正则表达式和路径优先级
 
@@ -472,7 +514,7 @@ Gateway API 路径匹配比许多 Ingress 控制器行为更明确和严格。
 使用以下规则：
 
 1. 对于单个固定 API 路径，优先使用 `Exact`。
-2. 对于正常应用程序子树（如 `/api` 或 `/console`），优先使用 `PathPrefix`。
+2. 对于普通应用程序子树，如 `/api` 或 `/console`，优先使用 `PathPrefix`。
 3. 仅在旧 Ingress 需要正则表达式行为时使用 `RegularExpression`。
 4. 重新测试每个正则表达式规则，因为 Envoy Gateway 使用 RE2 风格的正则表达式。
 5. 当特定 API 路径与广泛的前端路径重叠时，使特定路径为 `Exact`，以便不会被更广泛的前缀或正则表达式路由遮蔽。
@@ -499,9 +541,9 @@ rules:
 
 ## 第 6 章. 计划在前端负载均衡器后平稳切换
 
-当前端负载均衡器已经拥有外部地址时，在迁移过程中不要移动外部 LB IP。保持公共或私有 LB 监听器不变，仅将后端池从旧的 Ingress 控制器节点切换到新的 Envoy Gateway 节点。
+当前端负载均衡器已经拥有外部地址时，在迁移期间不要移动外部 LB IP。保持公共或私有 LB 监听器不变，仅将后端池从旧的 Ingress 控制器节点切换到新的 Envoy Gateway 节点。
 
-使用以下模型：
+使用此模型：
 
 ```text
 client -> front load balancer external IP -> backend targets -> old ingress or Envoy Gateway
@@ -516,12 +558,12 @@ client -> front load balancer external IP -> backend targets -> old ingress or E
 | 前端             | 外部 IP、DNS 名称、监听器端口、TLS 终止或直通模式                                |
 | 旧后端池     | 节点 IP、后端端口、健康检查路径和端口、后端权重                                       |
 | Gateway 后端池 | 新节点 IP、后端端口、健康检查路径和端口                                                   |
-| 流量转移     | 前端负载均衡器是否支持禁用后端、权重、排水或立即池替换 |
-| 源地址       | 应用程序是否依赖于客户端源 IP、`X-Forwarded-*` 头或 PROXY 协议           |
+| 流量切换     | 前端负载均衡器是否支持禁用后端、权重、排水或立即池替换 |
+| 源地址       | 应用程序是否依赖于客户端源 IP、`X-Forwarded-*` 头部或 PROXY 协议           |
 
 ### 选项 A：并行 hostNetwork 和端口偏移
 
-这是最安全的 hostNetwork 模式，当旧的 Ingress 控制器仍绑定节点端口 `80` 和 `443` 时。Envoy Gateway 可以运行 `hostNetwork: true` 和默认特权端口偏移。监听器端口 `80` 在节点端口 `10080` 上访问，监听器端口 `443` 在节点端口 `10443` 上访问。
+这是最安全的 hostNetwork 模式，当旧的 Ingress 控制器仍然绑定节点端口 `80` 和 `443` 时。Envoy Gateway 可以运行 `hostNetwork: true` 和默认特权端口偏移。监听器端口 `80` 通过节点端口 `10080` 到达，监听器端口 `443` 通过节点端口 `10443` 到达。
 
 外部 LB IP 保持不变，因为仅更改前端负载均衡器后端端口。
 
@@ -556,11 +598,11 @@ spec:
 
 1. 为 Envoy Gateway 标记一组节点，例如 `gateway-role=envoy`。
 2. 部署 `Gateway`、`EnvoyProxy`、`HTTPRoute`、`Backend` 和策略资源。
-3. 通过向 Gateway 节点发送请求，直接测试新的数据平面，使用 `10080` 或 `10443` 端口和原始 Host 头。
-4. 将 Gateway 节点添加到前端负载均衡器后端池，后端端口为 `10080` 和 `10443`，如果负载均衡器支持，初始禁用或权重为 `0`。
+3. 通过将请求发送到 `10080` 或 `10443` 上的 Gateway 节点，使用原始主机头直接测试新的数据平面。
+4. 将 Gateway 节点添加到前端负载均衡器后端池，后端端口为 `10080` 和 `10443`，如果负载均衡器支持，最初禁用或权重为 `0`。
 5. 启用少量流量或一个低风险主机名。
 6. 在验证状态码、延迟、重写行为和后端 TLS 后，增加流量到 Gateway 后端池。
-7. 在 Gateway 为约定的观察窗口服务所有流量后，移除旧的 Ingress 后端池。
+7. 在 Gateway 为约定的观察窗口提供所有流量后，移除旧的 Ingress 后端池。
 
 回滚仅是前端负载均衡器操作：禁用或将 Gateway 后端池的权重设置为 `0`，并将流量恢复到旧的 Ingress 后端池。
 
@@ -612,16 +654,16 @@ spec:
 使用此选项，旧的 Ingress pod 和新的 Envoy pod 不能在同一节点上绑定相同的主机端口。因此，平稳迁移需要以下布局之一：
 
 - 使用单独的 Gateway 节点集。将这些节点添加到前端负载均衡器后端池，端口为 `80` 和 `443`，切换流量，然后移除旧的 Ingress 节点。
-- 如果没有可用的单独节点，首先从旧的 Ingress 后端池中排水或移除一个节点，停止该节点上的旧 Ingress pod，以便 `80` 和 `443` 端口可用，在该节点上调度 Envoy Gateway，验证后再将该节点添加回作为 Gateway 后端。
-- 如果既没有单独节点也没有逐节点排水，则在相同主机端口上无法完全平稳切换。使用端口偏移模式或计划一个短的维护窗口。
+- 如果没有单独的节点可用，首先从旧的 Ingress 后端池中排水或移除一个节点，停止该节点上的旧 Ingress pod，以便 `80` 和 `443` 端口可用，在该节点上调度 Envoy Gateway，验证它，然后将该节点重新添加为 Gateway 后端。
+- 如果既没有单独的节点，也没有逐节点排水，切换无法在相同的主机端口上完全平稳。使用端口偏移模式或计划短暂的维护窗口。
 
-### 选项 C：前端负载均衡器后面的 NodePort
+### 选项 C：在前端负载均衡器后使用 NodePort
 
 如果不需要 hostNetwork，将 Envoy Gateway 公开为 `NodePort`，并将前端负载均衡器指向分配的 NodePort 值。外部 LB IP 保持不变；仅更改后端目标端口。
 
 此模式避免了主机端口冲突，但后端端口位于 Kubernetes NodePort 范围内。除非 NodePort 值已明确分配给这些数字并且对于集群的 NodePort 范围有效，否则不要将前端负载均衡器配置为使用监听器端口 `80` 和 `443`。
 
-## 第 7 章. 切换前的验证
+## 第 7 章. 在切换前进行验证
 
 ### 第 1 步：验证资源状态
 
@@ -650,7 +692,7 @@ kubectl get svc -n project-gateway \
   -l gateway.envoyproxy.io/owning-gateway-name=project-gateway
 ```
 
-在 Gateway VIP、NodePort、hostNetwork 节点端口或前端负载均衡器金丝雀后端上运行记录的请求案例，同时保留原始 Host 头：
+在 Gateway VIP、NodePort、hostNetwork 节点端口或前端负载均衡器金丝雀后端上运行记录的请求案例，同时保留原始主机头：
 
 ```bash
 export GATEWAY_ADDRESS="192.0.2.20"
@@ -675,7 +717,7 @@ done < migration-cases.txt
 
 ### 第 3 步：在切换期间运行两个条目
 
-在新的 Gateway 路径通过功能检查之前，保持旧的 Ingress 活跃。通过更改 DNS、外部负载均衡器后端或 VIP 绑定进行切换，具体取决于您的环境。
+在新 Gateway 路径通过功能检查之前，保持旧 Ingress 活跃。通过根据您的环境更改 DNS、外部负载均衡器后端或 VIP 绑定来切换。
 
 在切换期间：
 
@@ -717,18 +759,18 @@ kubectl get ingress demo-web -n demo
 | TLS 证书未使用                            | 检查监听器 `certificateRefs`、Secret 命名空间、Secret 类型和跨命名空间引用的 `ReferenceGrant`                                                                                                            |                             |
 | 后端返回 503 或 TLS 错误                      | 检查后端协议，HTTPS 上游是否使用 `Backend` 而不是普通的 `Service` backendRef，使用时的 `BackendTLSPolicy`，CA 秘钥 `ca.crt` 和 SNI 主机名                                                   |                             |
 | 重定向循环                                          | HTTP 和 HTTPS 路由都重定向，或重定向目标指向 HTTP 监听器                                                                                                                               |                             |
-| 正则表达式路由匹配过多                           | 用 `Exact` 或 `PathPrefix` 替换；在需要正则表达式时添加路径边界，例如 \`(/                                                                                                                                       | $)\` |
+| 正则路由匹配过多                           | 尽可能用 `Exact` 或 `PathPrefix` 替换；在需要正则表达式时添加路径边界，例如 \`(/                                                                                                                                       | $)\` |
 | 基于头部的亲和性发生变化                          | 使用 `BackendTrafficPolicy` 通过请求头进行一致哈希，以实现 ALB 或 ingress-nginx `upstream-hash-by` 风格的行为                                                                                                   |                             |
-| 集群内客户端无法访问 LoadBalancer VIP   | 使用 Gateway 服务 ClusterIP 进行集群内流量，或仅在该行为是故意需要时更改 `EnvoyProxy` `externalTrafficPolicy`                                                                |                             |
-| Gateway pod 无法启动，使用 hostNetwork              | 检查是否有其他 pod 已经在该节点上绑定相同的主机端口；使用单独的节点集、默认的端口偏移模式，或在滚动更新期间使用 `maxSurge: 0`                                                |                             |
+| 集群内客户端无法访问 LoadBalancer VIP   | 使用 Gateway 服务 ClusterIP 进行集群内流量，或仅在该行为故意需要时更改 `EnvoyProxy` `externalTrafficPolicy`                                                                |                             |
+| Gateway pod 无法使用 hostNetwork              | 检查是否有其他 pod 已经在该节点上绑定相同的主机端口；使用单独的节点集、默认端口偏移模式或在滚动更新期间使用 `maxSurge: 0`                                                |                             |
 | 前端负载均衡器健康检查在迁移后失败 | 检查后端目标端口。使用 hostNetwork 端口偏移时，监听器 `80` 映射到节点端口 `10080`，监听器 `443` 映射到节点端口 `10443`。使用标准主机端口时，Envoy 必须成功绑定 `80` 和 `443`。 |                             |
 
-## 参考
+## 参考文献
 
 - Gateway API: [从 Ingress 迁移](https://gateway-api.sigs.k8s.io/guides/getting-started/migrating-from-ingress/)
 - Kubernetes SIG 网络: [ingress2gateway](https://github.com/kubernetes-sigs/ingress2gateway)
-- Kubernetes 博客: [在迁移之前：您需要了解的五个令人惊讶的 Ingress-NGINX 行为](https://kubernetes.io/blog/2026/02/27/ingress-nginx-before-you-migrate/)
-- Kubernetes 博客: [宣布 Ingress2Gateway 1.0：您的 Gateway API 之路](https://kubernetes.io/blog/2026/03/20/ingress2gateway-1-0-release/)
+- Kubernetes 博客: [在您迁移之前：您需要了解的五个令人惊讶的 Ingress-NGINX 行为](https://kubernetes.io/blog/2026/02/27/ingress-nginx-before-you-migrate/)
+- Kubernetes 博客: [宣布 Ingress2Gateway 1.0：通往 Gateway API 的路径](https://kubernetes.io/blog/2026/03/20/ingress2gateway-1-0-release/)
 - ACP 文档: [Envoy Gateway Operator](https://docs-dev.alauda.cn/container_platform/main/networking/operators/envoy_gateway_operator)
 - ACP 文档: [配置 GatewayAPI Gateway](https://docs-dev.alauda.cn/container_platform/main/configure/networking/functions/configure_gatewayapi_gateway)
 - ACP 文档: [配置 GatewayAPI 路由](https://docs-dev.alauda.cn/container_platform/main/configure/networking/functions/configure_gatewayapi_route)
