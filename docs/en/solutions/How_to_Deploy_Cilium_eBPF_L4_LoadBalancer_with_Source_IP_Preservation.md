@@ -19,9 +19,9 @@ This document describes how to deploy Cilium CNI in a ACP 4.2+ cluster and lever
 | Network Mode | Custom Mode |
 | Architecture | x86_64 / amd64 |
 
-> **Note**: Cilium/eBPF requires Linux kernel 4.19+ (5.10+ recommended). The following operating systems are **NOT supported**:
+> **Note**: Cilium/eBPF requires Linux kernel 5.10+. The following operating systems are **NOT supported**:
 > - CentOS 7.x (kernel version 3.10.x)
-> - RHEL 7.x (kernel version 3.10.x - 4.18.x)
+> - RHEL 7.x (kernel version 3.10.x)
 >
 > Supported operating systems:
 > - Ubuntu 22.04
