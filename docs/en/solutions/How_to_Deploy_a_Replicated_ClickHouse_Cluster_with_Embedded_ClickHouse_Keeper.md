@@ -52,24 +52,29 @@ How the embedded topology works:
 - The dynamic part of the Keeper configuration — `server_id` and the `raft_configuration` member list — depends on the Pod identity, so it is generated at Pod start by an init container and pulled in through `include_from`.
 - A dedicated headless Service exposes the Keeper client port (9181), and `spec.configuration.zookeeper.nodes` points at that Service.
 
-### 2. Prerequisites
+### 2. Prerequisites and required environment variables
 
-| Item | Description | Example |
-|------|-------------|---------|
-| Namespace | Namespace for the ClickHouse cluster | `<namespace>` |
-| ClickHouseInstallation name | Name of the CHI resource | `<chi-name>` |
-| ClickHouse cluster name | Cluster name inside the CHI spec | `<cluster-name>` |
-| ClickHouse image | Server image (Keeper is included) | `<clickhouse-image>` |
-| StorageClass | StorageClass for data volumes | `<storage-class>` |
-| Storage size | PVC size per replica | `<storage-size>` |
+The ClickHouse Operator must already be installed and watching the target namespace.
+
+Every manifest and command in this procedure is parameterized with the environment variables below. Set all of them first; the manifests are rendered with `envsubst` before being applied (step 4), so each variable must be exported.
+
+| Environment variable | Description | Example |
+|----------------------|-------------|---------|
+| `NAMESPACE` | Namespace for the ClickHouse cluster | `<namespace>` |
+| `CHI_NAME` | Name of the `ClickHouseInstallation` resource | `<chi-name>` |
+| `CLUSTER_NAME` | Cluster name inside the CHI spec | `<cluster-name>` |
+| `CLICKHOUSE_IMAGE` | ClickHouse server image (Keeper is bundled in it) | `<clickhouse-image>` |
+| `STORAGE_CLASS` | StorageClass for the data volumes | `<storage-class>` |
+| `STORAGE_SIZE` | PVC size per replica | `<storage-size>` |
 
 ```bash
 export NAMESPACE="<namespace>"
 export CHI_NAME="<chi-name>"
 export CLUSTER_NAME="<cluster-name>"
+export CLICKHOUSE_IMAGE="<clickhouse-image>"
+export STORAGE_CLASS="<storage-class>"
+export STORAGE_SIZE="<storage-size>"
 ```
-
-The ClickHouse Operator must already be installed and watching the target namespace.
 
 ### 3. Create the Keeper client Service
 
@@ -165,7 +170,7 @@ spec:
         spec:
           containers:
             - name: clickhouse
-              image: <clickhouse-image>
+              image: ${CLICKHOUSE_IMAGE}
               env:
                 - name: RAFT_PORT
                   value: "9444"
@@ -194,7 +199,7 @@ spec:
                 failureThreshold: 3
           initContainers:
             - name: keeper-config-initializer
-              image: <clickhouse-image>
+              image: ${CLICKHOUSE_IMAGE}
               env:
                 - name: RAFT_PORT
                   value: "9444"
@@ -275,10 +280,10 @@ spec:
         spec:
           accessModes:
             - ReadWriteOnce
-          storageClassName: <storage-class>
+          storageClassName: ${STORAGE_CLASS}
           resources:
             requests:
-              storage: <storage-size>
+              storage: ${STORAGE_SIZE}
 ```
 
 Key points:
@@ -290,11 +295,12 @@ Key points:
 - **Readiness.** The readiness probe checks the Raft port (9444), so a Pod only becomes ready after its Keeper member is up.
 - **Per-replica Service ports.** The replica Service template exposes 9181 and 9444 in addition to the ClickHouse ports, so quorum members can reach each other through their per-replica DNS names.
 
-Apply the manifests:
+Save the Service from step 3 as `keeper-service.yaml` and the `ClickHouseInstallation` above as `chi.yaml`, then render and apply them. Pass an explicit variable list to `envsubst` so it substitutes only the configuration variables and leaves the init container's runtime shell variables (such as `${MY_ID}`, `${SHARD}`, and `${RAFT_PORT}`) intact:
 
 ```bash
-kubectl apply -n "$NAMESPACE" -f keeper-service.yaml
-kubectl apply -n "$NAMESPACE" -f chi.yaml
+RENDER_VARS='${NAMESPACE} ${CHI_NAME} ${CLUSTER_NAME} ${CLICKHOUSE_IMAGE} ${STORAGE_CLASS} ${STORAGE_SIZE}'
+envsubst "$RENDER_VARS" < keeper-service.yaml | kubectl apply -n "$NAMESPACE" -f -
+envsubst "$RENDER_VARS" < chi.yaml | kubectl apply -n "$NAMESPACE" -f -
 ```
 
 ### 5. Verify the Keeper quorum
