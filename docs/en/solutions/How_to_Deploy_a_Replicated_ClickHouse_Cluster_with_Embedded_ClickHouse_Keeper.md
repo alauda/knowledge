@@ -43,7 +43,7 @@ Three topologies are possible on Kubernetes:
 | Standalone Keeper | A separate ClickHouse Keeper StatefulSet (3 nodes); the `ClickHouseInstallation` points at `keeper:9181` | Resource isolation between Keeper and ClickHouse, but still two workloads, and the Keeper manifests are managed manually |
 | Embedded Keeper (this document) | Every ClickHouse Pod also runs a Keeper Raft member; the `ClickHouseInstallation` points at its own Keeper Service | One workload only; Keeper shares Pod resources with ClickHouse and scaling of the two is coupled |
 
-> **Note on operator-managed Keeper:** newer versions of the upstream Altinity operator introduce a `ClickHouseKeeperInstallation` (CHK) custom resource with its own controller. The ClickHouse Operator shipped with this platform version does not include that controller, and the CHK CRD is not installed — `kubectl api-resources --api-group=clickhouse-keeper.altinity.com` returns no resources. Keeper therefore cannot be deployed as an operator-managed CR; use the embedded topology described here (or a standalone StatefulSet) instead. The only Keeper-related field the operator consumes is `spec.configuration.zookeeper`, which works unchanged against Keeper because the client protocol is ZooKeeper-compatible.
+The operator consumes a single Keeper-related field, `spec.configuration.zookeeper`, and points ClickHouse at the coordination endpoint through it. This works unchanged against ClickHouse Keeper because the client protocol is ZooKeeper-compatible.
 
 How the embedded topology works:
 
