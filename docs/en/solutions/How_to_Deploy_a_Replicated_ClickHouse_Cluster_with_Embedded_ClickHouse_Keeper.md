@@ -305,21 +305,32 @@ Wait until the CHI reaches `Completed`:
 kubectl -n "$NAMESPACE" get clickhouseinstallation "$CHI_NAME" -w
 ```
 
-Check the quorum with the `mntr` four-letter command on any Pod (this is why `four_letter_word_white_list` is enabled):
+Use the dedicated `clickhouse-keeper-client` CLI (bundled in the ClickHouse server image) to confirm the embedded Keeper answers on a Pod:
+
+```bash
+kubectl -n "$NAMESPACE" exec chi-${CHI_NAME}-${CLUSTER_NAME}-0-0-0 -c clickhouse -- \
+  clickhouse-keeper-client -h localhost -p 9181 -q "ls /"
+```
+
+A healthy Keeper returns its root znodes (for example `keeper clickhouse`).
+
+Check the Raft role and quorum size. The `mntr` command here is **ClickHouse Keeper's own** four-letter-word (4lw) implementation — it is served by the Keeper Raft engine, not by any ZooKeeper process, and is what the `four_letter_word_white_list` in `keeper_config.xml` enables. The `zk_`-prefixed keys are retained only so existing monitoring tooling can parse the output:
 
 ```bash
 kubectl -n "$NAMESPACE" exec chi-${CHI_NAME}-${CLUSTER_NAME}-0-0-0 -c clickhouse -- \
   bash -c 'exec 3<>/dev/tcp/localhost/9181; printf mntr >&3; cat <&3' | egrep 'zk_server_state|zk_synced_followers'
 ```
 
-Expected output: one Pod reports `zk_server_state  leader` with `zk_synced_followers  2`; the other two report `follower`.
+Expected output: exactly one Pod reports `zk_server_state  leader` with `zk_synced_followers  2`; the other two report `follower`.
 
-Confirm ClickHouse can reach the coordination service:
+Confirm the ClickHouse server is connected to the Keeper quorum. The client-side view is exposed through `system.zookeeper_connection` — the table keeps the historical `zookeeper` name but reports the Keeper endpoint and works against Keeper unchanged:
 
 ```bash
 kubectl -n "$NAMESPACE" exec chi-${CHI_NAME}-${CLUSTER_NAME}-0-0-0 -c clickhouse -- \
-  clickhouse-client -q "SELECT * FROM system.zookeeper WHERE path = '/'"
+  clickhouse-client -q "SELECT * FROM system.zookeeper_connection FORMAT Vertical"
 ```
+
+The reported `host` must be the Keeper Service (`${CHI_NAME}-keeper`) on port `9181`.
 
 ### 6. Verify replication
 
