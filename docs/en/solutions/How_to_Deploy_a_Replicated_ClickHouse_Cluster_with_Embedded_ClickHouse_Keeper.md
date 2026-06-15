@@ -25,7 +25,7 @@ The procedure covers:
 ## Environment
 
 - Alauda Container Platform 4.2 or later
-- ClickHouse Operator based on Altinity clickhouse-operator 0.20.x
+- ClickHouse Operator shipped with the platform — the `clickhouse-operator` component (validated with image `clickhouse-operator:v4.2.3` on ACP 4.2)
 - ClickHouse Server 23.x or later (ClickHouse Keeper is bundled in the server image; validated with 25.x)
 - Cluster access via `kubectl`
 
@@ -43,7 +43,7 @@ Three topologies are possible on Kubernetes:
 | Standalone Keeper | A separate ClickHouse Keeper StatefulSet (3 nodes); the `ClickHouseInstallation` points at `keeper:9181` | Resource isolation between Keeper and ClickHouse, but still two workloads, and the Keeper manifests are managed manually |
 | Embedded Keeper (this document) | Every ClickHouse Pod also runs a Keeper Raft member; the `ClickHouseInstallation` points at its own Keeper Service | One workload only; Keeper shares Pod resources with ClickHouse and scaling of the two is coupled |
 
-> **Note on operator-managed Keeper:** newer upstream versions of the Altinity operator introduce a `ClickHouseKeeperInstallation` (CHK) custom resource with its own controller. The ClickHouse Operator 0.20.x delivered with the platform does not include this controller, and the CHK CRD is not installed — `kubectl api-resources --api-group=clickhouse-keeper.altinity.com` returns no resources. Keeper therefore cannot be deployed as an operator-managed CR on this version; use the embedded topology described here (or a standalone StatefulSet) instead. The only Keeper-related field the operator consumes is `spec.configuration.zookeeper`, which works unchanged against Keeper because the client protocol is ZooKeeper-compatible.
+> **Note on operator-managed Keeper:** newer versions of the upstream Altinity operator introduce a `ClickHouseKeeperInstallation` (CHK) custom resource with its own controller. The ClickHouse Operator shipped with this platform version does not include that controller, and the CHK CRD is not installed — `kubectl api-resources --api-group=clickhouse-keeper.altinity.com` returns no resources. Keeper therefore cannot be deployed as an operator-managed CR; use the embedded topology described here (or a standalone StatefulSet) instead. The only Keeper-related field the operator consumes is `spec.configuration.zookeeper`, which works unchanged against Keeper because the client protocol is ZooKeeper-compatible.
 
 How the embedded topology works:
 
