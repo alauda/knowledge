@@ -62,9 +62,13 @@ nodes (or use a `nodeSelector`/label that only the target nodes carry). Keep at
 least the target node schedulable.
 
 ```bash
-# Example: label the source and target nodes, then select them
-kubectl label node <source-node> <target-node> target=true --overwrite
+# Label ONLY the target node(s) so the recreated pod can land there and nowhere else
+kubectl label node <target-node> target=true --overwrite
 ```
+
+Do **not** label the source node — labeling both source and target would let the
+pod reschedule back onto the source. If you prefer cordoning over labels, cordon
+all non-target nodes instead and skip the `nodeSelector` step below.
 
 If you use a label-based selector, set it on the instance:
 

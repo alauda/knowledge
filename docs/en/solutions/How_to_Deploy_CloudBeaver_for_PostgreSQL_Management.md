@@ -139,12 +139,14 @@ Open the URL in a browser.
    kubectl -n <pg-namespace> get svc <cluster>
    ```
 
-3. Enter the database user and password. The `postgres` superuser password is available in the cluster as an environment variable / Secret:
+3. Enter the database user and password. The Operator stores each role's credentials in a Secret named `<role>.<cluster>.credentials.postgresql.acid.zalan.do`. Retrieve the `postgres` superuser password from its Secret:
 
    ```bash
-   kubectl exec -n <pg-namespace> <cluster>-0 -c postgres -- \
-     bash -c 'echo $PGPASSWORD_SUPERUSER'
+   kubectl get secret postgres.<cluster>.credentials.postgresql.acid.zalan.do \
+     -n <pg-namespace> -o jsonpath='{.data.password}' | base64 -d; echo
    ```
+
+   The same Secret also carries `username`, `host` and `port` keys.
 
 4. (Optional) Set **Database** to the target database; otherwise CloudBeaver connects to the default `postgres` database.
 5. Under **Access Management**, grant the current CloudBeaver user permission to use the new connection.
