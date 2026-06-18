@@ -5,6 +5,7 @@ products:
    - Alauda Container Platform
 ProductsVersion:
    - 4.3.1
+id: KB260600091
 ---
 
 # Rook-Ceph upgrade leaves CephCluster Progressing because the pod network cannot reach the storage network
