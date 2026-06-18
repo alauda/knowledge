@@ -4,7 +4,7 @@ products:
   - Alauda Container Platform
 kind:
   - Solution
-sourceSHA: f08bed9e8e3925b9d23738b44dac6e99b0d27fbf6802f8976076f756383d70d6
+sourceSHA: ca705a32374a9cc9c0d040748c930779fdb443c19b37c745682a00bd0902fa0a
 ---
 
 # 使用 Cilium CNI 和基于 eBPF 的 L4 负载均衡器实现高性能容器网络（源 IP 保留）
@@ -13,13 +13,13 @@ sourceSHA: f08bed9e8e3925b9d23738b44dac6e99b0d27fbf6802f8976076f756383d70d6
 
 ## 先决条件
 
-| 项目         | 要求             |
-| ------------ | ---------------- |
-| ACP 版本     | 4.2+             |
-| 网络模式     | 自定义模式       |
-| 架构         | x86_64 / amd64   |
+| 项目         | 要求            |
+| ------------ | --------------- |
+| ACP 版本     | 4.2+            |
+| 网络模式     | 自定义模式      |
+| 架构         | x86_64 / amd64  |
 
-> **注意**：Cilium/eBPF 需要 Linux 内核 5.10+。以下操作系统 **不支持**：
+> **注意**：Cilium/eBPF 需要 Linux 内核 5.10 及以上版本。以下操作系统 **不支持**：
 >
 > - CentOS 7.x（内核版本 3.10.x）
 > - RHEL 7.x（内核版本 3.10.x）
@@ -35,16 +35,16 @@ sourceSHA: f08bed9e8e3925b9d23738b44dac6e99b0d27fbf6802f8976076f756383d70d6
 | 端口 | 组件            | 描述               |
 | ---- | --------------- | ------------------ |
 | 4240 | cilium-agent    | 健康 API          |
-| 9962 | cilium-agent    | Prometheus 指标   |
+| 9962 | cilium-agent    | Prometheus 指标    |
 | 9879 | cilium-agent    | Envoy 指标        |
 | 9890 | cilium-agent    | 智能体指标        |
-| 9963 | cilium-operator | Prometheus 指标   |
+| 9963 | cilium-operator | Prometheus 指标    |
 | 9891 | cilium-operator | Operator 指标     |
 | 9234 | cilium-operator | 指标              |
 
 ### 内核配置要求
 
-确保节点上启用了以下内核配置（可以通过 `grep` 在 `/boot/config-$(uname -r)` 中检查）：
+确保节点上启用了以下内核配置（可以通过在 `/boot/config-$(uname -r)` 中使用 `grep` 检查）：
 
 - `CONFIG_BPF=y` 或 `=m`
 - `CONFIG_BPF_SYSCALL=y` 或 `=m`
@@ -57,7 +57,7 @@ sourceSHA: f08bed9e8e3925b9d23738b44dac6e99b0d27fbf6802f8976076f756383d70d6
 
 ### 步骤 1：创建集群
 
-在集群创建页面，将 **网络模式** 设置为 **自定义** 模式。在集群达到 `EnsureWaitClusterModuleReady` 状态后再部署 Cilium。
+在集群创建页面，将 **网络模式** 设置为 **自定义** 模式。等待集群达到 `EnsureWaitClusterModuleReady` 状态后再部署 Cilium。
 
 ### 步骤 2：安装 Cilium
 
@@ -114,7 +114,7 @@ EOF
 kubectl apply -f tmp.yaml
 ```
 
-4. 导航到 **管理员 → 市场 → 集群插件** 并安装 Cilium
+4. 导航至 **管理员 → 市场 → 集群插件** 并安装 Cilium
 
 5. Cilium 安装成功后，删除临时 RBAC 配置：
 
@@ -172,7 +172,7 @@ spec:
       - operator: Exists
       containers:
       - name: kube-proxy-cleanup
-        image: registry.alauda.cn:60070/tkestack/kube-proxy:<KUBERNETES_VERSION>      ## 用步骤 1 中获取的 kube-proxy 镜像替换
+        image: registry.alauda.cn:60070/tkestack/kube-proxy:<KUBERNETES_VERSION>      ## 用步骤 1 中获得的 kube-proxy 镜像替换
         imagePullPolicy: IfNotPresent
         command:
         - /bin/sh
@@ -218,7 +218,7 @@ BroadcastJob 配置了 `ttlSecondsAfterFinished: 300`，将在完成后 5 分钟
 
 ### 步骤 2：创建地址池
 
-> **VIP 地址要求**：Cilium L2 通告通过 ARP 广播实现 IP 故障转移。因此，VIP 必须在与集群节点 **相同的第二层网络** 中，以确保 ARP 请求能够正确广播并响应。
+> **VIP 地址要求**：Cilium L2 通告通过 ARP 广播实现 IP 故障转移。因此，VIP 必须在与集群节点 **相同的第二层网络** 中，以确保 ARP 请求能够正确广播并得到响应。
 
 保存为 `lb-resources.yaml`：
 
