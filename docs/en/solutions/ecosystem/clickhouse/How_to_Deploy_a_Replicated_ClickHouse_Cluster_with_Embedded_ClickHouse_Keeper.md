@@ -6,6 +6,7 @@ products:
    - Alauda Application Services
 ProductsVersion:
    - 4.2.x
+id: KB260600102
 ---
 # How to Deploy a Replicated ClickHouse Cluster with Embedded ClickHouse Keeper
 
