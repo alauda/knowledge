@@ -37,13 +37,13 @@ The procedure to enable IOMMU varies by operating system; refer to your OS docum
 
 1. Edit `/etc/default/grub` and add `intel_iommu=on iommu=pt` to `GRUB_CMDLINE_LINUX`:
 
-   ```
+   ```bash
    GRUB_CMDLINE_LINUX="crashkernel=auto rd.lvm.lv=centos/root rhgb quiet intel_iommu=on iommu=pt"
    ```
 
 2. Regenerate `grub.cfg`:
 
-   ```
+   ```bash
    grub2-mkconfig -o /boot/grub2/grub.cfg
    ```
 
@@ -51,7 +51,7 @@ The procedure to enable IOMMU varies by operating system; refer to your OS docum
 
 4. Confirm IOMMU is enabled. The output should contain `IOMMU enabled`:
 
-   ```
+   ```bash
    dmesg | grep -i iommu
    ```
 
@@ -105,7 +105,7 @@ The plugin installs in `vm-passthrough` sandbox mode by default. The platform au
 
    Example output:
 
-   ```
+   ```json
    {
        "nvidia.com/GK210GL_TESLA_K80": "8"
    }
