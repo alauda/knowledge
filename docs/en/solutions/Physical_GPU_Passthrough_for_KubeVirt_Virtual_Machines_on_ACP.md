@@ -113,7 +113,16 @@ The plugin installs in `vm-passthrough` sandbox mode by default. The platform au
 
 ## Configure KubeVirt
 
-1. Enable the `disableMDevConfiguration` feature gate:
+1. Enable the `disableMDevConfiguration` feature gate. It disables KubeVirt's mediated-device (mdev / vGPU) management, which is required for `vfio-pci` passthrough.
+
+   > **Warning:** `disableMDevConfiguration` is a global HCO feature gate. If the cluster already serves mediated devices or NVIDIA vGPU, enabling it disrupts that configuration. Verify first that no mediated devices are in use:
+
+   ```bash
+   kubectl get hco kubevirt-hyperconverged -n kubevirt \
+     -o jsonpath='{.spec.mediatedDevicesConfiguration}{"\n"}{.spec.permittedHostDevices.mediatedDevices}{"\n"}'
+   ```
+
+   Then enable the feature gate:
 
    ```bash
    kubectl patch hco kubevirt-hyperconverged -n kubevirt --type='json' \
@@ -134,11 +143,15 @@ The plugin installs in `vm-passthrough` sandbox mode by default. The platform au
    kubectl get node <gpu-node-name> -o json | jq '.status.allocatable | with_entries(select(.key | startswith("nvidia.com/"))) | with_entries(select(.value != "0"))'
    ```
 
-4. Register the passthrough GPU in `permittedHostDevices`.
+4. Register the passthrough GPU as a `pciHostDevices` entry. To avoid overwriting USB host devices, mediated devices, or other PCI devices that may already be configured, first inspect the current value:
+
+   ```bash
+   kubectl get hco kubevirt-hyperconverged -n kubevirt -o jsonpath='{.spec.permittedHostDevices}{"\n"}'
+   ```
 
    > **Note:** Convert all letters in the `pciDeviceSelector` to **uppercase**. For example, `10de:102d` becomes `10DE:102D`.
 
-   - Add a single GPU model:
+   - If `permittedHostDevices` is **not yet configured** (empty output above), initialize it with the GPU entry:
 
      ```bash
      export DEVICE=<pci-devices-id>      # e.g. 10DE:102D
@@ -162,18 +175,17 @@ The plugin installs in `vm-passthrough` sandbox mode by default. The platform au
      ]'
      ```
 
-   - Append an additional GPU model after one is already registered (`INDEX` is a zero-based array index):
+   - If `permittedHostDevices.pciHostDevices` **already exists**, append the GPU entry without touching the existing devices. The `-` token appends to the end of the array, so no index calculation is needed:
 
      ```bash
      export DEVICE=<pci-devices-id>
      export RESOURCE=<resource-name>
-     export INDEX=<index>               # e.g. 1 to add a second device
 
      kubectl patch hco kubevirt-hyperconverged -n kubevirt --type='json' -p='
      [
        {
          "op": "add",
-         "path": "/spec/permittedHostDevices/pciHostDevices/'"${INDEX}"'",
+         "path": "/spec/permittedHostDevices/pciHostDevices/-",
          "value": {
            "externalResourceProvider": true,
            "pciDeviceSelector": "'"$DEVICE"'",
@@ -182,6 +194,8 @@ The plugin installs in `vm-passthrough` sandbox mode by default. The platform au
        }
      ]'
      ```
+
+     > **Note:** If `permittedHostDevices` exists but has no `pciHostDevices` array yet, first create it with `{"op": "add", "path": "/spec/permittedHostDevices/pciHostDevices", "value": []}`, then run the append above.
 
 ## Create a Virtual Machine with a Passthrough GPU
 
@@ -202,10 +216,22 @@ If the configured GPU model can be selected during VM creation, the passthrough 
 
 ### Remove GPU Configuration from KubeVirt
 
-```bash
-kubectl patch hco kubevirt-hyperconverged -n kubevirt --type='json' \
-  -p='[{"op": "remove", "path": "/spec/permittedHostDevices"}]'
-```
+> **Warning:** Do not remove the entire `/spec/permittedHostDevices` object if the cluster also serves other host devices (USB host devices, mediated devices, or other PCI devices) — that would delete them as well. Remove only the GPU's `pciHostDevices` entry.
+
+1. List the current `pciHostDevices` to find the zero-based index of the GPU entry:
+
+   ```bash
+   kubectl get hco kubevirt-hyperconverged -n kubevirt -o jsonpath='{.spec.permittedHostDevices.pciHostDevices}{"\n"}'
+   ```
+
+2. Remove the GPU entry by its index (replace `<index>`):
+
+   ```bash
+   export INDEX=<index>
+
+   kubectl patch hco kubevirt-hyperconverged -n kubevirt --type='json' \
+     -p='[{"op": "remove", "path": "/spec/permittedHostDevices/pciHostDevices/'"${INDEX}"'"}]'
+   ```
 
 After removal, the GPU model can no longer be selected when creating a VM.
 
