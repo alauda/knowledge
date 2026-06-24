@@ -7,7 +7,6 @@ ProductsVersion:
   - 4.3.x and later
 tags:
   - LB
-id: KB260600103
 ---
 
 # How to Configure HTTP External Authorization for Envoy Gateway on ACP
