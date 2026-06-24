@@ -195,7 +195,12 @@ The plugin installs in `vm-passthrough` sandbox mode by default. The platform au
      ]'
      ```
 
-     > **Note:** If `permittedHostDevices` exists but has no `pciHostDevices` array yet, first create it with `{"op": "add", "path": "/spec/permittedHostDevices/pciHostDevices", "value": []}`, then run the append above.
+     If `permittedHostDevices` exists but has no `pciHostDevices` array yet, the append above fails because the path does not exist. Create the empty array first, then run the append:
+
+     ```bash
+     kubectl patch hco kubevirt-hyperconverged -n kubevirt --type='json' \
+       -p='[{"op": "add", "path": "/spec/permittedHostDevices/pciHostDevices", "value": []}]'
+     ```
 
 ## Create a Virtual Machine with a Passthrough GPU
 
