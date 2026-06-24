@@ -5,6 +5,7 @@ products:
    - Alauda Container Platform
 ProductsVersion:
    - 4.3.x
+id: KB260600120
 ---
 
 # Physical GPU Passthrough for KubeVirt Virtual Machines on ACP
