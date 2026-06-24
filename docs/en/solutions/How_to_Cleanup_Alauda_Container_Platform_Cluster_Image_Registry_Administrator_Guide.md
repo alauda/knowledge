@@ -27,7 +27,7 @@ This document uses the following terms consistently:
 
 - **Internal registry**: the image registry deployed and managed as part of the target ACP cluster.
 - **Registry endpoint**: the HTTP(S) endpoint that `ac adm prune images` uses to communicate with the registry.
-- **External registry endpoint**: a manually specified registry endpoint provided through `--registry-url` when automatic detection of the internal registry endpoint is unavailable or unsuitable.
+- **External registry endpoint**: a manually specified registry endpoint provided through `--registry-url` when the default in-cluster registry endpoint is unreachable or unsuitable.
 
 Unless otherwise stated, image pruning in this document targets the **internal registry** of the current cluster.
 
@@ -88,7 +88,8 @@ Actual deletion is performed only when `--confirm` is explicitly specified.
 | `--dry-run` | Run in inspection mode and print prune candidates without deleting anything. This is the default behavior. | `--dry-run` |
 | `--confirm` | Perform actual deletion of eligible image manifests. Without this flag, no deletion is performed. | `--confirm` |
 | `--prune-registry` | Trigger registry garbage collection after pruning in non-dry-run mode. This flag has no effect in dry-run mode. | `--prune-registry` |
-| `--registry-url=<url>` | Override automatic registry endpoint detection with a manually specified endpoint. | `http://image-registry.cpaas-system` |
+| `--registry-url=<url>` | Override the default registry endpoint with a manually specified endpoint. | `http://image-registry.cpaas-system` |
+| `--catalog-page-size=<N>` | Number of repositories requested per registry catalog page. The default is `1000`; valid values are `1` to `10000`, and `0` uses the default. | `1000` |
 
 ## Parameter Rules and Constraints
 
@@ -99,7 +100,8 @@ The following rules apply when combining pruning parameters:
 - `--all` instructs the command to ignore retention-based filters such as `--keep-younger-than` and `--keep-tag-revisions`, and to prune all images that are not currently in use, subject to whitelist rules.
 - `--whitelist=<regex>` protects matching repositories from pruning. It can be specified multiple times. If a repository matches any whitelist rule, it is excluded from deletion.
 - `--prune-registry` is meaningful only in non-dry-run execution. It triggers registry garbage collection after the prune workflow, even when no manifests were deleted during that run.
-- `--registry-url=<url>` overrides automatic registry endpoint detection. Use it only when automatic discovery does not produce the correct endpoint or when an externally reachable endpoint must be used.
+- `--registry-url=<url>` overrides the default in-cluster registry endpoint `http://image-registry.cpaas-system`. Use it when the Job or operator workstation must access the registry through a different endpoint.
+- `--catalog-page-size=<N>` controls registry `_catalog` pagination. Larger values can reduce paging round trips in large registries, but each registry request may take longer and use more memory.
 
 ## Recommended Usage Order
 
@@ -128,10 +130,16 @@ Before performing any deletion, run the command in its default dry-run mode to r
 ac adm prune images
 ```
 
-If `ac` cannot automatically detect the correct registry endpoint, specify the external registry endpoint with `--registry-url`.
+If the default in-cluster registry endpoint is not reachable from where `ac` runs, specify a reachable registry endpoint with `--registry-url`.
 
 ```bash
 ac adm prune images --registry-url=<external-registry-url>
+```
+
+For large registries, you can request larger catalog pages to reduce `_catalog` paging round trips.
+
+```bash
+ac adm prune images --catalog-page-size=1000
 ```
 
 ### Step 3: Run confirmed cleanup with a retention policy
@@ -194,7 +202,7 @@ Notes:
 
 - `<platform-registry-url>`: the registry endpoint of your target ACP platform.
 - `<tag>`: the AC image tag provided by your target ACP platform.
-- `serviceAccountName: ac-images-pruner-sa`: the ServiceAccount must be able to inspect workload resources to identify in-use images, read `registry.alauda.io/images` for dry-run analysis, delete `registry.alauda.io/images` for confirmed cleanup, and execute into the registry Pod when registry garbage collection is enabled.
+- `serviceAccountName: ac-images-pruner-sa`: the ServiceAccount must be able to inspect workload resources to identify in-use images and execute into the registry Pod when registry garbage collection is enabled. Registry tag, manifest, and deletion operations are performed through the registry API by using the resolved `ac` authentication token.
 
 ## Why These Permissions Are Required
 
@@ -206,10 +214,10 @@ The example RBAC grants permissions for the following purposes:
   `get`, `list`, and `watch` permissions on resources such as Pods, Deployments, StatefulSets, DaemonSets, ReplicaSets, Jobs, CronJobs, and ReplicationControllers are required so the command can discover image references currently in use by the cluster.
 
 - **Registry image inspection**:  
-  `get` access to `registry.alauda.io/images` is required so the command can retrieve image metadata during dry-run analysis.
+  The command queries the registry API directly to list repositories, tags, and any required manifest metadata. Kubernetes registry image custom-resource permissions are not required for this API path.
 
 - **Image deletion**:  
-  `delete` access to `registry.alauda.io/images` is required only when `--confirm` is used, because confirmed pruning removes eligible image manifests.
+  Confirmed pruning deletes eligible manifests through the registry API. The resolved `ac` token or in-cluster ServiceAccount token must be authorized by the registry proxy for the target repositories.
 
 - **Registry garbage collection support**:  
   `create` access to `pods/exec` is required only when registry garbage collection is enabled, because the workflow may need to execute GC-related operations through the registry Pod.
@@ -218,8 +226,8 @@ The example RBAC grants permissions for the following purposes:
 
 Grant only the permissions required by your selected execution mode:
 
-- For **dry-run only**, `get` access to `registry.alauda.io/images` is sufficient; `delete` is not required.
-- For **confirmed pruning**, both `get` and `delete` are required.
+- For **dry-run only**, workload discovery permission and registry API read authorization are required.
+- For **confirmed pruning**, registry API delete authorization is also required.
 - For **registry GC**, `pods/exec` permission is additionally required.
 
 ## Fully Runnable Example (Recommended Starting Point)
@@ -257,9 +265,6 @@ rules:
   - apiGroups: [""]
     resources: ["pods/exec"]
     verbs: ["create"]
-  - apiGroups: ["registry.alauda.io"]
-    resources: ["images"]
-    verbs: ["get", "delete"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
@@ -316,6 +321,7 @@ spec:
                 - images
                 - --keep-younger-than=168h
                 - --keep-tag-revisions=5
+                - --catalog-page-size=1000
                 - --whitelist=^cpaas-system/.*
               securityContext:
                 allowPrivilegeEscalation: false
@@ -354,6 +360,7 @@ Use the following guidance when adapting the runnable example to a production en
 - Manually trigger and validate one Job before relying on CronJob-based recurring cleanup.
 - Review logs regularly to confirm that prune candidates match expectations and that no protected repositories are affected.
 - Prefer a single operational CLI in the document and in daily operations. If ACP environments standardize on `ac`, use `ac` consistently for deployment, verification, and cleanup tasks.
+- Use `-v=4` during troubleshooting to print the registry endpoint, authentication mode, and catalog page size used by the command.
 
 ## Recommended Policy Patterns
 
@@ -361,8 +368,8 @@ The following policy patterns can be used as a reference when tuning schedule an
 
 | Scenario | Recommended schedule | Suggested flags | Notes |
 |----------|----------------------|-----------------|-------|
-| Daily inspection | `0 2 * * *` | `--keep-younger-than=168h --keep-tag-revisions=5 --whitelist=^cpaas-system/.*` | Dry-run only; suitable for daily visibility into prune candidates |
-| Weekly production cleanup | `30 3 * * 0` | `--keep-younger-than=336h --keep-tag-revisions=10 --whitelist=^cpaas-system/.* --confirm` | Recommended baseline policy for production |
+| Daily inspection | `0 2 * * *` | `--keep-younger-than=168h --keep-tag-revisions=5 --catalog-page-size=1000 --whitelist=^cpaas-system/.*` | Dry-run only; suitable for daily visibility into prune candidates |
+| Weekly production cleanup | `30 3 * * 0` | `--keep-younger-than=336h --keep-tag-revisions=10 --catalog-page-size=1000 --whitelist=^cpaas-system/.* --confirm` | Recommended baseline policy for production |
 | Monthly aggressive cleanup | `0 4 1 * *` | `--all --whitelist=^cpaas-system/.* --whitelist=^pro-ns1/base/.* --confirm` | Use only after thorough whitelist validation |
 | Weekly cleanup with GC | `0 1 * * 6` | `--keep-younger-than=720h --keep-tag-revisions=5 --prune-registry --confirm` | Schedule during an off-peak window |
 
@@ -482,8 +489,8 @@ Use the following table to identify common problems and the fastest checks to pe
 | Symptom | Possible cause | What to check first | Suggested action |
 |---------|----------------|---------------------|------------------|
 | `no current context set` | No usable in-cluster fallback and no valid CLI context in the container | Check the AC version and whether the Pod is expected to run with in-cluster credentials | Upgrade to a compatible AC version and verify ServiceAccount token mounting and in-cluster auth behavior |
-| `forbidden` / `cannot list ...` | Missing RBAC permissions for workload discovery | Run `ac auth can-i list pods --as system:serviceaccount:cpaas-system:ac-images-pruner-sa` and similar checks for required resources | Grant missing `get/list/watch` permissions for workload resources and required permissions on `registry.alauda.io/images` |
-| `forbidden` when deleting images | ServiceAccount has read access but not delete access | Check whether the run uses `--confirm` and whether `delete` is granted on `registry.alauda.io/images` | Add `delete` permission for confirmed cleanup |
+| `forbidden` / `cannot list ...` | Missing RBAC permissions for workload discovery | Run `ac auth can-i list pods --as system:serviceaccount:cpaas-system:ac-images-pruner-sa` and similar checks for required resources | Grant missing `get/list/watch` permissions for workload resources |
+| `forbidden` when deleting images | The registry proxy accepts read requests but rejects delete requests | Check whether the run uses `--confirm` and whether the resolved token is authorized to delete manifests in the target repositories | Grant the required registry delete authorization for confirmed cleanup |
 | `401` / `403` when fetching registry tags or manifests | Registry endpoint is reachable but authentication or authorization fails | Check logs for the exact registry endpoint in use and verify the ServiceAccount authorization path | Verify registry proxy authn/authz configuration, token handling, and whether `--registry-url` points to the correct endpoint |
 | `failed to list registry pods` | Missing access to the registry Pod namespace or missing permissions | Check whether the registry Pod exists in `cpaas-system` and whether the ServiceAccount can access related resources | Verify namespace, resource names, and RBAC for GC-related Pod access |
 | `pods/exec is forbidden` | GC is enabled but exec permission is missing | Confirm whether `--prune-registry` is enabled and whether `pods/exec` has `create` permission | Add `create` permission on `pods/exec` |
@@ -503,7 +510,8 @@ When a scheduled prune task fails, use the following sequence:
 4. Review container logs for the prune workflow stage and exact error text.
 5. Verify ServiceAccount RBAC with `ac auth can-i`.
 6. If `--registry-url` is set, verify endpoint reachability and authorization.
-7. If `--prune-registry` is enabled, verify `pods/exec` permission and registry Pod availability.
+7. Re-run with `-v=4` when you need to confirm the registry endpoint, authentication mode, and catalog page size used by the command.
+8. If `--prune-registry` is enabled, verify `pods/exec` permission and registry Pod availability.
 
 ## Cleanup Demo Resources
 

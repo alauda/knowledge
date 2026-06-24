@@ -29,7 +29,7 @@ sourceSHA: 8090ab7dd2da430b0d2da7a0c43972630ab8e8f1b2aa276afd63f2534034edcf
 
 - **内部注册表**：作为目标 ACP 集群一部分部署和管理的镜像注册表。
 - **注册表端点**：`ac adm prune images` 用于与注册表通信的 HTTP(S) 端点。
-- **外部注册表端点**：在无法或不适合自动检测内部注册表端点时，通过 `--registry-url` 手动指定的注册表端点。
+- **外部注册表端点**：当默认的集群内注册表端点不可达或不适合使用时，通过 `--registry-url` 手动指定的注册表端点。
 
 除非另有说明，本文档中的镜像修剪目标为当前集群的 **内部注册表**。
 
@@ -90,7 +90,8 @@ sourceSHA: 8090ab7dd2da430b0d2da7a0c43972630ab8e8f1b2aa276afd63f2534034edcf
 | `--dry-run`                      | 以检查模式运行并打印修剪候选项，而不删除任何内容。这是默认行为。                                                | `--dry-run`                        |
 | `--confirm`                      | 执行符合条件的镜像清单的实际删除。没有此标志，不会执行删除。                                                    | `--confirm`                        |
 | `--prune-registry`               | 在非干运行模式下修剪后触发注册表垃圾回收。此标志在干运行模式下无效。                                            | `--prune-registry`                 |
-| `--registry-url=<url>`           | 用手动指定的端点覆盖自动注册表端点检测。                                                                        | `http://image-registry.cpaas-system` |
+| `--registry-url=<url>`           | 用手动指定的端点覆盖默认注册表端点。                                                                            | `http://image-registry.cpaas-system` |
+| `--catalog-page-size=<N>`        | 每个注册表 catalog 分页请求获取的仓库数量。默认值为 `1000`；有效范围为 `1` 到 `10000`，`0` 表示使用默认值。       | `1000`                             |
 
 ## 参数规则和约束
 
@@ -101,7 +102,8 @@ sourceSHA: 8090ab7dd2da430b0d2da7a0c43972630ab8e8f1b2aa276afd63f2534034edcf
 - `--all` 指示命令忽略基于保留的过滤器，例如 `--keep-younger-than` 和 `--keep-tag-revisions`，并修剪所有当前未使用的镜像，受白名单规则的约束。
 - `--whitelist=<regex>` 保护与之匹配的存储库不被修剪。可以多次指定。如果存储库匹配任何白名单规则，则将其排除在删除之外。
 - `--prune-registry` 仅在非干运行执行中有意义。它在修剪工作流之后触发注册表垃圾回收，即使在该运行期间没有删除任何清单。
-- `--registry-url=<url>` 覆盖自动注册表端点检测。仅在自动发现未产生正确端点或必须使用外部可访问端点时使用。
+- `--registry-url=<url>` 覆盖默认的集群内注册表端点 `http://image-registry.cpaas-system`。当 Job 或运维工作站必须通过其他端点访问注册表时使用。
+- `--catalog-page-size=<N>` 控制注册表 `_catalog` 分页大小。较大的值可以减少大规模仓库场景下的分页往返次数，但单次注册表请求可能耗时更长并占用更多内存。
 
 ## 推荐使用顺序
 
@@ -130,10 +132,16 @@ ac config use-cluster <cluster-name>
 ac adm prune images
 ```
 
-如果 `ac` 无法自动检测到正确的注册表端点，请使用 `--registry-url` 指定外部注册表端点。
+如果默认的集群内注册表端点在 `ac` 运行位置不可达，请使用 `--registry-url` 指定可访问的注册表端点。
 
 ```bash
 ac adm prune images --registry-url=<external-registry-url>
+```
+
+对于大规模注册表，可以请求更大的 catalog 分页以减少 `_catalog` 分页往返次数。
+
+```bash
+ac adm prune images --catalog-page-size=1000
 ```
 
 ### 步骤 3：使用保留策略运行确认清理
@@ -196,7 +204,7 @@ spec:
 
 - `<platform-registry-url>`：目标 ACP 平台的注册表端点。
 - `<tag>`：目标 ACP 平台提供的 AC 镜像标签。
-- `serviceAccountName: ac-images-pruner-sa`：ServiceAccount 必须能够检查工作负载资源以识别正在使用的镜像，读取 `registry.alauda.io/images` 进行干运行分析，删除 `registry.alauda.io/images` 进行确认清理，并在启用注册表垃圾回收时执行注册表 Pod。
+- `serviceAccountName: ac-images-pruner-sa`：ServiceAccount 必须能够检查工作负载资源以识别正在使用的镜像，并在启用注册表垃圾回收时执行注册表 Pod。注册表 tag、manifest 和删除操作通过注册表 API 执行，并使用 `ac` 解析到的认证令牌。
 
 ## 为什么需要这些权限
 
@@ -208,10 +216,10 @@ spec:
   对 Pods、Deployments、StatefulSets、DaemonSets、ReplicaSets、Jobs、CronJobs 和 ReplicationControllers 等资源的 `get`、`list` 和 `watch` 权限是必需的，以便命令能够发现当前集群正在使用的镜像引用。
 
 - **注册表镜像检查**：\
-  对 `registry.alauda.io/images` 的 `get` 访问权限是必需的，以便命令能够在干运行分析期间检索镜像元数据。
+  命令直接查询注册表 API，以列出仓库、tag 以及所需的 manifest 元数据。这条 API 路径不需要 Kubernetes 注册表镜像自定义资源权限。
 
 - **镜像删除**：\
-  仅在使用 `--confirm` 时需要对 `registry.alauda.io/images` 的 `delete` 访问权限，因为确认修剪会删除符合条件的镜像清单。
+  确认修剪会通过注册表 API 删除符合条件的 manifest。`ac` 解析到的令牌或集群内 ServiceAccount 令牌必须被注册表代理授权访问目标仓库。
 
 - **注册表垃圾回收支持**：\
   仅在启用注册表垃圾回收时需要对 `pods/exec` 的 `create` 访问权限，因为工作流可能需要通过注册表 Pod 执行与 GC 相关的操作。
@@ -220,8 +228,8 @@ spec:
 
 仅授予所选执行模式所需的权限：
 
-- 对于 **仅干运行**，对 `registry.alauda.io/images` 的 `get` 访问权限就足够；不需要 `delete`。
-- 对于 **确认修剪**，需要 `get` 和 `delete`。
+- 对于 **仅干运行**，需要工作负载发现权限和注册表 API 读授权。
+- 对于 **确认修剪**，还需要注册表 API 删除授权。
 - 对于 **注册表 GC**，还需要 `pods/exec` 权限。
 
 ## 完全可运行示例（推荐起始点）
@@ -259,9 +267,6 @@ rules:
   - apiGroups: [""]
     resources: ["pods/exec"]
     verbs: ["create"]
-  - apiGroups: ["registry.alauda.io"]
-    resources: ["images"]
-    verbs: ["get", "delete"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
@@ -318,6 +323,7 @@ spec:
                 - images
                 - --keep-younger-than=168h
                 - --keep-tag-revisions=5
+                - --catalog-page-size=1000
                 - --whitelist=^cpaas-system/.*
               securityContext:
                 allowPrivilegeEscalation: false
@@ -356,6 +362,7 @@ ac get job -n cpaas-system ac-prune-images-cronjob-manual
 - 在依赖基于 CronJob 的定期清理之前，手动触发并验证一个 Job。
 - 定期查看日志，以确认修剪候选项符合预期，并且没有受保护的存储库受到影响。
 - 在文档和日常操作中优先使用单一操作 CLI。如果 ACP 环境标准化为 `ac`，则在部署、验证和清理任务中一致使用 `ac`。
+- 排障时可以使用 `-v=4` 输出命令实际使用的注册表端点、认证模式和 catalog 分页大小。
 
 ## 推荐的策略模式
 
@@ -363,8 +370,8 @@ ac get job -n cpaas-system ac-prune-images-cronjob-manual
 
 | 场景                     | 推荐调度          | 建议标志                                                                           | 备注                                                               |
 | ------------------------ | ------------------ | --------------------------------------------------------------------------------- | ------------------------------------------------------------------ |
-| 每日检查                 | `0 2 * * *`        | `--keep-younger-than=168h --keep-tag-revisions=5 --whitelist=^cpaas-system/.*` | 仅干运行；适合每日查看修剪候选项                                   |
-| 每周生产清理             | `30 3 * * 0`       | `--keep-younger-than=336h --keep-tag-revisions=10 --whitelist=^cpaas-system/.* --confirm` | 生产环境的推荐基线策略                                           |
+| 每日检查                 | `0 2 * * *`        | `--keep-younger-than=168h --keep-tag-revisions=5 --catalog-page-size=1000 --whitelist=^cpaas-system/.*` | 仅干运行；适合每日查看修剪候选项                                   |
+| 每周生产清理             | `30 3 * * 0`       | `--keep-younger-than=336h --keep-tag-revisions=10 --catalog-page-size=1000 --whitelist=^cpaas-system/.* --confirm` | 生产环境的推荐基线策略                                           |
 | 每月激进清理             | `0 4 1 * *`        | `--all --whitelist=^cpaas-system/.* --whitelist=^pro-ns1/base/.* --confirm`   | 仅在彻底验证白名单后使用                                         |
 | 每周清理与 GC            | `0 1 * * 6`        | `--keep-younger-than=720h --keep-tag-revisions=5 --prune-registry --confirm`  | 在非高峰期安排                                                    |
 
@@ -484,8 +491,8 @@ ac logs job/<job-name> -n cpaas-system
 | 症状                                                  | 可能原因                                                                                               | 首先检查的内容                                                                                                                 | 建议的操作                                                                                                             |
 | ----------------------------------------------------- | -------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
 | `no current context set`                              | 没有可用的集群内回退，且容器中没有有效的 CLI 上下文                                                    | 检查 AC 版本以及 Pod 是否预期使用集群内凭据                                                                                  | 升级到兼容的 AC 版本，并验证 ServiceAccount 令牌挂载和集群内身份验证行为                                            |
-| `forbidden` / `cannot list ...`                       | 缺少工作负载发现的 RBAC 权限                                                                             | 运行 `ac auth can-i list pods --as system:serviceaccount:cpaas-system:ac-images-pruner-sa` 和类似检查所需资源的权限            | 授予缺少的 `get/list/watch` 权限以访问工作负载资源以及对 `registry.alauda.io/images` 的所需权限                     |
-| `forbidden` when deleting images                      | ServiceAccount 具有读取权限但没有删除权限                                                               | 检查运行是否使用 `--confirm`，以及 `registry.alauda.io/images` 上是否授予了 `delete` 权限                                   | 为确认清理添加 `delete` 权限                                                                                         |
+| `forbidden` / `cannot list ...`                       | 缺少工作负载发现的 RBAC 权限                                                                             | 运行 `ac auth can-i list pods --as system:serviceaccount:cpaas-system:ac-images-pruner-sa` 和类似检查所需资源的权限            | 授予缺少的 `get/list/watch` 权限以访问工作负载资源                                                                    |
+| `forbidden` when deleting images                      | 注册表代理允许读请求但拒绝删除请求                                                                       | 检查运行是否使用 `--confirm`，以及解析到的令牌是否被授权删除目标仓库中的 manifest                                         | 为确认清理授予所需的注册表删除授权                                                                                   |
 | `401` / `403` when fetching registry tags or manifests | 注册表端点可访问，但身份验证或授权失败                                                                    | 检查日志以获取正在使用的确切注册表端点，并验证 ServiceAccount 授权路径                                                      | 验证注册表代理身份验证/授权配置、令牌处理，以及 `--registry-url` 是否指向正确的端点                                 |
 | `failed to list registry pods`                        | 缺少对注册表 Pod 命名空间的访问或缺少权限                                                                | 检查 `cpaas-system` 中是否存在注册表 Pod，以及 ServiceAccount 是否可以访问相关资源                                          | 验证命名空间、资源名称和与 GC 相关的 Pod 访问的 RBAC                                                                  |
 | `pods/exec is forbidden`                              | 启用了 GC，但缺少 exec 权限                                                                              | 确认是否启用了 `--prune-registry`，以及 `pods/exec` 是否具有 `create` 权限                                                  | 在 `pods/exec` 上添加 `create` 权限                                                                                   |
@@ -505,7 +512,8 @@ ac logs job/<job-name> -n cpaas-system
 4. 查看容器日志以获取修剪工作流阶段和确切错误文本。
 5. 验证 ServiceAccount RBAC 使用 `ac auth can-i`。
 6. 如果设置了 `--registry-url`，请验证端点可达性和授权。
-7. 如果启用了 `--prune-registry`，请验证 `pods/exec` 权限和注册表 Pod 可用性。
+7. 需要确认命令实际使用的注册表端点、认证模式和 catalog 分页大小时，使用 `-v=4` 重新运行。
+8. 如果启用了 `--prune-registry`，请验证 `pods/exec` 权限和注册表 Pod 可用性。
 
 ## 清理演示资源
 
