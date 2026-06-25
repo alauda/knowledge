@@ -5,6 +5,7 @@ products:
   - Alauda Container Platform
 ProductsVersion:
   - 4.3.x and later
+id: KB260600125
 ---
 
 # Use USB Redirection for KubeVirt VMs on ACP
