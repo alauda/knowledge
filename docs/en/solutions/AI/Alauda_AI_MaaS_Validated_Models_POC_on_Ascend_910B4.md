@@ -13,7 +13,7 @@ kind:
 ## Overview
 
 This proof of concept validates serving production-grade open large language models through the
-**Alauda AI MaaS** OpenAI-compatible gateway on **domestic Huawei Ascend 910B4 NPUs**, end to end:
+**Alauda AI MaaS** OpenAI-compatible gateway on **Huawei Ascend 910B4 NPUs**, end to end:
 model packaging (ModelCar), deployment (KServe `LLMInferenceService` + InferNex), inference runtime
 (`vllm-ascend`), and access through the MaaS gateway with API-key authentication and token rate limiting.
 
