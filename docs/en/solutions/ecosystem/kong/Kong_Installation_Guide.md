@@ -68,50 +68,77 @@ Expected result:
 > [!NOTE]
 > The `kong-operator` Deployment in the operator namespace is the OLM **wrap operator** — it watches `Kong` custom resources and installs the upstream Kong Operator chart when one is created. The actual Kong Gateway Operator (KGO) controller comes up only after you create a `Kong` instance in the next step.
 
-## Quick Start: Serve Traffic Through Kong Gateway
+### Create a Kong Instance
 
-This section walks through a minimal end-to-end example: create a `Kong` instance, define a `GatewayClass` + `Gateway`, route HTTP traffic to a sample upstream with an `HTTPRoute`, and verify with `curl`.
+Installing the OLM bundle only brings up the wrap operator. To actually deploy the Kong Gateway Operator (KGO) you create a single **`Kong`** custom resource. We recommend creating it through the OperatorHub form so the install-time defaults are explicit and reviewable.
 
-Set variables used in the commands below:
+1. From **Administrator > Marketplace > OperatorHub > Installed**, open **Kong Operator**, switch to the **`Kong`** tab, and click **Create Instance**.
+2. The form is grouped into three sections; defaults are tuned for a typical ACP business cluster (which ships cert-manager):
+
+   | Group | Field | Default | Recommendation |
+   |-------|-------|---------|----------------|
+   | **Certificates** | Use cert-manager for Webhooks | **On** | Leave on. Lets cert-manager issue and auto-renew the conversion / validating webhook certificates. Turn off only if cert-manager is not installed in the cluster (the chart will then self-sign). |
+   | **Certificates** | Use cert-manager for Operator CA | **On** | Leave on. cert-manager creates the Issuer that signs the DataPlane ↔ ControlPlane mutual-TLS certificates. |
+   | **High Availability** | Replica Count | `1` | Set to `2` or more for production so KGO survives a single Pod restart (leader election handles failover). |
+   | **Resources** (advanced) | CPU / Memory requests + limits | `10m / 128Mi` request, `500m / 256Mi` limit | Raise the memory limit to `512Mi+` if you expect many `DataPlane` instances; the default 256Mi limit can OOM under load. |
+
+3. Submit the form. The platform creates a `Kong` resource equivalent to the YAML below (cert-manager toggles on, single replica). All of these fields can also be edited later by reopening the `Kong` instance in the same UI.
+
+   ```yaml
+   apiVersion: kong-operator.alauda.io/v1
+   kind: Kong
+   metadata:
+     name: kong-sample
+     namespace: kong-system          # any namespace works; the wrap operator watches cluster-wide
+   spec:
+     global:
+       webhooks:
+         options:
+           certManager:
+             enabled: true
+       certificateAuthority:
+         options:
+           certManager:
+             enabled: true
+     replicaCount: 1
+   ```
+
+> [!NOTE]
+> The `Kong` CR is a **singleton install-level resource** — it controls how KGO itself is deployed (replicas, resources, cert-manager toggles). Day-to-day routing is managed through the standard Gateway API resources (`GatewayClass`, `Gateway`, `HTTPRoute`), which are created independently of the `Kong` CR. This separation lets cluster admins manage the install once while application teams add routes on their own cadence.
+
+Verify the install completed:
 
 ```bash
-export NAMESPACE=kong-demo
-export KONG_CR=kong-sample
-export GATEWAY=demo-gateway
-kubectl create namespace ${NAMESPACE}
-```
+NAMESPACE=<the namespace you chose>
+KONG_CR=kong-sample
 
-### 1. Create a Kong Instance
-
-The `Kong` CR represents an installation of the Kong Gateway Operator. Its `spec` mirrors the upstream Helm chart's [values.yaml](https://github.com/Kong/charts/blob/kong-operator-1.3.0/charts/kong-operator/values.yaml); an empty `spec: {}` uses sensible defaults (cert-manager-issued webhook certs, single replica, KGO 2.2.0 image).
-
-```yaml
-apiVersion: kong-operator.alauda.io/v1
-kind: Kong
-metadata:
-  name: kong-sample
-  namespace: kong-demo
-spec: {}
-```
-
-Apply the manifest and wait for the KGO Deployment to become Available:
-
-```bash
-kubectl apply -f kong.yaml
-kubectl -n ${NAMESPACE} wait kong/${KONG_CR} --for=jsonpath='{.status.conditions[?(@.type=="Deployed")].status}'=True --timeout=300s
-kubectl -n ${NAMESPACE} rollout status deploy/${KONG_CR}-kong-operator-controller-manager --timeout=300s
+kubectl -n ${NAMESPACE} wait kong/${KONG_CR} \
+  --for=jsonpath='{.status.conditions[?(@.type=="Deployed")].status}'=True --timeout=300s
+kubectl -n ${NAMESPACE} rollout status \
+  deploy/${KONG_CR}-kong-operator-controller-manager --timeout=300s
+kubectl -n ${NAMESPACE} get certificates
 ```
 
 Expected result:
 
 - The `Kong` resource reports `status.conditions[Deployed] = True`.
 - The `${KONG_CR}-kong-operator-controller-manager` Deployment is Available (1/1).
-- The Kubernetes Gateway API CRDs (`gateways.gateway.networking.k8s.io`, `gatewayclasses.gateway.networking.k8s.io`, `httproutes.gateway.networking.k8s.io`, ...) and KGO's own CRDs (`controlplanes.gateway-operator.konghq.com`, `dataplanes.gateway-operator.konghq.com`, `gatewayconfigurations.gateway-operator.konghq.com`) are registered cluster-wide.
+- Two cert-manager `Issuers` and three `Certificates` (webhook serving, validating webhook serving, operator CA) are all `Ready=True`.
+- KGO's own CRDs (`controlplanes`, `dataplanes`, `gatewayconfigurations` under `gateway-operator.konghq.com`) and the Kubernetes Gateway API standard CRDs (`gateways`, `gatewayclasses`, `httproutes`, ... under `gateway.networking.k8s.io`) are registered cluster-wide.
 
-> [!NOTE]
-> The `Kong` CR is a **singleton install-level resource** — it controls how KGO itself is deployed (replicas, resources, cert-manager toggles). Day-to-day routing is managed through the standard Gateway API resources (`GatewayClass`, `Gateway`, `HTTPRoute`), which are created independently of the `Kong` CR. This separation lets cluster admins manage the install once while application teams add routes on their own cadence.
+## Quick Start: Serve Traffic Through Kong Gateway
 
-### 2. Create a GatewayClass
+This section assumes the install from the previous chapter is complete — you have a running `Kong` instance and KGO is reconciling Gateway API resources. The quickstart walks through a minimal end-to-end example: declare a `GatewayClass` + `Gateway`, route HTTP traffic to a sample upstream with an `HTTPRoute`, and verify with `curl`.
+
+Set variables used in the commands below:
+
+```bash
+export NAMESPACE=kong-demo
+export GATEWAY=demo-gateway
+kubectl create namespace ${NAMESPACE}
+```
+
+### 1. Create a GatewayClass
 
 `GatewayClass` is cluster-scoped and tells the Gateway API which controller manages a given class of Gateways. KGO watches GatewayClasses whose `controllerName` is `konghq.com/gateway-operator`.
 
@@ -134,7 +161,7 @@ kubectl get gatewayclass kong \
 
 Expected result: `True`. KGO is now ready to reconcile Gateways that reference this class.
 
-### 3. Pin the Kong Gateway Data Plane Image (Optional but Recommended)
+### 2. Pin the Kong Gateway Data Plane Image (Optional but Recommended)
 
 By default KGO selects a built-in default Kong Gateway image when it creates a `DataPlane` for a `Gateway`. Pinning the image via `GatewayConfiguration` makes the version explicit and lets you point to an internal registry mirror if your cluster cannot reach `docker.io` directly.
 
@@ -164,9 +191,9 @@ spec:
 > [!TIP]
 > If your cluster mirrors `docker.io`, replace the image references with the mirrored equivalents — for example `docker-mirrors.alauda.cn/kong/kong-gateway:3.10`.
 
-### 4. Create a Gateway
+### 3. Create a Gateway
 
-A `Gateway` is the request entry point. It references the `GatewayClass` from step 2 and (optionally) the `GatewayConfiguration` from step 3. KGO sees the `Gateway` and dynamically creates a `ControlPlane` + `DataPlane` to serve it.
+A `Gateway` is the request entry point. It references the `GatewayClass` from step 1 and (optionally) the `GatewayConfiguration` from step 2. KGO sees the `Gateway` and dynamically creates a `ControlPlane` + `DataPlane` to serve it.
 
 ```yaml
 apiVersion: gateway.networking.k8s.io/v1
@@ -204,7 +231,7 @@ Expected result:
 - `Programmed=True` (the underlying `ControlPlane` + `DataPlane` Pods are running and reconciled).
 - The Gateway's `status.addresses` shows a Service address you can route traffic to.
 
-### 5. Deploy a Sample Upstream Service
+### 4. Deploy a Sample Upstream Service
 
 ```yaml
 apiVersion: apps/v1
@@ -248,7 +275,7 @@ kubectl apply -f echo.yaml
 kubectl -n ${NAMESPACE} rollout status deploy/echo
 ```
 
-### 6. Route Traffic with an HTTPRoute
+### 5. Route Traffic with an HTTPRoute
 
 `HTTPRoute` declares which host/path on the Gateway maps to which backend Service. This is the resource application teams typically create — separately from the `Kong` install CR.
 
@@ -283,7 +310,7 @@ kubectl -n ${NAMESPACE} get httproute echo-route \
 
 Expected result: `True`. The route is bound to the Gateway and KGO has pushed the Kong configuration to the data plane.
 
-### 7. Verify with curl
+### 6. Verify with curl
 
 Find the Gateway's in-cluster Service and probe it from a curl pod:
 
@@ -327,20 +354,6 @@ kubectl -n <operator-namespace> delete subscription kong-operator
 kubectl -n <operator-namespace> delete csv kong-operator.v2.2.0
 ```
 
-## Tuning the Install
-
-Re-open the `Kong` CR (or the OperatorHub form) to change any of these install-time options:
-
-| Field | Default | What it does |
-|-------|---------|--------------|
-| `global.webhooks.options.certManager.enabled` | `true` | When on, cert-manager issues webhook certificates. Disable only if cert-manager is not installed; the chart will then self-sign. |
-| `global.certificateAuthority.options.certManager.enabled` | `true` | When on, cert-manager creates the Operator CA Issuer. The CA signs DataPlane/ControlPlane mutual-TLS certificates. |
-| `replicaCount` | `1` | KGO controller replicas. Set `>= 2` in production for leader-election-driven failover. |
-| `resources.requests.{cpu,memory}` | `10m / 128Mi` | KGO controller per-Pod requests. Raise when managing many DataPlanes. |
-| `resources.limits.{cpu,memory}` | `500m / 256Mi` | KGO controller per-Pod limits. The 256Mi memory limit can OOM on clusters with many DataPlanes; bump to `512Mi+`. |
-
-Gateway-level options (replicas, images, environment, scheduling for the *Kong Gateway* data plane and *Kong Ingress Controller* control plane themselves) live on the `GatewayConfiguration` resource, not on the `Kong` CR. See step 3 for an example.
-
 ## FAQ
 
 ### What is the difference between the "Kong Operator" in OperatorHub and the "Kong Gateway Operator"?
@@ -364,7 +377,7 @@ Embedding these inside the `Kong` install CR would collapse three distinct lifec
 
 ### Kong Gateway Pods stay in `ImagePullBackOff`
 
-Symptom: after step 4 the Gateway never reaches `Programmed=True`, and `kubectl describe pod` on a DataPlane Pod shows `Failed to pull image "kong/kong-gateway:3.10": rpc error: ...`.
+Symptom: after step 3 the Gateway never reaches `Programmed=True`, and `kubectl describe pod` on a DataPlane Pod shows `Failed to pull image "kong/kong-gateway:3.10": rpc error: ...`.
 
 Cause: your cluster cannot reach `docker.io` directly.
 
