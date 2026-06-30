@@ -28,6 +28,13 @@ Kong is a Kubernetes-native API gateway built around the [Kubernetes Gateway API
 
 - An ACP cluster with the **OperatorHub** feature enabled.
 - **cert-manager installed and Ready in the cluster.** KGO 2.2.0 uses cert-manager to issue its admission/conversion webhook certificates and its internal CA. The default form options assume cert-manager is present; without it the install will fail to create `Issuer`/`Certificate` resources. ACP business clusters ship cert-manager by default.
+- **Kubernetes Gateway API CRDs at v1.5 or newer (`standard` channel)** installed cluster-wide. KGO 2.2.0 watches `gateway.networking.k8s.io/v1` `ReferenceGrant`, which graduated to `v1` only in Gateway API v1.5. If your cluster already has Gateway API CRDs from another implementation (Envoy Gateway v1.7, Cilium, etc.) that bundle Gateway API ≤ v1.4, install the newer CRDs explicitly — Helm-installed CRDs are skipped when older versions already exist, so the Kong Operator chart will **not** upgrade them for you:
+
+   ```bash
+   kubectl apply -f https://github.com/kubernetes-sigs/gateway-api/releases/download/v1.5.1/standard-install.yaml
+   ```
+
+   Verify `referencegrants.gateway.networking.k8s.io` lists `v1` under `spec.versions`. The upgrade is additive and backward-compatible — older controllers continue to read `v1beta1`. See [FAQ](#kgo-pod-crashloops-with-failed-to-wait-for-cache-to-sync) for the symptom this prevents.
 - A target namespace where you will deploy the `Kong` instance.
 - Business cluster nodes can access the platform image registry. The Kong Gateway data plane image (`kong/kong-gateway`) must be pullable; on restricted networks use a mirror (see [FAQ](#kong-gateway-pods-stay-in-imagepullbackoff)).
 - (Optional) The `violet` CLI, downloaded from **App Store > App Onboarding** and matching the target platform version. Only required if the Kong Operator plugin package is not yet uploaded to the target platform.
@@ -374,6 +381,32 @@ You install (1) once from OperatorHub. Creating a `Kong` CR triggers (1) to depl
 - `HTTPRoute` is namespaced and typically owned by an application team — there can be hundreds of them.
 
 Embedding these inside the `Kong` install CR would collapse three distinct lifecycles into one giant object and break the standard tooling (kubectl plugins, GitOps, policy engines) that expects them as separate resources. The `Kong` CR is intentionally limited to install-time concerns.
+
+### KGO pod CrashLoops with "failed to wait for Cache to sync"
+
+Symptom: the `<release>-kong-operator-controller-manager` Pod restarts every ~5 minutes. Its previous-container log shows:
+
+```
+failed to wait for gateway caches to sync kind source: *v1.ReferenceGrant: timed out waiting for cache to be synced
+"if kind is a CRD, it should be installed before calling Start","kind":"ReferenceGrant.gateway.networking.k8s.io"
+"no matches for kind \"ReferenceGrant\" in version \"gateway.networking.k8s.io/v1\""
+```
+
+Cause: KGO 2.2.0 watches `gateway.networking.k8s.io/v1` `ReferenceGrant`, which only exists in Gateway API CRDs at **v1.5 or newer**. If the cluster already had older Gateway API CRDs from another implementation (Envoy Gateway v1.7 ships Gateway API v1.4.1, for example), Helm-installed CRDs are skipped on conflict, and the Kong Operator chart leaves the older CRDs in place. KGO then can't find the `v1` group it expects.
+
+Fix: install the upstream Gateway API v1.5+ standard CRDs (additive, backward-compatible — older controllers keep working on `v1beta1`):
+
+```bash
+kubectl apply -f https://github.com/kubernetes-sigs/gateway-api/releases/download/v1.5.1/standard-install.yaml
+
+kubectl get crd referencegrants.gateway.networking.k8s.io \
+  -o jsonpath='{range .spec.versions[*]}{.name}{"\n"}{end}'
+# Expected output includes v1, v1beta1, v1alpha2
+
+kubectl -n <namespace> rollout restart deploy/<release>-kong-operator-controller-manager
+```
+
+After the restart, the Pod stays Ready=True without further CrashLoops.
 
 ### Kong Gateway Pods stay in `ImagePullBackOff`
 
