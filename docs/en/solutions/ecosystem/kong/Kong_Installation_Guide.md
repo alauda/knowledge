@@ -168,9 +168,9 @@ kubectl get gatewayclass kong \
 
 Expected result: `True`. KGO is now ready to reconcile Gateways that reference this class.
 
-### 2. Pin the Kong Gateway Data Plane Image (Optional but Recommended)
+### 2. Pin the Kong Gateway Data Plane Image and Service Type
 
-By default KGO selects a built-in default Kong Gateway image when it creates a `DataPlane` for a `Gateway`. Pinning the image via `GatewayConfiguration` makes the version explicit and lets you point to an internal registry mirror if your cluster cannot reach `docker.io` directly.
+By default KGO creates the `DataPlane`'s ingress Service as `type: LoadBalancer`. On clusters without a LoadBalancer provider (no MetalLB / cloud LB controller) the Service stays `EXTERNAL-IP: <pending>` and the Gateway never reaches `Programmed=True`. `GatewayConfiguration` lets you both pin the data plane image (so you point at an internal mirror on restricted networks) and set the ingress Service type to `NodePort` or `ClusterIP` instead.
 
 ```yaml
 apiVersion: gateway-operator.konghq.com/v1beta1
@@ -180,6 +180,10 @@ metadata:
   namespace: kong-demo
 spec:
   dataPlaneOptions:
+    network:
+      services:
+        ingress:
+          type: NodePort           # ClusterIP also works for in-cluster only access
     deployment:
       podTemplateSpec:
         spec:
@@ -197,6 +201,9 @@ spec:
 
 > [!TIP]
 > If your cluster mirrors `docker.io`, replace the image references with the mirrored equivalents — for example `docker-mirrors.alauda.cn/kong/kong-gateway:3.10`.
+
+> [!IMPORTANT]
+> Create the `GatewayConfiguration` **before** the `Gateway`. KGO snapshots the configuration when it first creates the `DataPlane` CR for the Gateway; later changes to `GatewayConfiguration` do **not** propagate to existing `DataPlane`s automatically. To apply a change after the fact, `kubectl delete dataplane <name> -n <ns>` — KGO immediately re-creates the DataPlane from the current `GatewayConfiguration`.
 
 ### 3. Create a Gateway
 
@@ -319,28 +326,44 @@ Expected result: `True`. The route is bound to the Gateway and KGO has pushed th
 
 ### 6. Verify with curl
 
-Find the Gateway's in-cluster Service and probe it from a curl pod:
+Find the Gateway's in-cluster ingress Service and probe it from a curl pod. KGO emits **two** Services per DataPlane — an `-admin-` Service (port 8444, internal Kong admin API) and an `-ingress-` Service (port 80, the proxy listener). Filter to the ingress one by name; the chart label `gateway-operator.konghq.com/managed-by=dataplane` is set on both and is not specific enough.
 
 ```bash
-# The DataPlane Service that fronts the Gateway listeners
-GATEWAY_SVC=$(kubectl -n ${NAMESPACE} get svc \
-  -l gateway-operator.konghq.com/managed-by=dataplane \
-  -o jsonpath='{.items[0].metadata.name}')
+# Pick the ingress Service (not the admin Service)
+GATEWAY_SVC=$(kubectl -n ${NAMESPACE} get svc -o name \
+  | grep dataplane-ingress | head -1 | sed 's|service/||')
 echo "Gateway service: ${GATEWAY_SVC}"
 
 kubectl -n ${NAMESPACE} run probe --rm -it --restart=Never \
   --image=curlimages/curl:latest \
-  -- curl -sS -H 'Host: echo.kong-demo.example.com' \
-       http://${GATEWAY_SVC}.${NAMESPACE}.svc:80/
+  -- sh -c "
+       echo '--- valid host -> expect 200 ---'
+       curl -sS -H 'Host: echo.kong-demo.example.com' http://${GATEWAY_SVC}.${NAMESPACE}.svc:80/
+       echo '--- wrong host -> expect 404 ---'
+       curl -sS -o /dev/null -w 'http %{http_code}\n' -H 'Host: other.example.com' http://${GATEWAY_SVC}.${NAMESPACE}.svc:80/
+     "
 ```
 
 Expected output:
 
 ```text
+--- valid host -> expect 200 ---
 hello from echo upstream
+--- wrong host -> expect 404 ---
+http 404
 ```
 
-Requests to the same Gateway with a Host header that doesn't match the `HTTPRoute.hostnames` return `404` — Kong rejects them as unrouted.
+If you set `dataPlaneOptions.network.services.ingress.type: NodePort` in step 2, you can also reach the Gateway from outside the cluster via any node IP and the assigned NodePort:
+
+```bash
+kubectl -n ${NAMESPACE} get svc | grep dataplane-ingress
+# Look for the "80:<NODEPORT>/TCP" column
+
+NODE_IP=$(kubectl get node -o jsonpath='{.items[0].status.addresses[?(@.type=="InternalIP")].address}')
+NODE_PORT=$(kubectl -n ${NAMESPACE} get svc \
+  -o jsonpath="{.items[?(@.metadata.name=='${GATEWAY_SVC}')].spec.ports[0].nodePort}")
+curl -sS -H 'Host: echo.kong-demo.example.com' http://${NODE_IP}:${NODE_PORT}/
+```
 
 ## Cleanup
 
