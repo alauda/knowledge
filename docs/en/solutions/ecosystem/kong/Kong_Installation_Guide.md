@@ -20,14 +20,13 @@ Kong is a Kubernetes-native API gateway built around the [Kubernetes Gateway API
 |-----------|--------------------|
 | Kong Operator (KGO) | 2.2.0 |
 | Kong Operator chart | 1.3.0 |
-| Kong Gateway (data plane, for the quickstart) | 3.10 |
-| Kubernetes Gateway API | v1 (standard channel CRDs) |
-| cert-manager (required) | 1.13+ |
+| Kong Gateway (data plane) | 3.10 (bundled in the operator package; pinned via `GatewayConfiguration`) |
+| Kubernetes Gateway API CRDs | **v1.5 or newer (standard channel)** |
+| Kubernetes | **1.30 or newer** (Gateway API v1.5 requirement) |
 
 ## Prerequisites
 
-- An ACP cluster with the **OperatorHub** feature enabled.
-- **cert-manager installed and Ready in the cluster.** KGO 2.2.0 uses cert-manager to issue its admission/conversion webhook certificates and its internal CA. The default form options assume cert-manager is present; without it the install will fail to create `Issuer`/`Certificate` resources. ACP business clusters ship cert-manager by default.
+- A target namespace where you will deploy the `Kong` instance.
 - **Kubernetes Gateway API CRDs at v1.5 or newer (`standard` channel)** installed cluster-wide. KGO 2.2.0 watches `gateway.networking.k8s.io/v1` `ReferenceGrant`, which graduated to `v1` only in Gateway API v1.5. If your cluster already has Gateway API CRDs from another implementation (Envoy Gateway v1.7, Cilium, etc.) that bundle Gateway API ≤ v1.4, install the newer CRDs explicitly — Helm-installed CRDs are skipped when older versions already exist, so the Kong Operator chart will **not** upgrade them for you:
 
    ```bash
@@ -35,14 +34,12 @@ Kong is a Kubernetes-native API gateway built around the [Kubernetes Gateway API
    ```
 
    Verify `referencegrants.gateway.networking.k8s.io` lists `v1` under `spec.versions`. The upgrade is additive and backward-compatible — older controllers continue to read `v1beta1`. See [FAQ](#kgo-pod-crashloops-with-failed-to-wait-for-cache-to-sync) for the symptom this prevents.
-- A target namespace where you will deploy the `Kong` instance.
-- Business cluster nodes can access the platform image registry. The Kong Gateway data plane image (`kong/kong-gateway`) must be pullable; on restricted networks use a mirror (see [FAQ](#kong-gateway-pods-stay-in-imagepullbackoff)).
-- (Optional) The `violet` CLI, downloaded from **App Store > App Onboarding** and matching the target platform version. Only required if the Kong Operator plugin package is not yet uploaded to the target platform.
+- (Optional) The `violet` CLI, downloaded from **App Store > App Onboarding** and matching the target platform version. Only required if the Kong Operator package is not yet uploaded to the target platform.
 
 ## Install the Kong Operator
 
-1. Download the **Kong Operator** plugin from the [Alauda Cloud Console](https://cloud.alauda.io/) Marketplace.
-2. If the plugin package has not been uploaded to the target platform, follow the [Upload Packages](https://docs.alauda.io/container_platform/4.2/extend/upload_package.html) guide to upload it to the cluster, or push directly with `violet`:
+1. Download the **Kong Operator** package from the [Alauda Cloud Console](https://cloud.alauda.io/) Marketplace.
+2. If the package has not been uploaded to the target platform, follow the [Upload Packages](https://docs.alauda.io/container_platform/4.2/extend/upload_package.html) guide to upload it to the cluster, or push directly with `violet`:
 
    ```bash
    violet push \
@@ -50,7 +47,7 @@ Kong is a Kubernetes-native API gateway built around the [Kubernetes Gateway API
      --clusters <business-cluster-name> \
      --platform-username <platform-admin-username> \
      --platform-password <platform-admin-password> \
-     <kong-operator-plugin-package>.tgz
+     <kong-operator-package>.tgz
    ```
 
 3. Sign in to the platform as an administrator. Navigate to **Administrator > Marketplace > OperatorHub**.
@@ -170,7 +167,9 @@ Expected result: `True`. KGO is now ready to reconcile Gateways that reference t
 
 ### 2. Pin the Kong Gateway Data Plane Image and Service Type
 
-By default KGO creates the `DataPlane`'s ingress Service as `type: LoadBalancer`. On clusters without a LoadBalancer provider (no MetalLB / cloud LB controller) the Service stays `EXTERNAL-IP: <pending>` and the Gateway never reaches `Programmed=True`. `GatewayConfiguration` lets you both pin the data plane image (so you point at an internal mirror on restricted networks) and set the ingress Service type to `NodePort` or `ClusterIP` instead.
+By default KGO creates the `DataPlane`'s ingress Service as `type: LoadBalancer`. On clusters without a LoadBalancer provider (no MetalLB / cloud LB controller) the Service stays `EXTERNAL-IP: <pending>` and the Gateway never reaches `Programmed=True`. `GatewayConfiguration` lets you both pin the data plane image and set the ingress Service type to `NodePort` or `ClusterIP` instead.
+
+The `kong/kong-gateway:3.10` image is bundled with the Kong Operator package — it is synced to the cluster's internal registry and registered in the platform's image whitelist, so the `docker.io/kong/kong-gateway` reference below is rewritten automatically to the internal location. No manual mirroring is needed.
 
 ```yaml
 apiVersion: gateway-operator.konghq.com/v1beta1
@@ -198,9 +197,6 @@ spec:
             - name: controller
               image: kong/kong-operator:2.2.0
 ```
-
-> [!TIP]
-> If your cluster mirrors `docker.io`, replace the image references with the mirrored equivalents — for example `docker-mirrors.alauda.cn/kong/kong-gateway:3.10`.
 
 > [!IMPORTANT]
 > Create the `GatewayConfiguration` **before** the `Gateway`. KGO snapshots the configuration when it first creates the `DataPlane` CR for the Gateway; later changes to `GatewayConfiguration` do **not** propagate to existing `DataPlane`s automatically. To apply a change after the fact, `kubectl delete dataplane <name> -n <ns>` — KGO immediately re-creates the DataPlane from the current `GatewayConfiguration`.
@@ -435,29 +431,9 @@ After the restart, the Pod stays Ready=True without further CrashLoops.
 
 Symptom: after step 3 the Gateway never reaches `Programmed=True`, and `kubectl describe pod` on a DataPlane Pod shows `Failed to pull image "kong/kong-gateway:3.10": rpc error: ...`.
 
-Cause: your cluster cannot reach `docker.io` directly.
+Cause: this should be rare — the Kong Operator package bundles `kong/kong-gateway:3.10` to the cluster's internal registry, and the platform's image whitelist rewrites `docker.io/kong/kong-gateway` references automatically. If you hit this, it usually means the image whitelist was not provisioned for your namespace yet, or the namespace was created before the Kong Operator was installed.
 
-Fix: set the data plane and control plane images on the `GatewayConfiguration` to your internal mirror, for example:
-
-```yaml
-spec:
-  dataPlaneOptions:
-    deployment:
-      podTemplateSpec:
-        spec:
-          containers:
-            - name: proxy
-              image: docker-mirrors.alauda.cn/kong/kong-gateway:3.10
-  controlPlaneOptions:
-    deployment:
-      podTemplateSpec:
-        spec:
-          containers:
-            - name: controller
-              image: docker-mirrors.alauda.cn/kong/kong-operator:2.2.0
-```
-
-Re-apply the `GatewayConfiguration`. KGO rolls the DataPlane to the new image.
+Fix: confirm the image is on the internal registry, and that your namespace receives the rewrite (the platform tool surface for image whitelists varies by ACP version). As a workaround you can override the image on the `GatewayConfiguration` to a fully-qualified internal path, for example `<your-internal-registry>/3rdparty/kong/kong-gateway:3.10`. Re-apply the `GatewayConfiguration` and `kubectl delete dataplane <name>` to force KGO to re-create the DataPlane with the new image.
 
 ### The `Kong` install fails with "cannot import: invalid ownership metadata"
 
