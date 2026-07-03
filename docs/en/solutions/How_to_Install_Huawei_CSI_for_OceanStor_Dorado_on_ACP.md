@@ -8,11 +8,11 @@ ProductsVersion:
 id: KB260600012
 ---
 
-# How to Install and Configure Huawei CSI for OceanStor Dorado on ACP
+# How to Install and Configure OceanStor CSI driver For Dorado on ACP
 
 ## Overview
 
-This guide walks you through manually (offline) installing the Huawei CSI driver on an ACP cluster and integrating it with a Huawei OceanStor Dorado storage array. It covers preparing the nodes, deploying the CSI components, configuring a storage backend, creating a StorageClass, and validating the integration with a test PVC. Both the iSCSI and NFS protocols are validated.
+This guide walks you through installing OceanStor CSI driver For Dorado as an ACP cluster plugin and integrating it with an OceanStor Dorado storage array. It covers preparing the nodes, deploying the CSI components, configuring a storage backend, creating a StorageClass, and validating the integration with a test PVC. Both the iSCSI and NFS protocols are validated.
 
 ## Environment
 
@@ -21,19 +21,20 @@ This guide walks you through manually (offline) installing the Huawei CSI driver
 | Container Platform | ACP 4.x (validated on 4.2) |
 | Node Operating System | Micro OS 5.5 |
 | Storage Device | OceanStor Dorado 6.1.6 |
-| Huawei CSI | v4.11.0 |
-| Installation Method | Manual |
+| OceanStor CSI driver For Dorado | v4.11.0 |
+| Installation Method | Cluster plugin |
 | Validated Protocols | iSCSI, NFS |
 
-> **Note**: The procedure applies to all ACP 4.x versions. The Huawei CSI and OceanStor Dorado versions, however, are coupled — confirm that the CSI version you install is on the compatibility list for your Dorado firmware version before proceeding. The versions in the table above are the ones validated for this guide.
+> **Note**: The procedure applies to all ACP 4.x versions. The OceanStor CSI driver For Dorado and OceanStor Dorado versions, however, are coupled — confirm that the CSI version you install is on the compatibility list for your Dorado firmware version before proceeding. The versions in the table above are the ones validated for this guide.
 
 ## Prerequisites
 
 - An ACP 4.x cluster, with `kubectl` access to it.
 - A reachable OceanStor Dorado array, and the management address, storage pool names, and data-plane portal addresses provided by the storage administrator.
 - Layer-3 connectivity between every cluster node (master and worker) and the storage management plane and data plane. Confirm this during environment planning.
-- The Huawei CSI v4.11.0 package obtained from the official Huawei channel, containing the `manual/` (installation YAML), `image/` (offline images), and `bin/` (the `oceanctl` tool) directories.
-- A node with a container runtime (for example Docker) that can load the offline images and push them to the cluster image registry.
+- The OceanStor CSI driver For Dorado plugin package downloaded from Alauda Cloud Marketplace.
+- The `oceanctl` tool from the eSDK package that matches the CSI version.
+- The `violet` CLI installed, and a platform account that can upload plugin packages to the target business cluster.
 
 The following placeholders are used throughout this guide. Replace them with the values for your environment:
 
@@ -42,7 +43,6 @@ The following placeholders are used throughout this guide. Replace them with the
 | `<dorado-management-ip>` | Dorado management plane address |
 | `<iscsi-portal-ip>` | iSCSI data-plane portal address |
 | `<nfs-portal-ip>` | NFS data-plane portal address |
-| `<registry>` | Cluster image registry address |
 | `<pool-name>` | OceanStor storage pool name |
 
 ## Resolution
@@ -123,90 +123,32 @@ defaults {
 }
 ```
 
-### 2. Prepare the installation package and images
+### 2. Prepare the installation package
 
-#### 2.1 Upload images to the registry
+#### 2.1 Download the plugin package from Alauda Cloud
 
-On the node with a container runtime, load the following image packages and push them to the cluster image registry one by one:
+Log in to Alauda Cloud with a tenant account, search for **OceanStor CSI driver For Dorado** in Marketplace, and download the plugin package.
 
-```shell
-# Load images (replace <arch> with the node architecture, e.g. amd64 or arm64)
-docker load -i huawei-csi-v4.11.0-<arch>.tar
-docker load -i storage-backend-controller-v4.11.0-<arch>.tar
-docker load -i storage-backend-sidecar-v4.11.0-<arch>.tar
-docker load -i huawei-csi-extender-v4.11.0-<arch>.tar
+#### 2.2 Upload the plugin package
 
-# Tag and push (repeat for each image)
-docker tag huawei-csi:4.11.0 <registry>/huawei-csi:4.11.0
-docker push <registry>/huawei-csi:4.11.0
-```
-
-#### 2.2 Replace the image addresses in the YAML files
-
-By default, the YAML files in the CSI package reference the official image addresses. Replace them with your cluster image registry address. Run the following in the `manual/esdk/deploy/` directory:
+Use `violet push` to upload the plugin package to the target cluster:
 
 ```shell
-# First inspect the current image references to identify the default registry prefix
-grep 'image:' *.yaml
-
-# Replace that default prefix with your cluster registry address.
-# Set <default-registry-address> to the prefix shown by the grep above (the part before /huawei-csi).
-# A '#' delimiter is used because registry addresses contain '/'.
-sed -i 's#<default-registry-address>#<registry>#g' *.yaml
-
-# Confirm the replacement result
-grep 'image:' *.yaml
+violet push \
+  --platform-address <platform-address> \
+  --clusters <business-cluster-name> \
+  --platform-username <platform-admin-username> \
+  --platform-password <platform-admin-password> \
+  <dorado-csi-plugin-package>.tgz
 ```
-
-> **Note**: If the image tag suffix (commit hash) does not match the version you actually pushed, replace it with `sed` as well:
->
-> ```shell
-> sed -i 's/<old-tag-suffix>/<new-tag-suffix>/g' *.yaml
-> ```
 
 ### 3. Deploy the CSI components
 
-Enter the `manual/esdk/` directory and run the following in order:
+#### 3.1 Install the cluster plugin
 
-#### 3.1 Create the namespace
+Install the **OceanStor CSI driver For Dorado** cluster plugin to the target cluster from the platform.
 
-```shell
-kubectl create ns huawei-csi
-```
-
-#### 3.2 Deploy the Backend CRD
-
-```shell
-kubectl apply -f ./crds/backend/
-```
-
-#### 3.3 Deploy the Snapshot CRD (optional, Kubernetes v1.20+)
-
-`--validate=false` skips client-side schema validation. It is required here because the bundled snapshot CRD manifests may target a different snapshot API version than the one on the cluster.
-
-```shell
-kubectl apply -f ./crds/snapshot-crds/ --validate=false
-```
-
-#### 3.4 Deploy the CSIDriver
-
-```shell
-kubectl apply -f ./deploy/csidriver.yaml
-```
-
-#### 3.5 Deploy the Controller
-
-```shell
-kubectl apply -f ./deploy/huawei-csi-controller.yaml
-```
-
-#### 3.6 Deploy the Node
-
-```shell
-kubectl apply -f ./deploy/huawei-csi-node.yaml
-```
-
-#### 3.7 Verify the deployment status
+#### 3.2 Verify the deployment status
 
 ```shell
 kubectl get pod -n huawei-csi
@@ -216,7 +158,7 @@ The deployment is successful when all Pods are in the `Running` state.
 
 ### 4. Configure the storage backend
 
-Use the `oceanctl` tool (located in the `bin/` directory of the CSI package) to create the backend.
+Use the `oceanctl` tool from the eSDK package to create the backend.
 
 #### 4.1 Backend authentication
 
@@ -251,7 +193,7 @@ maxClientThreads: "30"
 Create the backend:
 
 ```shell
-./bin/oceanctl create backend -f backend-blk.yaml -i yaml --log-dir /tmp/
+oceanctl create backend -f backend-blk.yaml -i yaml --log-dir /tmp/
 ```
 
 #### 4.3 Create an NFS backend
@@ -276,13 +218,13 @@ maxClientThreads: "30"
 Create the backend:
 
 ```shell
-./bin/oceanctl create backend -f backend-nfs.yaml -i yaml --log-dir /tmp/
+oceanctl create backend -f backend-nfs.yaml -i yaml --log-dir /tmp/
 ```
 
 #### 4.4 Verify the backend status
 
 ```shell
-./bin/oceanctl get backend -n huawei-csi
+oceanctl get backend -n huawei-csi
 ```
 
 ### 5. Configure the StorageClass
