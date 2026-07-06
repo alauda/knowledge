@@ -10,6 +10,7 @@ tags:
   - AI
   - Gateway
   - MCP
+id: KB260700009
 ---
 
 # How to Manage a Unified MCP Entry with Envoy AI Gateway
