@@ -3,6 +3,7 @@ products:
   - Alauda Application Services
 kind:
   - Solution
+id: KB260700005
 ---
 
 # OpenSearch Sizing and Capacity Planning Guide
