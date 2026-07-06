@@ -131,9 +131,12 @@ Compute needs scale with storage, shard count, and query complexity. Use storage
 | Standard (log ingest, archival, simple queries) | **~1 vCPU + 4 GiB memory** |
 | Heavy (many shards, frequent updates, aggregations, heavy search) | **~2 vCPU + 8 GiB memory** |
 
+> [!TIP]
+> The reference profiles set CPU `limit == request` for predictable QoS. For this latency-sensitive workload, a tight CPU **limit** can cause CFS throttling under bursty query load. If you observe throttling, consider **raising or removing the CPU `limit`** while keeping the memory `limit == request` (memory must stay bounded to avoid OOM eviction).
+
 ### JVM Heap
 
-- Set the JVM heap (`spec.nodePools[].jvm`, e.g. `-Xmx8G -Xms8G`) to **50% of the container memory limit**.
+- Set the JVM heap (`spec.nodePools[].jvm`, e.g. `-Xmx8G -Xms8G`) to **50% of the pool's memory**. If `jvm` is left unset, the operator auto-calculates the heap as **memory `request` ÷ 2** — so keep the memory `request` equal to the `limit` (as every profile below does) for this to also be half of the limit.
 - **Never exceed ~32 GiB** of heap — beyond this the JVM loses compressed object pointers, wasting memory. If a node needs more than 64 GiB of RAM, add nodes rather than growing heap.
 
 ### Storage Per Node
@@ -149,6 +152,9 @@ Keep per-node disk manageable (typically ≤ ~1.5–2 TiB per data node) so shar
 ## Reference Sizing Profiles
 
 The following node-pool configurations are safe starting points. Adjust `diskSize`, `replicas`, and `resources` using the formulas above, then benchmark.
+
+> [!NOTE]
+> **Host prerequisite:** OpenSearch requires `vm.max_map_count = 262144` on every worker node. By default the operator's init container sets this automatically; in restricted Pod Security Admission environments where that init container is disabled, set it on the hosts beforehand (see the OpenSearch Installation Guide).
 
 > [!NOTE]
 > The YAML blocks below are **fragments** under `spec.nodePools[]`. They belong under the `spec:` of a full `OpenSearchCluster` resource and cannot be `apply`-ed as standalone manifests.
@@ -307,12 +313,17 @@ Formulas give a starting point; real workloads vary widely. After deploying your
 
 1. Load representative data with your real index mappings and shard counts.
 2. Run representative query/ingest load — use [OpenSearch Benchmark](https://github.com/opensearch-project/opensearch-benchmark).
-3. Monitor cluster health and per-node metrics:
+3. Monitor cluster health and per-node metrics. Read the admin password from the operator-created `<cluster>-admin-password` secret rather than hardcoding it:
 
    ```bash
+   PASSWORD=$(kubectl get secret <cluster>-admin-password -n <namespace> \
+     -o jsonpath='{.data.password}' | base64 -d)
+
    kubectl exec -n <namespace> <cluster>-<pool>-0 -- \
-     curl -sk -u admin:<password> 'https://localhost:9200/_cluster/health?pretty'
+     curl -sk -u "admin:${PASSWORD}" 'https://localhost:9200/_cluster/health?pretty'
    ```
+
+   > `-k` is safe here — it only skips verification of the pod's own self-signed certificate.
 
 4. If **CPU utilization** or **JVM memory pressure** stays high, scale up node `resources` or add data-node `replicas`. If nodes are idle, scale down for efficiency.
 
