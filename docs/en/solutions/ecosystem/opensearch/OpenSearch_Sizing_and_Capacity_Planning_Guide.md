@@ -177,7 +177,7 @@ The following node-pool configurations are safe starting points. Adjust `diskSiz
 
 ### Small — Development / Light Production
 
-Up to ~180 GiB provisioned storage, low query load. Combined roles.
+~270 GiB total provisioned disk (3 × 90 GiB), low query load. Combined roles.
 
 ```yaml
 nodePools:
@@ -319,7 +319,7 @@ Formulas give a starting point; real workloads vary widely. After deploying your
    PASSWORD=$(kubectl get secret <cluster>-admin-password -n <namespace> \
      -o jsonpath='{.data.password}' | base64 -d)
 
-   kubectl exec -n <namespace> <cluster>-<pool>-0 -- \
+   kubectl exec -n <namespace> <cluster>-<component>-0 -- \
      curl -sk -u "admin:${PASSWORD}" 'https://localhost:9200/_cluster/health?pretty'
    ```
 
