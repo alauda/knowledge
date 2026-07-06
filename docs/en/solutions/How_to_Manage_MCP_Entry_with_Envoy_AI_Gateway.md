@@ -16,7 +16,7 @@ tags:
 
 ## Overview
 
-This document describes how to configure a unified MCP entry based on Envoy AI Gateway `MCPRoute`. The resource examples and fields in this document have been validated with Envoy AI Gateway v0.4.0.
+This document describes how to configure a unified MCP entry based on Envoy AI Gateway `MCPRoute`.
 
 The target scenario is that the platform deploys `MCPServer` instances in multiple workload namespaces through MCP Lifecycle Operator and provides one shared Gateway entry. A user's agent only needs to configure one MCP address to access all MCP Servers. The gateway aggregates tool lists, routes requests by tool name, and provides centralized authentication and authorization.
 
@@ -113,7 +113,7 @@ spec:
         externalTrafficPolicy: Cluster
 ---
 # MCPRoute aggregates multiple MCP backends into the same /mcp entry.
-apiVersion: aigateway.envoyproxy.io/v1alpha1
+apiVersion: aigateway.envoyproxy.io/v1beta1
 kind: MCPRoute
 metadata:
   name: unified-mcp
@@ -132,15 +132,6 @@ spec:
       kind: Backend
       group: gateway.envoyproxy.io
       path: /mcp
-    # Public external MCP Server, corresponding to the context7 Backend below.
-    - name: context7
-      kind: Backend
-      group: gateway.envoyproxy.io
-      path: /mcp
-      toolSelector:
-        include:
-          - resolve-library-id
-          - query-docs
 ```
 
 The `k8s-mcp-server` backend in the workload namespace is managed by MCP Lifecycle Operator. The following `MCPServer` generates a `Deployment` and `Service` with the same name. This example does not require the Gateway to inject backend HTTP credentials into `k8s-mcp-server`.
@@ -200,43 +191,64 @@ spec:
         port: 8080
 ```
 
-External HTTPS backends use Envoy Gateway `Backend` and `BackendTLSPolicy`. Here, `context7` points to a public MCP Server. It does not mean that a corresponding MCP server is deployed in the shared namespace:
+External HTTPS backends use Envoy Gateway `Backend` and `BackendTLSPolicy`. The following example points to a public Streamable HTTP MCP Server. It does not mean that a corresponding MCP server is deployed in the shared namespace. For production, replace the hostname, path, and TLS hostname with the external MCP endpoint you want to expose, then add the `Backend` name to `MCPRoute.spec.backendRefs`.
 
 ```yaml
 # Gateway Backend for the public external MCP Server.
 apiVersion: gateway.envoyproxy.io/v1alpha1
 kind: Backend
 metadata:
-  name: context7
+  name: zipp
   namespace: mcp-gateway-system
 spec:
   endpoints:
     - fqdn:
-        # Public Streamable HTTP MCP endpoint domain for Context7.
-        hostname: mcp.context7.com
+        # Public Streamable HTTP MCP endpoint domain for Zipp.
+        hostname: zippfeed.com
         port: 443
 ---
-apiVersion: gateway.networking.k8s.io/v1alpha3
+apiVersion: gateway.networking.k8s.io/v1
 kind: BackendTLSPolicy
 metadata:
-  name: context7-tls
+  name: zipp-tls
   namespace: mcp-gateway-system
 spec:
   targetRefs:
-    # TLS validation policy bound to the context7 Backend.
+    # TLS validation policy bound to the zipp Backend.
     - group: gateway.envoyproxy.io
       kind: Backend
-      name: context7
+      name: zipp
   validation:
     wellKnownCACertificates: System
-    hostname: mcp.context7.com
+    hostname: zippfeed.com
+---
+apiVersion: aigateway.envoyproxy.io/v1beta1
+kind: MCPRoute
+metadata:
+  name: unified-mcp
+  namespace: mcp-gateway-system
+spec:
+  parentRefs:
+    - name: ai-mcp-gateway
+      kind: Gateway
+      group: gateway.networking.k8s.io
+  path: /mcp
+  backendRefs:
+    - name: k8s-mcp-server
+      kind: Backend
+      group: gateway.envoyproxy.io
+      path: /mcp
+    - name: zipp
+      kind: Backend
+      group: gateway.envoyproxy.io
+      path: /mcp/
 ```
 
-### Header Forwarding in Newer Versions
+### Per-Backend Header Forwarding
 
-Newer versions of Envoy AI Gateway provide per-MCP-backend header forwarding. A selected header from the client request can be forwarded only to a specific backend, and the header name can be changed when forwarding to the backend. The fields below follow the newer API. Check the actual installed `MCPRoute` CRD before using them.
+Envoy AI Gateway `MCPRoute` supports per-MCP-backend header forwarding. A selected header from the client request can be forwarded only to a specific backend, and the header name can be changed when forwarding to the backend. Check the actual installed `MCPRoute` CRD before using these fields.
 
-This configuration fits the case where the client already holds credentials required by a backend, and the Gateway only performs selective forwarding or header renaming. For example, the client sends `x-context7-api-key`; the Gateway forwards it as `X-Context7-API-Key` only when accessing the `context7` backend. `k8s-mcp-server` does not configure `forwardHeaders`, so it does not receive this header.
+This configuration fits the case where the client already holds credentials required by a backend, and the Gateway only performs selective forwarding or header renaming. For example, the client sends `x-zipp-api-key`; the Gateway forwards it as `X-Zipp-API-Key` only when accessing the external backend. `k8s-mcp-server` does not configure `forwardHeaders`, so it does not receive this header.
 
 ```yaml
 apiVersion: aigateway.envoyproxy.io/v1beta1
@@ -251,14 +263,14 @@ spec:
       group: gateway.networking.k8s.io
   path: /mcp
   backendRefs:
-    - name: context7
+    - name: zipp
       kind: Backend
       group: gateway.envoyproxy.io
-      path: /mcp
-      # Newer versions support per-backend client header forwarding and renaming.
+      path: /mcp/
+      # Per-backend client header forwarding and renaming.
       forwardHeaders:
-        - name: x-context7-api-key
-          backendHeader: X-Context7-API-Key
+        - name: x-zipp-api-key
+          backendHeader: X-Zipp-API-Key
     - name: k8s-mcp-server
       kind: Backend
       group: gateway.envoyproxy.io
@@ -351,7 +363,7 @@ API key authentication is used to bring up the main flow first. When OIDC is req
 When opencode logs in to a remote MCP server through OAuth, the MCP entry needs to return the authentication challenge and protected resource metadata defined by the MCP Authorization specification. This capability is provided by `MCPRoute.securityPolicy.oauth`:
 
 ```yaml
-apiVersion: aigateway.envoyproxy.io/v1alpha1
+apiVersion: aigateway.envoyproxy.io/v1beta1
 kind: MCPRoute
 metadata:
   name: unified-mcp
@@ -403,9 +415,9 @@ After login, opencode stores and refreshes OAuth tokens, and sends `Authorizatio
 
 ## References
 
-- Envoy AI Gateway MCP documentation (v0.4.0 validation source): https://github.com/envoyproxy/ai-gateway/blob/v0.4.0/site/docs/capabilities/mcp/index.md
-- Envoy AI Gateway MCPRoute API (v0.4.0 validation source): https://github.com/envoyproxy/ai-gateway/blob/v0.4.0/api/v1alpha1/mcp_route.go
-- Envoy AI Gateway MCP example (v0.4.0 validation source): https://github.com/envoyproxy/ai-gateway/tree/v0.4.0/examples/mcp
+- Envoy AI Gateway MCP documentation: https://github.com/envoyproxy/ai-gateway/blob/main/site/docs/capabilities/mcp/index.md
+- Envoy AI Gateway MCPRoute API: https://github.com/envoyproxy/ai-gateway/blob/main/api/v1beta1/mcp_route.go
+- Envoy AI Gateway MCP example: https://github.com/envoyproxy/ai-gateway/tree/main/examples/mcp
 - opencode MCP servers configuration documentation: https://opencode.ai/docs/mcp-servers/
 - MCP Lifecycle Operator: https://github.com/kubernetes-sigs/mcp-lifecycle-operator
 - MCP Lifecycle Operator documentation: https://mcp-lifecycle-operator.sigs.k8s.io/
