@@ -162,7 +162,11 @@ The following node-pool configurations are safe starting points. Adjust `diskSiz
 >         whenUnsatisfiable: DoNotSchedule
 >         labelSelector:
 >           matchLabels:
->             opensearch.role: <the pool's role, e.g. cluster_manager>
+>             # The operator labels every pod with its node pool (component) and cluster.
+>             opster.io/opensearch-nodepool: <the pool's component, e.g. masters / data / hot-data / coordinators>
+>             opster.io/opensearch-cluster: <the cluster name>   # optional; scope when clusters share a namespace
+>
+> Select pods by the `opster.io/opensearch-nodepool` label (set on **every** pod), not `opensearch.role` — the operator only applies `opensearch.role` to master pods, so a role-based selector would silently match nothing on data/ingest/coordinator pools and leave them un-spread.
 > ```
 
 ### Small — Development / Light Production
