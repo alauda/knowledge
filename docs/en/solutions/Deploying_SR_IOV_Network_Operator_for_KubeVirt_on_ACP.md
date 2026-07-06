@@ -4,16 +4,16 @@ kind:
 products:
   - Alauda Container Platform
 ProductsVersion:
-  - '4.4.x'
+  - '4.3.x'
 ---
 
-# Enable SR-IOV NIC Passthrough for KubeVirt VMs on ACP
+# Provide High-Performance Secondary NICs for Application Pods and KubeVirt VMs with Multus and SR-IOV on ACP
 
 ## Issue
 
-Users running KubeVirt VMs on Alauda Container Platform 4.4.x may need to attach host SR-IOV VFs to the VMs as high-performance secondary NICs. The cluster primary CNI can remain kube-ovn; SR-IOV Network Operator is used to discover SR-IOV PFs, create VFs, advertise VF resources through the device plugin, and generate the corresponding `NetworkAttachmentDefinition` objects for Multus.
+Users running KubeVirt VMs or containerized network functions (CNFs) on Alauda Container Platform 4.3.x may need to attach host SR-IOV VFs to Pods or VMs as high-performance secondary NICs through Multus. The cluster primary CNI can remain kube-ovn. Multus attaches the secondary network to the workload, while SR-IOV Network Operator discovers SR-IOV PFs, creates VFs, advertises VF resources through the device plugin, and generates the `NetworkAttachmentDefinition` objects consumed by Multus.
 
-This article follows the user workflow for installing the ACP 4.4.x `sriov-network-plugin`, validating the control plane in an environment without SR-IOV NICs, and completing VF and VM data-plane validation in an environment with SR-IOV hardware.
+This article follows the user workflow for completing an end-to-end Multus + SR-IOV setup on ACP 4.3.x: install `sriov-network-plugin`, confirm the Multus/NAD base, configure `SriovNetworkNodePolicy`, generate `SriovNetwork`/NAD objects, validate the control plane without SR-IOV NICs, and validate Pod plus KubeVirt VM data-plane behavior on SR-IOV hardware.
 
 ## Environment
 
@@ -21,14 +21,17 @@ This article applies to the following combination:
 
 | Component | Version or description |
 | --- | --- |
-| Alauda Container Platform | 4.4.x |
+| Alauda Container Platform | 4.3.x |
 | Plugin | `sriov-network-plugin` |
-| Plugin package version | `sriov-network-plugin v4.4.1` |
+| Plugin package version | `sriov-network-plugin v4.3.x` |
 | Upstream baseline | `k8snetworkplumbingwg/sriov-network-operator:v1.6.0` |
 | Deployment namespace | `cpaas-system` when installed through the ACP marketplace |
 | Primary CNI | kube-ovn can remain the primary CNI; SR-IOV is used as a Multus secondary network |
+| Multi-NIC base | ACP provides Multus capability; workloads reference the SR-IOV secondary network through NAD |
 
-The ACP package enables only the SR-IOV CNI path. The image values for `ib-sriov-cni`, `ovs-cni`, and `rdma-cni` are empty, so the operator does not render these init containers in the `config-daemon` DaemonSet.
+The ACP package enables only the SR-IOV CNI path. The `config-daemon` installs the SR-IOV CNI binary into the node CNI bin directory through the `sriov-cni` init container. The image values for `ib-sriov-cni`, `ovs-cni`, and `rdma-cni` are empty, so the operator does not render these init containers in the `config-daemon` DaemonSet.
+
+This solution delivers SR-IOV VF orchestration and Multus secondary-network attachment. A DPDK userspace data plane can be built on top of SR-IOV VFs, but it still requires additional VF driver binding, HugePages, CPU isolation, NUMA planning, workload image adaptation, and performance testing. These are not provided as out-of-the-box capabilities by this plugin package.
 
 ## Prerequisites
 
@@ -61,11 +64,11 @@ kubectl label node <node-name> feature.node.kubernetes.io/sriov-capable=true
 
 ### Install the plugin
 
-This capability is delivered as an ACP 4.4.x feature. The plugin package version is `sriov-network-plugin v4.4.1`. The user workflow is to download the plugin package from the AC application marketplace, upload it to the target ACP platform, and then install it from the platform marketplace.
+This capability is delivered as an ACP 4.3.x feature. The plugin package version is `sriov-network-plugin v4.3.x`. The user workflow is to download the plugin package from the AC application marketplace, upload it to the target ACP platform, and then install it from the platform marketplace.
 
 1. Log in to the AC application marketplace and search for `SR-IOV Network Plugin` or `sriov-network-plugin`.
-2. Select the package whose compatible platform version is `v4.4` and whose plugin version is `v4.4.1`.
-3. Download the package that matches the target platform architecture. For amd64 platforms, download `sriov-network-plugin.amd64.v4.4.1.tgz`; for arm64 platforms, download `sriov-network-plugin.arm64.v4.4.1.tgz`. If the platform does not require an architecture-specific package, download `sriov-network-plugin.ALL.v4.4.1.tgz`.
+2. Select the package whose compatible platform version is `v4.3` and whose plugin version is `v4.3.x`.
+3. Download the package that matches the target platform architecture. For amd64 platforms, download `sriov-network-plugin.amd64.v4.3.x.tgz`; for arm64 platforms, download `sriov-network-plugin.arm64.v4.3.x.tgz`. If the platform does not require an architecture-specific package, download `sriov-network-plugin.ALL.v4.3.x.tgz`.
 4. Keep the downloaded `.tgz` filename unchanged. `violet` parses the plugin name, architecture, and version from the filename; renaming the package can make the upload fail.
 5. Upload the downloaded plugin package to the target ACP platform.
 
@@ -76,7 +79,7 @@ export PLATFORM_URL=""
 export USERNAME=""
 export PASSWORD=""
 export CLUSTER_NAME=""
-export PACKAGE_FILE="sriov-network-plugin.amd64.v4.4.1.tgz"
+export PACKAGE_FILE="sriov-network-plugin.amd64.v4.3.x.tgz"
 
 unset http_proxy https_proxy HTTP_PROXY HTTPS_PROXY
 
@@ -93,11 +96,11 @@ After the upload succeeds, verify on the global cluster that the plugin version 
 ```bash
 kubectl get moduleplugin sriov-network-plugin \
   -o jsonpath='{.status.latestVersion}{"\n"}'
-kubectl get moduleconfig sriov-network-plugin-v4.4.1 \
+kubectl get moduleconfig sriov-network-plugin-<version> \
   -o jsonpath='{.status.readyForDeploy}{"\n"}'
 ```
 
-The expected output is `v4.4.1` and `true`. If the `ModulePlugin` exists but no `ModuleConfig` is generated, or if the `ModuleConfig` is not `readyForDeploy=true`, the plugin package metadata is incomplete. Common causes are a missing `ModulePlugin.spec.logo` or a missing platform installation config file, `scripts/plugin-config.yaml`, in the package. Upload the complete package published from the AC marketplace instead.
+The expected output is `v4.3.x` and `true`. If the `ModulePlugin` exists but no `ModuleConfig` is generated, or if the `ModuleConfig` is not `readyForDeploy=true`, the plugin package metadata is incomplete. Common causes are a missing `ModulePlugin.spec.logo` or a missing platform installation config file, `scripts/plugin-config.yaml`, in the package. Upload the complete package published from the AC marketplace instead.
 
 After the upload is complete, go to **Administrator -> Marketplace -> Cluster Plugins**, select `sriov-network-plugin`, and install it into the target business cluster. When installed through the ACP marketplace, the SR-IOV components are deployed in the `cpaas-system` namespace by default. The following commands use this variable:
 
@@ -122,6 +125,16 @@ kubectl label namespace "$SRIOV_NAMESPACE" \
   pod-security.kubernetes.io/warn=privileged \
   --overwrite
 ```
+
+### Confirm the Multus base
+
+SR-IOV networks are attached to Pods or KubeVirt VMs by Multus as secondary NICs. Before or after installing the SR-IOV plugin, confirm that the cluster has the NAD CRD:
+
+```bash
+kubectl get crd network-attachment-definitions.k8s.cni.cncf.io
+```
+
+If this CRD does not exist, the Multus base is not ready. Install or enable ACP Multus capability before configuring SR-IOV networks. The SR-IOV plugin handles node-side VF orchestration, SR-IOV CNI installation, and SR-IOV-related NAD generation. It does not replace the Multus meta CNI.
 
 After installation, confirm that the operator and config-daemon are running:
 
@@ -349,6 +362,19 @@ kubectl get pod -n kubevirt -l kubevirt.io=virt-launcher -o wide
 ```
 
 Inside the guest operating system, confirm that an additional NIC appears, then configure an IP address according to the network design or use DHCP if available.
+
+### Relationship with DPDK and support boundary
+
+The upstream `sriov-cni` can assign SR-IOV VFs to workloads. After those VFs are bound to userspace drivers such as `vfio-pci`, they can become part of a DPDK data path. Therefore, this solution provides the SR-IOV attachment base for a DPDK high-performance network path, but it is not a complete DPDK solution by itself.
+
+If the customer workload explicitly requires DPDK, validate the following items in addition to this solution:
+
+- Node BIOS settings, IOMMU, VFIO driver, HugePages, CPU isolation, and NUMA affinity.
+- Whether VFs use kernel `netdevice` mode or are bound to `vfio-pci` for DPDK userspace processes.
+- Whether the DPDK path is direct SR-IOV VF consumption by the workload, kube-ovn OVS-DPDK, Userspace CNI, vhostuser, or another integration pattern.
+- Performance baselines for PPS, bandwidth, latency, and jitter using the customer CNF image or tools such as `testpmd` and Trex.
+
+Do not describe this plugin package as a complete DPDK productized delivery before the hardware, driver, resource-isolation, and performance-validation work is complete.
 
 ## Diagnostic steps
 

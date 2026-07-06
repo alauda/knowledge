@@ -4,16 +4,16 @@ kind:
 products:
   - Alauda Container Platform
 ProductsVersion:
-  - '4.4.x'
+  - '4.3.x'
 ---
 
-# 如何在 ACP 上为 KubeVirt 虚拟机启用 SR-IOV 网卡直通
+# 如何在 ACP 上通过 Multus 和 SR-IOV 为业务 Pod 和 KubeVirt 虚拟机提供高性能辅助网卡
 
 ## 问题
 
-用户在 Alauda Container Platform 4.4.x 上运行 KubeVirt 虚拟机，并希望给虚拟机挂载宿主机 SR-IOV VF 作为高性能辅助网卡。集群主 CNI 仍然可以是 kube-ovn；SR-IOV Network Operator 只负责发现 SR-IOV PF、创建 VF、通过 device plugin 暴露 VF 资源，并为 Multus 生成对应的 `NetworkAttachmentDefinition`。
+用户在 Alauda Container Platform 4.3.x 上运行 KubeVirt 虚拟机或容器化网络功能（CNF），并希望通过 Multus 给业务 Pod 或虚拟机挂载宿主机 SR-IOV VF 作为高性能辅助网卡。集群主 CNI 仍然可以是 kube-ovn；Multus 负责把辅助网络接入工作负载，SR-IOV Network Operator 负责发现 SR-IOV PF、创建 VF、通过 device plugin 暴露 VF 资源，并生成 Multus 使用的 `NetworkAttachmentDefinition`。
 
-本文从用户使用路径说明如何安装 ACP 4.4.x 的 `sriov-network-plugin`，并分别完成无 SR-IOV 网卡环境下的控制面验证，以及有 SR-IOV 网卡环境下的 VF 和虚拟机数据面验证。
+本文从用户使用路径说明如何在 ACP 4.3.x 上完成 Multus + SR-IOV 的端到端接入：安装 `sriov-network-plugin`、确认 Multus/NAD 基座、配置 `SriovNetworkNodePolicy`、生成 `SriovNetwork`/NAD，并分别完成无 SR-IOV 网卡环境下的控制面验证，以及有 SR-IOV 网卡环境下的 Pod 和 KubeVirt 虚拟机数据面验证。
 
 ## 环境
 
@@ -21,14 +21,17 @@ ProductsVersion:
 
 | 组件 | 版本或说明 |
 | --- | --- |
-| Alauda Container Platform | 4.4.x |
+| Alauda Container Platform | 4.3.x |
 | 插件 | `sriov-network-plugin` |
-| 插件包版本 | `sriov-network-plugin v4.4.1` |
+| 插件包版本 | `sriov-network-plugin v4.3.x` |
 | 上游基线 | `k8snetworkplumbingwg/sriov-network-operator:v1.6.0` |
 | 部署命名空间 | `cpaas-system`（通过 ACP 市场安装时） |
 | 主 CNI | 可使用 kube-ovn；SR-IOV 作为 Multus 辅助网络 |
+| 多网卡基座 | ACP 已提供 Multus 能力，业务通过 NAD 引用 SR-IOV 辅助网络 |
 
-ACP 打包版本只启用 SR-IOV CNI 路径。`ib-sriov-cni`、`ovs-cni`、`rdma-cni` 镜像值为空，operator 渲染 `config-daemon` 时不会部署这些 init containers。
+ACP 打包版本只启用 SR-IOV CNI 路径。`config-daemon` 会通过 `sriov-cni` init container 将 SR-IOV CNI 二进制安装到节点 CNI bin 目录；`ib-sriov-cni`、`ovs-cni`、`rdma-cni` 镜像值为空，operator 渲染 `config-daemon` 时不会部署这些 init containers。
+
+本方案交付的是 SR-IOV VF 编排和 Multus 辅助网络接入能力。DPDK 用户态数据面可以基于 SR-IOV VF 继续扩展，但还需要额外完成 VF 驱动绑定、HugePages、CPU 隔离、NUMA 规划、业务镜像适配和性能压测；这些不属于本插件包开箱即用能力。
 
 ## 先决条件
 
@@ -61,11 +64,11 @@ kubectl label node <node-name> feature.node.kubernetes.io/sriov-capable=true
 
 ### 安装插件
 
-该能力作为 ACP 4.4.x 新功能交付，插件包版本为 `sriov-network-plugin v4.4.1`。用户侧从 AC 应用市场获取插件包，再上传到目标 ACP 平台安装。
+该能力作为 ACP 4.3.x 新功能交付，插件包版本为 `sriov-network-plugin v4.3.x`。用户侧从 AC 应用市场获取插件包，再上传到目标 ACP 平台安装。
 
 1. 登录 AC 应用市场，搜索 `SR-IOV 网络插件` 或 `sriov-network-plugin`。
-2. 选择适配平台版本为 `v4.4`、插件版本为 `v4.4.1` 的安装包。
-3. 下载与目标平台架构匹配的包。amd64 平台下载 `sriov-network-plugin.amd64.v4.4.1.tgz`，arm64 平台下载 `sriov-network-plugin.arm64.v4.4.1.tgz`；如果平台不需要区分架构，再下载 `sriov-network-plugin.ALL.v4.4.1.tgz`。
+2. 选择适配平台版本为 `v4.3`、插件版本为 `v4.3.x` 的安装包。
+3. 下载与目标平台架构匹配的包。amd64 平台下载 `sriov-network-plugin.amd64.v4.3.x.tgz`，arm64 平台下载 `sriov-network-plugin.arm64.v4.3.x.tgz`；如果平台不需要区分架构，再下载 `sriov-network-plugin.ALL.v4.3.x.tgz`。
 4. 保持下载后的 `.tgz` 文件名不变。`violet` 会根据文件名解析插件名、架构和版本，重命名可能导致上传失败。
 5. 将下载的插件包上传到目标 ACP 平台。
 
@@ -76,7 +79,7 @@ export PLATFORM_URL=""
 export USERNAME=""
 export PASSWORD=""
 export CLUSTER_NAME=""
-export PACKAGE_FILE="sriov-network-plugin.amd64.v4.4.1.tgz"
+export PACKAGE_FILE="sriov-network-plugin.amd64.v4.3.x.tgz"
 
 unset http_proxy https_proxy HTTP_PROXY HTTPS_PROXY
 
@@ -93,11 +96,11 @@ violet push "$PACKAGE_FILE" \
 ```bash
 kubectl get moduleplugin sriov-network-plugin \
   -o jsonpath='{.status.latestVersion}{"\n"}'
-kubectl get moduleconfig sriov-network-plugin-v4.4.1 \
+kubectl get moduleconfig sriov-network-plugin-<version> \
   -o jsonpath='{.status.readyForDeploy}{"\n"}'
 ```
 
-预期分别输出 `v4.4.1` 和 `true`。如果 `ModulePlugin` 存在但没有生成 `ModuleConfig`，或者 `ModuleConfig` 不是 `readyForDeploy=true`，说明插件包元数据不完整，常见原因是包内缺少 `ModulePlugin.spec.logo` 或平台安装配置 `scripts/plugin-config.yaml`，需要使用 AC 市场发布后的完整包重新上传。
+预期分别输出 `v4.3.x` 和 `true`。如果 `ModulePlugin` 存在但没有生成 `ModuleConfig`，或者 `ModuleConfig` 不是 `readyForDeploy=true`，说明插件包元数据不完整，常见原因是包内缺少 `ModulePlugin.spec.logo` 或平台安装配置 `scripts/plugin-config.yaml`，需要使用 AC 市场发布后的完整包重新上传。
 
 上传完成后，进入 **管理员 -> 市场 -> 集群插件**，选择 `sriov-network-plugin` 并安装到目标业务集群。通过 ACP 市场安装时，SR-IOV 组件默认部署在 `cpaas-system` 命名空间。后续命令使用以下变量：
 
@@ -122,6 +125,16 @@ kubectl label namespace "$SRIOV_NAMESPACE" \
   pod-security.kubernetes.io/warn=privileged \
   --overwrite
 ```
+
+### 确认 Multus 基座可用
+
+SR-IOV 网络通过 Multus 作为辅助网卡接入 Pod 或 KubeVirt 虚拟机。安装 SR-IOV 插件前后，都应确认集群已经具备 NAD CRD：
+
+```bash
+kubectl get crd network-attachment-definitions.k8s.cni.cncf.io
+```
+
+如果该 CRD 不存在，说明 Multus 基座尚未就绪，应先安装或启用 ACP 的 Multus 能力，再继续配置 SR-IOV 网络。SR-IOV 插件负责节点侧 VF 编排、SR-IOV CNI 安装和 SR-IOV 相关 NAD 生成，不替代 Multus 元 CNI。
 
 安装后确认 operator 和 config-daemon 已运行：
 
@@ -349,6 +362,19 @@ kubectl get pod -n kubevirt -l kubevirt.io=virt-launcher -o wide
 ```
 
 进入虚拟机操作系统后，确认出现额外网卡，并按业务网络规划配置 IP 或使用 DHCP 获取地址。
+
+### 与 DPDK 的关系和边界
+
+上游 `sriov-cni` 可用于给工作负载分配 SR-IOV VF；VF 进一步绑定到 `vfio-pci` 等用户态驱动后，可以作为 DPDK 数据面的一部分使用。因此，本方案是 DPDK 高性能网络链路中的 SR-IOV 接入基础，但并不等同于完整 DPDK 方案。
+
+如果客户业务明确要求 DPDK，需要在本方案之外继续确认并验证以下内容：
+
+- 节点 BIOS、IOMMU、VFIO 驱动、HugePages、CPU 隔离和 NUMA 亲和性。
+- VF 是使用内核 `netdevice` 模式，还是绑定 `vfio-pci` 供 DPDK 用户态进程使用。
+- DPDK 路径是业务容器直接消费 SR-IOV VF，还是使用 kube-ovn OVS-DPDK、Userspace CNI、vhostuser 等方案。
+- 使用客户真实 CNF 镜像或 `testpmd`、Trex 等工具完成 PPS、带宽、时延和抖动基线压测。
+
+在没有完成上述硬件、驱动、资源隔离和压测验证前，不应把本插件包描述为完整的 DPDK 产品化交付。
 
 ## 诊断步骤
 
