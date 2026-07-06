@@ -40,7 +40,7 @@ Minimum storage requirement =
     × (1 + number of replicas)
     × (1 + indexing overhead)
     ÷ (1 - Linux reserved space)
-    ÷ (1 - OpenSearch internal overhead)
+    ÷ (1 - reserved headroom)
 ```
 
 | Factor | Typical value | Explanation |
@@ -48,7 +48,7 @@ Minimum storage requirement =
 | Number of replicas | `1` (default, minimum for HA) | Each replica is a full copy of the primary data. |
 | Indexing overhead | `10%` (`× 1.10`) | The on-disk inverted index is typically ~10% larger than the source. Can be higher with many indexed fields. |
 | Linux reserved space | `5%` (`÷ 0.95`) | Linux reserves ~5% of each filesystem for the `root` user. |
-| OpenSearch internal overhead | `20%` (`÷ 0.80`), capped at 20 GiB per node | Reserved for segment merges, logs, and internal operations. |
+| Reserved headroom | `20%` (`÷ 0.80`) | OpenSearch stops placing shards on a node once it passes the disk **low watermark** (default 85%); segment merges also need temporary free space. Budgeting ~20% keeps nodes clear of the watermark. |
 
 ### Simplified Rule
 
@@ -171,9 +171,9 @@ The following node-pool configurations are safe starting points. Adjust `diskSiz
 >             # The operator labels every pod with its node pool (component) and cluster.
 >             opster.io/opensearch-nodepool: <the pool's component, e.g. masters / data / hot-data / coordinators>
 >             opster.io/opensearch-cluster: <the cluster name>   # optional; scope when clusters share a namespace
+> ```
 >
 > Select pods by the `opster.io/opensearch-nodepool` label (set on **every** pod), not `opensearch.role` — the operator only applies `opensearch.role` to master pods, so a role-based selector would silently match nothing on data/ingest/coordinator pools and leave them un-spread.
-> ```
 
 ### Small — Development / Light Production
 
