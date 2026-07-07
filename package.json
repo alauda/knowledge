@@ -16,7 +16,7 @@
   },
   "scripts": {
     "dev": "doom dev",
-    "build": "doom build",
+    "build": "NODE_OPTIONS=--max-old-space-size=2560 doom build",
     "new": "doom new",
     "serve": "doom serve",
     "translate": "doom translate",
