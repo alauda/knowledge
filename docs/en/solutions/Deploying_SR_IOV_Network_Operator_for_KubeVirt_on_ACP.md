@@ -7,13 +7,13 @@ ProductsVersion:
   - '4.3'
 ---
 
-# Provide High-Performance Secondary NICs for Application Pods and KubeVirt VMs with Multus and SR-IOV on ACP
+# Provide High-Performance Secondary NICs for KubeVirt VMs with Multus and SR-IOV on ACP
 
 ## Issue
 
-Users running KubeVirt VMs or containerized network functions (CNFs) on Alauda Container Platform 4.3 may need to attach host SR-IOV VFs to Pods or VMs as high-performance secondary NICs through Multus. The cluster primary CNI can remain kube-ovn. Multus attaches the secondary network to the workload, while SR-IOV Network Operator discovers SR-IOV PFs, creates VFs, advertises VF resources through the device plugin, and generates the `NetworkAttachmentDefinition` objects consumed by Multus.
+Users running KubeVirt VMs on Alauda Container Platform 4.3 may need to attach host SR-IOV VFs to VMs as high-performance secondary NICs through Multus. The cluster primary CNI can remain kube-ovn. Multus attaches the secondary network to VMs, while SR-IOV Network Operator discovers SR-IOV PFs, creates VFs, advertises VF resources through the device plugin, and generates the `NetworkAttachmentDefinition` objects consumed by Multus.
 
-This article follows the user workflow for completing an end-to-end Multus + SR-IOV setup on ACP 4.3: install `sriov-network-plugin`, confirm the Multus/NAD base, configure `SriovNetworkNodePolicy`, generate `SriovNetwork`/NAD objects, validate the control plane without SR-IOV NICs, and validate Pod plus KubeVirt VM data-plane behavior on SR-IOV hardware.
+This article follows the user workflow for completing an end-to-end KubeVirt VM Multus + SR-IOV setup on ACP 4.3: install `sriov-network-plugin`, confirm the Multus/NAD base, configure `SriovNetworkNodePolicy`, generate `SriovNetwork`/NAD objects, and use the SR-IOV secondary NIC in a KubeVirt VM. The same SR-IOV capability can also be used by application Pods, but this article uses KubeVirt VMs as the example scenario.
 
 ## Environment
 
@@ -27,7 +27,7 @@ This article applies to the following combination:
 | Upstream baseline | `k8snetworkplumbingwg/sriov-network-operator:v1.6.0` |
 | Deployment namespace | `cpaas-system` when installed through the ACP marketplace |
 | Primary CNI | kube-ovn can remain the primary CNI; SR-IOV is used as a Multus secondary network |
-| Multi-NIC base | ACP provides Multus capability; workloads reference the SR-IOV secondary network through NAD |
+| Multi-NIC base | ACP provides Multus capability; VMs reference the SR-IOV secondary network through NAD |
 
 The ACP package enables the SR-IOV CNI path for SR-IOV VF orchestration and Multus secondary-network attachment.
 
@@ -37,7 +37,7 @@ This article covers installing and using the SR-IOV L5 plugin for KubeVirt VM se
 
 ### Nodes and hardware
 
-SR-IOV hardware is not required if you only need to validate the plugin control plane. To complete VF and virtual-machine data-plane validation, prepare at least one worker node that meets these requirements:
+Prepare at least one worker node that meets these requirements:
 
 - The node has a physical NIC PF that supports SR-IOV.
 - IOMMU is enabled in BIOS and the operating system, such as Intel VT-d or AMD-Vi.
@@ -76,7 +76,7 @@ After the upload is complete, go to **Administrator -> Marketplace -> Cluster Pl
 
 ### Confirm the Multus base
 
-SR-IOV networks are attached to Pods or KubeVirt VMs by Multus as secondary NICs. Before or after installing the SR-IOV plugin, confirm in **Administrator -> Marketplace -> Cluster Plugins** that Multus CNI is installed in the target business cluster. If it is not installed, follow the product documentation to [install Multus CNI](https://docs.alauda.cn/container_platform/4.3/configure/networking/how_to/kube_ovn/multiple_networks#%E5%AE%89%E8%A3%85-multus-cni) before configuring SR-IOV networks. The SR-IOV plugin handles node-side VF orchestration, SR-IOV CNI installation, and SR-IOV-related NAD generation. It does not replace the Multus meta CNI.
+SR-IOV networks are attached to KubeVirt VMs by Multus as secondary NICs. Before or after installing the SR-IOV plugin, confirm in **Administrator -> Marketplace -> Cluster Plugins** that Multus CNI is installed in the target business cluster. If it is not installed, follow the "Install Multus CNI" section in the product documentation for [multiple networks](https://docs.alauda.cn/container_platform/4.3/configure/networking/how_to/kube_ovn/multiple_networks) before configuring SR-IOV networks. The SR-IOV plugin handles node-side VF orchestration, SR-IOV CNI installation, and SR-IOV-related NAD generation. It does not replace the Multus meta CNI.
 
 After installation, confirm that the operator and config-daemon are running:
 
@@ -91,29 +91,18 @@ sriov-network-operator-xxxxx          1/1     Running
 sriov-network-config-daemon-xxxxx     1/1     Running
 ```
 
-### Control-plane validation without SR-IOV hardware
+### Configure VF resources
 
-If the current environment has no SR-IOV NIC, the validation goal is to prove that the plugin deploys correctly and the operator can synchronize node state.
+A PF is the physical NIC on a node. A VF is a virtual PCI NIC created from a PF and assigned to a VM.
 
-Check `SriovNetworkNodeState`:
+First list the node states synchronized by the operator, and select the target node from the `NAME` column:
 
 ```bash
 kubectl get sriovnetworknodestates.sriovnetwork.openshift.io \
   -n cpaas-system
 ```
 
-Check a specific node:
-
-```bash
-kubectl get sriovnetworknodestate <node-name> -n cpaas-system \
-  -o jsonpath='{.status.syncStatus}{"\n"}'
-```
-
-In an environment without SR-IOV hardware, `status.interfaces` can be empty. If the operator, config-daemon, and `syncStatus` are healthy, the control-plane smoke validation is sufficient.
-
-### VF validation with SR-IOV hardware
-
-On a node with an SR-IOV PF, first confirm that the operator discovers the physical NIC:
+On a node with an SR-IOV PF, confirm that the operator discovers the physical NIC:
 
 ```bash
 kubectl get sriovnetworknodestate <node-name> -n cpaas-system \
@@ -122,7 +111,9 @@ kubectl get sriovnetworknodestate <node-name> -n cpaas-system \
 
 The operator automatically discovers SR-IOV PFs on nodes and writes them to `SriovNetworkNodeState.status.interfaces`. It does not automatically decide which PF should create VFs, how many VFs to create, which `resourceName` to use, or which VF type to configure. To create VFs and advertise resources through the device plugin, create a `SriovNetworkNodePolicy`.
 
-Select a PF, such as `ens5f0`, and create a `SriovNetworkNodePolicy`. `nodeSelector` only matches labels that already exist on nodes. Use `SriovNetworkNodeState` to identify the node that has the target SR-IOV PF, then use a stable existing node label to limit the policy scope. The following example uses `kubernetes.io/hostname` to select one node, creates four VFs, and advertises a device-plugin resource named `sriov_vf`:
+Select a PF from the `status.interfaces[*].name` output, such as `ens5f0`, and create a `SriovNetworkNodePolicy`. `nodeSelector` only matches labels that already exist on nodes. Use `SriovNetworkNodeState` to identify the node that has the target SR-IOV PF, then use a stable existing node label to limit the policy scope. The following example uses `kubernetes.io/hostname` to select one node, creates four VFs, and advertises a device-plugin resource named `sriov_vf`.
+
+Save the following content as `sriov-node-policy.yaml`:
 
 ```yaml
 apiVersion: sriovnetwork.openshift.io/v1
@@ -170,7 +161,9 @@ If the output is a positive integer, the VF resource is available to the Kuberne
 
 ### Create an SR-IOV secondary network
 
-Create a `SriovNetwork`. The operator generates the corresponding `NetworkAttachmentDefinition`. The following example creates the NAD in the application namespace `kubevirt` and uses Kube-OVN IPAM to assign an address to the SR-IOV secondary NIC:
+Create a `SriovNetwork`. The operator generates the corresponding `NetworkAttachmentDefinition`. The following example creates the NAD in the VM namespace `kubevirt` and uses Kube-OVN IPAM to assign an address to the SR-IOV secondary NIC.
+
+Save the following content as `sriov-network.yaml`:
 
 ```yaml
 apiVersion: sriovnetwork.openshift.io/v1
@@ -190,9 +183,11 @@ spec:
     }
 ```
 
-The `provider` uses the `<NAD name>.<NAD namespace>.ovn` format. In this example, the operator generates a NAD named `vm-sriov-net` in the `kubevirt` namespace, so the provider is `vm-sriov-net.kubevirt.ovn`.
+The `provider` uses the `<NAD name>.<NAD namespace>.ovn` format. In this example, the operator generates a NAD named `vm-sriov-net` in the `kubevirt` namespace, so the provider is `vm-sriov-net.kubevirt.ovn`. If the VM runs in another namespace, update `SriovNetwork.spec.networkNamespace`, Subnet `spec.provider`, and VM `metadata.namespace` together.
 
-Create a Kube-OVN Subnet that uses the same provider. Adjust `cidrBlock`, `gateway`, and `excludeIps` according to the application network plan:
+Create a Kube-OVN Subnet that uses the same provider. Adjust `cidrBlock`, `gateway`, and `excludeIps` according to the application network plan.
+
+Save the following content as `sriov-subnet.yaml`:
 
 ```yaml
 apiVersion: kubeovn.io/v1
@@ -266,7 +261,7 @@ kubectl get pod -n kubevirt -l kubevirt.io=virt-launcher -o wide
 
 Inside the guest operating system, confirm that an additional NIC appears. The Kube-OVN Subnet handles platform-side address allocation for the secondary network. Whether the address is configured inside the guest still depends on the guest OS DHCP client, cloud-init, or system network configuration.
 
-### Bind the service VF to DPDK inside the VM
+### Optional: Bind the service VF to DPDK inside the VM
 
 If the workload needs DPDK inside the VM, operate only on the SR-IOV service VF that is passed through to the guest OS. Do not bind the default management NIC. Prefer the `dpdk-devbind.py` script from the DPDK package inside the VM. If the image does not include the script, get it from the DPDK upstream repository: <https://raw.githubusercontent.com/DPDK/dpdk/main/usertools/dpdk-devbind.py>.
 
@@ -292,4 +287,4 @@ python3 dpdk-devbind.py -b vfio-pci <guest-vf-pci-address>
 python3 dpdk-devbind.py --status
 ```
 
-`<guest-vf-pci-address>` is the PCI address seen inside the VM, not the VF address on the host. After binding, the VF is no longer used as a normal guest OS kernel NIC and is instead owned by the DPDK userspace process.
+`<guest-vf-pci-address>` is the PCI address seen inside the VM, not the VF address on the host. After binding, the VF is no longer used as a normal guest OS kernel NIC and is instead owned by the DPDK userspace process. If the service VF is owned by the DPDK application, subsequent IP configuration and packet processing are handled by that DPDK application.
