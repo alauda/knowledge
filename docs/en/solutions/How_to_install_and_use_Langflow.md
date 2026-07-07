@@ -107,11 +107,36 @@ Production environments strongly recommend PostgreSQL:
    spec: {}
    ```
 
-   Empty `spec: {}` uses the chart's defaults (SQLite on the cluster default StorageClass, IDE mode, ClusterIP Services, no Ingress). To customize, add fields under `spec.langflow.*` per the sections below — the wrap CR spec mirrors the upstream chart's `values.yaml` structure. See the upstream [`values.yaml`](https://github.com/langflow-ai/langflow-helm-charts/blob/langflow-ide-0.1.2/charts/langflow-ide/values.yaml) for the full field list.
+   Empty `spec: {}` uses the chart's defaults (SQLite on the cluster default StorageClass, IDE mode, ClusterIP Services only). To customize, add fields under `spec.langflow.*` per the sections below — the wrap CR spec mirrors the upstream chart's `values.yaml` structure. See the upstream [`values.yaml`](https://github.com/langflow-ai/langflow-helm-charts/blob/langflow-ide-0.1.2/charts/langflow-ide/values.yaml) for the full field list.
 
 ## Configuration
 
 Users can edit the `Langflow` custom resource's `spec.langflow.*` fields to customize the deployment. The wrap CR spec mirrors the upstream `langflow-ide` chart's `values.yaml` structure. The main configurations to focus on are as follows.
+
+> **⚠ Array fields REPLACE chart defaults, they do not append.**
+> When you set `spec.langflow.backend.volumes` (or `.volumeMounts`), the chart drops its own default `tmp` / `data` / `db` / `flows` `emptyDir` volumes and uses only what you provide. If you add a custom volume without re-declaring the defaults, the backend container will crash on startup with `FileNotFoundError: No usable temporary directory found in ['/tmp', '/var/tmp', '/usr/tmp', '/app']` (the Langflow entrypoint imports `dill`, which calls `tempfile.gettempdir()` — `readOnlyRootFilesystem: true` means `/tmp` must be a writable volume).
+>
+> If you customize `volumes` or `volumeMounts`, keep the four chart-default entries alongside your additions. Suggested minimal boilerplate:
+>
+> ```yaml
+> spec:
+>   langflow:
+>     backend:
+>       volumes:
+>         - {name: langflow-tmp, emptyDir: {}}   # /tmp        — required (readOnly root FS)
+>         - {name: app-data,     emptyDir: {}}   # /app/data   — chart default
+>         - {name: app-db,       emptyDir: {}}   # /app/db     — chart default
+>         - {name: app-flows,    emptyDir: {}}   # /app/flows  — chart default
+>         # ... your additions below
+>       volumeMounts:
+>         - {name: langflow-tmp, mountPath: /tmp}
+>         - {name: app-data,     mountPath: /app/data}
+>         - {name: app-db,       mountPath: /app/db}
+>         - {name: app-flows,    mountPath: /app/flows}
+>         # ... your additions below
+> ```
+>
+> Sections below that add custom `volumes` (ConfigMap flow import, local models, Python deps) omit this boilerplate for brevity — remember to include it. This trap was caught live on ACP 4.3 during doc validation.
 
 ### 1. Configure Storage
 
@@ -192,25 +217,8 @@ spec:
         - {name: langflow-service, port: 8080}
 ```
 
-**Alternative: upstream chart Ingress**
-
-The chart also exposes an Ingress block (default off). Enable via the wrap CR:
-
-```yaml
-spec:
-  langflow:
-    ingress:
-      enabled: true
-      hosts:
-        - host: langflow.example.com
-          paths: [{path: /, pathType: Prefix}]
-      tls:
-        - {secretName: langflow-tls, hosts: [langflow.example.com]}
-```
-
 Notes:
-- The chart's default `ingress.enabled: false` is intentional in the wrap — pre-opening Ingress would fail on clusters with no matching ingress class or DNS.
-- OAuth2 Proxy is **not** part of the upstream chart. If SSO is required, deploy an OAuth2 Proxy (or platform SSO) as a separate Deployment in front of the Langflow Service; the wrap does not manage its lifecycle. This is the same pattern used for other chart-wrap components on the platform.
+- The chart also ships an Ingress block (default off), but the platform standardises on Gateway API for chart-wrap components — Ingress is not the supported external-access path for Langflow and is not covered by this document.
 
 ### 4. Configure Authentication and User Management (Optional)
 
@@ -247,22 +255,18 @@ Notes:
 - The superuser credentials are only consumed on **first startup**. Once written into the database (SQLite or PostgreSQL), changing the env vars alone does not rotate them — the credential update must go through Langflow's admin UI or a DB migration.
 - Access/refresh token expiration are controlled by `LANGFLOW_ACCESS_TOKEN_EXPIRE_SECONDS` / `LANGFLOW_REFRESH_TOKEN_EXPIRE_SECONDS` (defaults are conservative; adjust only if required).
 
-### 5. Single Sign-On (SSO)
-
-The upstream `langflow-ide` chart **does not include an OAuth2 Proxy sidecar or Deployment**. If SSO is required, deploy an OAuth2 Proxy (or the platform's existing SSO gateway) as a separate workload in front of the Langflow frontend Service — this is outside the wrap CR's control surface and follows the same pattern used by other chart-wrap components on the platform. Configure the OAuth2 Proxy to point at `langflow-service:8080` as its upstream, and set `LANGFLOW_AUTO_LOGIN=false` on the backend so the proxy is the sole authentication entry point.
-
-### 6. Configure Runtime Mode (Backend-Only)
+### 5. Configure Runtime Mode (Backend-Only)
 
 Runtime mode drops the React IDE frontend and runs only the backend REST API. This is the recommended deployment shape for production API-serving scenarios.
 
-#### 6.1 Enable Runtime Mode
+#### 5.1 Enable Runtime Mode
 
 Two fields together enable full runtime mode:
 
 - `spec.langflow.backend.backendOnly: true` — starts the backend with `--backend-only` (backend is already the default in the current chart, but keep this explicit).
 - `spec.langflow.frontend.enabled: false` — the chart skips the frontend Deployment entirely (verified: `kubectl get deploy -n <ns>` returns 0 resources; only the backend StatefulSet remains).
 
-Optionally auto-import flows from a PVC or ConfigMap:
+Optionally auto-import flows from a PVC or ConfigMap. **Remember the [chart-defaults boilerplate](#configuration)** — mount the flows source under a distinct path (`/app/loaded-flows`) so it doesn't collide with the chart's own `/app/flows` `emptyDir`:
 
 ```yaml
 spec:
@@ -271,13 +275,21 @@ spec:
       backendOnly: true
       env:
         - name: LANGFLOW_LOAD_FLOWS_PATH
-          value: "/app/flows"
+          value: "/app/loaded-flows"
       volumes:
-        - name: flows
+        - {name: langflow-tmp, emptyDir: {}}
+        - {name: app-data,     emptyDir: {}}
+        - {name: app-db,       emptyDir: {}}
+        - {name: app-flows,    emptyDir: {}}
+        - name: loaded-flows
           persistentVolumeClaim: {claimName: langflow-flows-pvc}
       volumeMounts:
-        - name: flows
-          mountPath: /app/flows
+        - {name: langflow-tmp, mountPath: /tmp}
+        - {name: app-data,     mountPath: /app/data}
+        - {name: app-db,       mountPath: /app/db}
+        - {name: app-flows,    mountPath: /app/flows}
+        - name: loaded-flows
+          mountPath: /app/loaded-flows
     frontend:
       enabled: false
 ```
@@ -306,9 +318,6 @@ kubectl port-forward -n <langflow-ns> svc/langflow-service 8080:8080
 # open http://localhost:8080/
 ```
 
-### 3. Access via Ingress
-
-If Ingress was enabled via `spec.langflow.ingress.enabled=true`, use the configured hostname (DNS resolution and TLS certificate must be prepared by the cluster operator).
 
 # Langflow Quickstart
 
@@ -339,22 +348,34 @@ data:
 
 ### 1.2 Mount ConfigMap to the backend container
 
-Add the ConfigMap as a volume and expose the mount path through `LANGFLOW_LOAD_FLOWS_PATH`. The upstream chart appends any user-provided volumes/volumeMounts to those it ships by default:
+Add the ConfigMap as a volume and expose the mount path through `LANGFLOW_LOAD_FLOWS_PATH`. **Remember the "array replaces defaults" rule** — the four chart-default entries (`langflow-tmp` / `app-data` / `app-db` / `app-flows`) below the custom ConfigMap entry must stay in place:
 
 ```yaml
 spec:
   langflow:
     backend:
       volumes:
-        - name: flows
+        # chart defaults — required, do not omit
+        - {name: langflow-tmp, emptyDir: {}}
+        - {name: app-data,     emptyDir: {}}
+        - {name: app-db,       emptyDir: {}}
+        - {name: app-flows,    emptyDir: {}}
+        # additional flows source
+        - name: loaded-flows
           configMap: {name: langflow-flows}
       volumeMounts:
-        - name: flows
-          mountPath: /app/flows
+        - {name: langflow-tmp, mountPath: /tmp}
+        - {name: app-data,     mountPath: /app/data}
+        - {name: app-db,       mountPath: /app/db}
+        - {name: app-flows,    mountPath: /app/flows}
+        - name: loaded-flows
+          mountPath: /app/loaded-flows
       env:
         - name: LANGFLOW_LOAD_FLOWS_PATH
-          value: /app/flows
+          value: /app/loaded-flows
 ```
+
+Verified on ACP 4.3: with the above CR, restarting the backend caused Langflow to auto-import the `hello-world.json` file from the ConfigMap; `GET /api/v1/flows/` returns 34 flows (33 built-in starter projects + 1 imported).
 
 ### 1.3 Auto Import
 
@@ -383,16 +404,24 @@ This approach is suitable for scenarios where:
 
 #### 2.2.1 Mount Model Files via Volume
 
-Store model files in persistent volumes and provide them to the Langflow backend container through additional volumes/volumeMounts:
+Store model files in persistent volumes and provide them to the Langflow backend container through additional volumes/volumeMounts. **Remember the [chart-defaults boilerplate](#configuration)** — the four `emptyDir` entries must be included:
 
 ```yaml
 spec:
   langflow:
     backend:
       volumes:
+        - {name: langflow-tmp, emptyDir: {}}
+        - {name: app-data,     emptyDir: {}}
+        - {name: app-db,       emptyDir: {}}
+        - {name: app-flows,    emptyDir: {}}
         - name: models
           persistentVolumeClaim: {claimName: langflow-models-pvc}
       volumeMounts:
+        - {name: langflow-tmp, mountPath: /tmp}
+        - {name: app-data,     mountPath: /app/data}
+        - {name: app-db,       mountPath: /app/db}
+        - {name: app-flows,    mountPath: /app/flows}
         - name: models
           mountPath: /opt/models
 ```
@@ -415,22 +444,32 @@ In production environments, when using custom components, additional Python pack
 
 ### 3.1 Mount Dependencies via PVC
 
-Mount a directory using PVC to store additional Python packages:
+Mount a directory using PVC to store additional Python packages. **Remember the [chart-defaults boilerplate](#configuration)**:
 
 ```yaml
 spec:
   langflow:
     backend:
       volumes:
+        - {name: langflow-tmp, emptyDir: {}}
+        - {name: app-data,     emptyDir: {}}
+        - {name: app-db,       emptyDir: {}}
+        - {name: app-flows,    emptyDir: {}}
         - name: python-packages
           persistentVolumeClaim: {claimName: langflow-packages-pvc}
       volumeMounts:
+        - {name: langflow-tmp, mountPath: /tmp}
+        - {name: app-data,     mountPath: /app/data}
+        - {name: app-db,       mountPath: /app/db}
+        - {name: app-flows,    mountPath: /app/flows}
         - name: python-packages
           mountPath: /opt/python-packages
       env:
         - name: PYTHONPATH
           value: "/opt/python-packages"
 ```
+
+Verified on ACP 4.3: pod is Ready, `env` shows `PYTHONPATH=/opt/python-packages`, mount visible at that path.
 
 ### 3.2 Install Dependencies
 
