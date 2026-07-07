@@ -265,3 +265,30 @@ kubectl get pod -n kubevirt -l kubevirt.io=virt-launcher -o wide
 ```
 
 Inside the guest operating system, confirm that an additional NIC appears. The Kube-OVN Subnet handles platform-side address allocation for the secondary network. Whether the address is configured inside the guest still depends on the guest OS DHCP client, cloud-init, or system network configuration.
+
+### Bind the service VF to DPDK inside the VM
+
+If the workload needs DPDK inside the VM, operate only on the SR-IOV service VF that is passed through to the guest OS. Do not bind the default management NIC. Use the `dpdk-devbind.py` script from the DPDK package, or download it from the `dpdk-devbind.py` link in the ACP SR-IOV documentation.
+
+Inside the VM, identify the PCI NICs:
+
+```bash
+lspci -Dnn | grep -i ethernet
+```
+
+Prepare HugePages according to the workload requirements, and load the VFIO driver:
+
+```bash
+modprobe vfio-pci
+modprobe vfio_iommu_type1
+```
+
+Bind the service VF PCI address as seen inside the VM to `vfio-pci`:
+
+```bash
+python3 dpdk-devbind.py --status
+python3 dpdk-devbind.py -b vfio-pci <guest-vf-pci-address>
+python3 dpdk-devbind.py --status
+```
+
+`<guest-vf-pci-address>` is the PCI address seen inside the VM, not the VF address on the host. After binding, the VF is no longer used as a normal guest OS kernel NIC and is instead owned by the DPDK userspace process.

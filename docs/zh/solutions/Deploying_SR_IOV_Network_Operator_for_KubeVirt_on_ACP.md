@@ -265,3 +265,30 @@ kubectl get pod -n kubevirt -l kubevirt.io=virt-launcher -o wide
 ```
 
 进入虚拟机操作系统后，确认出现额外网卡。kube-ovn Subnet 负责平台侧辅助网络地址分配；虚拟机内部是否能拿到该地址，还取决于 guest OS 中的 DHCP 客户端、cloud-init 或系统网络配置。
+
+### 在虚拟机内将业务 VF 绑定给 DPDK
+
+如果业务需要在虚拟机内使用 DPDK，进入 guest OS 后只对 SR-IOV 直通进来的业务 VF 操作，不要绑定默认管理网卡。可以使用 DPDK 软件包自带的 `dpdk-devbind.py`，也可以从 ACP SR-IOV 文档的 `dpdk-devbind.py` 下载入口获取脚本。
+
+在虚拟机内确认 PCI 网卡：
+
+```bash
+lspci -Dnn | grep -i ethernet
+```
+
+按业务应用要求准备 HugePages，并加载 VFIO 驱动：
+
+```bash
+modprobe vfio-pci
+modprobe vfio_iommu_type1
+```
+
+将虚拟机内看到的业务 VF PCI 地址绑定到 `vfio-pci`：
+
+```bash
+python3 dpdk-devbind.py --status
+python3 dpdk-devbind.py -b vfio-pci <guest-vf-pci-address>
+python3 dpdk-devbind.py --status
+```
+
+`<guest-vf-pci-address>` 是虚拟机内部看到的 PCI 地址，不是宿主机上的 VF 地址。绑定后，该 VF 不再作为 guest OS 的普通内核网卡使用，而是由 DPDK 用户态进程接管。
