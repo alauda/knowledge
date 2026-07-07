@@ -268,7 +268,7 @@ Inside the guest operating system, confirm that an additional NIC appears. The K
 
 ### Bind the service VF to DPDK inside the VM
 
-If the workload needs DPDK inside the VM, operate only on the SR-IOV service VF that is passed through to the guest OS. Do not bind the default management NIC. Use the `dpdk-devbind.py` script from the DPDK package, or download it from the `dpdk-devbind.py` link in the ACP SR-IOV documentation.
+If the workload needs DPDK inside the VM, operate only on the SR-IOV service VF that is passed through to the guest OS. Do not bind the default management NIC. Prefer the `dpdk-devbind.py` script from the DPDK package inside the VM. If the image does not include the script, get it from the DPDK upstream repository: <https://raw.githubusercontent.com/DPDK/dpdk/main/usertools/dpdk-devbind.py>.
 
 Inside the VM, identify the PCI NICs:
 
@@ -276,11 +276,12 @@ Inside the VM, identify the PCI NICs:
 lspci -Dnn | grep -i ethernet
 ```
 
-Prepare HugePages according to the workload requirements, and load the VFIO driver:
+`dpdk-devbind.py` only binds the VF driver and does not prepare the DPDK application runtime. Configure HugePages, CPU affinity, and DPDK EAL parameters according to the workload image or application documentation.
+
+Load the VFIO driver:
 
 ```bash
 modprobe vfio-pci
-modprobe vfio_iommu_type1
 ```
 
 Bind the service VF PCI address as seen inside the VM to `vfio-pci`:

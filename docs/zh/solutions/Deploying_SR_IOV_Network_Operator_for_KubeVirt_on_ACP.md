@@ -268,7 +268,7 @@ kubectl get pod -n kubevirt -l kubevirt.io=virt-launcher -o wide
 
 ### 在虚拟机内将业务 VF 绑定给 DPDK
 
-如果业务需要在虚拟机内使用 DPDK，进入 guest OS 后只对 SR-IOV 直通进来的业务 VF 操作，不要绑定默认管理网卡。可以使用 DPDK 软件包自带的 `dpdk-devbind.py`，也可以从 ACP SR-IOV 文档的 `dpdk-devbind.py` 下载入口获取脚本。
+如果业务需要在虚拟机内使用 DPDK，进入 guest OS 后只对 SR-IOV 直通进来的业务 VF 操作，不要绑定默认管理网卡。优先使用虚拟机内 DPDK 软件包自带的 `dpdk-devbind.py`；如果镜像中没有该脚本，可以从 DPDK 官方仓库获取：<https://raw.githubusercontent.com/DPDK/dpdk/main/usertools/dpdk-devbind.py>。
 
 在虚拟机内确认 PCI 网卡：
 
@@ -276,11 +276,12 @@ kubectl get pod -n kubevirt -l kubevirt.io=virt-launcher -o wide
 lspci -Dnn | grep -i ethernet
 ```
 
-按业务应用要求准备 HugePages，并加载 VFIO 驱动：
+`dpdk-devbind.py` 只负责 VF 驱动绑定，不负责准备 DPDK 应用运行环境。HugePages、CPU 亲和性和 DPDK EAL 参数按业务镜像或应用文档配置。
+
+加载 VFIO 驱动：
 
 ```bash
 modprobe vfio-pci
-modprobe vfio_iommu_type1
 ```
 
 将虚拟机内看到的业务 VF PCI 地址绑定到 `vfio-pci`：
