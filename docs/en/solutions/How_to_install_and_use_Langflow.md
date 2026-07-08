@@ -37,11 +37,11 @@ This section provides detailed instructions on how to deploy Langflow to a Kuber
 
 ## Publishing
 
-Download the Langflow installation file: `langflow-operator.alpha.ALL.v1.10.1.tgz`
+Download the Langflow installation file: `langflow-operator.alpha.ALL.v1.10.2.tgz`
 
 Use the violet command to publish to the platform repository:
 ```bash
-violet push --platform-address=platform-access-address --platform-username=platform-admin --platform-password=platform-admin-password langflow-operator.alpha.ALL.v1.10.1.tgz
+violet push --platform-address=platform-access-address --platform-username=platform-admin --platform-password=platform-admin-password langflow-operator.alpha.ALL.v1.10.2.tgz
 ```
 
 Starting with v1.10.1, Langflow is installed via `OperatorHub` and a `Langflow` custom resource, not from the Applications / Catalog form.
@@ -77,7 +77,7 @@ Production environments strongly recommend PostgreSQL:
 
 1. In `Alauda Container Platform`, open `OperatorHub` and search for `Langflow`. Install `Langflow` from the `platform` catalog source (defaults: channel `alpha`, install mode `AllNamespaces`).
 
-2. Wait for the CSV `langflow-operator.v1.10.1` to reach `Succeeded`.
+2. Wait for the CSV `langflow-operator.v1.10.2` to reach `Succeeded`.
 
 3. Create a namespace for the Langflow instance (default suggestion: `langflow-system`).
 
