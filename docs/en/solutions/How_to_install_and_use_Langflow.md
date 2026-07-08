@@ -267,17 +267,22 @@ spec:
           value: "false"                       # Disable CLI superuser bootstrap
 ```
 
-Verified behavior with `LANGFLOW_AUTO_LOGIN=false`:
+**Verify the login flow in a browser**:
 
-- `GET /api/v1/auto_login` returns **403** (auto-login disabled).
-- `POST /api/v1/login` with the correct superuser credentials returns **200** with an `access_token`.
-- `POST /api/v1/login` with wrong credentials returns **401**.
-- Protected endpoints (e.g. `GET /api/v1/all`) return **200** with a valid Bearer token and **403** without.
+1. **Open the Langflow URL in a fresh browser tab** — use an Incognito / Private window, or clear the site's cookies first (DevTools → Application → Cookies → delete `access_token_lf`, `refresh_token_lf`, `apikey_tkn_lflw`). Without this step, previously issued auto-login cookies keep working until they expire, and the browser walks straight into the IDE as if authentication were still off.
+2. **The page should show a login form** instead of loading the IDE directly.
+3. **Log in with the superuser credentials** you set in `LANGFLOW_SUPERUSER` / `LANGFLOW_SUPERUSER_PASSWORD`. You should land in the IDE with your username shown in the top-right menu; entering a wrong password should keep you on the login page with an error message.
 
 Notes:
-- With `LANGFLOW_AUTO_LOGIN=false`, self-registration is not supported. New users must be added by the superuser via `/admin`; if `LANGFLOW_NEW_USER_IS_ACTIVE=false`, the superuser must activate the account before login is allowed.
-- The superuser credentials are only consumed on **first startup**. Once written into the database (SQLite or PostgreSQL), changing the env vars alone does not rotate them — the credential update must go through Langflow's admin UI or a DB migration.
-- Access/refresh token expiration are controlled by `LANGFLOW_ACCESS_TOKEN_EXPIRE_SECONDS` / `LANGFLOW_REFRESH_TOKEN_EXPIRE_SECONDS` (defaults are conservative; adjust only if required).
+
+- Self-registration is not supported when `LANGFLOW_AUTO_LOGIN=false`. New users must be added by the superuser from the admin page; if `LANGFLOW_NEW_USER_IS_ACTIVE=false`, the superuser must also activate each new account before the user can log in.
+- The superuser credentials are consumed on **first startup only**. Once written into the database, changing the env vars alone does not rotate the password — update it through Langflow's admin UI instead. Rotating requires either editing the existing user or wiping the database and restarting.
+- Access/refresh token expiration are controlled by `LANGFLOW_ACCESS_TOKEN_EXPIRE_SECONDS` (default 30 days) and `LANGFLOW_REFRESH_TOKEN_EXPIRE_SECONDS` (default 60 days). For production, shorter values are recommended:
+  ```yaml
+  env:
+    - {name: LANGFLOW_ACCESS_TOKEN_EXPIRE_SECONDS,  value: "3600"}     # 1 hour
+    - {name: LANGFLOW_REFRESH_TOKEN_EXPIRE_SECONDS, value: "604800"}   # 7 days
+  ```
 
 ### 5. Configure Runtime Mode (Backend-Only)
 
