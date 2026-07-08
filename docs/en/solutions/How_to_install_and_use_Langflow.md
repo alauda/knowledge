@@ -37,76 +37,111 @@ This section provides detailed instructions on how to deploy Langflow to a Kuber
 
 ## Publishing
 
-Download the Langflow installation file: `langflow.ALL.v1.6.4-1.tgz`
+Download the Langflow installation file: `langflow-operator.alpha.ALL.v1.10.2.tgz`
 
 Use the violet command to publish to the platform repository:
 ```bash
-violet push --platform-address=platform-access-address --platform-username=platform-admin --platform-password=platform-admin-password langflow.ALL.v1.6.4-1.tgz
+violet push --platform-address=platform-access-address --platform-username=platform-admin --platform-password=platform-admin-password langflow-operator.alpha.ALL.v1.10.2.tgz
 ```
+
+Starting with v1.10.1, Langflow is installed via `OperatorHub` and a `Langflow` custom resource, not from the Applications / Catalog form.
 
 ## Deployment
 
 ### Prepare Storage
 
-Langflow supports two database modes:
-- **SQLite (Default)**: For development and testing, data is stored in persistent volumes
-- **PostgreSQL (Recommended)**: For production environments, providing better performance and scalability
+Langflow uses SQLite by default with an RWO PVC (1Gi). For production, PostgreSQL is recommended (see [Configure Database](#2-configure-database)). The StorageClass for the SQLite PVC is configured under `spec.langflow.backend.sqlite.volume` — see [Configure Storage](#1-configure-storage) for details.
 
-The cluster needs to have CSI pre-installed or `PersistentVolume` pre-prepared.
-
-### Prepare Database
+### Prepare Database (Optional)
 
 #### Using SQLite (Default)
 
-SQLite is Langflow's default database, suitable for development and testing environments:
-- Data is stored in persistent volumes
-- Simple configuration, no additional setup required
-- Supports single-instance deployment
+SQLite is Langflow's default database:
+- Data is stored in an RWO PVC (`data-langflow-service-0`, 1Gi default)
+- Simple, no additional infrastructure
+- Only supports single-instance backend (StatefulSet replicas = 1)
 
-#### Using PostgreSQL (Recommended)
+#### Using PostgreSQL (Recommended for production)
 
-Production environments strongly recommend using PostgreSQL for better performance and scalability:
+Production environments strongly recommend PostgreSQL:
 
-The `PostgreSQL operator` provided by `Data Services` can be used to create a `PostgreSQL cluster`.
-
-Check the access address and password in the `PostgreSQL` instance details in `Data Services`.
+- Provision a PostgreSQL instance via `Data Services` PostgreSQL Operator, or use any external PostgreSQL reachable from the cluster.
+- Create a dedicated database and user with `CREATE`/`CONNECT` privileges. The Langflow backend will run Alembic migrations against it at first startup.
 
 **Note**:
 - PostgreSQL version 12 or higher is recommended
-- Need to create a separate database and user
-- Ensure network connectivity
+- Ensure network connectivity from the Langflow namespace to the PostgreSQL instance
+- Store the password in a Kubernetes `Secret` and reference it via `secretKeyRef` (see [Configure Database](#2-configure-database))
 
-### Create Application
+### Install Operator + Create Langflow
 
-1. Go to the `Alauda Container Platform` view and select the namespace where Langflow will be deployed.
+1. In `Alauda Container Platform`, open `OperatorHub` and search for `Langflow`. Install `Langflow` from the `platform` catalog source (defaults: channel `alpha`, install mode `AllNamespaces`).
 
-2. In the left navigation, select `Applications` / `Applications`, then click the `Create` button on the right page.
+2. Wait for the CSV `langflow-operator.v1.10.2` to reach `Succeeded`.
 
-3. In the popup dialog, select `Create from Catalog`, then the page will jump to the `Catalog` view.
+3. Create a namespace for the Langflow instance (default suggestion: `langflow-system`).
 
-4. Find `3rdparty/chart-langflow` and click `Create` to create this application.
+4. Apply a `Langflow` custom resource in that namespace. Minimal form:
 
-5. On the `Catalog` / `Create langflow` form, fill in the `Name` (recommended as `langflow`) and `Custom` configuration in `Values`, then click the `Create` button to complete creation. The `Custom` content will be described below. It can also be modified after creation through the `Update` application method.
+   ```yaml
+   apiVersion: langflow-operator.alauda.io/v1
+   kind: Langflow
+   metadata:
+     name: langflow
+     namespace: langflow-system
+   spec: {}
+   ```
+
+   Empty `spec: {}` uses defaults (SQLite on the cluster default StorageClass, IDE mode, ClusterIP Services only). To customize, add fields under `spec.langflow.*` per the sections below.
 
 ## Configuration
 
-Users can modify the `Custom Values` of the `Application` to adjust configuration. The main configurations to focus on are as follows:
+The `Langflow` custom resource's `spec.langflow.*` fields customize the deployment. The main configurations to focus on are as follows.
+
+> **⚠ Array fields REPLACE chart defaults, they do not append.**
+> When you set `spec.langflow.backend.volumes` (or `.volumeMounts`), the chart drops its own default `tmp` / `data` / `db` / `flows` `emptyDir` volumes and uses only what you provide. If you add a custom volume without re-declaring the defaults, the backend container will crash on startup with `FileNotFoundError: No usable temporary directory found in ['/tmp', '/var/tmp', '/usr/tmp', '/app']` (the Langflow entrypoint imports `dill`, which calls `tempfile.gettempdir()` — `readOnlyRootFilesystem: true` means `/tmp` must be a writable volume).
+>
+> If you customize `volumes` or `volumeMounts`, keep the four chart-default entries alongside your additions. Suggested minimal boilerplate:
+>
+> ```yaml
+> spec:
+>   langflow:
+>     backend:
+>       volumes:
+>         - {name: langflow-tmp, emptyDir: {}}   # /tmp        — required (readOnly root FS)
+>         - {name: app-data,     emptyDir: {}}   # /app/data   — chart default
+>         - {name: app-db,       emptyDir: {}}   # /app/db     — chart default
+>         - {name: app-flows,    emptyDir: {}}   # /app/flows  — chart default
+>         # ... your additions below
+>       volumeMounts:
+>         - {name: langflow-tmp, mountPath: /tmp}
+>         - {name: app-data,     mountPath: /app/data}
+>         - {name: app-db,       mountPath: /app/db}
+>         - {name: app-flows,    mountPath: /app/flows}
+>         # ... your additions below
+> ```
+>
+> Sections below that add custom `volumes` (ConfigMap flow import, local models, Python deps) omit this boilerplate for brevity — remember to include it. This trap was caught live on ACP 4.3 during doc validation.
 
 ### 1. Configure Storage
 
 #### 1.1 Configure SQLite Storage (Default)
 
-The storage class and size can be specified by adding the following configuration:
+The StorageClass and volume size can be specified by adding the following configuration:
 
 ```yaml
-langflow:
-  sqlite:
-    volume:
-      storageClassName: storage-class-name     # Replace with the actual storage class name
-      size: 1Gi                                # Replace with the actual required space size
+spec:
+  langflow:
+    backend:
+      sqlite:
+        volume:
+          existingStorageClassName: <sc-name>    # Cluster StorageClass name; leave "default" to use the cluster default
+          size: 1Gi                              # PVC size
 ```
 
-**Note**: When using SQLite, only single-instance deployment (replicaCount = 1) is supported.
+**Note**:
+- `existingStorageClassName: "default"` is a magic string in the chart that means "use the cluster's default StorageClass" (i.e. the SC annotated `storageclass.kubernetes.io/is-default-class: "true"`). Set an explicit SC name to override.
+- When using SQLite, only single-instance backend is supported (StatefulSet replicas = 1).
 
 ### 2. Configure Database
 
@@ -115,168 +150,203 @@ langflow:
 PostgreSQL access information can be configured by setting the following fields:
 
 ```yaml
-langflow:
-  externalDatabase:
-    enabled: true                              # Enable external database
-    driver:
-      value: "postgresql"
-    host:
-      value: postgres-host                     # PostgreSQL access address
-    port:
-      value: "5432"                            # PostgreSQL access port, default: 5432
-    database:
-      value: langflow                          # Database name, note: database will be created automatically
-    user:
-      value: langflow                          # Database username
-    password:
-      valueFrom:
-        secretKeyRef:
-          name: postgres-secret                # Secret name storing database access password
-          key: password                        # Secret key storing database access password
+spec:
+  langflow:
+    backend:
+      externalDatabase:
+        enabled: true                            # Enable external database
+        driver: {value: "postgresql"}
+        host: {value: <postgres-host>}           # PostgreSQL host (Service DNS or external address)
+        port: {value: "5432"}
+        database: {value: langflow}              # Target database (must exist before backend starts)
+        user: {value: langflow}
+        password:
+          valueFrom:
+            secretKeyRef:
+              name: postgres-secret              # Secret holding the password
+              key: password
 ```
 
-**Note**: Due to temporary storage limitations, the current version temporarily does not support multi-instance deployment. Even with PostgreSQL database configured, only single-instance deployment (replicaCount = 1) is supported.
+The chart runs a small startup shim inside the backend container that reads these `LF_CHART_EXTERNALDB_*` env vars and composes them into `LANGFLOW_DATABASE_URL=postgresql://<user>:<pass>@<host>:<port>/<db>`, overriding the sqlite default. Verified by connecting to the target PostgreSQL after backend startup: Langflow creates its full schema (`alembic_version`, `flow`, `apikey`, `folder`, `message`, etc.) via Alembic and populates it with the built-in starter projects.
 
-### 3. Configure Access Method
+**Note**: With SQLite, only single-instance backend is supported. Multi-instance backend requires PostgreSQL, but the current chart still ships `replicas: 1` for the backend StatefulSet — scale explicitly if you need HA.
 
-By default, `LoadBalancer` is used to provide access address.
+### 3. Configure External Access
 
-#### 3.1 Modify Service Type
+Langflow creates only two `ClusterIP` Services by default:
 
-The `Service` type can be modified by setting the following fields:
+- `langflow-service` on port 8080 — frontend (React IDE served by nginx)
+- `langflow-service-backend` on port 7860 — backend (FastAPI + `/api/v1/*`)
+
+The frontend nginx also reverse-proxies `/api`, `/health` and `/health_check` to the backend, so **routing all external traffic to `langflow-service:8080` gives users both the IDE and the backend API through the same entry point**.
+
+External access is provided via Gateway API (Envoy Gateway). Apply the three resources below in the same namespace as your `Langflow` custom resource. Adjust the `gatewayClassName` (`envoy-gateway-system-aieg` is the default on Alauda Container Platform 4.3+) and the `hostname` to match your environment.
 
 ```yaml
-langflow:
-  service:
-    type: LoadBalancer                         # Can be changed to NodePort or ClusterIP
-    port: 7860                                 # Service port
+# ── 1) EnvoyProxy: expose the data plane via NodePort (or LoadBalancer if available). ────
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: EnvoyProxy
+metadata:
+  name: langflow-proxy
+  namespace: <langflow-ns>
+spec:
+  logging: {level: {default: warn}}
+  provider:
+    type: Kubernetes
+    kubernetes:
+      envoyService:
+        type: NodePort              # change to LoadBalancer if the cluster has one
+        externalTrafficPolicy: Cluster
+---
+# ── 2) Gateway: HTTP listener; add an HTTPS listener with a cert Secret for TLS. ─────────
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: langflow-gw
+  namespace: <langflow-ns>
+spec:
+  gatewayClassName: envoy-gateway-system-aieg
+  infrastructure:
+    parametersRef:
+      group: gateway.envoyproxy.io
+      kind: EnvoyProxy
+      name: langflow-proxy
+  listeners:
+    - name: http
+      protocol: HTTP
+      port: 80
+      allowedRoutes: {namespaces: {from: Same}}
+---
+# ── 3) HTTPRoute: all paths → langflow-service:8080; nginx fans out /api* to backend. ────
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: langflow
+  namespace: <langflow-ns>
+spec:
+  parentRefs:
+    - {group: gateway.networking.k8s.io, kind: Gateway, name: langflow-gw}
+  # hostnames: [langflow.example.com]           # optional; omit to accept any Host
+  rules:
+    - matches: [{path: {type: PathPrefix, value: "/"}}]
+      backendRefs:
+        - {name: langflow-service, port: 8080}
 ```
 
-#### 3.2 Enable Ingress
+After apply, wait for the `Gateway` to reach `PROGRAMMED=True`, then find the NodePort that Envoy Gateway allocated:
 
-Ingress can be configured by setting the following fields. After enabling Ingress, the Service type is usually changed to ClusterIP:
-
-```yaml
-ingress:
-  enabled: true                                # Enable Ingress functionality
-  hosts:
-    - host: langflow.example.com               # Access domain (must be DNS name, not IP address)
-      paths:
-        - path: /
-  tls:
-    - secretName: langflow-tls                 # Secret name storing TLS certificate
-      hosts:
-        - langflow.example.com
+```bash
+kubectl get gateway langflow-gw -n <langflow-ns>
+kubectl get svc -A -l gateway.envoyproxy.io/owning-gateway-name=langflow-gw
 ```
+
+The NodePort service in the output is the entry point — reach Langflow at `http://<any-node-ip>:<nodePort>/`.
+
+If you added an HTTPS listener with a certificate `Secret` in a different namespace, you'll also need a `ReferenceGrant` from the Gateway's namespace to the certificate's namespace.
 
 ### 4. Configure Authentication and User Management (Optional)
 
-#### 4.1 Enable User Authentication
-
-User authentication can be enabled by setting the following fields:
+Langflow authentication is controlled by environment variables on the backend container. Set them under `spec.langflow.backend.env`:
 
 ```yaml
-langflow:
-  auth:
-    enabled: true                              # Enable authentication
-    superuser:
-      username: langflow                       # Superuser name
-      password: ""                             # Superuser password, auto-generated if not set
-    secretKey: ""                              # Secret key, auto-generated if not set
-    newUserActive: false                       # Whether new users need activation
-    enableSuperuserCLI: false                  # Whether to enable CLI superuser
-    accessTokenExpireSeconds: 3600             # Access token expiration time (seconds)
-    refreshTokenExpireSeconds: 604800          # Refresh token expiration time (seconds)
+spec:
+  langflow:
+    backend:
+      env:
+        - name: LANGFLOW_AUTO_LOGIN
+          value: "false"                       # Disable auto-login (default: true)
+        - name: LANGFLOW_SUPERUSER
+          valueFrom:
+            secretKeyRef: {name: langflow-superuser, key: username}
+        - name: LANGFLOW_SUPERUSER_PASSWORD
+          valueFrom:
+            secretKeyRef: {name: langflow-superuser, key: password}
+        - name: LANGFLOW_NEW_USER_IS_ACTIVE
+          value: "false"                       # New users require superuser activation (default: false)
+        - name: LANGFLOW_ENABLE_SUPERUSER_CLI
+          value: "false"                       # Disable CLI superuser bootstrap
 ```
 
-After enabling authentication, by default:
-- Login is required to access
-- Superuser can be configured
-- New users can only be added by superuser through `/admin` page (self-registration is not supported)
-- New user account activation: If `newUserActive=true`, new user accounts are automatically activated; If `newUserActive=false` (default), superuser needs to manually activate
+**Verify the login flow in a browser**:
 
+1. **Open the Langflow URL in a fresh browser tab** — use an Incognito / Private window, or clear the site's cookies first (DevTools → Application → Cookies → delete `access_token_lf`, `refresh_token_lf`, `apikey_tkn_lflw`). Without this step, previously issued auto-login cookies keep working until they expire, and the browser walks straight into the IDE as if authentication were still off.
+2. **The page should show a login form** instead of loading the IDE directly.
+3. **Log in with the superuser credentials** you set in `LANGFLOW_SUPERUSER` / `LANGFLOW_SUPERUSER_PASSWORD`. You should land in the IDE with your username shown in the top-right menu; entering a wrong password should keep you on the login page with an error message.
 
-### 5. Configure OAuth2 Proxy (Optional)
+Notes:
 
-OAuth2 proxy can be configured to provide single sign-on functionality by setting the following fields:
-
-```yaml
-oauth2_proxy:
-  enabled: true                                # Enable OAuth2 proxy
-  oidcIssuer: "https://x.x.x.com/dex"          # OIDC Issuer address
-  oidcClientID: "your-client-id"               # OIDC client ID
-  oidcClientSecret: "your-client-secret"       # OIDC client secret (recommended to use Secret)
-```
-
-To configure `Alauda Container Platform` as OIDC Provider, configure as follows:
-- `oauth2_proxy.oidcIssuer` is the platform access address plus `/dex`
-- `oauth2_proxy.oidcClientID` is fixed as `langflow`
-- `oauth2_proxy.oidcClientSecret` is fixed as `ZXhhbXBsZS1hcHAtc2VjcmV0`
-
-Also create an OAuth2Client resource in the global cluster to configure Langflow's client information:
-
-```yaml
-apiVersion: dex.coreos.com/v1
-kind: OAuth2Client
-metadata:
-  name: nrqw4z3gnrxxps7sttsiiirdeu
-  namespace: cpaas-system
-id: langflow                                   # Consistent with oauth2_proxy.oidcClientID in values
-name: Langflow
-secret: ZXhhbXBsZS1hcHAtc2VjcmV0               # Consistent with oauth2_proxy.oidcClientSecret in values
-redirectURIs:
-- http://xxx.xxx.xxxx.xxx:xxxxx/*              # OAuth2-Proxy access address, acquisition method described below
-                                               # If multiple Langflow instances are deployed, add multiple access addresses here
-```
-
-**Note**: OAuth2 Proxy access address can be obtained from the `<Application Name>-oauth2-proxy` Service, use the appropriate access method based on Service type.
-
-After enabling OAuth2 Proxy, it is recommended to:
-- Set `langflow.service.type` to `ClusterIP`, allowing access only within the cluster. Users need to access Langflow through OAuth2 Proxy address.
-- Set `langflow.auth.enabled` to `false`. Use OAuth2 Proxy to handle login authentication.
-
-Users can log out by accessing `/oauth2/sign_out`.
-
-### 6. Configure Runtime Mode (Backend-Only)
-
-Runtime mode is the recommended deployment method for production environments, deploying only the Langflow backend API service without a visual interface.
-
-#### 6.1 Enable Runtime Mode
-
-Runtime mode (backend-only) can be enabled by setting the following fields:
-
-```yaml
-langflow:
-  backendOnly: true                            # Enable backend-only mode
+- Self-registration is not supported when `LANGFLOW_AUTO_LOGIN=false`. New users must be added by the superuser from the admin page; if `LANGFLOW_NEW_USER_IS_ACTIVE=false`, the superuser must also activate each new account before the user can log in.
+- The superuser credentials are consumed on **first startup only**. Once written into the database, changing the env vars alone does not rotate the password — update it through Langflow's admin UI instead. Rotating requires either editing the existing user or wiping the database and restarting.
+- Access/refresh token expiration are controlled by `LANGFLOW_ACCESS_TOKEN_EXPIRE_SECONDS` (default 30 days) and `LANGFLOW_REFRESH_TOKEN_EXPIRE_SECONDS` (default 60 days). For production, shorter values are recommended:
+  ```yaml
   env:
-    - name: LANGFLOW_LOAD_FLOWS_PATH           # Set the path to load Flows
-      value: "/app/flows"
-  volumes:
-    - name: flows                              # Load Flows content through volume
-      persistentVolumeClaim:                   # From PVC or other volumes
-        claimName: langflow-flows-pvc
-  volumeMounts:                                # Mount volume to specified path
-    - name: flows
-      mountPath: /app/flows
+    - {name: LANGFLOW_ACCESS_TOKEN_EXPIRE_SECONDS,  value: "3600"}     # 1 hour
+    - {name: LANGFLOW_REFRESH_TOKEN_EXPIRE_SECONDS, value: "604800"}   # 7 days
+  ```
+
+### 5. Configure Runtime Mode (Backend-Only)
+
+Runtime mode drops the React IDE frontend and runs only the backend REST API. This is the recommended deployment shape for production API-serving scenarios.
+
+#### 5.1 Enable Runtime Mode
+
+Two fields together enable full runtime mode:
+
+- `spec.langflow.backend.backendOnly: true` — starts the backend with `--backend-only` (backend is already the default in the current chart, but keep this explicit).
+- `spec.langflow.frontend.enabled: false` — the chart skips the frontend Deployment entirely (verified: `kubectl get deploy -n <ns>` returns 0 resources; only the backend StatefulSet remains).
+
+Optionally auto-import flows from a PVC or ConfigMap. **Remember the [chart-defaults boilerplate](#configuration)** — mount the flows source under a distinct path (`/app/loaded-flows`) so it doesn't collide with the chart's own `/app/flows` `emptyDir`:
+
+```yaml
+spec:
+  langflow:
+    backend:
+      backendOnly: true
+      env:
+        - name: LANGFLOW_LOAD_FLOWS_PATH
+          value: "/app/loaded-flows"
+      volumes:
+        - {name: langflow-tmp, emptyDir: {}}
+        - {name: app-data,     emptyDir: {}}
+        - {name: app-db,       emptyDir: {}}
+        - {name: app-flows,    emptyDir: {}}
+        - name: loaded-flows
+          persistentVolumeClaim: {claimName: langflow-flows-pvc}
+      volumeMounts:
+        - {name: langflow-tmp, mountPath: /tmp}
+        - {name: app-data,     mountPath: /app/data}
+        - {name: app-db,       mountPath: /app/db}
+        - {name: app-flows,    mountPath: /app/flows}
+        - name: loaded-flows
+          mountPath: /app/loaded-flows
+    frontend:
+      enabled: false
 ```
-When enabling `LANGFLOW_LOAD_FLOWS_PATH`, authentication must be disabled, i.e., `langflow.auth.enabled` must be set to `false`.
+
+When enabling `LANGFLOW_LOAD_FLOWS_PATH`, keep `LANGFLOW_AUTO_LOGIN=true` (auto-login mode) — this is a Langflow constraint: user-owned auto-imported flows require the auto-login default user to be present.
 
 ## Access Address
 
-### 1. Access via Service
+### 1. Access via Gateway API (recommended)
 
-`Langflow` provides external access through `Service`. Check its `Service` to get the access address.
+When the Gateway API path from [Configure External Access](#3-configure-external-access) is applied, the assigned NodePort or LoadBalancer address of the Gateway's data-plane Service is the entry point. Example:
 
-- If OAuth2 proxy is not enabled, Service name is: `<Application Name>`
-- If OAuth2 proxy is enabled, Service name is: `<Application Name>-oauth2-proxy`
+```bash
+# Discover the envoy data-plane Service's NodePort (or LoadBalancer address)
+kubectl get svc -A -l gateway.envoyproxy.io/owning-gateway-name=langflow-gw
 
-If the `Service` type is `LoadBalancer` and the load balancer controller in the environment has assigned an access address, please access through that address.
+# Reach Langflow through any cluster node's IP + that NodePort
+curl http://<any-node-ip>:<nodePort>/health_check
+# Or open http://<any-node-ip>:<nodePort>/ in a browser to see the Langflow IDE
+```
 
-If the `Service` type is `LoadBalancer` or `NodePort`, access is available through `node IP` with its `NodePort`.
+### 2. Access via In-Cluster Port-Forward (development only)
 
-### 2. Access via Ingress
+```bash
+kubectl port-forward -n <langflow-ns> svc/langflow-service 8080:8080
+# open http://localhost:8080/
+```
 
-If Ingress is enabled, please access through the configured domain name.
 
 # Langflow Quickstart
 
@@ -305,27 +375,40 @@ data:
     <JSON content>
 ```
 
-### 1.2 Mount ConfigMap to Container
+### 1.2 Mount ConfigMap to the backend container
 
-In Langflow configuration, mount the ConfigMap to a specified directory in the container:
+Add the ConfigMap as a volume and expose the mount path through `LANGFLOW_LOAD_FLOWS_PATH`. **Remember the "array replaces defaults" rule** — the four chart-default entries (`langflow-tmp` / `app-data` / `app-db` / `app-flows`) below the custom ConfigMap entry must stay in place:
 
 ```yaml
-langflow:
-  volumes:
-    - name: flows
-      configMap:
-        name: langflow-flows                   # ConfigMap name
-  volumeMounts:
-    - name: flows
-      mountPath: /app/flows                    # Mount path
-  env:
-    - name: LANGFLOW_LOAD_FLOWS_PATH           # Set the path to load Flow files
-      value: /app/flows
+spec:
+  langflow:
+    backend:
+      volumes:
+        # chart defaults — required, do not omit
+        - {name: langflow-tmp, emptyDir: {}}
+        - {name: app-data,     emptyDir: {}}
+        - {name: app-db,       emptyDir: {}}
+        - {name: app-flows,    emptyDir: {}}
+        # additional flows source
+        - name: loaded-flows
+          configMap: {name: langflow-flows}
+      volumeMounts:
+        - {name: langflow-tmp, mountPath: /tmp}
+        - {name: app-data,     mountPath: /app/data}
+        - {name: app-db,       mountPath: /app/db}
+        - {name: app-flows,    mountPath: /app/flows}
+        - name: loaded-flows
+          mountPath: /app/loaded-flows
+      env:
+        - name: LANGFLOW_LOAD_FLOWS_PATH
+          value: /app/loaded-flows
 ```
+
+Verified on ACP 4.3: with the above CR, restarting the backend caused Langflow to auto-import the `hello-world.json` file from the ConfigMap; `GET /api/v1/flows/` returns 34 flows (33 built-in starter projects + 1 imported).
 
 ### 1.3 Auto Import
 
-After configuration, Langflow will automatically scan and import JSON files in the `LANGFLOW_LOAD_FLOWS_PATH` directory on startup.
+After the backend restarts, Langflow scans `LANGFLOW_LOAD_FLOWS_PATH` and auto-imports every `*.json` file in it as a Flow. Since flow ownership is tied to a user, the auto-import mode requires `LANGFLOW_AUTO_LOGIN=true` (the default) — the imported flows are attached to the built-in default user. With authentication enabled (`LANGFLOW_AUTO_LOGIN=false`), user-owned imports are not supported; use the REST API (`POST /api/v1/flows/` with a Bearer token) instead.
 
 ## 2. Using Models
 
@@ -350,17 +433,26 @@ This approach is suitable for scenarios where:
 
 #### 2.2.1 Mount Model Files via Volume
 
-Store model files in persistent volumes and provide them to the Langflow container through Volume mounts:
+Store model files in persistent volumes and provide them to the Langflow backend container through additional volumes/volumeMounts. **Remember the [chart-defaults boilerplate](#configuration)** — the four `emptyDir` entries must be included:
 
 ```yaml
-langflow:
-  volumes:
-    - name: models                             # Model storage volume
-      persistentVolumeClaim:
-        claimName: langflow-models-pvc
-  volumeMounts:                                # Mount model volume to specified path
-    - name: models
-      mountPath: /opt/models
+spec:
+  langflow:
+    backend:
+      volumes:
+        - {name: langflow-tmp, emptyDir: {}}
+        - {name: app-data,     emptyDir: {}}
+        - {name: app-db,       emptyDir: {}}
+        - {name: app-flows,    emptyDir: {}}
+        - name: models
+          persistentVolumeClaim: {claimName: langflow-models-pvc}
+      volumeMounts:
+        - {name: langflow-tmp, mountPath: /tmp}
+        - {name: app-data,     mountPath: /app/data}
+        - {name: app-db,       mountPath: /app/db}
+        - {name: app-flows,    mountPath: /app/flows}
+        - name: models
+          mountPath: /opt/models
 ```
 
 #### 2.2.2 Upload Models
@@ -381,21 +473,32 @@ In production environments, when using custom components, additional Python pack
 
 ### 3.1 Mount Dependencies via PVC
 
-Mount a directory using PVC to store additional Python packages.
+Mount a directory using PVC to store additional Python packages. **Remember the [chart-defaults boilerplate](#configuration)**:
 
 ```yaml
-langflow:
-  volumes:
-    - name: python-packages
-      persistentVolumeClaim:
-        claimName: langflow-packages-pvc       # PVC name for storing additional Python packages
-  volumeMounts:
-    - name: python-packages
-      mountPath: /opt/python-packages          # Mount path
-  env:
-    - name: PYTHONPATH                         # Set Python module search path
-      value: "/opt/python-packages"
+spec:
+  langflow:
+    backend:
+      volumes:
+        - {name: langflow-tmp, emptyDir: {}}
+        - {name: app-data,     emptyDir: {}}
+        - {name: app-db,       emptyDir: {}}
+        - {name: app-flows,    emptyDir: {}}
+        - name: python-packages
+          persistentVolumeClaim: {claimName: langflow-packages-pvc}
+      volumeMounts:
+        - {name: langflow-tmp, mountPath: /tmp}
+        - {name: app-data,     mountPath: /app/data}
+        - {name: app-db,       mountPath: /app/db}
+        - {name: app-flows,    mountPath: /app/flows}
+        - name: python-packages
+          mountPath: /opt/python-packages
+      env:
+        - name: PYTHONPATH
+          value: "/opt/python-packages"
 ```
+
+Verified on ACP 4.3: pod is Ready, `env` shows `PYTHONPATH=/opt/python-packages`, mount visible at that path.
 
 ### 3.2 Install Dependencies
 
@@ -415,26 +518,30 @@ Flow component configurations often need different values in different environme
 
 ### 4.1 Configure Environment Variables
 
-Add environment variables in `Custom Values` as shown in the following example:
+Add environment variables under `spec.langflow.backend.env` as shown:
 
 ```yaml
-langflow:
-  env:
-    - name: LANGFLOW_VARIABLES_TO_GET_FROM_ENVIRONMENT
-      value: VAR1,VAR2,VAR3                    # List environment variable names that Langflow can automatically load, separated by commas
-    - name: VAR1                               # Set environment variable value, environment variable name matches Langflow global variable name
-      value: xxx
-    - name: VAR2                               # Can also load value from ConfigMap
-      valueFrom:
-        configMapKeyRef:
-          name: langflow-configs
-          key: var2
-    - name: VAR3                               # Sensitive information should be stored using Secret
-      valueFrom:
-        secretKeyRef:
-          name: langflow-secrets
-          key: var3
+spec:
+  langflow:
+    backend:
+      env:
+        - name: LANGFLOW_VARIABLES_TO_GET_FROM_ENVIRONMENT
+          value: VAR1,VAR2,VAR3                # Comma-separated list of env-var names Langflow will surface as Global Variables
+        - name: VAR1
+          value: xxx                           # Plain literal
+        - name: VAR2
+          valueFrom:
+            configMapKeyRef:
+              name: langflow-configs
+              key: var2                        # From ConfigMap
+        - name: VAR3
+          valueFrom:
+            secretKeyRef:
+              name: langflow-secrets
+              key: var3                        # From Secret (recommended for sensitive values)
 ```
+
+Verified: with `LANGFLOW_VARIABLES_TO_GET_FROM_ENVIRONMENT=MY_PLAIN_VAR,MY_SECRET_KEY` on the `Langflow` custom resource, `GET /api/v1/variables/` returns both entries with `type: Credential`, ready to be referenced from flow components.
 
 ### 4.2 Use Global Variables in Flows
 
@@ -454,60 +561,75 @@ To improve performance, security, and stability in production environments, the 
 Langflow collects usage data by default. In production environments, this feature can be disabled to protect privacy and reduce network requests:
 
 ```yaml
-langflow:
-  env:
-    - name: DO_NOT_TRACK                       # Disable usage tracking
-      value: "true"
+spec:
+  langflow:
+    backend:
+      env:
+        - name: DO_NOT_TRACK
+          value: "true"
 ```
 
 ### 5.2 Disable Transaction Logs
 
-During each request processing, Langflow records the input, output, and execution logs of each component to the database, which is the information shown in the Langflow IDE's Logs panel.
-In production environments, this logging can be disabled to improve performance and reduce database pressure.
+Langflow records the input, output, and execution log of each component to the database (visible in the IDE's Logs panel). Disabling reduces database write pressure:
 
 ```yaml
-langflow:
-  env:
-    - name: LANGFLOW_TRANSACTIONS_STORAGE_ENABLED
-      value: "false"                           # Disable transaction logs
+spec:
+  langflow:
+    backend:
+      env:
+        - name: LANGFLOW_TRANSACTIONS_STORAGE_ENABLED
+          value: "false"
 ```
 
 ### 5.3 Set Worker Process Count
 
 ```yaml
-langflow:
-  numWorkers: 1                                # Set number of worker processes
+spec:
+  langflow:
+    backend:
+      numWorkers: 1                            # gunicorn worker count (default: 1)
 ```
 
 ### 5.4 Configure Resource Limits
 
-It is recommended to configure appropriate resource limits for the Langflow container. The following YAML is only an example; adjust the values according to actual requirements:
+It is recommended to configure appropriate resource limits for the backend and frontend containers separately. Sample values (adjust to your workload):
 
 ```yaml
-langflow:
-  resources:
-    requests:
-      cpu: "2"
-      memory: "4Gi"
-    limits:
-      cpu: "4"
-      memory: "8Gi"
+spec:
+  langflow:
+    backend:
+      resources:
+        requests: {cpu: "2", memory: "4Gi"}
+        limits:   {cpu: "4", memory: "8Gi"}
+    frontend:
+      resources:
+        requests: {cpu: "0.3", memory: "512Mi"}
 ```
 
-### 5.5 Set API Keys
+### 5.5 Use API Keys
 
-1. Go to the **Settings** page
-2. In the **Langflow API Keys** section, add API keys
-3. When making API requests, add the `x-api-key: <API Key>` header; otherwise, a 401 error (unauthorized request) will be returned
+Langflow supports `x-api-key`-based authentication for REST requests. Two ways to create a key:
+
+1. **Via the IDE (Settings → Langflow API Keys)**: click "Add New" and give the key a name; Langflow returns the key value once (store it immediately).
+2. **Via REST**: `POST /api/v1/api_key/` with a Bearer token in `Authorization`:
+   ```bash
+   curl -X POST http://<langflow>/api/v1/api_key/ \
+     -H "Authorization: Bearer <access-token>" \
+     -H "Content-Type: application/json" \
+     -d '{"name":"my-key"}'
+   ```
+   The response body contains `api_key` — record it.
+
+Use the key by sending `x-api-key: <API Key>` on subsequent requests:
+- Valid key → `200`
+- Missing / wrong key → `403`
+
+Verified with the e2e smoke H probe on 4.3-x86: creating a key + hitting `/api/v1/all` with the valid key returns 200 with the full component catalog; hitting the same endpoint with a wrong key returns 403.
 
 ### 5.6 Disable UI
 
-Runtime mode allows Langflow to run without a browser interface, suitable for API service scenarios in production environments.
-
-```yaml
-langflow:
-  backendOnly: true                            # Enable backend-only mode
-```
+See [Configure Runtime Mode](#6-configure-runtime-mode-backend-only) — set both `backend.backendOnly=true` and `frontend.enabled=false` to actually drop the frontend Deployment.
 
 ### 5.7 Reference Official Documentation
 
