@@ -44,28 +44,13 @@ Use the violet command to publish to the platform repository:
 violet push --platform-address=platform-access-address --platform-username=platform-admin --platform-password=platform-admin-password langflow-operator.alpha.ALL.v1.10.1.tgz
 ```
 
-Starting with v1.10.1, Langflow is packaged as an OLM `OperatorBundle` (chart-wrap of the upstream `langflow-ai/langflow-helm-charts/langflow-ide` chart), not a raw Helm chart. Installation goes through OperatorHub and a `Langflow` custom resource, not the Applications / Catalog picker.
-
-## Prerequisites
-
-Before installing Langflow, the target workload cluster must have:
-
-- **A default StorageClass** — Langflow's backend uses SQLite by default, backed by an RWO PVC that requests the cluster's default StorageClass. Without a default, `data-langflow-service-0` will stay `Pending` and the backend pod cannot schedule. Set one with:
-
-  ```bash
-  kubectl get sc
-  kubectl patch sc <name> -p '{"metadata":{"annotations":{"storageclass.kubernetes.io/is-default-class":"true"}}}'
-  ```
-
-  If you want to pin a specific StorageClass instead of relying on the cluster default, set `spec.langflow.backend.sqlite.volume.existingStorageClassName` on the `Langflow` custom resource (see [Configure Storage](#1-configure-storage)).
-
-- **(Optional, for Gateway API external access)** Envoy Gateway installed on the cluster with a `GatewayClass` whose `controllerName` contains `envoy`. Without one, users can only reach Langflow via `kubectl port-forward` or by opening a NodePort/LoadBalancer Service manually.
+Starting with v1.10.1, Langflow is installed via `OperatorHub` and a `Langflow` custom resource, not from the Applications / Catalog form.
 
 ## Deployment
 
 ### Prepare Storage
 
-Langflow uses SQLite by default with an RWO PVC (1Gi). For production, PostgreSQL is recommended (see [Configure Database](#2-configure-database)). The cluster must have a default StorageClass or the user must set `existingStorageClassName` explicitly.
+Langflow uses SQLite by default with an RWO PVC (1Gi). For production, PostgreSQL is recommended (see [Configure Database](#2-configure-database)). The StorageClass for the SQLite PVC is configured under `spec.langflow.backend.sqlite.volume` — see [Configure Storage](#1-configure-storage) for details.
 
 ### Prepare Database (Optional)
 
@@ -107,11 +92,11 @@ Production environments strongly recommend PostgreSQL:
    spec: {}
    ```
 
-   Empty `spec: {}` uses the chart's defaults (SQLite on the cluster default StorageClass, IDE mode, ClusterIP Services only). To customize, add fields under `spec.langflow.*` per the sections below — the wrap CR spec mirrors the upstream chart's `values.yaml` structure. See the upstream [`values.yaml`](https://github.com/langflow-ai/langflow-helm-charts/blob/langflow-ide-0.1.2/charts/langflow-ide/values.yaml) for the full field list.
+   Empty `spec: {}` uses defaults (SQLite on the cluster default StorageClass, IDE mode, ClusterIP Services only). To customize, add fields under `spec.langflow.*` per the sections below.
 
 ## Configuration
 
-Users can edit the `Langflow` custom resource's `spec.langflow.*` fields to customize the deployment. The wrap CR spec mirrors the upstream `langflow-ide` chart's `values.yaml` structure. The main configurations to focus on are as follows.
+The `Langflow` custom resource's `spec.langflow.*` fields customize the deployment. The main configurations to focus on are as follows.
 
 > **⚠ Array fields REPLACE chart defaults, they do not append.**
 > When you set `spec.langflow.backend.volumes` (or `.volumeMounts`), the chart drops its own default `tmp` / `data` / `db` / `flows` `emptyDir` volumes and uses only what you provide. If you add a custom volume without re-declaring the defaults, the backend container will crash on startup with `FileNotFoundError: No usable temporary directory found in ['/tmp', '/var/tmp', '/usr/tmp', '/app']` (the Langflow entrypoint imports `dill`, which calls `tempfile.gettempdir()` — `readOnlyRootFilesystem: true` means `/tmp` must be a writable volume).
@@ -188,20 +173,51 @@ The chart runs a small startup shim inside the backend container that reads thes
 
 ### 3. Configure External Access
 
-The upstream chart creates only two `ClusterIP` Services by default:
+Langflow creates only two `ClusterIP` Services by default:
 
 - `langflow-service` on port 8080 — frontend (React IDE served by nginx)
 - `langflow-service-backend` on port 7860 — backend (FastAPI + `/api/v1/*`)
 
-The frontend nginx also reverse-proxies `/api`, `/health` and `/health_check` to the backend, so **routing all external traffic to `langflow-service:8080` gives users both the SPA and the backend API through the same entry point**.
+The frontend nginx also reverse-proxies `/api`, `/health` and `/health_check` to the backend, so **routing all external traffic to `langflow-service:8080` gives users both the IDE and the backend API through the same entry point**.
 
-**Recommended path: Gateway API (Envoy Gateway)**
-
-The chart-wrap ships an example under `components/langflow/examples/gateway-httproute.example.yaml` (in the `oss-operator-factory` repo). Cluster operators apply an `EnvoyProxy` + `Gateway` once per cluster; users add an `HTTPRoute` in the Langflow namespace pointing at `langflow-service:8080`. A single rule with one backend covers everything — no path-prefix split needed.
-
-Minimal HTTPRoute example (assuming a Gateway `langflow-gw` already exists):
+External access is provided via Gateway API (Envoy Gateway). Apply the three resources below in the same namespace as your `Langflow` custom resource. Adjust the `gatewayClassName` (`envoy-gateway-system-aieg` is the default on Alauda Container Platform 4.3+) and the `hostname` to match your environment.
 
 ```yaml
+# ── 1) EnvoyProxy: expose the data plane via NodePort (or LoadBalancer if available). ────
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: EnvoyProxy
+metadata:
+  name: langflow-proxy
+  namespace: <langflow-ns>
+spec:
+  logging: {level: {default: warn}}
+  provider:
+    type: Kubernetes
+    kubernetes:
+      envoyService:
+        type: NodePort              # change to LoadBalancer if the cluster has one
+        externalTrafficPolicy: Cluster
+---
+# ── 2) Gateway: HTTP listener; add an HTTPS listener with a cert Secret for TLS. ─────────
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: langflow-gw
+  namespace: <langflow-ns>
+spec:
+  gatewayClassName: envoy-gateway-system-aieg
+  infrastructure:
+    parametersRef:
+      group: gateway.envoyproxy.io
+      kind: EnvoyProxy
+      name: langflow-proxy
+  listeners:
+    - name: http
+      protocol: HTTP
+      port: 80
+      allowedRoutes: {namespaces: {from: Same}}
+---
+# ── 3) HTTPRoute: all paths → langflow-service:8080; nginx fans out /api* to backend. ────
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute
 metadata:
@@ -209,20 +225,28 @@ metadata:
   namespace: <langflow-ns>
 spec:
   parentRefs:
-    - {group: gateway.networking.k8s.io, kind: Gateway, name: langflow-gw, namespace: <gw-ns>}
-  hostnames: [<host>]
+    - {group: gateway.networking.k8s.io, kind: Gateway, name: langflow-gw}
+  # hostnames: [langflow.example.com]           # optional; omit to accept any Host
   rules:
     - matches: [{path: {type: PathPrefix, value: "/"}}]
       backendRefs:
         - {name: langflow-service, port: 8080}
 ```
 
-Notes:
-- The chart also ships an Ingress block (default off), but the platform standardises on Gateway API for chart-wrap components — Ingress is not the supported external-access path for Langflow and is not covered by this document.
+After apply, wait for the `Gateway` to reach `PROGRAMMED=True`, then find the NodePort that Envoy Gateway allocated:
+
+```bash
+kubectl get gateway langflow-gw -n <langflow-ns>
+kubectl get svc -A -l gateway.envoyproxy.io/owning-gateway-name=langflow-gw
+```
+
+The NodePort service in the output is the entry point — reach Langflow at `http://<any-node-ip>:<nodePort>/`.
+
+If you added an HTTPS listener with a certificate `Secret` in a different namespace, you'll also need a `ReferenceGrant` from the Gateway's namespace to the certificate's namespace.
 
 ### 4. Configure Authentication and User Management (Optional)
 
-The upstream community chart does not expose a structured `auth` field. Instead, Langflow authentication is controlled by environment variables set on the backend container. Set them under `spec.langflow.backend.env`:
+Langflow authentication is controlled by environment variables on the backend container. Set them under `spec.langflow.backend.env`:
 
 ```yaml
 spec:
@@ -379,7 +403,7 @@ Verified on ACP 4.3: with the above CR, restarting the backend caused Langflow t
 
 ### 1.3 Auto Import
 
-After the backend restarts, Langflow scans `LANGFLOW_LOAD_FLOWS_PATH` and auto-imports every `*.json` file in it as a Flow. Since flow ownership is tied to a user, the auto-import mode requires `LANGFLOW_AUTO_LOGIN=true` (the default) — the imported flows are attached to the built-in default user. With authentication enabled (`LANGFLOW_AUTO_LOGIN=false`), user-owned imports are not supported by the upstream chart; use the REST API (`POST /api/v1/flows/` with a Bearer token) instead.
+After the backend restarts, Langflow scans `LANGFLOW_LOAD_FLOWS_PATH` and auto-imports every `*.json` file in it as a Flow. Since flow ownership is tied to a user, the auto-import mode requires `LANGFLOW_AUTO_LOGIN=true` (the default) — the imported flows are attached to the built-in default user. With authentication enabled (`LANGFLOW_AUTO_LOGIN=false`), user-owned imports are not supported; use the REST API (`POST /api/v1/flows/` with a Bearer token) instead.
 
 ## 2. Using Models
 
@@ -512,7 +536,7 @@ spec:
               key: var3                        # From Secret (recommended for sensitive values)
 ```
 
-Verified: with `LANGFLOW_VARIABLES_TO_GET_FROM_ENVIRONMENT=MY_PLAIN_VAR,MY_SECRET_KEY` on the wrap CR, `GET /api/v1/variables/` returns both entries with `type: Credential`, ready to be referenced from flow components.
+Verified: with `LANGFLOW_VARIABLES_TO_GET_FROM_ENVIRONMENT=MY_PLAIN_VAR,MY_SECRET_KEY` on the `Langflow` custom resource, `GET /api/v1/variables/` returns both entries with `type: Credential`, ready to be referenced from flow components.
 
 ### 4.2 Use Global Variables in Flows
 
