@@ -23,7 +23,7 @@ This article applies to the following combination:
 | --- | --- |
 | Alauda Container Platform | 4.3 |
 | Plugin | `sriov-network-plugin` |
-| Plugin package version | `sriov-network-plugin v4.3.1` |
+| Plugin package version | `sriov-network-plugin v4.3.3` |
 | Upstream baseline | `k8snetworkplumbingwg/sriov-network-operator:v1.6.0` |
 | Deployment namespace | `cpaas-system` when installed through the ACP marketplace |
 | Primary CNI | kube-ovn can remain the primary CNI; SR-IOV is used as a Multus secondary network or PCI passthrough device |
@@ -57,11 +57,11 @@ echo vfio-pci > /etc/modules-load.d/vfio-pci.conf
 
 ### Install the plugin
 
-This capability is delivered as an ACP 4.3 feature. The plugin package version is `sriov-network-plugin v4.3.1`. The user workflow is to download the plugin package from the AC application marketplace, upload it to the target ACP platform, and then install it from the platform marketplace.
+This capability is delivered as an ACP 4.3 feature. The plugin package version is `sriov-network-plugin v4.3.3`. The user workflow is to download the plugin package from the AC application marketplace, upload it to the target ACP platform, and then install it from the platform marketplace.
 
 1. Log in to the AC application marketplace and search for `SR-IOV Network Plugin` or `sriov-network-plugin`.
-2. Select the package whose compatible platform version is `v4.3` and whose plugin version is `v4.3.1`.
-3. Download the `sriov-network-plugin.*.v4.3.1.tgz` package that matches the target platform architecture.
+2. Select the package whose compatible platform version is `v4.3` and whose plugin version is `v4.3.3`.
+3. Download the `sriov-network-plugin.*.v4.3.3.tgz` package that matches the target platform architecture.
 4. Keep the downloaded `.tgz` filename unchanged. `violet` parses the plugin name, architecture, and version from the filename; renaming the package can make the upload fail.
 5. Upload the downloaded plugin package to the target ACP platform.
 
@@ -72,7 +72,7 @@ export PLATFORM_URL=""
 export USERNAME=""
 export PASSWORD=""
 export CLUSTER_NAME=""
-export PACKAGE_FILE="sriov-network-plugin.amd64.v4.3.1.tgz"
+export PACKAGE_FILE="sriov-network-plugin.amd64.v4.3.3.tgz"
 
 violet push "$PACKAGE_FILE" \
   --platform-address "$PLATFORM_URL" \
@@ -82,7 +82,7 @@ violet push "$PACKAGE_FILE" \
   --target-catalog-source platform
 ```
 
-After the upload is complete, go to **Administrator -> Marketplace -> Cluster Plugins**, select version `v4.3.1` of `sriov-network-plugin`, and install it into the target business cluster. When installed through the ACP marketplace, the SR-IOV components are deployed in the `cpaas-system` namespace by default.
+After the upload is complete, go to **Administrator -> Marketplace -> Cluster Plugins**, select version `v4.3.3` of `sriov-network-plugin`, and install it into the target business cluster. When installed through the ACP marketplace, the SR-IOV components are deployed in the `cpaas-system` namespace by default.
 
 ### Confirm the Multus base
 

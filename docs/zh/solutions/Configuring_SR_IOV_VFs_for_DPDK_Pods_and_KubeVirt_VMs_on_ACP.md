@@ -23,7 +23,7 @@ ProductsVersion:
 | --- | --- |
 | Alauda Container Platform | 4.3 |
 | 插件 | `sriov-network-plugin` |
-| 插件包版本 | `sriov-network-plugin v4.3.1` |
+| 插件包版本 | `sriov-network-plugin v4.3.3` |
 | 上游基线 | `k8snetworkplumbingwg/sriov-network-operator:v1.6.0` |
 | 部署命名空间 | `cpaas-system`（通过 ACP 市场安装时） |
 | 主 CNI | 可使用 kube-ovn；SR-IOV 作为 Multus 辅助网络或 PCI 直通设备 |
@@ -57,11 +57,11 @@ echo vfio-pci > /etc/modules-load.d/vfio-pci.conf
 
 ### 安装插件
 
-该能力作为 ACP 4.3 新功能交付，插件包版本为 `sriov-network-plugin v4.3.1`。用户侧从 AC 应用市场获取插件包，再上传到目标 ACP 平台安装。
+该能力作为 ACP 4.3 新功能交付，插件包版本为 `sriov-network-plugin v4.3.3`。用户侧从 AC 应用市场获取插件包，再上传到目标 ACP 平台安装。
 
 1. 登录 AC 应用市场，搜索 `SR-IOV 网络插件` 或 `sriov-network-plugin`。
-2. 选择适配平台版本为 `v4.3`、插件版本为 `v4.3.1` 的安装包。
-3. 下载与目标平台架构匹配的 `sriov-network-plugin.*.v4.3.1.tgz` 包。
+2. 选择适配平台版本为 `v4.3`、插件版本为 `v4.3.3` 的安装包。
+3. 下载与目标平台架构匹配的 `sriov-network-plugin.*.v4.3.3.tgz` 包。
 4. 保持下载后的 `.tgz` 文件名不变。`violet` 会根据文件名解析插件名、架构和版本，重命名可能导致上传失败。
 5. 将下载的插件包上传到目标 ACP 平台。
 
@@ -72,7 +72,7 @@ export PLATFORM_URL=""
 export USERNAME=""
 export PASSWORD=""
 export CLUSTER_NAME=""
-export PACKAGE_FILE="sriov-network-plugin.amd64.v4.3.1.tgz"
+export PACKAGE_FILE="sriov-network-plugin.amd64.v4.3.3.tgz"
 
 violet push "$PACKAGE_FILE" \
   --platform-address "$PLATFORM_URL" \
@@ -82,7 +82,7 @@ violet push "$PACKAGE_FILE" \
   --target-catalog-source platform
 ```
 
-上传完成后，进入 **管理员 -> 市场 -> 集群插件**，选择 `sriov-network-plugin` 的 `v4.3.1` 版本并安装到目标业务集群。通过 ACP 市场安装时，SR-IOV 组件默认部署在 `cpaas-system` 命名空间。
+上传完成后，进入 **管理员 -> 市场 -> 集群插件**，选择 `sriov-network-plugin` 的 `v4.3.3` 版本并安装到目标业务集群。通过 ACP 市场安装时，SR-IOV 组件默认部署在 `cpaas-system` 命名空间。
 
 ### 确认 Multus 基座可用
 
