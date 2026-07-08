@@ -29,8 +29,6 @@ ProductsVersion:
 | 主 CNI | 可使用 kube-ovn；SR-IOV 作为 Multus 辅助网络或 PCI 直通设备 |
 | 多网卡基座 | ACP 已提供 Multus 能力，Pod 或虚拟机通过 NAD 引用 SR-IOV VF |
 
-ACP 打包版本启用 SR-IOV CNI 路径，用于完成 SR-IOV VF 编排和 Multus 辅助网络接入。
-
 本文覆盖 SR-IOV L5 插件在 DPDK/CNF Pod 和 KubeVirt 虚拟机 VF 接入场景中的安装与使用；不覆盖 OVS-DPDK、Userspace CNI 或 DPDK 应用内部参数配置。
 
 ## 先决条件
@@ -49,15 +47,11 @@ lsmod | grep vfio
 modprobe vfio-pci
 ```
 
-在后续创建 VF 后，记录目标 VF 的 PCI 地址，并确认该 VF 所在 IOMMU group 中没有混入不应直通给业务的其他设备：
+如果需要节点重启后自动加载，可将模块写入系统模块加载配置：
 
 ```bash
-VF_PCI_ADDR="<vf-pci-address>"
-GROUP_PATH="$(readlink -f /sys/bus/pci/devices/$VF_PCI_ADDR/iommu_group)"
-ls -l "$GROUP_PATH/devices"
+echo vfio-pci > /etc/modules-load.d/vfio-pci.conf
 ```
-
-如果同一个 group 内包含宿主机还需要使用的其他设备，不应直接将该 VF 用于 `vfio-pci`/PCI 直通场景，应先调整硬件、BIOS、内核 IOMMU 参数或网卡规划。
 
 ## 解决方案
 
@@ -178,6 +172,16 @@ kubectl get node <node-name> \
 ```
 
 如果输出为正整数，说明 VF 已经被 device plugin 暴露给 Kubernetes 调度器。
+
+记录目标 VF 的 PCI 地址，并确认该 VF 所在 IOMMU group 中没有混入不应直通给业务的其他设备：
+
+```bash
+VF_PCI_ADDR="<vf-pci-address>"
+GROUP_PATH="$(readlink -f /sys/bus/pci/devices/$VF_PCI_ADDR/iommu_group)"
+ls -l "$GROUP_PATH/devices"
+```
+
+如果同一个 group 内包含宿主机还需要使用的其他设备，不应直接将该 VF 用于 `vfio-pci`/PCI 直通场景，应先调整硬件、BIOS、内核 IOMMU 参数或网卡规划。
 
 创建 `SriovNetwork`，由 operator 生成对应的 `NetworkAttachmentDefinition`。以下示例将 NAD 生成到业务命名空间 `default`。由于 VF 会被 DPDK/CNF 应用直接接管，这里不配置 kube-ovn IPAM。
 
@@ -302,6 +306,8 @@ kubectl get sriovnetworknodestates.sriovnetwork.openshift.io \
 kubectl get node <node-name> \
   -o jsonpath='{.status.allocatable.openshift\.io/sriov_vfio}{"\n"}'
 ```
+
+如果前面没有检查过目标 VF 的 IOMMU group，在继续创建虚拟机使用的 `SriovNetwork` 前，先完成同样的 IOMMU group 检查。
 
 创建 `SriovNetwork`，由 operator 生成对应的 `NetworkAttachmentDefinition`。以下示例将 NAD 生成到虚拟机所在命名空间 `kubevirt`。如果该 VF 后续由虚拟机内的 DPDK 应用接管，不需要在这里配置 kube-ovn IPAM。
 

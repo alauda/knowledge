@@ -29,8 +29,6 @@ This article applies to the following combination:
 | Primary CNI | kube-ovn can remain the primary CNI; SR-IOV is used as a Multus secondary network or PCI passthrough device |
 | Multi-NIC base | ACP provides Multus capability; Pods or VMs reference the SR-IOV VF through NAD |
 
-The ACP package enables the SR-IOV CNI path for SR-IOV VF orchestration and Multus secondary-network attachment.
-
 This article covers installing and using the SR-IOV L5 plugin for DPDK/CNF Pod and KubeVirt VM VF attachment. It does not cover OVS-DPDK, Userspace CNI, or internal DPDK application parameters.
 
 ## Prerequisites
@@ -49,15 +47,11 @@ lsmod | grep vfio
 modprobe vfio-pci
 ```
 
-After VFs are created later in the procedure, record the PCI address of the target VF and confirm that its IOMMU group does not include other devices that should not be passed through to the workload:
+To load the module automatically after node reboot, write it to the system module-load configuration:
 
 ```bash
-VF_PCI_ADDR="<vf-pci-address>"
-GROUP_PATH="$(readlink -f /sys/bus/pci/devices/$VF_PCI_ADDR/iommu_group)"
-ls -l "$GROUP_PATH/devices"
+echo vfio-pci > /etc/modules-load.d/vfio-pci.conf
 ```
-
-If the same group contains other devices still required by the host, do not use that VF directly for `vfio-pci` or PCI passthrough. Adjust the hardware, BIOS settings, kernel IOMMU parameters, or NIC planning first.
 
 ## Resolution
 
@@ -178,6 +172,16 @@ kubectl get node <node-name> \
 ```
 
 If the output is a positive integer, the VF resource is available to the Kubernetes scheduler.
+
+Record the PCI address of the target VF and confirm that its IOMMU group does not include other devices that should not be passed through to the workload:
+
+```bash
+VF_PCI_ADDR="<vf-pci-address>"
+GROUP_PATH="$(readlink -f /sys/bus/pci/devices/$VF_PCI_ADDR/iommu_group)"
+ls -l "$GROUP_PATH/devices"
+```
+
+If the same group contains other devices still required by the host, do not use that VF directly for `vfio-pci` or PCI passthrough. Adjust the hardware, BIOS settings, kernel IOMMU parameters, or NIC planning first.
 
 Create a `SriovNetwork`. The operator generates the corresponding `NetworkAttachmentDefinition`. The following example creates the NAD in the application namespace `default`. Because the VF is owned directly by the DPDK/CNF application, Kube-OVN IPAM is not configured here.
 
@@ -302,6 +306,8 @@ Confirm that the SR-IOV device-plugin resource appears in node allocatable resou
 kubectl get node <node-name> \
   -o jsonpath='{.status.allocatable.openshift\.io/sriov_vfio}{"\n"}'
 ```
+
+If the target VF IOMMU group was not checked earlier, complete the same IOMMU group check before creating the `SriovNetwork` for the VM.
 
 Create a `SriovNetwork`. The operator generates the corresponding `NetworkAttachmentDefinition`. The following example creates the NAD in the VM namespace `kubevirt`. If the VF is later owned by a DPDK application inside the VM, Kube-OVN IPAM is not required here.
 
