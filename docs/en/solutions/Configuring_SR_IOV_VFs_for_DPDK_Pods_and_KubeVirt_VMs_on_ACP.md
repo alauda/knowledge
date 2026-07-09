@@ -229,19 +229,10 @@ spec:
   mtu: 1500
 ```
 
-Apply the policy and watch node synchronization:
+Apply the policy:
 
 ```bash
 kubectl apply -f sriov-node-policy-pod.yaml
-kubectl get sriovnetworknodestates.sriovnetwork.openshift.io \
-  -n cpaas-system
-```
-
-Confirm that the target node reaches `Succeeded`:
-
-```bash
-kubectl get sriovnetworknodestate <node-name> -n cpaas-system \
-  -o jsonpath='{.status.syncStatus}{"\n"}{.status.lastSyncError}{"\n"}'
 ```
 
 Confirm that the SR-IOV device-plugin resource appears in node allocatable resources:
@@ -253,15 +244,12 @@ kubectl get node <node-name> \
 
 If the output is a positive integer, the VF resource is available to the Kubernetes scheduler.
 
-Record the PCI address of the target VF and confirm that its IOMMU group does not include other devices that should not be passed through to the workload:
+If the resource does not appear for a long time, check the target node synchronization status and error message:
 
 ```bash
-VF_PCI_ADDR="<vf-pci-address>"
-GROUP_PATH="$(readlink -f /sys/bus/pci/devices/$VF_PCI_ADDR/iommu_group)"
-ls -l "$GROUP_PATH/devices"
+kubectl get sriovnetworknodestate <node-name> -n cpaas-system \
+  -o jsonpath='{.status.syncStatus}{"\n"}{.status.lastSyncError}{"\n"}'
 ```
-
-If the same group contains other devices still required by the host, do not use that VF directly for `vfio-pci` or PCI passthrough. Adjust the hardware, BIOS settings, kernel IOMMU parameters, or NIC planning first.
 
 Create a `SriovNetwork`. The operator generates the corresponding `NetworkAttachmentDefinition`. The following example creates the NAD in the application namespace `default`. Because the VF is owned directly by the DPDK/CNF application, Kube-OVN IPAM is not configured here.
 
@@ -402,12 +390,10 @@ spec:
   mtu: 1500
 ```
 
-Apply the policy and watch node synchronization:
+Apply the policy:
 
 ```bash
 kubectl apply -f sriov-node-policy-vm.yaml
-kubectl get sriovnetworknodestates.sriovnetwork.openshift.io \
-  -n cpaas-system
 ```
 
 Confirm that the SR-IOV device-plugin resource appears in node allocatable resources:
@@ -416,8 +402,6 @@ Confirm that the SR-IOV device-plugin resource appears in node allocatable resou
 kubectl get node <node-name> \
   -o jsonpath='{.status.allocatable.openshift\.io/sriov_vfio}{"\n"}'
 ```
-
-If the target VF IOMMU group was not checked earlier, complete the same IOMMU group check before creating the `SriovNetwork` for the VM.
 
 Create a `SriovNetwork`. The operator generates the corresponding `NetworkAttachmentDefinition`. The following example creates the NAD in the VM namespace `kubevirt`. If the VF is later owned by a DPDK application inside the VM, Kube-OVN IPAM is not required here.
 

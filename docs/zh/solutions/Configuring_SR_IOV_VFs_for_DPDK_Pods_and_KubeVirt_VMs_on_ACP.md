@@ -228,19 +228,10 @@ spec:
   mtu: 1500
 ```
 
-应用后观察节点同步状态：
+应用 policy：
 
 ```bash
 kubectl apply -f sriov-node-policy-pod.yaml
-kubectl get sriovnetworknodestates.sriovnetwork.openshift.io \
-  -n cpaas-system
-```
-
-确认目标节点变为 `Succeeded`：
-
-```bash
-kubectl get sriovnetworknodestate <node-name> -n cpaas-system \
-  -o jsonpath='{.status.syncStatus}{"\n"}{.status.lastSyncError}{"\n"}'
 ```
 
 确认节点资源中出现 SR-IOV device plugin 暴露的资源：
@@ -252,15 +243,12 @@ kubectl get node <node-name> \
 
 如果输出为正整数，说明 VF 已经被 device plugin 暴露给 Kubernetes 调度器。
 
-记录目标 VF 的 PCI 地址，并确认该 VF 所在 IOMMU group 中没有混入不应直通给业务的其他设备：
+如果长时间没有资源，再查看目标节点的同步状态和错误信息：
 
 ```bash
-VF_PCI_ADDR="<vf-pci-address>"
-GROUP_PATH="$(readlink -f /sys/bus/pci/devices/$VF_PCI_ADDR/iommu_group)"
-ls -l "$GROUP_PATH/devices"
+kubectl get sriovnetworknodestate <node-name> -n cpaas-system \
+  -o jsonpath='{.status.syncStatus}{"\n"}{.status.lastSyncError}{"\n"}'
 ```
-
-如果同一个 group 内包含宿主机还需要使用的其他设备，不应直接将该 VF 用于 `vfio-pci`/PCI 直通场景，应先调整硬件、BIOS、内核 IOMMU 参数或网卡规划。
 
 创建 `SriovNetwork`，由 operator 生成对应的 `NetworkAttachmentDefinition`。以下示例将 NAD 生成到业务命名空间 `default`。由于 VF 会被 DPDK/CNF 应用直接接管，这里不配置 kube-ovn IPAM。
 
@@ -401,12 +389,10 @@ spec:
   mtu: 1500
 ```
 
-应用后观察节点同步状态：
+应用 policy：
 
 ```bash
 kubectl apply -f sriov-node-policy-vm.yaml
-kubectl get sriovnetworknodestates.sriovnetwork.openshift.io \
-  -n cpaas-system
 ```
 
 确认节点资源中出现 SR-IOV device plugin 暴露的资源：
@@ -415,8 +401,6 @@ kubectl get sriovnetworknodestates.sriovnetwork.openshift.io \
 kubectl get node <node-name> \
   -o jsonpath='{.status.allocatable.openshift\.io/sriov_vfio}{"\n"}'
 ```
-
-如果前面没有检查过目标 VF 的 IOMMU group，在继续创建虚拟机使用的 `SriovNetwork` 前，先完成同样的 IOMMU group 检查。
 
 创建 `SriovNetwork`，由 operator 生成对应的 `NetworkAttachmentDefinition`。以下示例将 NAD 生成到虚拟机所在命名空间 `kubevirt`。如果该 VF 后续由虚拟机内的 DPDK 应用接管，不需要在这里配置 kube-ovn IPAM。
 
