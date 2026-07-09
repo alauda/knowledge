@@ -22,7 +22,7 @@ This article covers both: Machine Configuration for the existing nodes, and the 
 
 This procedure is delivered by the Alauda Container Platform Machine Configuration component, and its applicability is tied to that component's version — **not** to the ACP platform version:
 
-- **Machine Configuration version.** The procedure applies to Machine Configuration releases **before v4.1.x**. Machine Configuration v4.1.x introduces a dedicated custom resource for kubelet configuration; on any release that provides it, use that resource instead and migrate the objects created here.
+- **Machine Configuration version.** This procedure applies to the current Machine Configuration releases — those prior to the planned **v4.1.x** release. v4.1.x is **planned but not yet released**; it is intended to introduce a dedicated custom resource for kubelet configuration. Once that release is available and in use, configure the kubelet through that resource instead, and migrate the objects created here.
 - **ACP platform version.** The method itself does not depend on the ACP version. Whether it can be used on a given cluster depends only on which ACP versions the installed Machine Configuration release supports. The current Machine Configuration supports ACP v4.1, v4.2, and v4.3.
 
 ## Root Cause
@@ -199,7 +199,7 @@ A common concern is whether re-applying the Machine Configuration drop-in to a n
 ### Limitations
 
 - **Pod network sizing.** `maxPods` cannot exceed the number of pod IP addresses available per node. With the default per-node pod CIDR (a `/24`, roughly 254 usable addresses), a node cannot usefully run more pods than that regardless of `maxPods`. Before raising `maxPods` toward or beyond that number, check the cluster's per-node pod CIDR size; enlarging it is a cluster-wide networking change that must be planned separately.
-- **Interim method, bounded by the Machine Configuration version.** This drop-in approach is the supported path only on Machine Configuration releases **before v4.1.x**, which have no dedicated kubelet-configuration resource. Machine Configuration v4.1.x adds that resource; once the cluster runs a Machine Configuration release that provides it, migrate the Part 1 objects to it and stop using this method. The labels and the one-object-per-field layout above are what make that migration mechanical. Note this boundary is set by the Machine Configuration version, not by the ACP version.
+- **Interim method, bounded by the Machine Configuration version.** This drop-in approach is the supported path on the current Machine Configuration releases (those prior to the planned **v4.1.x**), which have no dedicated kubelet-configuration resource. The v4.1.x release is **planned but not yet available**; it is intended to add that resource. Once the cluster runs a Machine Configuration release that provides it, migrate the Part 1 objects to it and stop using this method. The labels and the one-object-per-field layout above are what make that migration mechanical. Note this boundary is set by the Machine Configuration version, not by the ACP version.
 
 ## Diagnostic Steps
 
