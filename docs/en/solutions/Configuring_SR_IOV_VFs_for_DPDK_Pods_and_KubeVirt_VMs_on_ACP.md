@@ -149,11 +149,7 @@ kubectl get sriovnetworknodestate <node-name> -n cpaas-system \
   -o jsonpath='{range .status.interfaces[*]}{.name}{"\t"}{.pciAddress}{"\t"}{.vendor}{"\t"}{.deviceID}{"\t"}{.totalVfs}{"\n"}{end}'
 ```
 
-The operator automatically discovers SR-IOV PFs on nodes and writes them to `SriovNetworkNodeState.status.interfaces`. It does not automatically decide which PF should create VFs, how many VFs to create, which `resourceName` to use, or which VF type to configure. To create VFs and advertise resources through the device plugin, create a `SriovNetworkNodePolicy`.
-
-Select a PF from the `status.interfaces[*].name` output, such as `ens5f0`. `nodeSelector` only matches labels that already exist on nodes. Use `SriovNetworkNodeState` to identify the node that has the target SR-IOV PF, then use a stable existing node label to limit the policy scope.
-
-The following DPDK/CNF Pod and KubeVirt VM sections are two usage examples. If they share the same PF and `resourceName`, create the `SriovNetworkNodePolicy` only once. If different workloads need independent VF pools at the same time, use different PFs or plan different `resourceName` values and VF counts.
+Select the target PF from the `status.interfaces[*].name` output, such as `ens5f0`, and use `SriovNetworkNodePolicy` to choose the nodes, PF, VF count, `resourceName`, and `deviceType`. The following DPDK/CNF Pod and KubeVirt VM examples can share the same policy. Create a separate policy only when the workloads need independent VF pools with different PFs, `resourceName` values, or VF counts.
 
 ### Optional: Handle NICs not in the default supported list
 

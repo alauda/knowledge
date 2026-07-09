@@ -148,11 +148,7 @@ kubectl get sriovnetworknodestate <node-name> -n cpaas-system \
   -o jsonpath='{range .status.interfaces[*]}{.name}{"\t"}{.pciAddress}{"\t"}{.vendor}{"\t"}{.deviceID}{"\t"}{.totalVfs}{"\n"}{end}'
 ```
 
-operator 会自动发现节点上的 SR-IOV PF，并写入 `SriovNetworkNodeState.status.interfaces`；但不会自动决定在哪个 PF 上创建多少 VF、使用什么 `resourceName` 或 VF 类型。要创建 VF 并通过 device plugin 暴露资源，需要创建 `SriovNetworkNodePolicy`。
-
-从 `status.interfaces[*].name` 输出中选择一个 PF，例如 `ens5f0`。`nodeSelector` 只匹配节点上已有的 label；先根据 `SriovNetworkNodeState` 确认有 SR-IOV PF 的节点，再使用该节点已有的稳定 label 限制策略作用范围。
-
-后续 DPDK/CNF Pod 和 KubeVirt 虚拟机是两种使用示例。如果它们共用同一个 PF 和 `resourceName`，只需要创建一次 `SriovNetworkNodePolicy`；如果需要同时给不同业务分配独立 VF 池，应使用不同 PF，或规划不同的 `resourceName` 和 VF 数量。
+从 `status.interfaces[*].name` 输出中选择要使用的 PF，例如 `ens5f0`，并通过 `SriovNetworkNodePolicy` 指定在哪些节点、哪个 PF 上创建多少 VF，以及使用什么 `resourceName` 和 `deviceType`。后续 DPDK/CNF Pod 和 KubeVirt 虚拟机示例可以共用同一个 policy；只有需要独立 VF 池时，才需要规划不同 PF、`resourceName` 或 VF 数量。
 
 ### 处理不在默认支持列表中的网卡（可选）
 
