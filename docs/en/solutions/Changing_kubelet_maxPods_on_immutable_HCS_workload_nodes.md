@@ -18,6 +18,13 @@ You need to change the kubelet `maxPods` setting on immutable-infrastructure wor
 
 This article covers both: Machine Configuration for the existing nodes, and the cluster's provider template for future nodes.
 
+## Environment
+
+This procedure is delivered by the Alauda Container Platform Machine Configuration component, and its applicability is tied to that component's version — **not** to the ACP platform version:
+
+- **Machine Configuration version.** The procedure applies to Machine Configuration releases **before v4.1.x**. Machine Configuration v4.1.x introduces a dedicated custom resource for kubelet configuration; on any release that provides it, use that resource instead and migrate the objects created here.
+- **ACP platform version.** The method itself does not depend on the ACP version. Whether it can be used on a given cluster depends only on which ACP versions the installed Machine Configuration release supports. The current Machine Configuration supports ACP v4.1, v4.2, and v4.3.
+
 ## Root Cause
 
 `maxPods` is a field of the upstream `KubeletConfiguration` (`kubelet.config.k8s.io/v1beta1`). On immutable nodes the kubelet configuration is owned by Machine Configuration, which renders and reconciles node files through the machine configuration daemon; the daemon marks a node `Degraded` if a managed file is edited out of band. Two independent delivery paths are needed because the two node populations are created differently:
@@ -27,7 +34,7 @@ This article covers both: Machine Configuration for the existing nodes, and the 
 
 The kubelet reads its configuration from several layered sources, and the effective value follows a fixed precedence: **command-line flag > `--config-dir` drop-in > base configuration file > built-in default**. This precedence is what lets the two delivery paths coexist without fighting (see *Keeping the two paths consistent*, below).
 
-On ACP 4.1–4.3, Machine Configuration does not yet provide a dedicated custom resource for kubelet configuration. The supported interim method is a `MachineConfig` that writes a kubelet configuration drop-in, described below. A future release introduces a dedicated kubelet-configuration resource; when you upgrade to it, migrate the objects created here to that resource.
+In the Machine Configuration releases this procedure targets (see *Environment* above), there is no dedicated custom resource for kubelet configuration. The supported interim method is therefore a `MachineConfig` that writes a kubelet configuration drop-in, described below.
 
 > This is an advanced, node-level procedure. A mistake in the kubelet service override can leave a node `NotReady`. Apply it to a non-production pool first, and engage Alauda support if you are unsure.
 
@@ -192,7 +199,7 @@ A common concern is whether re-applying the Machine Configuration drop-in to a n
 ### Limitations
 
 - **Pod network sizing.** `maxPods` cannot exceed the number of pod IP addresses available per node. With the default per-node pod CIDR (a `/24`, roughly 254 usable addresses), a node cannot usefully run more pods than that regardless of `maxPods`. Before raising `maxPods` toward or beyond that number, check the cluster's per-node pod CIDR size; enlarging it is a cluster-wide networking change that must be planned separately.
-- **Interim method.** On ACP 4.1–4.3, Machine Configuration has no dedicated kubelet-configuration resource, so this drop-in approach is the supported path. A future release adds a dedicated resource; once you upgrade, migrate the Part 1 objects to it. The labels and the one-object-per-field layout above are what make that migration mechanical.
+- **Interim method, bounded by the Machine Configuration version.** This drop-in approach is the supported path only on Machine Configuration releases **before v4.1.x**, which have no dedicated kubelet-configuration resource. Machine Configuration v4.1.x adds that resource; once the cluster runs a Machine Configuration release that provides it, migrate the Part 1 objects to it and stop using this method. The labels and the one-object-per-field layout above are what make that migration mechanical. Note this boundary is set by the Machine Configuration version, not by the ACP version.
 
 ## Diagnostic Steps
 
