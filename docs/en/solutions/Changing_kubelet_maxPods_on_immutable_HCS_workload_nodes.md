@@ -159,9 +159,9 @@ Keep each concern in its own object: put only kubelet settings in these objects 
 
 ### Part 2 — Make future nodes carry the value (provider template)
 
-New worker nodes are created from the worker pool's `KubeadmConfigTemplate` (together with its `MachineDeployment` and `HCSMachineTemplate`). Set `maxPods` there so nodes are born with it.
+New worker (compute) nodes are created from the worker pool's `KubeadmConfigTemplate` (together with its `MachineDeployment` and `HCSMachineTemplate`). Set `maxPods` there so nodes are born with it. Control-plane nodes are configured through a different resource—the `KubeadmControlPlane`—and are out of scope for this workload-node procedure.
 
-Use a kubeadm `KubeletConfiguration` **patch**, not `kubeletExtraArgs`. HCS clusters already apply kubelet patches this way (for example, for the kubelet serving certificate). Add `maxPods` to the worker pool's `KubeadmConfigTemplate`, either by extending the existing `kubeletconfiguration…+strategic.json` patch or by adding a new patch file:
+For worker nodes, set the value with `joinConfiguration.nodeRegistration.kubeletExtraArgs` in the `KubeadmConfigTemplate`. Add `max-pods` alongside any existing `kubeletExtraArgs` entries (such as `volume-plugin-dir`); do not remove them:
 
 ```yaml
 apiVersion: bootstrap.cluster.x-k8s.io/v1beta1
@@ -171,30 +171,21 @@ metadata:
 spec:
   template:
     spec:
-      files:
-        - path: /etc/kubernetes/patches/kubeletconfiguration1+strategic.json
-          owner: root:root
-          permissions: "0644"
-          content: |
-            {
-              "apiVersion": "kubelet.config.k8s.io/v1beta1",
-              "kind": "KubeletConfiguration",
-              "maxPods": 250
-            }
       joinConfiguration:
-        patches:
-          directory: /etc/kubernetes/patches
+        nodeRegistration:
+          kubeletExtraArgs:
+            max-pods: "250"
 ```
 
-Because a patch modifies the base kubelet configuration file — not a command-line flag — it stays underneath the Part 1 `--config-dir` drop-in in precedence, so the two paths agree. Applying this template does not change existing nodes; it only affects nodes created after the change.
+`kubeletExtraArgs` becomes a kubelet command-line flag (`--max-pods`). Applying this template does not change existing nodes; it only affects worker nodes created after the change. Because a flag takes precedence over the Part 1 `--config-dir` drop-in, the provider value is authoritative on new nodes—keep it identical to the Part 1 value (see *Keeping the two paths consistent*).
 
 ### Keeping the two paths consistent
 
-A common concern is whether re-applying the Machine Configuration drop-in to a node that the provider already configured causes a problem. It does not:
+A common concern is whether re-applying the Machine Configuration drop-in to a new node—one the provider bootstrap already configured—causes a problem. It does not:
 
-- The two paths write **different files**. The provider sets `maxPods` in the node's base kubelet configuration; Machine Configuration writes a separate drop-in under `/etc/kubernetes/kubelet.conf.d/`. The machine configuration daemon manages only its own two files and never touches the base configuration, so there is no shared-ownership conflict, no drift, and no reboot loop.
-- When a newly provisioned node joins and matches the pool, the daemon applies the drop-in as well. This re-asserts the same value and triggers a single kubelet restart on first reconcile — harmless.
-- Only the effective-value precedence matters. Keep the value in Part 1 and Part 2 **identical**. If they ever differ, the `--config-dir` drop-in wins over the base configuration file — which is exactly why Part 2 uses a patch and not `kubeletExtraArgs`: `kubeletExtraArgs` becomes a command-line flag, and a flag would instead win over the drop-in and silently shadow it. Set the value through these two declarative paths only; do not edit nodes over SSH.
+- The two paths do not share a file. On existing nodes, Machine Configuration writes the `maxPods` drop-in under `/etc/kubernetes/kubelet.conf.d/`. On new worker nodes, the provider sets `maxPods` as a kubelet flag (`--max-pods`) through `kubeletExtraArgs`. The machine configuration daemon manages only its own drop-in and switch files and never touches the provider's flag, so there is no shared-ownership conflict, no drift, and no reboot loop.
+- A new node also matches the `MachineConfigPool`, so the daemon applies the drop-in there too. Because the flag already sets the same value, the effective `maxPods` does not change; at most this triggers one kubelet restart on first reconcile — harmless.
+- Precedence decides the effective value on a new node, where both are present: the kubelet flag wins over the `--config-dir` drop-in, so the provider value is authoritative and the drop-in is shadowed. Keep the Part 1 and Part 2 values **identical** so the result is the same either way. Set the value only through these two declarative paths; do not edit nodes over SSH.
 
 ### Limitations
 
