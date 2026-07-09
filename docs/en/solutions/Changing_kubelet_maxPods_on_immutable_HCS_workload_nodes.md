@@ -5,6 +5,7 @@ products:
    - Alauda Container Platform
 ProductsVersion:
    - 4.1.x,4.2.x,4.3.x
+id: KB260700026
 ---
 
 # Changing the kubelet maxPods setting on immutable infrastructure nodes
