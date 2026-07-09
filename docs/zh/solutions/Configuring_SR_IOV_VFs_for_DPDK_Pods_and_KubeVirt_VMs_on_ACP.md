@@ -145,10 +145,16 @@ kubectl get sriovnetworknodestates.sriovnetwork.openshift.io \
 
 ```bash
 kubectl get sriovnetworknodestate <node-name> -n cpaas-system \
-  -o jsonpath='{range .status.interfaces[*]}{.name}{"\t"}{.pciAddress}{"\t"}{.vendor}{"\t"}{.deviceID}{"\t"}{.totalVfs}{"\n"}{end}'
+  -o jsonpath='{range .status.interfaces[*]}{.name}{"\t"}{.pciAddress}{"\t"}{.vendor}{"\t"}{.deviceID}{"\n"}{end}'
 ```
 
-记录要使用的 PF 名称，例如 `ens5f0`。后续创建 `SriovNetworkNodePolicy` 时，会在 policy 中指定目标节点、PF 名称、VF 数量、`resourceName` 和 `deviceType`。DPDK/CNF Pod 和 KubeVirt 虚拟机示例可以共用同一个 policy；只有需要独立 VF 池时，才需要创建不同的 policy。
+输出格式为 `<PF 名称> <PCI 地址> <vendor ID> <device ID>`，例如：
+
+```text
+p1p1    0000:3d:00.0    19e5    1822
+```
+
+记录要使用的 PF 名称，例如 `p1p1`。后续创建 `SriovNetworkNodePolicy` 时，会在 policy 中指定目标节点、PF 名称、VF 数量、`resourceName` 和 `deviceType`。DPDK/CNF Pod 和 KubeVirt 虚拟机示例可以共用同一个 policy；只有需要独立 VF 池时，才需要创建不同的 policy。
 
 ### 处理不在默认支持列表中的网卡（可选）
 

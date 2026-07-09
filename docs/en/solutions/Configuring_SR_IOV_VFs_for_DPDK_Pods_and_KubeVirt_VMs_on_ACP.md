@@ -146,10 +146,16 @@ On a node with an SR-IOV PF, confirm that the operator discovers the physical NI
 
 ```bash
 kubectl get sriovnetworknodestate <node-name> -n cpaas-system \
-  -o jsonpath='{range .status.interfaces[*]}{.name}{"\t"}{.pciAddress}{"\t"}{.vendor}{"\t"}{.deviceID}{"\t"}{.totalVfs}{"\n"}{end}'
+  -o jsonpath='{range .status.interfaces[*]}{.name}{"\t"}{.pciAddress}{"\t"}{.vendor}{"\t"}{.deviceID}{"\n"}{end}'
 ```
 
-Record the PF name to use, such as `ens5f0`. Later, the `SriovNetworkNodePolicy` specifies the target nodes, PF name, VF count, `resourceName`, and `deviceType`. The following DPDK/CNF Pod and KubeVirt VM examples can share the same policy. Create a separate policy only when the workloads need independent VF pools.
+The output format is `<PF name> <PCI address> <vendor ID> <device ID>`, for example:
+
+```text
+p1p1    0000:3d:00.0    19e5    1822
+```
+
+Record the PF name to use, such as `p1p1`. Later, the `SriovNetworkNodePolicy` specifies the target nodes, PF name, VF count, `resourceName`, and `deviceType`. The following DPDK/CNF Pod and KubeVirt VM examples can share the same policy. Create a separate policy only when the workloads need independent VF pools.
 
 ### Optional: Handle NICs not in the default supported list
 
