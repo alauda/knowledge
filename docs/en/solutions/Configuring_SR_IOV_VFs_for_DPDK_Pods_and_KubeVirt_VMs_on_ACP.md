@@ -23,7 +23,7 @@ This article applies to the following combination:
 | --- | --- |
 | Alauda Container Platform | 4.3 |
 | Plugin | `sriov-network-plugin` |
-| Plugin package version | `sriov-network-plugin v4.3.3` |
+| Plugin package version | `sriov-network-plugin v4.3.7` |
 | Upstream baseline | `k8snetworkplumbingwg/sriov-network-operator:v1.6.0` |
 | Deployment namespace | `cpaas-system` when installed through the ACP marketplace |
 | Primary CNI | kube-ovn can remain the primary CNI; SR-IOV is used as a Multus secondary network or PCI passthrough device |
@@ -40,7 +40,23 @@ Prepare at least one worker node that meets these requirements:
 - The node has a physical NIC PF that supports SR-IOV.
 - IOMMU is enabled in BIOS and the operating system, such as Intel VT-d or AMD-Vi.
 - The PF driver supports VF creation, and the PF is not held by the primary CNI or OVS in a way that prevents VF configuration.
-- The node kernel has VFIO support enabled. At minimum, confirm that the `vfio-pci` module is available:
+
+On the node, use the following checks to confirm that IOMMU is enabled:
+
+```bash
+cat /proc/cmdline
+dmesg | grep -Ei 'DMAR|IOMMU|AMD-Vi'
+```
+
+`/proc/cmdline` usually contains a parameter such as `intel_iommu=on` or `amd_iommu=on`, and `dmesg` should include IOMMU initialization logs. After a VF is created, also confirm that the VF has an IOMMU group:
+
+```bash
+readlink -f /sys/bus/pci/devices/<vf-pci-address>/iommu_group
+```
+
+If the path does not exist, the node usually does not have usable IOMMU isolation, and the `vfio-pci` or PCI passthrough scenario should not continue.
+
+The node kernel must also have VFIO support enabled. At minimum, confirm that the `vfio-pci` module is available:
 
 ```bash
 lsmod | grep vfio
@@ -53,15 +69,25 @@ To load the module automatically after node reboot, write it to the system modul
 echo vfio-pci > /etc/modules-load.d/vfio-pci.conf
 ```
 
+### Label SR-IOV nodes
+
+`sriov-network-config-daemon` is scheduled only to nodes labeled with `feature.node.kubernetes.io/sriov-capable=true` by default. Before installing the plugin, label the nodes that actually have SR-IOV PFs:
+
+```bash
+kubectl label node <node-name> feature.node.kubernetes.io/sriov-capable=true --overwrite
+```
+
+Apply this label only to nodes where VFs will be configured. Nodes without this label do not run `sriov-network-config-daemon` and do not get a corresponding `SriovNetworkNodeState`.
+
 ## Resolution
 
 ### Install the plugin
 
-This capability is delivered as an ACP 4.3 feature. The plugin package version is `sriov-network-plugin v4.3.3`. The user workflow is to download the plugin package from the AC application marketplace, upload it to the target ACP platform, and then install it from the platform marketplace.
+This capability is delivered as an ACP 4.3 feature. The plugin package version is `sriov-network-plugin v4.3.7`. The user workflow is to download the plugin package from the AC application marketplace, upload it to the target ACP platform, and then install it from the platform marketplace.
 
 1. Log in to the AC application marketplace and search for `SR-IOV Network Plugin` or `sriov-network-plugin`.
-2. Select the package whose compatible platform version is `v4.3` and whose plugin version is `v4.3.3`.
-3. Download the `sriov-network-plugin.*.v4.3.3.tgz` package that matches the target platform architecture.
+2. Select the package whose compatible platform version is `v4.3` and whose plugin version is `v4.3.7`.
+3. Download the `sriov-network-plugin.*.v4.3.7.tgz` package that matches the target platform architecture.
 4. Keep the downloaded `.tgz` filename unchanged. `violet` parses the plugin name, architecture, and version from the filename; renaming the package can make the upload fail.
 5. Upload the downloaded plugin package to the target ACP platform.
 
@@ -72,7 +98,7 @@ export PLATFORM_URL=""
 export USERNAME=""
 export PASSWORD=""
 export CLUSTER_NAME=""
-export PACKAGE_FILE="sriov-network-plugin.amd64.v4.3.3.tgz"
+export PACKAGE_FILE="sriov-network-plugin.amd64.v4.3.7.tgz"
 
 violet push "$PACKAGE_FILE" \
   --platform-address "$PLATFORM_URL" \
@@ -82,7 +108,7 @@ violet push "$PACKAGE_FILE" \
   --target-catalog-source platform
 ```
 
-After the upload is complete, go to **Administrator -> Marketplace -> Cluster Plugins**, select version `v4.3.3` of `sriov-network-plugin`, and install it into the target business cluster. When installed through the ACP marketplace, the SR-IOV components are deployed in the `cpaas-system` namespace by default.
+After the upload is complete, go to **Administrator -> Marketplace -> Cluster Plugins**, select version `v4.3.7` of `sriov-network-plugin`, and install it into the target business cluster. When installed through the ACP marketplace, the SR-IOV components are deployed in the `cpaas-system` namespace by default.
 
 ### Confirm the Multus base
 
@@ -101,6 +127,8 @@ sriov-network-operator-xxxxx          1/1     Running
 sriov-network-config-daemon-xxxxx     1/1     Running
 ```
 
+If `sriov-network-config-daemon` is not visible, first confirm that the target node is labeled with `feature.node.kubernetes.io/sriov-capable=true`.
+
 ### Confirm SR-IOV PFs on nodes
 
 A PF is the physical NIC on a node. A VF is a virtual PCI NIC created from a PF and assigned to a Pod or VM.
@@ -111,6 +139,8 @@ First list the node states synchronized by the operator, and select the target n
 kubectl get sriovnetworknodestates.sriovnetwork.openshift.io \
   -n cpaas-system
 ```
+
+If a node with an SR-IOV NIC is missing from the list, first check whether the node has the `feature.node.kubernetes.io/sriov-capable=true` label. The config-daemon collects PF status only on nodes that match this label.
 
 On a node with an SR-IOV PF, confirm that the operator discovers the physical NIC:
 
@@ -125,9 +155,57 @@ Select a PF from the `status.interfaces[*].name` output, such as `ens5f0`. `node
 
 The following DPDK/CNF Pod and KubeVirt VM sections are two usage examples. If they share the same PF and `resourceName`, create the `SriovNetworkNodePolicy` only once. If different workloads need independent VF pools at the same time, use different PFs or plan different `resourceName` values and VF counts.
 
+### Optional: Handle NICs not in the default supported list
+
+If `sriov-network-config-daemon` keeps logging messages like the following, the operator is running, but the NIC PCI ID is not in the default supported list. The operator skips that PF:
+
+```text
+DiscoverSriovDevices(): unsupported device {"device": "0000:3d:00.0 -> driver: 'hinic' ... product: 'Hi1822 Family (4*25GE)'"}
+IsSupportedModel(): found unsupported model {"vendorId:": "19e5", "deviceId:": "1822"}
+```
+
+Add the NIC to the `supported-nic-ids` allowlist. The entry format is:
+
+```text
+<name>: "<vendor-id> <pf-device-id> <vf-device-id>"
+```
+
+For example, a Huawei Hi1822 PF has PCI ID `19e5:1822`, and its VF has PCI ID `19e5:375e`. The entry is:
+
+```yaml
+supportedExtraNICs:
+  - 'Huawei_Hi1822: "19e5 1822 375e"'
+```
+
+If the VF device ID is unknown, temporarily create one VF during a maintenance window and inspect it. In the following example, `0000:3d:00.0` is the PF PCI address:
+
+```bash
+echo 1 > /sys/bus/pci/devices/0000:3d:00.0/sriov_numvfs
+readlink -f /sys/bus/pci/devices/0000:3d:00.0/virtfn0
+lspci -Dnn -s <vf-pci-address>
+```
+
+For on-site validation, you can temporarily patch the ConfigMap in an installed cluster and restart the operator and config-daemon:
+
+```bash
+kubectl patch cm supported-nic-ids -n cpaas-system --type merge -p \
+  '{"data":{"Huawei_Hi1822":"19e5 1822 375e"}}'
+
+kubectl rollout restart deployment/sriov-network-operator -n cpaas-system
+kubectl rollout restart daemonset/sriov-network-config-daemon -n cpaas-system
+```
+
+This patch is only suitable for validation and can be lost after plugin upgrade or reinstall. For production delivery, persist the entry through `supportedExtraNICs` in the plugin installation parameters. If `sriov_numvfs` was written manually to discover the VF ID, clear the manually created VFs before letting the operator manage the PF through `SriovNetworkNodePolicy`:
+
+```bash
+echo 0 > /sys/bus/pci/devices/<pf-pci-address>/sriov_numvfs
+```
+
+Otherwise, config-daemon may report that the PF already has VFs that were not created by the sriov operator and skip part of the change flow.
+
 ### Configure and use an SR-IOV VF for DPDK/CNF Pods
 
-When a DPDK/CNF Pod needs a userspace process to own the VF directly, set `deviceType` to `vfio-pci`. In this mode, the VF is not used as a regular Linux network interface inside the Pod. Packet processing and address handling are owned by the DPDK/CNF application in the container.
+When a DPDK/CNF Pod needs a userspace process to own the VF directly, set `deviceType` to `vfio-pci`. In this mode, the VF is not used as a regular Linux network interface inside the Pod. Packet processing and address handling are owned by the DPDK/CNF application in the container. Therefore, it is expected that `ip a` inside the Pod does not show a secondary interface such as `net1`. The validation target is a `/dev/vfio/<iommu-group>` device inside the container.
 
 Save the following content as `sriov-node-policy-pod.yaml`:
 
@@ -144,7 +222,7 @@ spec:
   nicSelector:
     pfNames:
       - ens5f0
-  numVfs: 4
+  numVfs: 8
   deviceType: vfio-pci
   mtu: 1500
 ```
@@ -243,6 +321,36 @@ kubectl apply -f sriov-pod.yaml
 kubectl get pod -n default sriov-pod -o wide
 ```
 
+Confirm that the container has received the VFIO device:
+
+```bash
+kubectl exec -n default sriov-pod -- ls -l /dev/vfio/
+```
+
+The expected output includes the `vfio` control device and one numeric IOMMU group device, for example:
+
+```text
+crw-------    1 root     root      234, 191 ... 191
+crw-rw-rw-    1 root     root       10, 196 ... vfio
+```
+
+The numeric device, such as `191`, is the VFIO group available to the current Pod. In this scenario, do not use the presence of a secondary interface in `ip a` as the success criterion.
+
+If `dpdk-devbind.py -s` is run inside the container or the Pod namespace, it may list all PF/VF PCI devices on the node. The script reads `/sys/bus/pci/devices`, and PCI sysfs is not filtered by Pod resource allocation. To determine which VF the current Pod can actually use, rely on the devices exposed under `/dev/vfio/` and the `openshift.io/sriov_vfio` resource allocated to the Pod.
+
+The following is a reference observation: when `numVfs: 8` creates eight VFs on the node, all eight VFs are bound to `vfio-pci`, so `dpdk-devbind.py -s` can list eight VFs. However, when a single Pod requests only one `openshift.io/sriov_vfio`, the container exposes only one numeric group device under `/dev/vfio/`.
+
+```text
+Network devices using DPDK-compatible driver
+============================================
+0000:3d:00.1 'Hi1822 Family Virtual Function 375e' numa_node=0 drv=vfio-pci unused=hinic
+0000:3d:00.2 'Hi1822 Family Virtual Function 375e' numa_node=0 drv=vfio-pci unused=hinic
+...
+0000:3d:01.0 'Hi1822 Family Virtual Function 375e' numa_node=0 drv=vfio-pci unused=hinic
+```
+
+This output only shows the VF driver binding status on the node. The number of VFs actually available to the Pod is still determined by `/dev/vfio/` and the resource request count.
+
 If the workload uses Deployment, StatefulSet, or another controller, set `k8s.v1.cni.cncf.io/networks` in the Pod template `metadata.annotations`, and request `openshift.io/sriov_vfio` in the application container `resources.requests` and `resources.limits`. The VF resource only assigns the PCI device to the Pod. DPDK applications usually also need CPU, HugePages, and startup-parameter configuration; the exact values are determined by the business image and DPDK application documentation. A reference Pod fragment is:
 
 ```yaml
@@ -287,7 +395,7 @@ spec:
   nicSelector:
     pfNames:
       - ens5f0
-  numVfs: 4
+  numVfs: 8
   deviceType: vfio-pci
   mtu: 1500
 ```
