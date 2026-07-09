@@ -149,7 +149,7 @@ kubectl get sriovnetworknodestate <node-name> -n cpaas-system \
   -o jsonpath='{range .status.interfaces[*]}{.name}{"\t"}{.pciAddress}{"\t"}{.vendor}{"\t"}{.deviceID}{"\t"}{.totalVfs}{"\n"}{end}'
 ```
 
-Select the target PF from the `status.interfaces[*].name` output, such as `ens5f0`, and use `SriovNetworkNodePolicy` to choose the nodes, PF, VF count, `resourceName`, and `deviceType`. The following DPDK/CNF Pod and KubeVirt VM examples can share the same policy. Create a separate policy only when the workloads need independent VF pools with different PFs, `resourceName` values, or VF counts.
+Record the PF name to use, such as `ens5f0`. Later, the `SriovNetworkNodePolicy` specifies the target nodes, PF name, VF count, `resourceName`, and `deviceType`. The following DPDK/CNF Pod and KubeVirt VM examples can share the same policy. Create a separate policy only when the workloads need independent VF pools.
 
 ### Optional: Handle NICs not in the default supported list
 
