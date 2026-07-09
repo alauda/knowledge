@@ -23,7 +23,7 @@ ProductsVersion:
 | --- | --- |
 | Alauda Container Platform | 4.3 |
 | 插件 | `sriov-network-plugin` |
-| 插件包版本 | `sriov-network-plugin v4.3.7` |
+| 插件包版本 | `sriov-network-plugin v4.3.8` |
 | 上游基线 | `k8snetworkplumbingwg/sriov-network-operator:v1.6.0` |
 | 部署命名空间 | `cpaas-system`（通过 ACP 市场安装时） |
 | 主 CNI | 可使用 kube-ovn；SR-IOV 作为 Multus 辅助网络或 PCI 直通设备 |
@@ -82,11 +82,11 @@ kubectl label node <node-name> feature.node.kubernetes.io/sriov-capable=true --o
 
 ### 安装插件
 
-该能力作为 ACP 4.3 新功能交付，插件包版本为 `sriov-network-plugin v4.3.7`。用户侧从 AC 应用市场获取插件包，再上传到目标 ACP 平台安装。
+该能力作为 ACP 4.3 新功能交付，插件包版本为 `sriov-network-plugin v4.3.8`。用户侧从 AC 应用市场获取插件包，再上传到目标 ACP 平台安装。
 
 1. 登录 AC 应用市场，搜索 `SR-IOV 网络插件` 或 `sriov-network-plugin`。
-2. 选择适配平台版本为 `v4.3`、插件版本为 `v4.3.7` 的安装包。
-3. 下载与目标平台架构匹配的 `sriov-network-plugin.*.v4.3.7.tgz` 包。
+2. 选择适配平台版本为 `v4.3`、插件版本为 `v4.3.8` 的安装包。
+3. 下载与目标平台架构匹配的 `sriov-network-plugin.*.v4.3.8.tgz` 包。
 4. 保持下载后的 `.tgz` 文件名不变。`violet` 会根据文件名解析插件名、架构和版本，重命名可能导致上传失败。
 5. 将下载的插件包上传到目标 ACP 平台。
 
@@ -97,7 +97,7 @@ export PLATFORM_URL=""
 export USERNAME=""
 export PASSWORD=""
 export CLUSTER_NAME=""
-export PACKAGE_FILE="sriov-network-plugin.amd64.v4.3.7.tgz"
+export PACKAGE_FILE="sriov-network-plugin.amd64.v4.3.8.tgz"
 
 violet push "$PACKAGE_FILE" \
   --platform-address "$PLATFORM_URL" \
@@ -107,7 +107,7 @@ violet push "$PACKAGE_FILE" \
   --target-catalog-source platform
 ```
 
-上传完成后，进入 **管理员 -> 市场 -> 集群插件**，选择 `sriov-network-plugin` 的 `v4.3.7` 版本并安装到目标业务集群。通过 ACP 市场安装时，SR-IOV 组件默认部署在 `cpaas-system` 命名空间。
+上传完成后，进入 **管理员 -> 市场 -> 集群插件**，选择 `sriov-network-plugin` 的 `v4.3.8` 版本并安装到目标业务集群。通过 ACP 市场安装时，SR-IOV 组件默认部署在 `cpaas-system` 命名空间。
 
 ### 确认 Multus 基座可用
 
@@ -165,18 +165,16 @@ DiscoverSriovDevices(): unsupported device {"device": "0000:3d:00.0 -> driver: '
 IsSupportedModel(): found unsupported model {"vendorId:": "19e5", "deviceId:": "1822"}
 ```
 
-这类场景需要把网卡加入 `supported-nic-ids` 白名单。白名单条目的格式为：
+这类场景需要把网卡加入 `supported-nic-ids` 白名单。插件 `v4.3.8` 支持通过安装或升级表单配置额外网卡，不需要手工编写 chart values。在 **管理员 -> 市场 -> 集群插件** 中安装或升级 `sriov-network-plugin` 时，在“额外支持的 SR-IOV 网卡”表格中新增一行，并按现场确认的 PCI ID 填写：
 
-```text
-<名称>: "<vendor-id> <pf-device-id> <vf-device-id>"
-```
+| 字段 | 说明 | 示例 |
+| --- | --- | --- |
+| 名称 | 自定义网卡名称，只用于生成白名单键名 | `Huawei_Hi1822` |
+| Vendor ID | PF 的 PCI vendor ID | `19e5` |
+| PF Device ID | PF 的 PCI device ID | `1822` |
+| VF Device ID | VF 的 PCI device ID | `375e` |
 
-例如 Huawei Hi1822 PF 的 PCI ID 是 `19e5:1822`，创建出的 VF PCI ID 是 `19e5:375e`，则条目为：
-
-```yaml
-supportedExtraNICs:
-  - 'Huawei_Hi1822: "19e5 1822 375e"'
-```
+以上示例只说明字段格式，不表示插件默认内置 Huawei Hi1822。不同客户环境的网卡型号和 VF device ID 可能不同，应以现场 `lspci` 输出为准。
 
 如果还不知道 VF device ID，可以在维护窗口中临时创建 1 个 VF 后查看。以下示例中的 `0000:3d:00.0` 是 PF 的 PCI 地址：
 
@@ -186,7 +184,7 @@ readlink -f /sys/bus/pci/devices/0000:3d:00.0/virtfn0
 lspci -Dnn -s <vf-pci-address>
 ```
 
-如果只是现场验证，可以临时 patch 已安装集群中的 ConfigMap，并重启 operator 和 config-daemon：
+如果只是现场验证，也可以临时 patch 已安装集群中的 ConfigMap，并重启 operator 和 config-daemon：
 
 ```bash
 kubectl patch cm supported-nic-ids -n cpaas-system --type merge -p \
@@ -196,7 +194,7 @@ kubectl rollout restart deployment/sriov-network-operator -n cpaas-system
 kubectl rollout restart daemonset/sriov-network-config-daemon -n cpaas-system
 ```
 
-这种 patch 只适合现场验证，插件升级或重装后可能丢失。不同客户环境的网卡型号和 VF device ID 可能不同，不应把该条目写成通用默认值；需要长期保留时，应按现场确认的 PCI ID，在该环境的插件安装或升级参数中通过 `supportedExtraNICs` 配置。若为了查看 VF ID 手动写过 `sriov_numvfs`，在让 operator 通过 `SriovNetworkNodePolicy` 接管前，先清理手工创建的 VF：
+这种 patch 只适合现场验证，插件升级或重装后可能丢失；长期配置应使用插件安装或升级表单。若为了查看 VF ID 手动写过 `sriov_numvfs`，在让 operator 通过 `SriovNetworkNodePolicy` 接管前，先清理手工创建的 VF：
 
 ```bash
 echo 0 > /sys/bus/pci/devices/<pf-pci-address>/sriov_numvfs

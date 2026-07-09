@@ -23,7 +23,7 @@ This article applies to the following combination:
 | --- | --- |
 | Alauda Container Platform | 4.3 |
 | Plugin | `sriov-network-plugin` |
-| Plugin package version | `sriov-network-plugin v4.3.7` |
+| Plugin package version | `sriov-network-plugin v4.3.8` |
 | Upstream baseline | `k8snetworkplumbingwg/sriov-network-operator:v1.6.0` |
 | Deployment namespace | `cpaas-system` when installed through the ACP marketplace |
 | Primary CNI | kube-ovn can remain the primary CNI; SR-IOV is used as a Multus secondary network or PCI passthrough device |
@@ -83,11 +83,11 @@ Apply this label only to nodes where VFs will be configured. Nodes without this 
 
 ### Install the plugin
 
-This capability is delivered as an ACP 4.3 feature. The plugin package version is `sriov-network-plugin v4.3.7`. The user workflow is to download the plugin package from the AC application marketplace, upload it to the target ACP platform, and then install it from the platform marketplace.
+This capability is delivered as an ACP 4.3 feature. The plugin package version is `sriov-network-plugin v4.3.8`. The user workflow is to download the plugin package from the AC application marketplace, upload it to the target ACP platform, and then install it from the platform marketplace.
 
 1. Log in to the AC application marketplace and search for `SR-IOV Network Plugin` or `sriov-network-plugin`.
-2. Select the package whose compatible platform version is `v4.3` and whose plugin version is `v4.3.7`.
-3. Download the `sriov-network-plugin.*.v4.3.7.tgz` package that matches the target platform architecture.
+2. Select the package whose compatible platform version is `v4.3` and whose plugin version is `v4.3.8`.
+3. Download the `sriov-network-plugin.*.v4.3.8.tgz` package that matches the target platform architecture.
 4. Keep the downloaded `.tgz` filename unchanged. `violet` parses the plugin name, architecture, and version from the filename; renaming the package can make the upload fail.
 5. Upload the downloaded plugin package to the target ACP platform.
 
@@ -98,7 +98,7 @@ export PLATFORM_URL=""
 export USERNAME=""
 export PASSWORD=""
 export CLUSTER_NAME=""
-export PACKAGE_FILE="sriov-network-plugin.amd64.v4.3.7.tgz"
+export PACKAGE_FILE="sriov-network-plugin.amd64.v4.3.8.tgz"
 
 violet push "$PACKAGE_FILE" \
   --platform-address "$PLATFORM_URL" \
@@ -108,7 +108,7 @@ violet push "$PACKAGE_FILE" \
   --target-catalog-source platform
 ```
 
-After the upload is complete, go to **Administrator -> Marketplace -> Cluster Plugins**, select version `v4.3.7` of `sriov-network-plugin`, and install it into the target business cluster. When installed through the ACP marketplace, the SR-IOV components are deployed in the `cpaas-system` namespace by default.
+After the upload is complete, go to **Administrator -> Marketplace -> Cluster Plugins**, select version `v4.3.8` of `sriov-network-plugin`, and install it into the target business cluster. When installed through the ACP marketplace, the SR-IOV components are deployed in the `cpaas-system` namespace by default.
 
 ### Confirm the Multus base
 
@@ -166,18 +166,16 @@ DiscoverSriovDevices(): unsupported device {"device": "0000:3d:00.0 -> driver: '
 IsSupportedModel(): found unsupported model {"vendorId:": "19e5", "deviceId:": "1822"}
 ```
 
-Add the NIC to the `supported-nic-ids` allowlist. The entry format is:
+Add the NIC to the `supported-nic-ids` allowlist. Plugin `v4.3.8` supports configuring extra NICs from the installation or upgrade form, so users do not need to write chart values manually. When installing or upgrading `sriov-network-plugin` from **Administrator -> Marketplace -> Cluster Plugins**, add a row in the **Extra Supported SR-IOV NICs** table and fill in the PCI IDs confirmed on site:
 
-```text
-<name>: "<vendor-id> <pf-device-id> <vf-device-id>"
-```
+| Field | Description | Example |
+| --- | --- | --- |
+| Name | Custom NIC name, used only as the allowlist key | `Huawei_Hi1822` |
+| Vendor ID | PCI vendor ID of the PF | `19e5` |
+| PF Device ID | PCI device ID of the PF | `1822` |
+| VF Device ID | PCI device ID of the VF | `375e` |
 
-For example, a Huawei Hi1822 PF has PCI ID `19e5:1822`, and its VF has PCI ID `19e5:375e`. The entry is:
-
-```yaml
-supportedExtraNICs:
-  - 'Huawei_Hi1822: "19e5 1822 375e"'
-```
+These example values only show the required field format. They do not mean that Huawei Hi1822 is built in by default. NIC models and VF device IDs can differ between customer environments, so use the on-site `lspci` output as the source of truth.
 
 If the VF device ID is unknown, temporarily create one VF during a maintenance window and inspect it. In the following example, `0000:3d:00.0` is the PF PCI address:
 
@@ -187,7 +185,7 @@ readlink -f /sys/bus/pci/devices/0000:3d:00.0/virtfn0
 lspci -Dnn -s <vf-pci-address>
 ```
 
-For on-site validation, you can temporarily patch the ConfigMap in an installed cluster and restart the operator and config-daemon:
+For on-site validation, you can also temporarily patch the ConfigMap in an installed cluster and restart the operator and config-daemon:
 
 ```bash
 kubectl patch cm supported-nic-ids -n cpaas-system --type merge -p \
@@ -197,7 +195,7 @@ kubectl rollout restart deployment/sriov-network-operator -n cpaas-system
 kubectl rollout restart daemonset/sriov-network-config-daemon -n cpaas-system
 ```
 
-This patch is only suitable for on-site validation and can be lost after plugin upgrade or reinstall. NIC models and VF device IDs can differ between customer environments, so this entry should not be added as a universal default. To keep it long term, configure `supportedExtraNICs` in the plugin installation or upgrade parameters with the PCI IDs confirmed in that environment. If `sriov_numvfs` was written manually to discover the VF ID, clear the manually created VFs before letting the operator manage the PF through `SriovNetworkNodePolicy`:
+This patch is only suitable for on-site validation and can be lost after plugin upgrade or reinstall. Use the plugin installation or upgrade form for long-term configuration. If `sriov_numvfs` was written manually to discover the VF ID, clear the manually created VFs before letting the operator manage the PF through `SriovNetworkNodePolicy`:
 
 ```bash
 echo 0 > /sys/bus/pci/devices/<pf-pci-address>/sriov_numvfs
