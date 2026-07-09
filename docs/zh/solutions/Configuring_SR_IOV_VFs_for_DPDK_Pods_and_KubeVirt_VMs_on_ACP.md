@@ -196,7 +196,7 @@ kubectl rollout restart deployment/sriov-network-operator -n cpaas-system
 kubectl rollout restart daemonset/sriov-network-config-daemon -n cpaas-system
 ```
 
-这种 patch 只适合验证，插件升级或重装后可能丢失；正式交付应在插件安装参数中通过 `supportedExtraNICs` 固化。若为了查看 VF ID 手动写过 `sriov_numvfs`，在让 operator 通过 `SriovNetworkNodePolicy` 接管前，先清理手工创建的 VF：
+这种 patch 只适合现场验证，插件升级或重装后可能丢失。不同客户环境的网卡型号和 VF device ID 可能不同，不应把该条目写成通用默认值；需要长期保留时，应按现场确认的 PCI ID，在该环境的插件安装或升级参数中通过 `supportedExtraNICs` 配置。若为了查看 VF ID 手动写过 `sriov_numvfs`，在让 operator 通过 `SriovNetworkNodePolicy` 接管前，先清理手工创建的 VF：
 
 ```bash
 echo 0 > /sys/bus/pci/devices/<pf-pci-address>/sriov_numvfs

@@ -197,7 +197,7 @@ kubectl rollout restart deployment/sriov-network-operator -n cpaas-system
 kubectl rollout restart daemonset/sriov-network-config-daemon -n cpaas-system
 ```
 
-This patch is only suitable for validation and can be lost after plugin upgrade or reinstall. For production delivery, persist the entry through `supportedExtraNICs` in the plugin installation parameters. If `sriov_numvfs` was written manually to discover the VF ID, clear the manually created VFs before letting the operator manage the PF through `SriovNetworkNodePolicy`:
+This patch is only suitable for on-site validation and can be lost after plugin upgrade or reinstall. NIC models and VF device IDs can differ between customer environments, so this entry should not be added as a universal default. To keep it long term, configure `supportedExtraNICs` in the plugin installation or upgrade parameters with the PCI IDs confirmed in that environment. If `sriov_numvfs` was written manually to discover the VF ID, clear the manually created VFs before letting the operator manage the PF through `SriovNetworkNodePolicy`:
 
 ```bash
 echo 0 > /sys/bus/pci/devices/<pf-pci-address>/sriov_numvfs
