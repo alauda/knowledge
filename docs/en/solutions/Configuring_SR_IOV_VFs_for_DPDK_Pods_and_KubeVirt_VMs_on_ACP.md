@@ -223,11 +223,13 @@ spec:
     kubernetes.io/hostname: <node-name>
   nicSelector:
     pfNames:
-      - ens5f0
+      - <pf-name>
   numVfs: 8
   deviceType: vfio-pci
   mtu: 1500
 ```
+
+Replace `<pf-name>` with the PF name recorded earlier, such as `p1p1`.
 
 Apply the policy:
 
@@ -243,6 +245,12 @@ kubectl get node <node-name> \
 ```
 
 If the output is a positive integer, the VF resource is available to the Kubernetes scheduler.
+
+For example, output `8` means that the current node has eight schedulable `openshift.io/sriov_vfio` VFs:
+
+```text
+8
+```
 
 If the resource does not appear for a long time, check the target node synchronization status and error message:
 
@@ -326,20 +334,14 @@ crw-rw-rw-    1 root     root       10, 196 ... vfio
 
 The numeric device, such as `191`, is the VFIO group available to the current Pod. In this scenario, do not use the presence of a secondary interface in `ip a` as the success criterion.
 
-If `dpdk-devbind.py -s` is run inside the container or the Pod namespace, it may list all PF/VF PCI devices on the node. The script reads `/sys/bus/pci/devices`, and PCI sysfs is not filtered by Pod resource allocation. To determine which VF the current Pod can actually use, rely on the devices exposed under `/dev/vfio/` and the `openshift.io/sriov_vfio` resource allocated to the Pod.
-
-The following is a reference observation: when `numVfs: 8` creates eight VFs on the node, all eight VFs are bound to `vfio-pci`, so `dpdk-devbind.py -s` can list eight VFs. However, when a single Pod requests only one `openshift.io/sriov_vfio`, the container exposes only one numeric group device under `/dev/vfio/`.
+To confirm the VF driver binding state, run `dpdk-devbind.py -s` on the host node. When the target VF appears under `Network devices using DPDK-compatible driver` with `drv=vfio-pci`, the VF is bound to a DPDK-compatible driver:
 
 ```text
 Network devices using DPDK-compatible driver
 ============================================
 0000:3d:00.1 'Hi1822 Family Virtual Function 375e' numa_node=0 drv=vfio-pci unused=hinic
-0000:3d:00.2 'Hi1822 Family Virtual Function 375e' numa_node=0 drv=vfio-pci unused=hinic
 ...
-0000:3d:01.0 'Hi1822 Family Virtual Function 375e' numa_node=0 drv=vfio-pci unused=hinic
 ```
-
-This output only shows the VF driver binding status on the node. The number of VFs actually available to the Pod is still determined by `/dev/vfio/` and the resource request count.
 
 If the workload uses Deployment, StatefulSet, or another controller, set `k8s.v1.cni.cncf.io/networks` in the Pod template `metadata.annotations`, and request `openshift.io/sriov_vfio` in the application container `resources.requests` and `resources.limits`. The VF resource only assigns the PCI device to the Pod. DPDK applications usually also need CPU, HugePages, and startup-parameter configuration; the exact values are determined by the business image and DPDK application documentation. A reference Pod fragment is:
 
@@ -384,11 +386,13 @@ spec:
     kubernetes.io/hostname: <node-name>
   nicSelector:
     pfNames:
-      - ens5f0
+      - <pf-name>
   numVfs: 8
   deviceType: vfio-pci
   mtu: 1500
 ```
+
+Replace `<pf-name>` with the PF name recorded earlier, such as `p1p1`.
 
 Apply the policy:
 

@@ -222,11 +222,13 @@ spec:
     kubernetes.io/hostname: <node-name>
   nicSelector:
     pfNames:
-      - ens5f0
+      - <pf-name>
   numVfs: 8
   deviceType: vfio-pci
   mtu: 1500
 ```
+
+将 `<pf-name>` 替换为前面记录的 PF 名称，例如 `p1p1`。
 
 应用 policy：
 
@@ -242,6 +244,12 @@ kubectl get node <node-name> \
 ```
 
 如果输出为正整数，说明 VF 已经被 device plugin 暴露给 Kubernetes 调度器。
+
+例如输出为 `8`，表示当前节点可被调度使用的 `openshift.io/sriov_vfio` VF 数量为 8：
+
+```text
+8
+```
 
 如果长时间没有资源，再查看目标节点的同步状态和错误信息：
 
@@ -325,20 +333,14 @@ crw-rw-rw-    1 root     root       10, 196 ... vfio
 
 其中数字设备（如 `191`）表示当前 Pod 可用的 VFIO group。该场景下不要使用 `ip a` 是否出现辅助网卡作为成功标准。
 
-如果在容器或 Pod 命名空间中运行 `dpdk-devbind.py -s`，可能会看到节点上的所有 PF/VF PCI 设备；这是因为脚本读取 `/sys/bus/pci/devices`，PCI sysfs 不会按 Pod 资源分配过滤。判断当前 Pod 实际可用的 VF，应以 `/dev/vfio/` 下暴露的设备和 Pod 申请到的 `openshift.io/sriov_vfio` 资源为准。
-
-以下是一个参考现象：节点上通过 `numVfs: 8` 创建出的 8 个 VF 都绑定到 `vfio-pci`，因此 `dpdk-devbind.py -s` 可以看到 8 个 VF；但单个 Pod 只申请 1 个 `openshift.io/sriov_vfio` 时，容器内 `/dev/vfio/` 只暴露 1 个数字 group 设备。
+如需辅助确认 VF 驱动绑定状态，可在宿主机节点上运行 `dpdk-devbind.py -s`。当目标 VF 出现在 `Network devices using DPDK-compatible driver` 区域，且显示 `drv=vfio-pci` 时，表示该 VF 已绑定到 DPDK 兼容驱动：
 
 ```text
 Network devices using DPDK-compatible driver
 ============================================
 0000:3d:00.1 'Hi1822 Family Virtual Function 375e' numa_node=0 drv=vfio-pci unused=hinic
-0000:3d:00.2 'Hi1822 Family Virtual Function 375e' numa_node=0 drv=vfio-pci unused=hinic
 ...
-0000:3d:01.0 'Hi1822 Family Virtual Function 375e' numa_node=0 drv=vfio-pci unused=hinic
 ```
-
-该输出只能说明节点上的 VF 驱动绑定状态；Pod 实际拿到几个 VF，仍以 `/dev/vfio/` 和资源申请数量为准。
 
 如果业务使用 Deployment、StatefulSet 等控制器，在 Pod template 的 `metadata.annotations` 中设置 `k8s.v1.cni.cncf.io/networks`，并在业务容器的 `resources.requests` 和 `resources.limits` 中申请 `openshift.io/sriov_vfio`。VF 资源只负责把 PCI 设备分配给 Pod；DPDK 应用通常还需要 CPU、HugePages 和启动参数等配置，具体取值由业务镜像和 DPDK 应用文档决定。参考配置片段如下：
 
@@ -383,11 +385,13 @@ spec:
     kubernetes.io/hostname: <node-name>
   nicSelector:
     pfNames:
-      - ens5f0
+      - <pf-name>
   numVfs: 8
   deviceType: vfio-pci
   mtu: 1500
 ```
+
+将 `<pf-name>` 替换为前面记录的 PF 名称，例如 `p1p1`。
 
 应用 policy：
 
