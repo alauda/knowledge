@@ -199,6 +199,14 @@ readlink -f /sys/bus/pci/devices/0000:3d:00.0/virtfn0
 lspci -Dnn -s <vf-pci-address>
 ```
 
+When reading the result, use the `<vendor>:<device>` pair inside brackets in the `lspci -Dnn` output. For example:
+
+```text
+0000:5e:0a.0 Ethernet controller [0200]: Intel Corporation Ethernet Virtual Function 700 Series [8086:154c] (rev 02)
+```
+
+In this case, `8086` is the vendor ID, and `154c` is the VF Device ID that should be entered in the form.
+
 For on-site validation, you can also temporarily patch the ConfigMap in an installed cluster and restart the operator and config-daemon:
 
 ```bash
