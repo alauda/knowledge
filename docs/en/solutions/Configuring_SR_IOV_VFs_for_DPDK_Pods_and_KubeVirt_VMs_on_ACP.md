@@ -142,6 +142,20 @@ kubectl get sriovnetworknodestates.sriovnetwork.openshift.io \
 
 If a node with an SR-IOV NIC is missing from the list, first check whether the node has the `feature.node.kubernetes.io/sriov-capable=true` label. The config-daemon collects PF status only on nodes that match this label.
 
+If you need a quick host-side check to confirm that a physical NIC advertises SR-IOV capability before looking at the operator state, inspect the PCI capabilities of the PF. Replace `af:00.3` with the target PF PCI address:
+
+```bash
+lspci -s af:00.3 -vvv | grep -i capabilities
+```
+
+If the output includes `Single Root I/O Virtualization (SR-IOV)`, the physical NIC advertises SR-IOV capability, for example:
+
+```text
+Capabilities: [160 v1] Single Root I/O Virtualization (SR-IOV)
+```
+
+This check only proves that the hardware exposes SR-IOV capability. It does not mean that the operator already supports the NIC or that VFs have already been created. Continue with the driver, allowlist, and `SriovNetworkNodePolicy` checks.
+
 On a node with an SR-IOV PF, confirm that the operator discovers the physical NIC:
 
 ```bash

@@ -141,6 +141,20 @@ kubectl get sriovnetworknodestates.sriovnetwork.openshift.io \
 
 如果带 SR-IOV 网卡的节点没有出现在列表中，先检查该节点是否已经打上 `feature.node.kubernetes.io/sriov-capable=true` 标签；config-daemon 只会在该标签匹配的节点上采集 PF 状态。
 
+如果需要先在宿主机侧快速判断某张物理网卡是否具备 SR-IOV 能力，可以直接查看该 PF 的 PCI capability。以下命令中，`af:00.3` 替换为目标 PF 的 PCI 地址：
+
+```bash
+lspci -s af:00.3 -vvv | grep -i capabilities
+```
+
+如果输出中包含 `Single Root I/O Virtualization (SR-IOV)`，说明这张物理网卡声明了 SR-IOV capability，例如：
+
+```text
+Capabilities: [160 v1] Single Root I/O Virtualization (SR-IOV)
+```
+
+这个检查只说明硬件具备 SR-IOV capability，不等于 operator 已经支持或已经创建出 VF；后续仍需继续确认 driver、白名单和 `SriovNetworkNodePolicy` 配置。
+
 在带 SR-IOV PF 的节点上，确认 operator 能发现物理网卡：
 
 ```bash
