@@ -202,12 +202,12 @@ lspci -Dnn -s <vf-pci-address>
 When reading the result, use the `<vendor>:<device>` pair inside brackets in the `lspci -Dnn` output. For example:
 
 ```text
-0000:5e:0a.0 Ethernet controller [0200]: Huawei Technologies Co., Ltd. Hi1822 Family Virtual Function [19e5:375e] (rev 45)
+0000:3d:01.0 Ethernet controller [0200]: Huawei Technologies Co., Ltd. Hi1822 Family Virtual Function [19e5:375e] (rev 45)
 ```
 
 In this case, `19e5` is the vendor ID, and `375e` is the VF Device ID that should be entered in the form.
 
-Only for on-site validation, you can temporarily patch the ConfigMap in an installed cluster and restart the operator and config-daemon:
+For on-site validation only, you can temporarily patch the ConfigMap in an installed cluster and restart the operator and config-daemon:
 
 ```bash
 kubectl patch cm supported-nic-ids -n cpaas-system --type merge -p \
@@ -351,7 +351,7 @@ To confirm the VF driver binding state, run `dpdk-devbind.py -s` on the host nod
 ```text
 Network devices using DPDK-compatible driver
 ============================================
-0000:5e:0a.0 'Hi1822 Family Virtual Function 375e' numa_node=0 drv=vfio-pci unused=hinic
+0000:3d:01.0 'Hi1822 Family Virtual Function 375e' numa_node=0 drv=vfio-pci unused=hinic
 ...
 ```
 

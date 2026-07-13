@@ -202,7 +202,7 @@ lspci -Dnn -s <vf-pci-address>
 判断时以 `lspci -Dnn` 输出中方括号内的 `<vendor>:<device>` 为准。例如：
 
 ```text
-0000:5e:0a.0 Ethernet controller [0200]: Huawei Technologies Co., Ltd. Hi1822 Family Virtual Function [19e5:375e] (rev 45)
+0000:3d:01.0 Ethernet controller [0200]: Huawei Technologies Co., Ltd. Hi1822 Family Virtual Function [19e5:375e] (rev 45)
 ```
 
 其中 `19e5` 是 vendor ID，`375e` 才是要填写到表单中的 VF Device ID。
@@ -351,7 +351,7 @@ crw-rw-rw-    1 root     root       10, 196 ... vfio
 ```text
 Network devices using DPDK-compatible driver
 ============================================
-0000:5e:0a.0 'Hi1822 Family Virtual Function 375e' numa_node=0 drv=vfio-pci unused=hinic
+0000:3d:01.0 'Hi1822 Family Virtual Function 375e' numa_node=0 drv=vfio-pci unused=hinic
 ...
 ```
 
