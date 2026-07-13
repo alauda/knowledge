@@ -39,6 +39,7 @@ ProductsVersion:
 
 - 节点上有支持 SR-IOV 的物理网卡 PF。
 - BIOS 和操作系统已经启用 IOMMU，例如 Intel VT-d 或 AMD-Vi。
+- PF 驱动支持创建 VF，且 PF 未被主 CNI 或 OVS 占用到无法配置 VF。
 
 在节点上可以通过以下方式确认 IOMMU 已启用：
 
@@ -82,7 +83,7 @@ kubectl label node <node-name> feature.node.kubernetes.io/sriov-capable=true --o
 
 ### 安装插件
 
-该能力作为 ACP 4.3 新功能交付，插件包版本为 `sriov-network-plugin v4.3.8`。用户侧从 AC 应用市场获取插件包，再上传到目标 ACP 平台安装。
+该能力作为 ACP 4.3 新功能交付，插件包版本为 `sriov-network-plugin v4.3.8`。先从 AC 应用市场下载插件包，再上传到目标 ACP 平台安装。
 
 1. 登录 AC 应用市场，搜索 `SR-IOV 网络插件` 或 `sriov-network-plugin`。
 2. 选择适配平台版本为 `v4.3`、插件版本为 `v4.3.8` 的安装包。
@@ -111,12 +112,12 @@ violet push "$PACKAGE_FILE" \
 
 ### 确认 Multus 基座可用
 
-SR-IOV 网络通过 Multus 作为辅助网络接入 DPDK/CNF Pod 或 KubeVirt 虚拟机。安装 SR-IOV 插件前后，都应在 **管理员 -> 市场 -> 集群插件** 中确认目标业务集群已经安装 Multus CNI。如果尚未安装，先参考产品文档[多网络](https://docs.alauda.cn/container_platform/4.3/configure/networking/how_to/kube_ovn/multiple_networks) 中的“安装 Multus CNI”章节，再继续配置 SR-IOV 网络。SR-IOV 插件负责节点侧 VF 编排、SR-IOV CNI 安装和 SR-IOV 相关 NAD 生成，不替代 Multus 元 CNI。
+SR-IOV 网络通过 Multus 作为辅助网络接入 DPDK/CNF Pod 或 KubeVirt 虚拟机。配置 SR-IOV 网络之前，先在 **管理员 -> 市场 -> 集群插件** 中确认目标业务集群已经安装 Multus CNI。如果尚未安装，先参考产品文档[多网络](https://docs.alauda.cn/container_platform/4.3/configure/networking/how_to/kube_ovn/multiple_networks) 中的“安装 Multus CNI”章节。SR-IOV 插件负责节点侧 VF 编排、SR-IOV CNI 安装和 SR-IOV 相关 NAD 生成，不替代 Multus 元 CNI。
 
 安装后确认 operator 和 config-daemon 已运行：
 
 ```bash
-kubectl get pods -n cpaas-system
+kubectl get pods -n cpaas-system | grep sriov-network
 ```
 
 预期至少看到以下工作负载处于 `Running`：
@@ -132,7 +133,7 @@ sriov-network-config-daemon-xxxxx     1/1     Running
 
 PF 是节点上的物理网卡，VF 是从 PF 创建出来并分配给 Pod 或虚拟机使用的虚拟 PCI 网卡。
 
-先查看 operator 已同步的节点状态，并从输出的 `NAME` 选择目标节点：
+先查看 operator 已同步的节点状态，并从输出的 `NAME` 列中选择目标节点：
 
 ```bash
 kubectl get sriovnetworknodestates.sriovnetwork.openshift.io \
@@ -201,12 +202,12 @@ lspci -Dnn -s <vf-pci-address>
 判断时以 `lspci -Dnn` 输出中方括号内的 `<vendor>:<device>` 为准。例如：
 
 ```text
-0000:5e:0a.0 Ethernet controller [0200]: Intel Corporation Ethernet Virtual Function 700 Series [8086:154c] (rev 02)
+0000:5e:0a.0 Ethernet controller [0200]: Huawei Technologies Co., Ltd. Hi1822 Family Virtual Function [19e5:375e] (rev 45)
 ```
 
-其中 `8086` 是 vendor ID，`154c` 才是要填写到表单中的 VF Device ID。
+其中 `19e5` 是 vendor ID，`375e` 才是要填写到表单中的 VF Device ID。
 
-如果只是现场验证，也可以临时 patch 已安装集群中的 ConfigMap，并重启 operator 和 config-daemon：
+仅在现场验证时，可以临时 patch 已安装集群中的 ConfigMap，并重启 operator 和 config-daemon：
 
 ```bash
 kubectl patch cm supported-nic-ids -n cpaas-system --type merge -p \
@@ -216,7 +217,7 @@ kubectl rollout restart deployment/sriov-network-operator -n cpaas-system
 kubectl rollout restart daemonset/sriov-network-config-daemon -n cpaas-system
 ```
 
-这种 patch 只适合现场验证，插件升级或重装后可能丢失；长期配置应使用插件安装或升级表单。若为了查看 VF ID 手动写过 `sriov_numvfs`，在让 operator 通过 `SriovNetworkNodePolicy` 接管前，先清理手工创建的 VF：
+这种 patch 在插件升级或重装后可能丢失；长期配置应使用插件安装或升级表单。若为了查看 VF ID 手动写过 `sriov_numvfs`，在让 operator 通过 `SriovNetworkNodePolicy` 接管前，先清理手工创建的 VF：
 
 ```bash
 echo 0 > /sys/bus/pci/devices/<pf-pci-address>/sriov_numvfs
@@ -226,7 +227,7 @@ echo 0 > /sys/bus/pci/devices/<pf-pci-address>/sriov_numvfs
 
 ### 为 DPDK/CNF Pod 配置并使用 SR-IOV VF
 
-DPDK/CNF Pod 需要由用户态进程直接接管 VF 时，`deviceType` 使用 `vfio-pci`。这种模式下 VF 不作为 Pod 内的普通 Linux 网卡使用，业务报文处理和地址配置由容器内的 DPDK/CNF 应用负责。因此，Pod 内 `ip a` 看不到 `net1` 之类的辅助网卡是正常现象；验证目标是容器内出现 `/dev/vfio/<iommu-group>` 设备。
+DPDK/CNF Pod 需要由用户态进程直接接管 VF 时，`deviceType` 使用 `vfio-pci`。这种模式下 VF 不作为 Pod 内的普通 Linux 网卡使用，业务报文处理和地址配置由容器内应用负责；成功标准是容器内出现 `/dev/vfio/<iommu-group>` 设备，而不是 `ip a` 出现 `net1`。
 
 将以下内容保存为 `sriov-node-policy-pod.yaml`：
 
@@ -263,22 +264,16 @@ kubectl get node <node-name> \
   -o jsonpath='{.status.allocatable.openshift\.io/sriov_vfio}{"\n"}'
 ```
 
-如果输出为正整数，说明 VF 已经被 device plugin 暴露给 Kubernetes 调度器。
+如果输出为正整数，例如 `8`，说明当前节点有 8 个可调度的 `openshift.io/sriov_vfio` VF。
 
-例如输出为 `8`，表示当前节点可被调度使用的 `openshift.io/sriov_vfio` VF 数量为 8：
-
-```text
-8
-```
-
-如果长时间没有资源，再查看目标节点的同步状态和错误信息：
+如果资源长时间未出现在 allocatable 中，再查看目标节点的同步状态和错误信息：
 
 ```bash
 kubectl get sriovnetworknodestate <node-name> -n cpaas-system \
   -o jsonpath='{.status.syncStatus}{"\n"}{.status.lastSyncError}{"\n"}'
 ```
 
-创建 `SriovNetwork`，由 operator 生成对应的 `NetworkAttachmentDefinition`。以下示例将 NAD 生成到业务命名空间 `default`。由于 VF 会被 DPDK/CNF 应用直接接管，这里不配置 kube-ovn IPAM。
+创建 `SriovNetwork`，由 operator 生成对应的 `NetworkAttachmentDefinition`。以下示例将 NAD 生成到业务命名空间 `default`；VF 由 DPDK/CNF 应用直接接管，因此这里不配置 kube-ovn IPAM。
 
 将以下内容保存为 `sriov-network-pod.yaml`：
 
@@ -295,9 +290,7 @@ spec:
 
 上例中 operator 会在 `default` 命名空间生成名为 `pod-sriov-net` 的 NAD。如果业务 Pod 运行在其他命名空间，需要同时替换 `SriovNetwork.spec.networkNamespace`、Pod `metadata.namespace` 和 Pod 中的 NAD 引用。
 
-如果业务网络需要接入指定 VLAN，可在 `spec` 中增加 `vlan: <vlan-id>`；不配置时使用未打标签网络。
-
-Pod 的默认网络仍然使用 kube-ovn 主网络；SR-IOV VF 作为 Multus 辅助资源接入，并由 DPDK/CNF 应用使用。
+如果业务网络需要接入指定 VLAN，可在 `spec` 中增加 `vlan: <vlan-id>`；不配置时流量不携带 VLAN tag（untagged）。Pod 的默认网络仍由 kube-ovn 提供，SR-IOV VF 作为 Multus 辅助资源接入。
 
 应用后确认 NAD 已生成：
 
@@ -306,7 +299,7 @@ kubectl apply -f sriov-network-pod.yaml
 kubectl get network-attachment-definitions.k8s.cni.cncf.io -n default pod-sriov-net
 ```
 
-Pod 通过 `k8s.v1.cni.cncf.io/networks` annotation 引用 NAD，并通过 resource request 申请一个 SR-IOV VF。以下示例将 Pod 的默认网络保留为 kube-ovn，同时申请一个 `vfio-pci` 类型的 SR-IOV VF 给 DPDK/CNF 应用使用。
+Pod 通过 `k8s.v1.cni.cncf.io/networks` annotation 引用 NAD，并通过 resource request 申请一个 `vfio-pci` 类型的 SR-IOV VF。
 
 将以下内容保存为 `sriov-pod.yaml`：
 
@@ -321,7 +314,7 @@ metadata:
 spec:
   containers:
     - name: app
-      image: nginx:latest
+      image: <dpdk-cnf-image>
       resources:
         requests:
           openshift.io/sriov_vfio: "1"
@@ -351,18 +344,18 @@ crw-------    1 root     root      234, 191 ... 191
 crw-rw-rw-    1 root     root       10, 196 ... vfio
 ```
 
-其中数字设备（如 `191`）表示当前 Pod 可用的 VFIO group。该场景下不要使用 `ip a` 是否出现辅助网卡作为成功标准。
+其中数字设备（如 `191`）表示当前 Pod 可用的 VFIO group。
 
 如需辅助确认 VF 驱动绑定状态，可在宿主机节点上运行 `dpdk-devbind.py -s`。当目标 VF 出现在 `Network devices using DPDK-compatible driver` 区域，且显示 `drv=vfio-pci` 时，表示该 VF 已绑定到 DPDK 兼容驱动：
 
 ```text
 Network devices using DPDK-compatible driver
 ============================================
-0000:3d:00.1 'Hi1822 Family Virtual Function 375e' numa_node=0 drv=vfio-pci unused=hinic
+0000:5e:0a.0 'Hi1822 Family Virtual Function 375e' numa_node=0 drv=vfio-pci unused=hinic
 ...
 ```
 
-如果业务使用 Deployment、StatefulSet 等控制器，在 Pod template 的 `metadata.annotations` 中设置 `k8s.v1.cni.cncf.io/networks`，并在业务容器的 `resources.requests` 和 `resources.limits` 中申请 `openshift.io/sriov_vfio`。VF 资源只负责把 PCI 设备分配给 Pod；DPDK 应用通常还需要 CPU、HugePages 和启动参数等配置，具体取值由业务镜像和 DPDK 应用文档决定。参考配置片段如下：
+如果业务使用 Deployment、StatefulSet 等控制器，在 Pod template 的 `metadata.annotations` 中设置 NAD 引用，并在业务容器的 `resources.requests` 和 `resources.limits` 中申请 `openshift.io/sriov_vfio`。DPDK 应用通常还需要 CPU、HugePages 和启动参数等配置，具体取值由业务镜像和应用文档决定。参考配置片段如下：
 
 ```yaml
 resources:
@@ -387,9 +380,9 @@ volumes:
 
 ### 为 KubeVirt 虚拟机配置并使用 SR-IOV 网络
 
-KubeVirt SR-IOV PCI 直通场景需要把 VF 作为 PCI 设备传递给虚拟机，因此 `deviceType` 使用 `vfio-pci`。
+KubeVirt SR-IOV PCI 直通场景需要把 VF 作为 PCI 设备传递给虚拟机，因此同样使用 `deviceType: vfio-pci`。
 
-如果已经为同一个 PF 创建过 `resourceName: sriov_vfio` 的 `SriovNetworkNodePolicy`，可直接继续创建虚拟机使用的 `SriovNetwork`。如果虚拟机需要使用独立 VF 池，再创建单独的 policy。
+如果同一个 PF 已经有 `resourceName: sriov_vfio` 的 `SriovNetworkNodePolicy`，跳过本段，直接创建虚拟机使用的 `SriovNetwork`。只有没有可复用 policy，或虚拟机需要独立 VF 池时，才创建以下 policy。
 
 将以下内容保存为 `sriov-node-policy-vm.yaml`：
 
@@ -413,20 +406,15 @@ spec:
 
 将 `<pf-name>` 替换为前面记录的 PF 名称，例如 `p1p1`。
 
-应用 policy：
+如果创建了上述 policy，应用并确认节点资源：
 
 ```bash
 kubectl apply -f sriov-node-policy-vm.yaml
-```
-
-确认节点资源中出现 SR-IOV device plugin 暴露的资源：
-
-```bash
 kubectl get node <node-name> \
   -o jsonpath='{.status.allocatable.openshift\.io/sriov_vfio}{"\n"}'
 ```
 
-创建 `SriovNetwork`，由 operator 生成对应的 `NetworkAttachmentDefinition`。以下示例将 NAD 生成到虚拟机所在命名空间 `kubevirt`。如果该 VF 后续由虚拟机内的 DPDK 应用接管，不需要在这里配置 kube-ovn IPAM。
+创建 `SriovNetwork`，由 operator 生成对应的 `NetworkAttachmentDefinition`。以下示例将 NAD 生成到虚拟机所在命名空间 `kubevirt`；如果 VF 后续由虚拟机内的 DPDK 应用接管，这里不配置 kube-ovn IPAM。
 
 将以下内容保存为 `sriov-network-vm.yaml`：
 
@@ -443,9 +431,7 @@ spec:
 
 上例中 operator 会在 `kubevirt` 命名空间生成名为 `vm-sriov-net` 的 NAD。如果虚拟机运行在其他命名空间，需要同时替换 `SriovNetwork.spec.networkNamespace`、VM `metadata.namespace` 和 VM 中的 NAD 引用。
 
-如果业务网络需要接入指定 VLAN，可在 `spec` 中增加 `vlan: <vlan-id>`；不配置时使用未打标签网络。
-
-KubeVirt 虚拟机的默认网络仍然使用 kube-ovn 主网络；SR-IOV VF 作为 Multus 辅助设备直通给虚拟机。
+如果业务网络需要接入指定 VLAN，可在 `spec` 中增加 `vlan: <vlan-id>`；不配置时流量不携带 VLAN tag（untagged）。虚拟机默认网络仍由 kube-ovn 提供，SR-IOV VF 作为 Multus 辅助设备直通给虚拟机。
 
 应用后确认 NAD 已生成：
 

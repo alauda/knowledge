@@ -83,7 +83,7 @@ Apply this label only to nodes where VFs will be configured. Nodes without this 
 
 ### Install the plugin
 
-This capability is delivered as an ACP 4.3 feature. The plugin package version is `sriov-network-plugin v4.3.8`. The user workflow is to download the plugin package from the AC application marketplace, upload it to the target ACP platform, and then install it from the platform marketplace.
+This capability is delivered as an ACP 4.3 feature. The plugin package version is `sriov-network-plugin v4.3.8`. Download the plugin package from the AC application marketplace, upload it to the target ACP platform, and then install it from the platform marketplace.
 
 1. Log in to the AC application marketplace and search for `SR-IOV Network Plugin` or `sriov-network-plugin`.
 2. Select the package whose compatible platform version is `v4.3` and whose plugin version is `v4.3.8`.
@@ -112,15 +112,15 @@ After the upload is complete, go to **Administrator -> Marketplace -> Cluster Pl
 
 ### Confirm the Multus base
 
-SR-IOV networks are attached to DPDK/CNF Pods or KubeVirt VMs by Multus as secondary networks. Before or after installing the SR-IOV plugin, confirm in **Administrator -> Marketplace -> Cluster Plugins** that Multus CNI is installed in the target business cluster. If it is not installed, follow the "Install Multus CNI" section in the product documentation for [multiple networks](https://docs.alauda.cn/container_platform/4.3/configure/networking/how_to/kube_ovn/multiple_networks) before configuring SR-IOV networks. The SR-IOV plugin handles node-side VF orchestration, SR-IOV CNI installation, and SR-IOV-related NAD generation. It does not replace the Multus meta CNI.
+SR-IOV networks are attached to DPDK/CNF Pods or KubeVirt VMs by Multus as secondary networks. Before configuring SR-IOV networks, confirm in **Administrator -> Marketplace -> Cluster Plugins** that Multus CNI is installed in the target business cluster. If it is not installed, follow the "Install Multus CNI" section in the product documentation for [multiple networks](https://docs.alauda.cn/container_platform/4.3/configure/networking/how_to/kube_ovn/multiple_networks). The SR-IOV plugin handles node-side VF orchestration, SR-IOV CNI installation, and SR-IOV-related NAD generation. It does not replace the Multus meta CNI.
 
 After installation, confirm that the operator and config-daemon are running:
 
 ```bash
-kubectl get pods -n cpaas-system
+kubectl get pods -n cpaas-system | grep sriov-network
 ```
 
-Expected workloads:
+At minimum, the following workloads should be `Running`:
 
 ```text
 sriov-network-operator-xxxxx          1/1     Running
@@ -202,12 +202,12 @@ lspci -Dnn -s <vf-pci-address>
 When reading the result, use the `<vendor>:<device>` pair inside brackets in the `lspci -Dnn` output. For example:
 
 ```text
-0000:5e:0a.0 Ethernet controller [0200]: Intel Corporation Ethernet Virtual Function 700 Series [8086:154c] (rev 02)
+0000:5e:0a.0 Ethernet controller [0200]: Huawei Technologies Co., Ltd. Hi1822 Family Virtual Function [19e5:375e] (rev 45)
 ```
 
-In this case, `8086` is the vendor ID, and `154c` is the VF Device ID that should be entered in the form.
+In this case, `19e5` is the vendor ID, and `375e` is the VF Device ID that should be entered in the form.
 
-For on-site validation, you can also temporarily patch the ConfigMap in an installed cluster and restart the operator and config-daemon:
+Only for on-site validation, you can temporarily patch the ConfigMap in an installed cluster and restart the operator and config-daemon:
 
 ```bash
 kubectl patch cm supported-nic-ids -n cpaas-system --type merge -p \
@@ -217,7 +217,7 @@ kubectl rollout restart deployment/sriov-network-operator -n cpaas-system
 kubectl rollout restart daemonset/sriov-network-config-daemon -n cpaas-system
 ```
 
-This patch is only suitable for on-site validation and can be lost after plugin upgrade or reinstall. Use the plugin installation or upgrade form for long-term configuration. If `sriov_numvfs` was written manually to discover the VF ID, clear the manually created VFs before letting the operator manage the PF through `SriovNetworkNodePolicy`:
+This patch will not survive a plugin upgrade or reinstall. Use the plugin installation or upgrade form for long-term configuration. If `sriov_numvfs` was written manually to discover the VF ID, clear the manually created VFs before letting the operator manage the PF through `SriovNetworkNodePolicy`:
 
 ```bash
 echo 0 > /sys/bus/pci/devices/<pf-pci-address>/sriov_numvfs
@@ -227,7 +227,7 @@ Otherwise, config-daemon may report that the PF already has VFs that were not cr
 
 ### Configure and use an SR-IOV VF for DPDK/CNF Pods
 
-When a DPDK/CNF Pod needs a userspace process to own the VF directly, set `deviceType` to `vfio-pci`. In this mode, the VF is not used as a regular Linux network interface inside the Pod. Packet processing and address handling are owned by the DPDK/CNF application in the container. Therefore, it is expected that `ip a` inside the Pod does not show a secondary interface such as `net1`. The validation target is a `/dev/vfio/<iommu-group>` device inside the container.
+When a DPDK/CNF Pod needs a userspace process to own the VF directly, set `deviceType` to `vfio-pci`. In this mode, the VF is not used as a regular Linux network interface inside the Pod. Packet processing and address handling are owned by the application, and success is validated by a `/dev/vfio/<iommu-group>` device in the container, not by a secondary interface such as `net1` in `ip a`.
 
 Save the following content as `sriov-node-policy-pod.yaml`:
 
@@ -264,22 +264,16 @@ kubectl get node <node-name> \
   -o jsonpath='{.status.allocatable.openshift\.io/sriov_vfio}{"\n"}'
 ```
 
-If the output is a positive integer, the VF resource is available to the Kubernetes scheduler.
+If the output is a positive integer, such as `8`, the node has eight schedulable `openshift.io/sriov_vfio` VFs.
 
-For example, output `8` means that the current node has eight schedulable `openshift.io/sriov_vfio` VFs:
-
-```text
-8
-```
-
-If the resource does not appear for a long time, check the target node synchronization status and error message:
+If the resource does not appear in allocatable for a long time, check the target node synchronization status and error message:
 
 ```bash
 kubectl get sriovnetworknodestate <node-name> -n cpaas-system \
   -o jsonpath='{.status.syncStatus}{"\n"}{.status.lastSyncError}{"\n"}'
 ```
 
-Create a `SriovNetwork`. The operator generates the corresponding `NetworkAttachmentDefinition`. The following example creates the NAD in the application namespace `default`. Because the VF is owned directly by the DPDK/CNF application, Kube-OVN IPAM is not configured here.
+Create a `SriovNetwork`. The operator generates the corresponding `NetworkAttachmentDefinition`. The following example creates the NAD in the application namespace `default`. Because the VF is owned directly by the DPDK/CNF application, Kube-OVN IPAM is not configured.
 
 Save the following content as `sriov-network-pod.yaml`:
 
@@ -296,9 +290,7 @@ spec:
 
 In this example, the operator generates a NAD named `pod-sriov-net` in the `default` namespace. If the application Pod runs in another namespace, update `SriovNetwork.spec.networkNamespace`, Pod `metadata.namespace`, and the Pod NAD reference together.
 
-If the service network must use a specific VLAN, add `vlan: <vlan-id>` under `spec`. If this field is omitted, the network is untagged.
-
-The Pod default network still uses the kube-ovn primary network. The SR-IOV VF is attached as a Multus secondary resource and consumed by the DPDK/CNF application.
+If the service network must use a specific VLAN, add `vlan: <vlan-id>` under `spec`. If this field is omitted, the network is untagged. The Pod default network is still provided by kube-ovn, and the SR-IOV VF is attached as a Multus secondary resource.
 
 Apply the objects and confirm that the NAD is generated:
 
@@ -307,7 +299,7 @@ kubectl apply -f sriov-network-pod.yaml
 kubectl get network-attachment-definitions.k8s.cni.cncf.io -n default pod-sriov-net
 ```
 
-A Pod references the NAD through the `k8s.v1.cni.cncf.io/networks` annotation and requests one SR-IOV VF through resource requests. The following example keeps the Pod default network on kube-ovn and requests one `vfio-pci` SR-IOV VF for the DPDK/CNF application.
+A Pod references the NAD through the `k8s.v1.cni.cncf.io/networks` annotation and requests one `vfio-pci` SR-IOV VF through resource requests.
 
 Save the following content as `sriov-pod.yaml`:
 
@@ -322,7 +314,7 @@ metadata:
 spec:
   containers:
     - name: app
-      image: nginx:latest
+      image: <dpdk-cnf-image>
       resources:
         requests:
           openshift.io/sriov_vfio: "1"
@@ -352,18 +344,18 @@ crw-------    1 root     root      234, 191 ... 191
 crw-rw-rw-    1 root     root       10, 196 ... vfio
 ```
 
-The numeric device, such as `191`, is the VFIO group available to the current Pod. In this scenario, do not use the presence of a secondary interface in `ip a` as the success criterion.
+The numeric device, such as `191`, is the VFIO group available to the current Pod.
 
 To confirm the VF driver binding state, run `dpdk-devbind.py -s` on the host node. When the target VF appears under `Network devices using DPDK-compatible driver` with `drv=vfio-pci`, the VF is bound to a DPDK-compatible driver:
 
 ```text
 Network devices using DPDK-compatible driver
 ============================================
-0000:3d:00.1 'Hi1822 Family Virtual Function 375e' numa_node=0 drv=vfio-pci unused=hinic
+0000:5e:0a.0 'Hi1822 Family Virtual Function 375e' numa_node=0 drv=vfio-pci unused=hinic
 ...
 ```
 
-If the workload uses Deployment, StatefulSet, or another controller, set `k8s.v1.cni.cncf.io/networks` in the Pod template `metadata.annotations`, and request `openshift.io/sriov_vfio` in the application container `resources.requests` and `resources.limits`. The VF resource only assigns the PCI device to the Pod. DPDK applications usually also need CPU, HugePages, and startup-parameter configuration; the exact values are determined by the business image and DPDK application documentation. A reference Pod fragment is:
+If the workload uses Deployment, StatefulSet, or another controller, set the NAD reference in the Pod template `metadata.annotations`, and request `openshift.io/sriov_vfio` in the application container `resources.requests` and `resources.limits`. DPDK applications usually also need CPU, HugePages, and startup parameters; the exact values are determined by the business image and application documentation. A reference Pod fragment is:
 
 ```yaml
 resources:
@@ -388,9 +380,9 @@ volumes:
 
 ### Configure and use an SR-IOV network for KubeVirt VMs
 
-KubeVirt SR-IOV PCI passthrough passes the VF to the VM as a PCI device, so `deviceType` is `vfio-pci`.
+KubeVirt SR-IOV PCI passthrough passes the VF to the VM as a PCI device, so it also uses `deviceType: vfio-pci`.
 
-If a `SriovNetworkNodePolicy` with `resourceName: sriov_vfio` already exists for the same PF, continue directly with the `SriovNetwork` for the VM. Create a separate policy only when the VM needs an independent VF pool.
+If a `SriovNetworkNodePolicy` with `resourceName: sriov_vfio` already exists for the same PF, skip this policy step and continue with the VM `SriovNetwork`. Create the following policy only when there is no reusable policy or the VM needs an independent VF pool.
 
 Save the following content as `sriov-node-policy-vm.yaml`:
 
@@ -414,20 +406,15 @@ spec:
 
 Replace `<pf-name>` with the PF name recorded earlier, such as `p1p1`.
 
-Apply the policy:
+If you created the policy above, apply it and confirm the node resource:
 
 ```bash
 kubectl apply -f sriov-node-policy-vm.yaml
-```
-
-Confirm that the SR-IOV device-plugin resource appears in node allocatable resources:
-
-```bash
 kubectl get node <node-name> \
   -o jsonpath='{.status.allocatable.openshift\.io/sriov_vfio}{"\n"}'
 ```
 
-Create a `SriovNetwork`. The operator generates the corresponding `NetworkAttachmentDefinition`. The following example creates the NAD in the VM namespace `kubevirt`. If the VF is later owned by a DPDK application inside the VM, Kube-OVN IPAM is not required here.
+Create a `SriovNetwork`. The operator generates the corresponding `NetworkAttachmentDefinition`. The following example creates the NAD in the VM namespace `kubevirt`. If the VF is later owned by a DPDK application inside the VM, Kube-OVN IPAM is not required.
 
 Save the following content as `sriov-network-vm.yaml`:
 
@@ -444,9 +431,7 @@ spec:
 
 In this example, the operator generates a NAD named `vm-sriov-net` in the `kubevirt` namespace. If the VM runs in another namespace, update `SriovNetwork.spec.networkNamespace`, VM `metadata.namespace`, and the VM NAD reference together.
 
-If the service network must use a specific VLAN, add `vlan: <vlan-id>` under `spec`. If this field is omitted, the network is untagged.
-
-The KubeVirt VM default network still uses the kube-ovn primary network. The SR-IOV VF is attached as a Multus secondary device and passed through to the VM.
+If the service network must use a specific VLAN, add `vlan: <vlan-id>` under `spec`. If this field is omitted, the network is untagged. The VM default network is still provided by kube-ovn, and the SR-IOV VF is attached as a Multus secondary device and passed through to the VM.
 
 Apply the objects and confirm that the NAD is generated:
 
