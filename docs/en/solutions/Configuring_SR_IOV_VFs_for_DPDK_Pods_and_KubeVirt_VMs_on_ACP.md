@@ -5,6 +5,7 @@ products:
   - Alauda Container Platform
 ProductsVersion:
   - '4.3'
+id: KB260700036
 ---
 
 # Attach High-Performance SR-IOV VFs to DPDK Pods and KubeVirt VMs with Multus on ACP
