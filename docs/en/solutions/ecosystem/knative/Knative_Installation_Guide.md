@@ -4,7 +4,7 @@ products:
 kind:
   - Solution
 ProductsVersion:
-  - '4.2,4.3'
+  - '4.1,4.2,4.3'
 id: TBD
 ---
 
@@ -36,7 +36,7 @@ up Knative Serving with the Kourier ingress, and validate a serverless `Service`
 <!-- factory:auto:supported-versions BEGIN -->
 | Item | Version |
 |------|---------|
-| ACP | 4.2, 4.3 |
+| ACP | 4.1, 4.2, 4.3 |
 | Architectures | amd64 (x86_64), arm64 |
 | Knative Operator (bundle) | v1.22.1 |
 | Knative Serving / Eventing operands | v1.22.0 |
