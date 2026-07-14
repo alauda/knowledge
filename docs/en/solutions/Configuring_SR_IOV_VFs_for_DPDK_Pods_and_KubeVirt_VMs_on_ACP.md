@@ -88,31 +88,13 @@ This capability is delivered as an ACP 4.3 feature. The plugin package version i
 1. Log in to the AC application marketplace and search for `SR-IOV Network Plugin` or `sriov-network-plugin`.
 2. Select the package whose compatible platform version is `v4.3` and whose plugin version is `v4.3.8`.
 3. Download the `sriov-network-plugin.*.v4.3.8.tgz` package that matches the target platform architecture.
-4. Keep the downloaded `.tgz` filename unchanged. `violet` parses the plugin name, architecture, and version from the filename; renaming the package can make the upload fail.
-5. Upload the downloaded plugin package to the target ACP platform.
+4. Follow the [Cluster Plugin](https://docs.alauda.cn/container_platform/4.3/extend/cluster_plugin) instructions in the ACP User Guide to upload the package and install `sriov-network-plugin v4.3.8` in the target business cluster.
 
-If the target platform uses `violet` to upload offline packages, use the following command:
-
-```bash
-export PLATFORM_URL=""
-export USERNAME=""
-export PASSWORD=""
-export CLUSTER_NAME=""
-export PACKAGE_FILE="sriov-network-plugin.amd64.v4.3.8.tgz"
-
-violet push "$PACKAGE_FILE" \
-  --platform-address "$PLATFORM_URL" \
-  --platform-username "$USERNAME" \
-  --platform-password "$PASSWORD" \
-  --clusters "$CLUSTER_NAME" \
-  --target-catalog-source platform
-```
-
-After the upload is complete, go to **Administrator -> Marketplace -> Cluster Plugins**, select version `v4.3.8` of `sriov-network-plugin`, and install it into the target business cluster. When installed through the ACP marketplace, the SR-IOV components are deployed in the `cpaas-system` namespace by default.
+When installed through the ACP marketplace, the SR-IOV components are deployed in the `cpaas-system` namespace by default.
 
 ### Confirm the Multus base
 
-SR-IOV networks are attached to DPDK/CNF Pods or KubeVirt VMs by Multus as secondary networks. Before configuring SR-IOV networks, confirm in **Administrator -> Marketplace -> Cluster Plugins** that Multus CNI is installed in the target business cluster. If it is not installed, follow the "Install Multus CNI" section in the product documentation for [multiple networks](https://docs.alauda.cn/container_platform/4.3/configure/networking/how_to/kube_ovn/multiple_networks). The SR-IOV plugin handles node-side VF orchestration, SR-IOV CNI installation, and SR-IOV-related NAD generation. It does not replace the Multus meta CNI.
+SR-IOV networks are attached to DPDK/CNF Pods or KubeVirt VMs by Multus as secondary networks. Before configuring SR-IOV networks, confirm in **Platform Management -> Marketplace -> Cluster Plugins** that Multus CNI is installed in the target business cluster. If it is not installed, follow the "Install Multus CNI" section in the product documentation for [multiple networks](https://docs.alauda.cn/container_platform/4.3/configure/networking/how_to/kube_ovn/multiple_networks). The SR-IOV plugin handles node-side VF orchestration, SR-IOV CNI installation, and SR-IOV-related NAD generation. It does not replace the Multus meta CNI.
 
 After installation, confirm that the operator and config-daemon are running:
 
@@ -180,7 +162,7 @@ DiscoverSriovDevices(): unsupported device {"device": "0000:3d:00.0 -> driver: '
 IsSupportedModel(): found unsupported model {"vendorId:": "19e5", "deviceId:": "1822"}
 ```
 
-Add the NIC to the `supported-nic-ids` allowlist. Plugin `v4.3.8` supports configuring extra NICs from the installation or upgrade form, so users do not need to write chart values manually. When installing or upgrading `sriov-network-plugin` from **Administrator -> Marketplace -> Cluster Plugins**, add a row in the **Extra Supported SR-IOV NICs** table and fill in the PCI IDs confirmed on site:
+Add the NIC to the `supported-nic-ids` allowlist. Plugin `v4.3.8` supports configuring extra NICs from the installation or upgrade form, so users do not need to write chart values manually. When installing or upgrading `sriov-network-plugin` from **Platform Management -> Marketplace -> Cluster Plugins**, add a row in the **Extra Supported SR-IOV NICs** table and fill in the PCI IDs confirmed on site:
 
 | Field | Description | Example |
 | --- | --- | --- |

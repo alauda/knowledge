@@ -88,31 +88,13 @@ kubectl label node <node-name> feature.node.kubernetes.io/sriov-capable=true --o
 1. 登录 AC 应用市场，搜索 `SR-IOV 网络插件` 或 `sriov-network-plugin`。
 2. 选择适配平台版本为 `v4.3`、插件版本为 `v4.3.8` 的安装包。
 3. 下载与目标平台架构匹配的 `sriov-network-plugin.*.v4.3.8.tgz` 包。
-4. 保持下载后的 `.tgz` 文件名不变。`violet` 会根据文件名解析插件名、架构和版本，重命名可能导致上传失败。
-5. 将下载的插件包上传到目标 ACP 平台。
+4. 按照 ACP 用户手册中的[集群插件](https://docs.alauda.cn/container_platform/4.3/extend/cluster_plugin)说明上传插件包，并将 `sriov-network-plugin v4.3.8` 安装到目标业务集群。
 
-如果目标平台使用 `violet` 上传离线包，可以参考以下命令：
-
-```bash
-export PLATFORM_URL=""
-export USERNAME=""
-export PASSWORD=""
-export CLUSTER_NAME=""
-export PACKAGE_FILE="sriov-network-plugin.amd64.v4.3.8.tgz"
-
-violet push "$PACKAGE_FILE" \
-  --platform-address "$PLATFORM_URL" \
-  --platform-username "$USERNAME" \
-  --platform-password "$PASSWORD" \
-  --clusters "$CLUSTER_NAME" \
-  --target-catalog-source platform
-```
-
-上传完成后，进入 **管理员 -> 市场 -> 集群插件**，选择 `sriov-network-plugin` 的 `v4.3.8` 版本并安装到目标业务集群。通过 ACP 市场安装时，SR-IOV 组件默认部署在 `cpaas-system` 命名空间。
+通过 ACP 市场安装时，SR-IOV 组件默认部署在 `cpaas-system` 命名空间。
 
 ### 确认 Multus 基座可用
 
-SR-IOV 网络通过 Multus 作为辅助网络接入 DPDK/CNF Pod 或 KubeVirt 虚拟机。配置 SR-IOV 网络之前，先在 **管理员 -> 市场 -> 集群插件** 中确认目标业务集群已经安装 Multus CNI。如果尚未安装，先参考产品文档[多网络](https://docs.alauda.cn/container_platform/4.3/configure/networking/how_to/kube_ovn/multiple_networks) 中的“安装 Multus CNI”章节。SR-IOV 插件负责节点侧 VF 编排、SR-IOV CNI 安装和 SR-IOV 相关 NAD 生成，不替代 Multus 元 CNI。
+SR-IOV 网络通过 Multus 作为辅助网络接入 DPDK/CNF Pod 或 KubeVirt 虚拟机。配置 SR-IOV 网络之前，先在 **平台管理 -> 市场 -> 集群插件** 中确认目标业务集群已经安装 Multus CNI。如果尚未安装，先参考产品文档[多网络](https://docs.alauda.cn/container_platform/4.3/configure/networking/how_to/kube_ovn/multiple_networks) 中的“安装 Multus CNI”章节。SR-IOV 插件负责节点侧 VF 编排、SR-IOV CNI 安装和 SR-IOV 相关 NAD 生成，不替代 Multus 元 CNI。
 
 安装后确认 operator 和 config-daemon 已运行：
 
@@ -180,7 +162,7 @@ DiscoverSriovDevices(): unsupported device {"device": "0000:3d:00.0 -> driver: '
 IsSupportedModel(): found unsupported model {"vendorId:": "19e5", "deviceId:": "1822"}
 ```
 
-这类场景需要把网卡加入 `supported-nic-ids` 白名单。插件 `v4.3.8` 支持通过安装或升级表单配置额外网卡，不需要手工编写 chart values。在 **管理员 -> 市场 -> 集群插件** 中安装或升级 `sriov-network-plugin` 时，在“额外支持的 SR-IOV 网卡”表格中新增一行，并按现场确认的 PCI ID 填写：
+这类场景需要把网卡加入 `supported-nic-ids` 白名单。插件 `v4.3.8` 支持通过安装或升级表单配置额外网卡，不需要手工编写 chart values。在 **平台管理 -> 市场 -> 集群插件** 中安装或升级 `sriov-network-plugin` 时，在“额外支持的 SR-IOV 网卡”表格中新增一行，并按现场确认的 PCI ID 填写：
 
 | 字段 | 说明 | 示例 |
 | --- | --- | --- |
