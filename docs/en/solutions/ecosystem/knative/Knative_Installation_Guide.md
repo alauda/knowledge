@@ -32,7 +32,7 @@ Knative is a CNCF project that adds serverless building blocks to Kubernetes. It
 
 On Alauda Container Platform (ACP), Knative is delivered as an OLM Operator that you install from the
 Marketplace. The Operator manages the lifecycle of `KnativeServing` and `KnativeEventing` custom
-resources. This guide describes how to install the Knative Operator from the ACP Marketplace, bring
+resources. This guide describes how to install **Alauda support for Knative** from the ACP Marketplace, bring
 up Knative Serving with the Kourier ingress, and validate a serverless `Service` end to end.
 
 ### Supported Versions
@@ -42,7 +42,7 @@ up Knative Serving with the Kourier ingress, and validate a serverless `Service`
 |------|---------|
 | ACP | 4.1, 4.2, 4.3 |
 | Architectures | amd64 (x86_64), arm64 |
-| Knative Operator (bundle) | v1.22.1 |
+| Alauda support for Knative (bundle) | v1.22.1 |
 | Knative Serving / Eventing operands | v1.22.0 |
 | Upstream bundle | `quay.io/operatorhubio/knative-operator:v1.22.1` |
 <!-- factory:auto:supported-versions END -->
@@ -54,10 +54,10 @@ up Knative Serving with the Kourier ingress, and validate a serverless `Service`
 
 - An ACP cluster at one of the supported versions above, and `cluster-admin` access to the target
   workload cluster.
-- The **Knative Operator** plugin available in your cluster's OperatorHub. If it is not yet uploaded,
+- The **Alauda support for Knative** plugin available in your cluster's OperatorHub. If it is not yet uploaded,
   an administrator can push it with the `violet` CLI:
   ```bash
-  violet push knative-operator.<version>.tgz \
+  violet push alauda-support-for-knative.<version>.tgz \
     --platform-address="https://<acp-console>" \
     --platform-username="<user>" --platform-password="<password>" \
     --clusters="<target-cluster>"
@@ -65,21 +65,22 @@ up Knative Serving with the Kourier ingress, and validate a serverless `Service`
 - `kubectl` configured against the target cluster.
 - Cluster networking is IPv4 or IPv4-primary dual-stack (see [Known Limitations](#known-limitations)).
 
-## Install the Knative Operator
+## Install Alauda support for Knative
 
 1. In the ACP Console, go to **Administrator > Marketplace > OperatorHub**, select the target cluster,
-   find **Knative Operator**, and click **Install**.
+   find **Alauda support for Knative**, and click **Install**.
 2. Keep the default channel (`alpha`) and namespace, and confirm the installation.
 
 ### Verify the Operator
 
 ```bash
-kubectl -n operators get csv | grep knative-operator
+kubectl -n operators get csv | grep alauda-support-for-knative
 kubectl -n operators get deploy knative-operator
 ```
 
-Expected: the CSV `knative-operator.v<version>` reaches phase `Succeeded`, and the
-`knative-operator` Deployment shows `1/1` ready.
+Expected: the CSV `alauda-support-for-knative.v<version>` reaches phase `Succeeded`, and the
+`knative-operator` Deployment (the operator's own deployment name, unchanged from upstream)
+shows `1/1` ready.
 
 ## Quick Start: Deploy a Serverless Service with Knative Serving
 
@@ -203,8 +204,8 @@ kubectl delete ksvc hello -n default
 kubectl delete knativeserving knative-serving -n knative-serving
 kubectl delete namespace knative-serving
 # Uninstall the Operator from Administrator > Marketplace > OperatorHub (or delete its Subscription/CSV)
-kubectl -n operators delete subscription knative-operator
-kubectl -n operators delete csv -l operators.coreos.com/knative-operator.operators
+kubectl -n operators delete subscription alauda-support-for-knative
+kubectl -n operators delete csv -l operators.coreos.com/alauda-support-for-knative.operators
 ```
 
 ## FAQ
