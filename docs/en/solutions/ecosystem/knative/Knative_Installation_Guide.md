@@ -16,9 +16,13 @@ id: TBD
   release evidence. Prose outside the markers is human-owned and preserved across releases.
 -->
 
-# Knative Installation Guide
+# Alauda support for Knative — Installation Guide
 
 ## Overview
+
+**Alauda support for Knative** is the Alauda Application Services (S2, certified) packaging of the
+upstream CNCF Knative Operator, listed on the Alauda Cloud marketplace and installable from the ACP
+OperatorHub.
 
 Knative is a CNCF project that adds serverless building blocks to Kubernetes. It has two components:
 
