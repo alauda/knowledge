@@ -235,6 +235,57 @@ spec:
 
 将 `<pf-name>` 替换为之前记录的 PF 名称，例如 `p1p1`。
 
+### 指定 Pod 可使用的 VF 范围（可选）
+
+Pod 不能在 `spec` 中直接指定某个 VF PCI 地址或 VF 编号。Pod 只能申请 `openshift.io/<resourceName>` 形式的扩展资源；具体分配哪一个 VF，由 kubelet device manager 和 SR-IOV device plugin 从对应资源池中选择。
+
+在 SR-IOV Network Operator 部署方式下，这个流程不需要直接配置 `sriov-network-device-plugin` 的 `resourceList` ConfigMap。应在 `SriovNetworkNodePolicy` 中把目标 VF 或 VF 范围拆成独立资源池，然后让 Pod 申请该资源池。例如，只允许 Pod 使用 `ens1f0` 上的 VF 3：
+
+```yaml
+apiVersion: sriovnetwork.openshift.io/v1
+kind: SriovNetworkNodePolicy
+metadata:
+  name: sriov-pod-vf3-policy
+  namespace: cpaas-system
+spec:
+  resourceName: sriov_vf3
+  nodeSelector:
+    kubernetes.io/hostname: <node-name>
+  nicSelector:
+    pfNames:
+      - ens1f0#3
+  numVfs: 8
+  deviceType: vfio-pci
+  mtu: 1500
+```
+
+`pfNames` 支持 `<pf-name>#<vf-index>` 和 `<pf-name>#<first-vf>-<last-vf>` 格式。也可以使用逗号组合多个编号或范围，例如 `ens1f0#0-1,3,5`。`numVfs` 仍表示该 PF 上需要创建或管理的 VF 总数，`pfNames` 后面的编号只决定当前 policy 暴露哪些 VF 到该 `resourceName`。
+
+随后创建 `SriovNetwork` 时使用同一个 `resourceName`：
+
+```yaml
+apiVersion: sriovnetwork.openshift.io/v1
+kind: SriovNetwork
+metadata:
+  name: pod-sriov-vf3-net
+  namespace: cpaas-system
+spec:
+  networkNamespace: default
+  resourceName: sriov_vf3
+```
+
+Pod 再申请 `openshift.io/sriov_vf3`：
+
+```yaml
+resources:
+  requests:
+    openshift.io/sriov_vf3: "1"
+  limits:
+    openshift.io/sriov_vf3: "1"
+```
+
+如果这个资源池只包含一个 VF，Pod 申请该资源就等价于限定使用这个 VF。若多个节点都配置了同名资源池，Pod 仍可能被调度到任一满足资源的节点；需要固定到某台节点时，同时配置 Pod `nodeSelector` 或 node affinity。不建议在 NAD 或 Pod 中手工写死 CNI `deviceID`，否则容易绕过 device plugin 的调度和占用模型，导致 VF 分配冲突。
+
 应用策略：
 
 ```bash

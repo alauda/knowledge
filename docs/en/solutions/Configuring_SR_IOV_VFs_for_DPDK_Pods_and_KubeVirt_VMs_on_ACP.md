@@ -234,6 +234,57 @@ spec:
 
 Replace `<pf-name>` with the PF name recorded earlier, such as `p1p1`.
 
+### Optional: Select the VF range available to Pods
+
+A Pod cannot directly specify a VF PCI address or VF index in its `spec`. The Pod can only request an extended resource in the `openshift.io/<resourceName>` form. The actual VF is selected by kubelet device manager and the SR-IOV device plugin from the matching resource pool.
+
+In an SR-IOV Network Operator deployment, do not configure the `sriov-network-device-plugin` `resourceList` ConfigMap directly for this workflow. Instead, split the target VF or VF range into a dedicated resource pool in `SriovNetworkNodePolicy`, and let the Pod request that resource pool. For example, to allow a Pod to use only VF 3 on `ens1f0`:
+
+```yaml
+apiVersion: sriovnetwork.openshift.io/v1
+kind: SriovNetworkNodePolicy
+metadata:
+  name: sriov-pod-vf3-policy
+  namespace: cpaas-system
+spec:
+  resourceName: sriov_vf3
+  nodeSelector:
+    kubernetes.io/hostname: <node-name>
+  nicSelector:
+    pfNames:
+      - ens1f0#3
+  numVfs: 8
+  deviceType: vfio-pci
+  mtu: 1500
+```
+
+`pfNames` supports the `<pf-name>#<vf-index>` and `<pf-name>#<first-vf>-<last-vf>` formats. You can also combine multiple indexes or ranges with commas, such as `ens1f0#0-1,3,5`. `numVfs` still means the total number of VFs to create or manage on the PF. The indexes after `pfNames` only decide which VFs this policy exposes through the current `resourceName`.
+
+Then create a `SriovNetwork` with the same `resourceName`:
+
+```yaml
+apiVersion: sriovnetwork.openshift.io/v1
+kind: SriovNetwork
+metadata:
+  name: pod-sriov-vf3-net
+  namespace: cpaas-system
+spec:
+  networkNamespace: default
+  resourceName: sriov_vf3
+```
+
+The Pod requests `openshift.io/sriov_vf3`:
+
+```yaml
+resources:
+  requests:
+    openshift.io/sriov_vf3: "1"
+  limits:
+    openshift.io/sriov_vf3: "1"
+```
+
+If the resource pool contains only one VF, requesting that resource effectively limits the Pod to that VF. If multiple nodes expose the same resource pool name, the Pod can still be scheduled to any node that has available resources; use Pod `nodeSelector` or node affinity when the workload must run on a specific node. Do not hard-code the CNI `deviceID` in the NAD or Pod, because that can bypass the device plugin scheduling and allocation model and cause VF allocation conflicts.
+
 Apply the policy:
 
 ```bash
