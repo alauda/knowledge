@@ -9,11 +9,11 @@ id: KB260600012
 sourceSHA: 51bfed8c0d07f77b6ef4d61e860e0b71ccd5180e707ec2625337de9970deccb9
 ---
 
-# 如何在 ACP 上安装和配置华为 CSI 以支持 OceanStor Dorado
+# 如何在 ACP 上安装和配置 OceanStor CSI driver For Dorado
 
 ## 概述
 
-本指南将引导您手动（离线）在 ACP 集群上安装华为 CSI 驱动程序，并将其与华为 OceanStor Dorado 存储阵列集成。内容包括准备节点、部署 CSI 组件、配置存储后端、创建 StorageClass 以及通过测试 PVC 验证集成。验证了 iSCSI 和 NFS 协议。
+本指南将引导您通过 ACP 集群插件安装 OceanStor CSI driver For Dorado，并将其与 OceanStor Dorado 存储阵列集成。内容包括准备节点、部署 CSI 组件、配置存储后端、创建 StorageClass 以及通过测试 PVC 验证集成。验证了 iSCSI 和 NFS 协议。
 
 ## 环境
 
@@ -22,19 +22,20 @@ sourceSHA: 51bfed8c0d07f77b6ef4d61e860e0b71ccd5180e707ec2625337de9970deccb9
 | 容器平台              | ACP 4.x（在 4.2 上验证）   |
 | 节点操作系统          | Micro OS 5.5               |
 | 存储设备              | OceanStor Dorado 6.1.6     |
-| 华为 CSI              | v4.11.0                    |
-| 安装方式              | 手动                        |
+| OceanStor CSI driver For Dorado | v4.11.0          |
+| 安装方式              | 集群插件                    |
 | 验证的协议            | iSCSI, NFS                 |
 
-> **注意**：该操作步骤适用于所有 ACP 4.x 版本。然而，华为 CSI 和 OceanStor Dorado 版本是耦合的——在继续之前，请确认您安装的 CSI 版本在您的 Dorado 固件版本的兼容性列表中。上表中的版本是本指南验证过的版本。
+> **注意**：该操作步骤适用于所有 ACP 4.x 版本。然而，OceanStor CSI driver For Dorado 和 OceanStor Dorado 版本是耦合的——在继续之前，请确认您安装的 CSI 版本在您的 Dorado 固件版本的兼容性列表中。上表中的版本是本指南验证过的版本。
 
 ## 先决条件
 
 - 一个 ACP 4.x 集群，并具有 `kubectl` 访问权限。
 - 一个可访问的 OceanStor Dorado 阵列，以及存储管理员提供的管理地址、存储池名称和数据平面门户地址。
 - 每个集群节点（主节点和工作节点）与存储管理平面和数据平面之间的三层连接。请在环境规划时确认这一点。
-- 从华为官方渠道获取的华为 CSI v4.11.0 包，其中包含 `manual/`（安装 YAML）、`image/`（离线镜像）和 `bin/`（`oceanctl` 工具）目录。
-- 一个具有容器运行时的节点（例如 Docker），可以加载离线镜像并将其推送到集群镜像注册表。
+- 从 Alauda Cloud Marketplace 下载的 OceanStor CSI driver For Dorado 插件包。
+- 从 eSDK 包获取与 CSI 版本匹配的 `oceanctl` 工具。
+- 已安装 `violet` CLI，并拥有可向目标业务集群上传插件包的平台账户。
 
 本指南中使用了以下占位符。请将其替换为您环境中的值：
 
@@ -43,7 +44,6 @@ sourceSHA: 51bfed8c0d07f77b6ef4d61e860e0b71ccd5180e707ec2625337de9970deccb9
 | `<dorado-management-ip>` | Dorado 管理平面地址            |
 | `<iscsi-portal-ip>`      | iSCSI 数据平面门户地址         |
 | `<nfs-portal-ip>`        | NFS 数据平面门户地址           |
-| `<registry>`             | 集群镜像注册表地址            |
 | `<pool-name>`            | OceanStor 存储池名称           |
 
 ## 解决方案
@@ -124,90 +124,32 @@ defaults {
 }
 ```
 
-### 2. 准备安装包和镜像
+### 2. 准备安装包
 
-#### 2.1 将镜像上传到注册表
+#### 2.1 从 Alauda Cloud 下载插件包
 
-在具有容器运行时的节点上，逐个加载以下镜像包并将其推送到集群镜像注册表：
+使用租户账户登录 Alauda Cloud，在 Marketplace 中搜索并下载 **OceanStor CSI driver For Dorado** 插件包。
 
-```shell
-# 加载镜像（将 <arch> 替换为节点架构，例如 amd64 或 arm64）
-docker load -i huawei-csi-v4.11.0-<arch>.tar
-docker load -i storage-backend-controller-v4.11.0-<arch>.tar
-docker load -i storage-backend-sidecar-v4.11.0-<arch>.tar
-docker load -i huawei-csi-extender-v4.11.0-<arch>.tar
+#### 2.2 上传插件包
 
-# 标记并推送（对每个镜像重复）
-docker tag huawei-csi:4.11.0 <registry>/huawei-csi:4.11.0
-docker push <registry>/huawei-csi:4.11.0
-```
-
-#### 2.2 替换 YAML 文件中的镜像地址
-
-默认情况下，CSI 包中的 YAML 文件引用官方镜像地址。将其替换为您的集群镜像注册表地址。在 `manual/esdk/deploy/` 目录中运行以下命令：
+使用 `violet push` 将插件包上传到目标集群：
 
 ```shell
-# 首先检查当前的镜像引用，以识别默认注册表前缀
-grep 'image:' *.yaml
-
-# 用您的集群注册表地址替换该默认前缀。
-# 将 <default-registry-address> 设置为 grep 上述命令显示的前缀（/huawei-csi 之前的部分）。
-# 使用 '#' 分隔符，因为注册表地址包含 '/'。
-sed -i 's#<default-registry-address>#<registry>#g' *.yaml
-
-# 确认替换结果
-grep 'image:' *.yaml
+violet push \
+  --platform-address <platform-address> \
+  --clusters <business-cluster-name> \
+  --platform-username <platform-admin-username> \
+  --platform-password <platform-admin-password> \
+  <dorado-csi-plugin-package>.tgz
 ```
-
-> **注意**：如果镜像标签后缀（提交哈希）与您实际推送的版本不匹配，也请使用 `sed` 替换它：
->
-> ```shell
-> sed -i 's/<old-tag-suffix>/<new-tag-suffix>/g' *.yaml
-> ```
 
 ### 3. 部署 CSI 组件
 
-进入 `manual/esdk/` 目录并按顺序运行以下命令：
+#### 3.1 安装集群插件
 
-#### 3.1 创建命名空间
+在平台中将 **OceanStor CSI driver For Dorado** 集群插件安装到目标集群。
 
-```shell
-kubectl create ns huawei-csi
-```
-
-#### 3.2 部署后端 CRD
-
-```shell
-kubectl apply -f ./crds/backend/
-```
-
-#### 3.3 部署快照 CRD（可选，Kubernetes v1.20+）
-
-`--validate=false` 跳过客户端的模式验证。这里需要这样做，因为捆绑的快照 CRD 清单可能针对与集群上的快照 API 版本不同的版本。
-
-```shell
-kubectl apply -f ./crds/snapshot-crds/ --validate=false
-```
-
-#### 3.4 部署 CSIDriver
-
-```shell
-kubectl apply -f ./deploy/csidriver.yaml
-```
-
-#### 3.5 部署控制器
-
-```shell
-kubectl apply -f ./deploy/huawei-csi-controller.yaml
-```
-
-#### 3.6 部署节点
-
-```shell
-kubectl apply -f ./deploy/huawei-csi-node.yaml
-```
-
-#### 3.7 验证部署状态
+#### 3.2 验证部署状态
 
 ```shell
 kubectl get pod -n huawei-csi
@@ -217,7 +159,7 @@ kubectl get pod -n huawei-csi
 
 ### 4. 配置存储后端
 
-使用 `oceanctl` 工具（位于 CSI 包的 `bin/` 目录中）创建后端。
+使用从 eSDK 包获取的 `oceanctl` 工具创建后端。
 
 #### 4.1 后端身份验证
 
@@ -252,7 +194,7 @@ maxClientThreads: "30"
 创建后端：
 
 ```shell
-./bin/oceanctl create backend -f backend-blk.yaml -i yaml --log-dir /tmp/
+oceanctl create backend -f backend-blk.yaml -i yaml --log-dir /tmp/
 ```
 
 #### 4.3 创建 NFS 后端
@@ -277,13 +219,13 @@ maxClientThreads: "30"
 创建后端：
 
 ```shell
-./bin/oceanctl create backend -f backend-nfs.yaml -i yaml --log-dir /tmp/
+oceanctl create backend -f backend-nfs.yaml -i yaml --log-dir /tmp/
 ```
 
 #### 4.4 验证后端状态
 
 ```shell
-./bin/oceanctl get backend -n huawei-csi
+oceanctl get backend -n huawei-csi
 ```
 
 ### 5. 配置 StorageClass
