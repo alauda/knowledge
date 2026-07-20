@@ -9,7 +9,7 @@ ProductsVersion:
 
 # ACP Registry v2 Migration Runbook
 
-Migration from the legacy ACP Registry is required when an existing ACP environment moves image workloads from the legacy Registry to **Registry v2** in `image-registry-system`. Registry v2 means the Registry deployed and managed by `cluster-image-registry-operator`.
+Migration from the legacy ACP Registry is required when an existing ACP environment moves image workloads from the legacy Registry to **Registry v2** in `image-registry-system`. Registry v2 means the Registry deployed and managed by the Registry v2 Operator.
 
 Use only the following current `ac` commands for this workflow:
 
@@ -267,12 +267,16 @@ wc -l "$IMAGE_LIST_FILE"
 
 Remove temporary test images, retired namespaces, and incorrect tags from the list.
 
-Check Registry v2 repository path compatibility before continuing:
+Check Registry v2 repository path compatibility before continuing. The migration files use the hostless target portion of an image reference, `<namespace>/<repository>:<tag>`, because the Registry hosts are supplied separately:
 
 ```bash
 UNSUPPORTED_IMAGE_LIST_FILE="$MIGRATION_DIR/unsupported-registry-v2-paths.txt"
 
-awk '
+validate_registry_v2_image_paths() {
+  input_file="$1"
+  [ -s "$input_file" ] || return 0
+
+  awk '
   NF {
     image=$1
     slash_count=gsub("/", "/", image)
@@ -280,7 +284,13 @@ awk '
       print image
     }
   }
-' "$IMAGE_LIST_FILE" > "$UNSUPPORTED_IMAGE_LIST_FILE"
+  ' "$input_file" >> "$UNSUPPORTED_IMAGE_LIST_FILE"
+}
+
+: > "$UNSUPPORTED_IMAGE_LIST_FILE"
+validate_registry_v2_image_paths "$IMAGE_LIST_FILE"
+validate_registry_v2_image_paths "${IMAGE_DIGEST_FILE:-}"
+sort -u "$UNSUPPORTED_IMAGE_LIST_FILE" -o "$UNSUPPORTED_IMAGE_LIST_FILE"
 
 if [ -s "$UNSUPPORTED_IMAGE_LIST_FILE" ]; then
   echo "The following image repositories are not supported by Registry v2:" >&2
@@ -374,7 +384,12 @@ write_imagestream_mapping() {
 
   [ -z "$digest" ] || inspect_ref="$inspect_registry_host/$namespace/$stream@$digest"
 
-  ac image info "$inspect_ref" $REGISTRY_INSECURE_FLAG > "$info_file"
+  if ! ac image info "$inspect_ref" $REGISTRY_INSECURE_FLAG > "$info_file" 2>&1; then
+    BACKFILL_LAST_ACTION="failed"
+    echo "[metadata] failed to inspect $inspect_ref; output=$info_file" >&2
+    sed -n '1,20p' "$info_file" >&2
+    return 1
+  fi
 
   [ -n "$digest" ] || digest="$(awk '/^Digest:/ { sub(/^Digest:[[:space:]]*/, ""); print; exit }' "$info_file")"
   media_type="$(awk '/^Media Type:/ { sub(/^Media Type:[[:space:]]*/, ""); print; exit }' "$info_file")"
@@ -672,13 +687,10 @@ ac create configmap registry-s3-trusted-ca \
 ac apply -f "$MIGRATION_DIR/modern-registry-s3-trusted-ca.yaml"
 ```
 
-Create `$MIGRATION_DIR/modern-registry-object-storage.yaml` from the supported fields:
+Create `$MIGRATION_DIR/modern-registry-object-storage-patch.yaml` from the supported fields:
 
-```yaml
-apiVersion: imageregistry.operator.alauda.io/v1
-kind: Config
-metadata:
-  name: cluster
+```bash
+cat > "$MIGRATION_DIR/modern-registry-object-storage-patch.yaml" <<EOF
 spec:
   managementState: Managed
   storage:
@@ -690,12 +702,15 @@ spec:
       virtualHostedStyle: false
       trustedCA:
         name: registry-s3-trusted-ca
+EOF
 ```
 
-Apply it and wait:
+Patch `Config/cluster` with merge semantics so that existing settings such as routes or pull-secret management are not removed, then wait:
 
 ```bash
-ac apply -f "$MIGRATION_DIR/modern-registry-object-storage.yaml"
+ac patch config.imageregistry.operator.alauda.io cluster \
+  --type merge \
+  --patch-file "$MIGRATION_DIR/modern-registry-object-storage-patch.yaml"
 
 until ac get deployment image-registry -n "$MODERN_REGISTRY_NAMESPACE" >/dev/null 2>&1 \
   && ac get deployment image-api-server -n "$MODERN_REGISTRY_NAMESPACE" >/dev/null 2>&1; do
@@ -759,18 +774,19 @@ awk -F= -v target="$TARGET_REGISTRY_HOST/" '
 
 : > "$IMAGE_DIGEST_FILE"
 
-awk '
-  NF {
-    image=$1
-    slash_count=gsub("/", "/", image)
-    if (slash_count != 1 || image !~ ":[^/]+$") {
-      print image
-    }
-  }
-' "$IMAGE_LIST_FILE"
+UNSUPPORTED_IMAGE_LIST_FILE="${UNSUPPORTED_IMAGE_LIST_FILE:-$MIGRATION_DIR/unsupported-registry-v2-paths.txt}"
+: > "$UNSUPPORTED_IMAGE_LIST_FILE"
+validate_registry_v2_image_paths "$IMAGE_LIST_FILE"
+sort -u "$UNSUPPORTED_IMAGE_LIST_FILE" -o "$UNSUPPORTED_IMAGE_LIST_FILE"
+
+if [ -s "$UNSUPPORTED_IMAGE_LIST_FILE" ]; then
+  echo "The following target image repositories are not supported by Registry v2:" >&2
+  sed -n '1,50p' "$UNSUPPORTED_IMAGE_LIST_FILE" >&2
+  false
+fi
 ```
 
-The last command must print no output. If it prints a line, the target mapping still contains an unsupported Registry v2 repository path.
+The compatibility check must produce an empty file. If it reports a line, the target mapping still contains an unsupported Registry v2 repository path.
 
 Run a dry run before copying:
 

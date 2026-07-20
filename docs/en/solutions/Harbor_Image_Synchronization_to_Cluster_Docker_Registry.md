@@ -78,7 +78,7 @@ Define the sync target and path structure:
 
 - **Destination registry**: Select the registry endpoint configured in Step 1
 - **Namespace**: The name of the namespace in which to replicate resources. If empty, the resources will be put under the same namespace as the source. For this example, leave empty to use the same namespace as the source
-- **Flattening**: Reduce the nested repository structure when copying images. Leave empty to preserve the original image hierarchy. If the destination is Registry v2, do not preserve nested repository paths; configure flattening or another rename rule so the destination image uses `<namespace>/<repository>:<tag>`.
+- **Flattening**: Reduce the nested repository structure when copying images. Leave empty to preserve the original image hierarchy. If the destination is Registry v2, do not preserve nested repository paths; configure flattening or another rename rule so a source such as `team-a/platform/my-app:v1` is synchronized to a target such as `team-a/platform-my-app:v1`. Update workload image references to use the flattened target path.
 
 **Additional Settings**
 - **Trigger Mode**: Decide how to trigger the sync. Select `Event Based` to trigger sync on Harbor push events for this example
