@@ -249,8 +249,51 @@ kubectl -n $TGT_NS exec acid-mig-0 -c postgres -- psql -U postgres -c \
 - **Repoint clients** to the target cluster's service (and update any external access such as NodePort/LoadBalancer/ingress used by applications).
 - The demoted source is now a live **reverse DR standby** of the target: writes on the target replicate back to it. Choose one:
   - **Keep it** as disaster-recovery / rollback insurance (recommended for at least a soak period). Rolling back is the same two-phase switchover in the opposite direction.
-  - **Dismantle it**: delete the source `postgresql` CR, then its PVCs (PVCs are retained on CR deletion and must be removed manually if you want the storage back).
+  - **Dismantle it** and remove the replication setup entirely — see below.
 - Scale/tune the target (replica count, resources, backup schedule, monitoring) to match what the source had.
+
+### Dismantling the Source and Removing the Replication Configuration
+
+Perform these steps **in order** — the standby must be gone before the primary's replication configuration is removed, otherwise the standby loses its upstream while still streaming.
+
+**1. Delete the demoted source instance** (on the source cluster):
+
+```bash
+kubectl --context <source-ctx> -n $SRC_NS delete postgresql $SRC_CLUSTER
+# PVCs are retained on CR deletion — remove them to reclaim storage:
+kubectl --context <source-ctx> -n $SRC_NS delete pvc -l cluster-name=$SRC_CLUSTER
+```
+
+The operator deletes the credential secrets it owns along with the CR.
+
+**2. Convert the target to a normal (non-replicated) instance** by removing the `clusterReplication` block:
+
+```bash
+kubectl --context <target-ctx> -n $TGT_NS patch postgresql acid-mig --type json \
+  -p '[{"op":"remove","path":"/spec/clusterReplication"}]'
+```
+
+This transition is fully handled by the operator: it re-applies normal-primary Patroni configuration, drops the `sys_operator` metadata schema from the database, and removes the `xdc_hotstandby` replication slot. (The reverse — converting an existing normal instance *into* a standby — is not a supported transition; standbys must be created as standbys.)
+
+**3. Clean up leftover objects** on the target that the operator does not own:
+
+```bash
+kubectl --context <target-ctx> -n $TGT_NS delete secret standby-bootstrap-secret
+# The <name>-xcr service is owner-referenced to the CR; verify it is gone and
+# delete it manually only if it lingers:
+kubectl --context <target-ctx> -n $TGT_NS get svc acid-mig-xcr
+```
+
+**4. Verify the target is a clean standalone instance:**
+
+```bash
+kubectl -n $TGT_NS exec acid-mig-0 -c postgres -- psql -U postgres -tA -c \
+  "SELECT count(*) FROM pg_replication_slots WHERE slot_name='xdc_hotstandby';
+   SELECT count(*) FROM pg_namespace WHERE nspname='sys_operator';"
+# Both counts must be 0
+kubectl -n $TGT_NS exec acid-mig-0 -c postgres -- patronictl list
+# Expect a plain Leader/Replica cluster, no Standby Leader
+```
 
 ## Troubleshooting
 
