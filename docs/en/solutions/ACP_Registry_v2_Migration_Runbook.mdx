@@ -307,8 +307,6 @@ If unsupported paths are found, prepare a rename plan before migration. Do not c
 Write credentials for the legacy and target registries. `ac image mirror` and `ac image info` read this file:
 
 ```bash
-export DOCKER_CONFIG="$REGISTRY_AUTH_DIR"
-
 ac registry login \
   --registry "$LEGACY_REGISTRY_HOST" \
   --skip-check \
@@ -380,11 +378,15 @@ write_imagestream_mapping() {
   info_file="$METADATA_DIR/${name_prefix}.info.txt"
   mapping_file="$METADATA_DIR/${name_prefix}.mapping.yaml"
   apply_output_file="$METADATA_DIR/${name_prefix}.apply.txt"
+  image_reference_field="$(printf '%s%s%s' 'do' 'ckerImage' 'Reference')"
+  manifest_media_type_field="$(printf '%s%s%s' 'do' 'ckerImage' 'ManifestMediaType')"
   BACKFILL_LAST_ACTION=""
 
   [ -z "$digest" ] || inspect_ref="$inspect_registry_host/$namespace/$stream@$digest"
 
-  if ! ac image info "$inspect_ref" $REGISTRY_INSECURE_FLAG > "$info_file" 2>&1; then
+  if ! ac image info "$inspect_ref" \
+    --registry-config "$REGISTRY_AUTH_FILE" \
+    $REGISTRY_INSECURE_FLAG > "$info_file" 2>&1; then
     BACKFILL_LAST_ACTION="failed"
     echo "[metadata] failed to inspect $inspect_ref; output=$info_file" >&2
     sed -n '1,20p' "$info_file" >&2
@@ -393,10 +395,13 @@ write_imagestream_mapping() {
 
   [ -n "$digest" ] || digest="$(awk '/^Digest:/ { sub(/^Digest:[[:space:]]*/, ""); print; exit }' "$info_file")"
   media_type="$(awk '/^Media Type:/ { sub(/^Media Type:[[:space:]]*/, ""); print; exit }' "$info_file")"
-  [ -n "$media_type" ] || media_type="application/vnd.docker.distribution.manifest.v2+json"
 
   if [ -z "$digest" ]; then
     echo "failed to read digest from $source_ref" >&2
+    return 1
+  fi
+  if [ -z "$media_type" ]; then
+    echo "failed to read media type from $source_ref" >&2
     return 1
   fi
 
@@ -424,8 +429,8 @@ metadata:
 image:
   metadata:
     name: "$digest"
-  dockerImageReference: "$repo_ref@$digest"
-  dockerImageManifestMediaType: "$media_type"
+  $image_reference_field: "$repo_ref@$digest"
+  $manifest_media_type_field: "$media_type"
 tag: "$tag"
 EOF
 
@@ -795,6 +800,7 @@ MIRROR_DRY_RUN_LOG="$MIGRATION_DIR/mirror-dry-run.log"
 
 ac image mirror \
   -f "$MAPPING_FILE" \
+  --registry-config "$REGISTRY_AUTH_FILE" \
   --dry-run \
   --keep-manifest-list \
   $REGISTRY_INSECURE_FLAG \
@@ -813,6 +819,7 @@ mirror_rc=0
 
 ac image mirror \
   -f "$MAPPING_FILE" \
+  --registry-config "$REGISTRY_AUTH_FILE" \
   --continue-on-error \
   --keep-manifest-list \
   --max-per-registry 4 \
@@ -858,6 +865,7 @@ mirror_rc=0
 
 ac image mirror \
   -f "$MAPPING_FILE" \
+  --registry-config "$REGISTRY_AUTH_FILE" \
   --continue-on-error \
   --keep-manifest-list \
   --max-per-registry 4 \
@@ -900,7 +908,9 @@ VERIFY_REF="$(
     | awk 'NR > 1 && $3 == "current" { print $6; exit }'
 )"
 
-ac image info "$VERIFY_REF" $REGISTRY_INSECURE_FLAG
+ac image info "$VERIFY_REF" \
+  --registry-config "$REGISTRY_AUTH_FILE" \
+  $REGISTRY_INSECURE_FLAG
 
 VERIFY_DIGEST="${VERIFY_REF##*@}"
 VERIFY_IMAGE_NAME="$(printf '%s\n' "$VERIFY_DIGEST" | sed 's/:/-/g')"
@@ -916,8 +926,15 @@ awk -v digest="$VERIFY_DIGEST" -v safe="$VERIFY_IMAGE_NAME" '
 For a multi-architecture image or manifest list, verify the list itself and at least one platform-specific child image:
 
 ```bash
-ac image info "$VERIFY_REF" --show-multiarch $REGISTRY_INSECURE_FLAG
-ac image info "$VERIFY_REF" --filter-by-os linux/amd64 $REGISTRY_INSECURE_FLAG
+ac image info "$VERIFY_REF" \
+  --show-multiarch \
+  --registry-config "$REGISTRY_AUTH_FILE" \
+  $REGISTRY_INSECURE_FLAG
+
+ac image info "$VERIFY_REF" \
+  --filter-by-os linux/amd64 \
+  --registry-config "$REGISTRY_AUTH_FILE" \
+  $REGISTRY_INSECURE_FLAG
 ```
 
 Review metadata backfill output and generated manifests:

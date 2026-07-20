@@ -6,22 +6,22 @@ products:
 kind:
    - Solution
 ---
-# Harbor Image Synchronization to Cluster Docker Registry
+# Harbor Image Synchronization to Cluster Registry
 
-This guide explains how to configure Harbor replication rules to automatically synchronize images from Harbor to Docker registries in clusters when new images are pushed.
+This guide explains how to configure Harbor replication rules to automatically synchronize images from Harbor to cluster registries when new images are pushed.
 
 ## Prerequisites
 
 - A running Harbor service
-- Docker client or other image management tools installed locally for pushing images to Harbor
-- A Kubernetes cluster with a Docker registry deployed
+- An OCI-compatible image client installed locally for pushing images to Harbor
+- A Kubernetes cluster with a registry deployed
 - Kubectl installed locally and configured to access the Kubernetes cluster
 
 ## Overview
 
 **Key Configurations in Harbor**
 
-- **Registry Endpoint**: Add target Docker registry information to Harbor
+- **Registry Endpoint**: Add target registry information to Harbor
 - **Replication Rule**: Define which images to sync and the synchronization path
 
 **Process Overview**
@@ -36,12 +36,12 @@ This guide explains how to configure Harbor replication rules to automatically s
 
 ### Step 1: Configure Registry Endpoint in Harbor
 
-First, configure the target Docker registry information in Harbor using the `Registry Endpoint` feature.
+First, configure the target registry information in Harbor using the `Registry Endpoint` feature.
 
 1. Log into Harbor and navigate to **Administration > Registries**
 2. Click **NEW ENDPOINT** and configure the following:
 
-- **Provider**: Select your registry type. For this example, choose `Docker Registry`
+- **Provider**: Select the generic registry provider that supports OCI Distribution-compatible endpoints
 - **Name**: Provide a descriptive name for your target registry. We recommend using the format `<cluster-name>-registry` for easy identification in this example.
 - **Endpoint URL**: Enter your registry URL (e.g., `https://cluster1-registry.example.com`)
 - **Access ID**: Username with `Push/Delete` permissions for the target registry
@@ -95,9 +95,9 @@ Define the sync target and path structure:
 Push an image to Harbor to trigger the sync:
 
 ```bash
-docker pull alpine:latest
-docker tag alpine:latest <your-harbor-address>/library/alpine:latest
-docker push <your-harbor-address>/library/alpine:latest
+nerdctl pull alpine:latest
+nerdctl tag alpine:latest <your-harbor-address>/library/alpine:latest
+nerdctl push <your-harbor-address>/library/alpine:latest
 ```
 
 **Monitor Synchronization Job in Harbor**
