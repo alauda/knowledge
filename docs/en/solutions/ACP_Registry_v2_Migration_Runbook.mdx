@@ -11,13 +11,15 @@ ProductsVersion:
 
 Migration from the legacy ACP Registry is required when an existing ACP environment moves image workloads from the legacy Registry to **Registry v2** in `image-registry-system`. Registry v2 means the Registry deployed and managed by `cluster-image-registry-operator`.
 
-The migration workflow is based on the validated ACP `ac` runbook. No dedicated Registry migration subcommand is required. Use the following `ac` commands:
+Use only the following current `ac` commands for this workflow:
 
 - `ac get images` to export the legacy image list.
 - `ac registry login` to write OCI registry credentials.
 - `ac image mirror` to copy image blobs when the source and target registries do not share storage.
 - `ac image info` to read image digests and media types from the registry selected for metadata inspection.
 - `ac create -f` to create `ImageStreamMapping` resources and backfill Registry v2 Image and ImageStream metadata.
+
+Validate this runbook only with the commands and steps listed here. Older Registry migration tests or scripts that exercise a different CLI flow are not acceptance evidence for this runbook.
 
 During migration, use a maintenance window when possible. At minimum, pause writes to the legacy Registry. Reads can remain available. If new images are pushed during migration, repeat image copy and metadata backfill before the final cutover.
 
@@ -28,13 +30,24 @@ During migration, use a maintenance window when possible. At minimum, pause writ
 | Storage reuse | The legacy Registry and Registry v2 run in the same ACP environment and business cluster, and Registry v2 reuses the legacy Registry storage. | Not required. Registry v2 is attached to the existing blob storage. | Required. Read digest and media type from the legacy Registry, then backfill `ImageStream` and `ImageStreamMapping` objects. |
 | Cross-registry sync | The legacy Registry and Registry v2 use different storage, different clusters, or different ACP environments. | Required. Use `ac image mirror` to copy images from the legacy Registry to the target Registry. | Required after image copy. Read digest and media type from Registry v2, then backfill `ImageStream` and `ImageStreamMapping` objects. |
 
+## Repository Path Compatibility
+
+Registry v2 stores an image repository as one namespace and one image repository name. The supported image reference shape is:
+
+```text
+<registry-host>/<namespace>/<repository>:<tag>
+```
+
+Repository paths with an additional path segment are not supported in Registry v2. For example, `registry.example.com/team-a/my-app:v1` is supported, but `registry.example.com/team-a/platform/my-app:v1` is not.
+
+If the legacy Registry contains nested repository paths such as `team-a/platform/my-app:v1`, do not migrate them unchanged. Choose a target name such as `team-a/platform-my-app:v1`, or move the image to another namespace, and update workload image references during cutover. Storage reuse cannot rename repository paths; nested legacy repositories must use cross-registry sync with an explicit source-to-target mapping.
+
 ## Required Inputs
 
-Prepare the following inputs before running the migration:
+Prepare user-specific inputs before running the migration. The workspace paths are created in the next step.
 
 | Variable | Description | Example |
 | --- | --- | --- |
-| `MIGRATION_KUBECONFIG` | Optional kubeconfig used only for migration. | `/tmp/registry-migration/kubeconfig` |
 | `ACP_PLATFORM_URL` | ACP platform login URL. | `https://acp.example.com` |
 | `ACP_SESSION_NAME` | ACP login session name for migration. | `registry-migration` |
 | `ACP_USERNAME` | ACP account used for migration. | `admin` |
@@ -45,14 +58,7 @@ Prepare the following inputs before running the migration:
 | `LEGACY_REGISTRY_URL` | Legacy Registry URL used by `ac get images --registry-url`. Include `http://` or `https://`. | `http://old-registry.example.com:5000` |
 | `LEGACY_REGISTRY_HOST` | Legacy Registry external host used by `ac image mirror`. Do not include a scheme. | `old-registry.example.com:5000` |
 | `TARGET_REGISTRY_HOST` | Registry v2 external host used by mirror, image inspect, metadata backfill, and verification. Do not include a scheme. | `image-registry.example.com` |
-| `IMAGE_LIST_FILE` | Image list to migrate. Each line is `namespace/name:tag`. | `/tmp/registry-migration/image-list.txt` |
-| `IMAGE_DIGEST_FILE` | Optional image and digest list. Each line is `namespace/name:tag sha256:...`. | `/tmp/registry-migration/image-digests.txt` |
-| `MAPPING_FILE` | Mirror mapping file for cross-registry sync. Each line is `source=target`. | `/tmp/registry-migration/mirror-map.txt` |
-| `METADATA_DIR` | Output directory for `ac image info`, `ImageStreamMapping`, and apply results. | `/tmp/registry-migration/metadata` |
-| `METADATA_INSPECT_REGISTRY_HOST` | Registry host used by metadata backfill when inspecting digest and media type. Use the legacy Registry for storage reuse and Registry v2 for cross-registry sync. | `old-registry.example.com:5000` |
 | `REGISTRY_INSECURE_FLAG` | Set to `--insecure` when the registry uses HTTP, a self-signed certificate, or a test certificate. Set to an empty string for trusted HTTPS. | `--insecure` |
-| `REGISTRY_AUTH_DIR` | OCI registry auth directory. | `/tmp/registry-migration/registry-auth` |
-| `REGISTRY_AUTH_FILE` | OCI registry auth file written by `ac registry login --to`. | `/tmp/registry-migration/registry-auth/config.json` |
 
 Create a migration workspace:
 
@@ -118,6 +124,104 @@ ac registry info --internal
 
 `ac registry info` shows the Registry discovered for the current mode. It might return an in-cluster Service such as `image-registry.cpaas-system`, which is not directly reachable from an administrator workstation. Use `LEGACY_REGISTRY_URL` for image discovery and use `LEGACY_REGISTRY_HOST` and `TARGET_REGISTRY_HOST` for image copy.
 
+Set the Registry namespaces used by the inventory, storage, and rollback steps:
+
+```bash
+export LEGACY_REGISTRY_NAMESPACE="${LEGACY_REGISTRY_NAMESPACE:-cpaas-system}"
+export MODERN_REGISTRY_NAMESPACE="${MODERN_REGISTRY_NAMESPACE:-image-registry-system}"
+```
+
+## Pre-Cutover Checks
+
+Set one namespace and identity sample:
+
+```bash
+export TEST_NAMESPACE=your-namespace
+export TEST_USER=user@example.com
+export TEST_SERVICE_ACCOUNT=default
+```
+
+### RBAC
+
+Image data migration does not migrate user authorization. Registry v2 checks `image.alauda.io` resources:
+
+| Action | Role | Resource and verb |
+| --- | --- | --- |
+| Pull | `system:image-puller` | `imagestreams/layers get` |
+| Push | `system:image-pusher` | `imagestreams/layers update`; `imagestreams create/get/list` for first push |
+| Delete | `system:image-deleter` | `images delete` |
+| Catalog | `system:image-registry-catalog-reader` | `imagestreams list` |
+
+Save bindings, add missing namespace `RoleBinding` objects, and test representative identities:
+
+```bash
+ac get rolebinding,clusterrolebinding -A -o yaml \
+  > "$MIGRATION_DIR/registry-image-bindings.before.yaml"
+
+ac auth can-i get imagestreams.image.alauda.io --subresource=layers \
+  -n "$TEST_NAMESPACE" --as "$TEST_USER"
+
+ac auth can-i update imagestreams.image.alauda.io --subresource=layers \
+  -n "$TEST_NAMESPACE" --as "$TEST_USER"
+
+ac auth can-i get imagestreams.image.alauda.io --subresource=layers \
+  -n "$TEST_NAMESPACE" \
+  --as "system:serviceaccount:$TEST_NAMESPACE:$TEST_SERVICE_ACCOUNT"
+```
+
+For `403 Forbidden`, check:
+
+```bash
+ac config get-registry-mode
+ac get rolebinding -n "$TEST_NAMESPACE"
+ac logs -n "$MODERN_REGISTRY_NAMESPACE" deployment/image-registry -c registry --tail=100
+```
+
+### ServiceAccount Pull Secrets
+
+Inventory existing ServiceAccount pull secrets. If workloads pull from the internal Registry, enable Registry v2 pull-secret management and verify one namespace:
+
+```bash
+ac get sa -A -o go-template='{{range .items}}{{if .imagePullSecrets}}{{.metadata.namespace}}{{"\t"}}{{.metadata.name}}{{"\t"}}{{range .imagePullSecrets}}{{.name}}{{","}}{{end}}{{"\n"}}{{end}}{{end}}' \
+  > "$MIGRATION_DIR/serviceaccount-pullsecrets.before.tsv"
+
+ac patch config.imageregistry.operator.alauda.io cluster \
+  --type merge \
+  -p '{"spec":{"imagePullSecret":{"managementState":"Managed","additionalRegistryHosts":["'"$TARGET_REGISTRY_HOST"'"]}}}'
+
+ac get rolebinding image-registry-system-image-pullers -n "$TEST_NAMESPACE" -o yaml
+ac get secret -n "$TEST_NAMESPACE" \
+  -l imageregistry.operator.alauda.io/managed-pull-secret=true
+```
+
+Use `Unmanaged` to pause v2 pull-secret reconciliation during rollback. Use `Removed` only when v2-managed secrets and ServiceAccount references should be deleted.
+
+### Legacy Limit Settings
+
+If the legacy Registry used `registryLimitConfig`, export it and convert supported fields before allowing writes to Registry v2:
+
+```bash
+ac get configmap image-registry-limit-config -n "$LEGACY_REGISTRY_NAMESPACE" -o yaml \
+  > "$MIGRATION_DIR/legacy-image-registry-limit-config.yaml" 2>/dev/null || true
+
+ac get configmap registry-gateway-config -n "$LEGACY_REGISTRY_NAMESPACE" -o yaml \
+  > "$MIGRATION_DIR/legacy-registry-gateway-config.yaml" 2>/dev/null || true
+```
+
+| Legacy key | Registry v2 target |
+| --- | --- |
+| `max_image_size` | `LimitRange` type `alauda.io/Image`, `max.storage` |
+| `tag_count_limit` | `LimitRange` type `alauda.io/ImageStream`, `max["alauda.io/image-tags"]` |
+| Namespace-wide image or tag rules | `ResourceQuota` hard values such as `alauda.io/images` or `alauda.io/image-tags` |
+| Complex `rules` regex | Manual review; no direct generic mapping |
+
+Apply converted objects and confirm:
+
+```bash
+ac apply -f "$MIGRATION_DIR/registry-v2-quota-limitrange.yaml"
+ac get resourcequota,limitrange -n "$TEST_NAMESPACE"
+```
+
 ## Prepare the Image List
 
 Export the legacy image list visible to the current ACP user:
@@ -163,6 +267,31 @@ wc -l "$IMAGE_LIST_FILE"
 
 Remove temporary test images, retired namespaces, and incorrect tags from the list.
 
+Check Registry v2 repository path compatibility before continuing:
+
+```bash
+UNSUPPORTED_IMAGE_LIST_FILE="$MIGRATION_DIR/unsupported-registry-v2-paths.txt"
+
+awk '
+  NF {
+    image=$1
+    slash_count=gsub("/", "/", image)
+    if (slash_count != 1 || image !~ ":[^/]+$") {
+      print image
+    }
+  }
+' "$IMAGE_LIST_FILE" > "$UNSUPPORTED_IMAGE_LIST_FILE"
+
+if [ -s "$UNSUPPORTED_IMAGE_LIST_FILE" ]; then
+  echo "The following image repositories are not supported by Registry v2:" >&2
+  sed -n '1,50p' "$UNSUPPORTED_IMAGE_LIST_FILE" >&2
+  echo "Rename them to <namespace>/<repository>:<tag> and use Scenario B with an explicit mapping." >&2
+  false
+fi
+```
+
+If unsupported paths are found, prepare a rename plan before migration. Do not continue with storage reuse for those images.
+
 ## Write Registry Credentials
 
 Write credentials for the legacy and target registries. `ac image mirror` and `ac image info` read this file:
@@ -197,6 +326,8 @@ KUBECONFIG="$TARGET_KUBECONFIG" \
 
 Registry v2 needs Image API metadata in addition to image blobs. Use `ImageStreamMapping` to backfill `Image`, `ImageStream`, and tag metadata.
 
+The helper below performs a minimal metadata backfill: digest, Registry v2 digest reference, media type, `ImageStream`, and current tag. It does not fully reconstruct raw manifest payload, config blob, complete layer list, layer sizes, or all manifest-list child metadata. Do not run prune or Registry GC until the migration is accepted.
+
 Define the metadata backfill functions in the migration shell session:
 
 ```bash
@@ -205,10 +336,7 @@ ensure_imagestream() {
   stream="$2"
   stream_file="$METADATA_DIR/${namespace}-${stream}.imagestream.yaml"
   stream_output_file="$METADATA_DIR/${namespace}-${stream}.imagestream.apply.txt"
-
-  if ac get imagestreams.image.alauda.io "$stream" -n "$namespace" >/dev/null 2>&1; then
-    return 0
-  fi
+  ac get imagestreams.image.alauda.io "$stream" -n "$namespace" >/dev/null 2>&1 && return 0
 
   cat > "$stream_file" <<EOF
 apiVersion: image.alauda.io/v1
@@ -221,10 +349,7 @@ spec:
     local: false
 EOF
 
-  if ac create -f "$stream_file" > "$stream_output_file" 2>&1; then
-    return 0
-  fi
-
+  ac create -f "$stream_file" > "$stream_output_file" 2>&1 && return 0
   echo "[metadata] failed to create ImageStream $namespace/$stream; output=$stream_output_file" >&2
   sed -n '1,20p' "$stream_output_file" >&2
   return 1
@@ -247,9 +372,7 @@ write_imagestream_mapping() {
   apply_output_file="$METADATA_DIR/${name_prefix}.apply.txt"
   BACKFILL_LAST_ACTION=""
 
-  if [ -n "$digest" ]; then
-    inspect_ref="$inspect_registry_host/$namespace/$stream@$digest"
-  fi
+  [ -z "$digest" ] || inspect_ref="$inspect_registry_host/$namespace/$stream@$digest"
 
   ac image info "$inspect_ref" $REGISTRY_INSECURE_FLAG > "$info_file"
 
@@ -303,100 +426,57 @@ EOF
 }
 
 backfill_metadata() {
+  source_file="$IMAGE_LIST_FILE"
+  source_has_digest=false
+  if [ -n "${IMAGE_DIGEST_FILE:-}" ] && [ -s "$IMAGE_DIGEST_FILE" ]; then
+    source_file="$IMAGE_DIGEST_FILE"
+    source_has_digest=true
+  fi
+  [ -s "$source_file" ] || {
+    echo "[metadata] no image list found; check IMAGE_DIGEST_FILE or IMAGE_LIST_FILE" >&2
+    return 1
+  }
+
   total=0
   success=0
   applied=0
   skipped=0
   failed=0
-  progress_interval="${METADATA_PROGRESS_INTERVAL:-100}"
-  verbose="${METADATA_VERBOSE:-false}"
+  echo "[metadata] start backfill source=$source_file output_dir=$METADATA_DIR"
 
-  if [ -n "${IMAGE_DIGEST_FILE:-}" ] && [ -s "$IMAGE_DIGEST_FILE" ]; then
-    echo "[metadata] start backfill source=$IMAGE_DIGEST_FILE output_dir=$METADATA_DIR progress_interval=$progress_interval"
-    while read -r image digest; do
-      [ -n "$image" ] || continue
-      total=$((total + 1))
-      if write_imagestream_mapping "$image" "$digest"; then
-        success=$((success + 1))
-        [ "$BACKFILL_LAST_ACTION" = "applied" ] && applied=$((applied + 1))
-        [ "$BACKFILL_LAST_ACTION" = "skipped" ] && skipped=$((skipped + 1))
-      else
-        failed=$((failed + 1))
-      fi
-      if [ "$verbose" = "true" ]; then
-        echo "[metadata] [$total] $image action=${BACKFILL_LAST_ACTION:-unknown}"
-      elif [ "$progress_interval" -gt 0 ] && [ $((total % progress_interval)) -eq 0 ]; then
-        echo "[metadata] progress: total=$total success=$success applied=$applied skipped=$skipped failed=$failed"
-      fi
-    done < "$IMAGE_DIGEST_FILE"
-  elif [ -n "${IMAGE_LIST_FILE:-}" ] && [ -s "$IMAGE_LIST_FILE" ]; then
-    echo "[metadata] start backfill source=$IMAGE_LIST_FILE output_dir=$METADATA_DIR progress_interval=$progress_interval"
-    while read -r image; do
-      [ -n "$image" ] || continue
-      total=$((total + 1))
-      if write_imagestream_mapping "$image"; then
-        success=$((success + 1))
-        [ "$BACKFILL_LAST_ACTION" = "applied" ] && applied=$((applied + 1))
-        [ "$BACKFILL_LAST_ACTION" = "skipped" ] && skipped=$((skipped + 1))
-      else
-        failed=$((failed + 1))
-      fi
-      if [ "$verbose" = "true" ]; then
-        echo "[metadata] [$total] $image action=${BACKFILL_LAST_ACTION:-unknown}"
-      elif [ "$progress_interval" -gt 0 ] && [ $((total % progress_interval)) -eq 0 ]; then
-        echo "[metadata] progress: total=$total success=$success applied=$applied skipped=$skipped failed=$failed"
-      fi
-    done < "$IMAGE_LIST_FILE"
-  else
-    echo "[metadata] no image list found; check IMAGE_DIGEST_FILE or IMAGE_LIST_FILE" >&2
-    return 1
-  fi
+  while read -r image digest _; do
+    [ -n "$image" ] || continue
+    total=$((total + 1))
+    if [ "$source_has_digest" = "true" ]; then
+      write_imagestream_mapping "$image" "$digest"
+    else
+      write_imagestream_mapping "$image"
+    fi
+    if [ "$?" -eq 0 ]; then
+      success=$((success + 1))
+      [ "$BACKFILL_LAST_ACTION" = "applied" ] && applied=$((applied + 1))
+      [ "$BACKFILL_LAST_ACTION" = "skipped" ] && skipped=$((skipped + 1))
+    else
+      failed=$((failed + 1))
+    fi
+  done < "$source_file"
 
   echo "[metadata] summary: total=$total success=$success applied=$applied skipped=$skipped failed=$failed output_dir=$METADATA_DIR"
   [ "$failed" -eq 0 ]
 }
 ```
 
-Confirm that the function exists in the current shell:
-
-```bash
-if type backfill_metadata >/dev/null 2>&1; then
-  echo "backfill_metadata loaded"
-fi
-```
-
-For large migrations, the function prints progress every 100 images by default. Adjust the interval if needed:
-
-```bash
-export METADATA_PROGRESS_INTERVAL=500
-```
-
-Set `METADATA_VERBOSE=true` only when troubleshooting a small set of images.
-
 ## Scenario A: Reuse Legacy Storage
 
 Use this path when the legacy Registry and Registry v2 run in the same ACP environment and business cluster, and Registry v2 can be configured to access the same blob storage that the legacy Registry uses.
 
-This path does not copy image blobs. However, do not assume that Registry v2 can read old blobs by tag before metadata exists. The correct sequence is:
-
-1. Pause writes to the legacy Registry.
-2. Attach Registry v2 to the legacy blob storage.
-3. Read digest and media type from the legacy Registry.
-4. Create `ImageStream` and `ImageStreamMapping` objects in Registry v2.
-5. Verify reads through Registry v2.
-
-Do not run prune or Registry GC against either Registry until migration has been accepted.
-
-Set the Registry namespaces:
-
-```bash
-export LEGACY_REGISTRY_NAMESPACE="${LEGACY_REGISTRY_NAMESPACE:-cpaas-system}"
-export MODERN_REGISTRY_NAMESPACE="${MODERN_REGISTRY_NAMESPACE:-image-registry-system}"
-```
+This path does not copy blobs. Pause writes, attach Registry v2 to the legacy blob storage, backfill metadata from the legacy Registry, then verify reads through Registry v2.
 
 ### Filesystem or PVC Storage Reuse
 
 For filesystem storage such as NFS or CephFS, make the Registry v2 PVC point to the same legacy Registry data. The exact PV/PVC manifest depends on the storage backend. The example below applies only when the legacy Registry uses an NFS CSI PV.
+
+Configure reuse before Registry v2 creates its own PVC when possible. If the target PVC already exists, stop Registry v2 and decide whether to keep, delete, or rebind that PVC before continuing.
 
 Locate the legacy Registry PVC and PV:
 
@@ -448,6 +528,17 @@ test -n "$LEGACY_STORAGE_SIZE"
 
 If the storage backend is not NFS CSI, do not reuse this manifest. Ask the storage administrator to provide a PV/PVC that mounts the same legacy data and keep the PVC name aligned with `Config/cluster.spec.storage.pvc.claim`.
 
+Check whether the target Registry v2 PVC already exists:
+
+```bash
+if ac get pvc "$MODERN_REGISTRY_PVC" -n "$MODERN_REGISTRY_NAMESPACE" >/dev/null 2>&1; then
+  echo "Registry v2 target PVC already exists: $MODERN_REGISTRY_NAMESPACE/$MODERN_REGISTRY_PVC" >&2
+  ac get pvc "$MODERN_REGISTRY_PVC" -n "$MODERN_REGISTRY_NAMESPACE" -o wide
+  echo "Stop here and decide whether to keep, delete, or rebind the existing target PVC." >&2
+  false
+fi
+```
+
 Before replacing Registry v2 storage, stop the Registry v2 runtime and wait for the data-plane deployments to be removed:
 
 ```bash
@@ -455,11 +546,8 @@ ac patch config.imageregistry.operator.alauda.io cluster \
   --type merge \
   -p '{"spec":{"managementState":"Removed"}}'
 
-while ac get deployment image-registry -n "$MODERN_REGISTRY_NAMESPACE" >/dev/null 2>&1; do
-  sleep 5
-done
-
-while ac get deployment image-api-server -n "$MODERN_REGISTRY_NAMESPACE" >/dev/null 2>&1; do
+while ac get deployment image-registry -n "$MODERN_REGISTRY_NAMESPACE" >/dev/null 2>&1 \
+  || ac get deployment image-api-server -n "$MODERN_REGISTRY_NAMESPACE" >/dev/null 2>&1; do
   sleep 5
 done
 ```
@@ -508,6 +596,8 @@ EOF
 ac apply -f "$MIGRATION_DIR/modern-registry-reuse-legacy-storage.yaml"
 ```
 
+The example creates a new static PV that points to the same NFS location. If reusing the exact legacy PV, stop the legacy Registry, patch the PV reclaim policy to `Retain`, delete only the old PVC after backup approval, update `spec.claimRef` only after the PV is `Released`, and bind it to the Registry v2 PVC. Never edit `claimRef` while the legacy Registry can still write. If reuse fails, keep Registry v2 `Removed`, leave legacy storage intact, and restore the previous `Config/cluster` storage section.
+
 Restart Registry v2 with unmanaged PVC storage and wait for both the Registry and Image API server:
 
 ```bash
@@ -515,11 +605,8 @@ ac patch config.imageregistry.operator.alauda.io cluster \
   --type merge \
   -p '{"spec":{"managementState":"Managed","storage":{"managementState":"Unmanaged","pvc":{"claim":"'"$MODERN_REGISTRY_PVC"'"}}}}'
 
-while ! ac get deployment image-registry -n "$MODERN_REGISTRY_NAMESPACE" >/dev/null 2>&1; do
-  sleep 5
-done
-
-while ! ac get deployment image-api-server -n "$MODERN_REGISTRY_NAMESPACE" >/dev/null 2>&1; do
+until ac get deployment image-registry -n "$MODERN_REGISTRY_NAMESPACE" >/dev/null 2>&1 \
+  && ac get deployment image-api-server -n "$MODERN_REGISTRY_NAMESPACE" >/dev/null 2>&1; do
   sleep 5
 done
 
@@ -529,41 +616,63 @@ ac rollout status deployment/image-api-server -n "$MODERN_REGISTRY_NAMESPACE" --
 
 ### Object Storage Reuse
 
-For object storage such as S3, OSS, GCS, Azure, Swift, or IBM COS, configure Registry v2 to use the same bucket or container, endpoint, region, path prefix, credentials, CA, and access parameters that the legacy Registry used.
+Configure Registry v2 with the same object storage location and credentials. If Registry v2 cannot express a required legacy parameter such as path prefix, use Scenario B instead.
 
-If the legacy Registry uses a path prefix and Registry v2 cannot configure the same prefix, use Scenario B instead. Also use Scenario B if the Registry v2 Operator does not support the legacy object storage type or a required access parameter.
-
-If Registry v2 already uses another storage backend, stop the runtime before changing object storage:
+Stop Registry v2 before changing storage:
 
 ```bash
 ac patch config.imageregistry.operator.alauda.io cluster \
   --type merge \
   -p '{"spec":{"managementState":"Removed"}}'
 
-while ac get deployment image-registry -n "$MODERN_REGISTRY_NAMESPACE" >/dev/null 2>&1; do
-  sleep 5
-done
-
-while ac get deployment image-api-server -n "$MODERN_REGISTRY_NAMESPACE" >/dev/null 2>&1; do
+while ac get deployment image-registry -n "$MODERN_REGISTRY_NAMESPACE" >/dev/null 2>&1 \
+  || ac get deployment image-api-server -n "$MODERN_REGISTRY_NAMESPACE" >/dev/null 2>&1; do
   sleep 5
 done
 ```
 
-Confirm the supported storage fields in the current Operator version:
+Check supported fields and inspect the legacy configuration:
 
 ```bash
 ac explain configs.imageregistry.operator.alauda.io.spec.storage --recursive
-```
-
-Then inspect the legacy Registry configuration and secrets:
-
-```bash
 ac get deployment image-registry -n "$LEGACY_REGISTRY_NAMESPACE" -o yaml
 ac get configmap image-registry-config -n "$LEGACY_REGISTRY_NAMESPACE" -o yaml
 ac get secret -n "$LEGACY_REGISTRY_NAMESPACE"
 ```
 
-The following S3 structure is an example only. Use `ac explain` and the actual legacy Registry configuration as the source of truth, replace bucket, region, endpoint, CA, and related access settings, and remove fields that the current environment does not use:
+For S3-compatible storage, use this mapping:
+
+| Legacy field | Registry v2 target |
+| --- | --- |
+| `s3storage.bucket` | `Config.spec.storage.s3.bucket` |
+| `s3storage.region` | `Config.spec.storage.s3.region` |
+| `s3storage.regionEndpoint` | `Config.spec.storage.s3.regionEndpoint`; add `http://` or `https://` if missing |
+| Secret key `access-key-id` | `image-registry-system/image-registry-private-configuration-user`, key `REGISTRY_STORAGE_S3_ACCESSKEY` |
+| Secret key `secret-access-key` | `image-registry-system/image-registry-private-configuration-user`, key `REGISTRY_STORAGE_S3_SECRETKEY` |
+| `REGISTRY_STORAGE_S3_SKIPVERIFY=true` | No direct field; import CA with `trustedCA` or use Scenario B |
+
+Create the v2 credential Secret and optional CA ConfigMap:
+
+```bash
+ac create secret generic image-registry-private-configuration-user \
+  -n "$MODERN_REGISTRY_NAMESPACE" \
+  --from-literal=REGISTRY_STORAGE_S3_ACCESSKEY='<access-key-id>' \
+  --from-literal=REGISTRY_STORAGE_S3_SECRETKEY='<secret-access-key>' \
+  --dry-run=client -o yaml \
+  > "$MIGRATION_DIR/modern-registry-s3-secret.yaml"
+
+ac apply -f "$MIGRATION_DIR/modern-registry-s3-secret.yaml"
+
+ac create configmap registry-s3-trusted-ca \
+  -n "$MODERN_REGISTRY_NAMESPACE" \
+  --from-file=ca-bundle.crt=/path/to/s3-ca.crt \
+  --dry-run=client -o yaml \
+  > "$MIGRATION_DIR/modern-registry-s3-trusted-ca.yaml"
+
+ac apply -f "$MIGRATION_DIR/modern-registry-s3-trusted-ca.yaml"
+```
+
+Create `$MIGRATION_DIR/modern-registry-object-storage.yaml` from the supported fields:
 
 ```yaml
 apiVersion: imageregistry.operator.alauda.io/v1
@@ -577,51 +686,41 @@ spec:
     s3:
       bucket: <same-bucket>
       region: <same-region>
-      regionEndpoint: <same-endpoint>
+      regionEndpoint: https://<same-endpoint>
       virtualHostedStyle: false
       trustedCA:
-        name: <trusted-ca-configmap>
+        name: registry-s3-trusted-ca
 ```
 
-Save the storage configuration and apply it:
+Apply it and wait:
 
 ```bash
 ac apply -f "$MIGRATION_DIR/modern-registry-object-storage.yaml"
 
-while ! ac get deployment image-registry -n "$MODERN_REGISTRY_NAMESPACE" >/dev/null 2>&1; do
-  sleep 5
-done
-
-while ! ac get deployment image-api-server -n "$MODERN_REGISTRY_NAMESPACE" >/dev/null 2>&1; do
+until ac get deployment image-registry -n "$MODERN_REGISTRY_NAMESPACE" >/dev/null 2>&1 \
+  && ac get deployment image-api-server -n "$MODERN_REGISTRY_NAMESPACE" >/dev/null 2>&1; do
   sleep 5
 done
 ```
 
-Do not store object storage credentials in the migration environment file. Create or reuse the Secret required by the Registry v2 Operator, then verify that the Registry pod has picked up the storage settings:
+Verify the pod and then backfill metadata from the legacy Registry:
 
 ```bash
-ac get deployment image-registry -n "$MODERN_REGISTRY_NAMESPACE" -o yaml
-ac logs -n "$MODERN_REGISTRY_NAMESPACE" deployment/image-registry -c registry --tail=80
-
 ac rollout status deployment/image-registry -n "$MODERN_REGISTRY_NAMESPACE" --timeout=300s
 ac rollout status deployment/image-api-server -n "$MODERN_REGISTRY_NAMESPACE" --timeout=300s
-```
 
-After storage reuse is configured, backfill metadata by inspecting the legacy Registry:
-
-```bash
 export METADATA_INSPECT_REGISTRY_HOST="$LEGACY_REGISTRY_HOST"
 ac config set-registry-mode modern
 backfill_metadata
 ```
 
-If `ac image info "$TARGET_REGISTRY_HOST/$image"` fails before metadata backfill, that does not necessarily mean storage reuse is broken. Registry v2 can return `NAME_UNKNOWN` when Image and ImageStream metadata do not exist yet. Use the `backfill_metadata` result and the verification steps below as the decision point.
+If the pod reports TLS or S3 connection errors, fix the endpoint URL and CA before backfill.
 
 ## Scenario B: Copy Images Between Registries
 
 Use this path when the source and target registries do not share storage.
 
-Generate a mirror mapping file. This preserves namespace, repository, and tag names and only replaces the Registry host:
+Generate a mirror mapping file. When all legacy image paths are compatible with Registry v2, this preserves namespace, repository, and tag names and only replaces the Registry host:
 
 ```bash
 while read -r image; do
@@ -634,6 +733,44 @@ done < "$IMAGE_LIST_FILE" > "$MAPPING_FILE"
 sed -n '1,20p' "$MAPPING_FILE"
 wc -l "$MAPPING_FILE"
 ```
+
+If the legacy Registry contains nested repository paths, write an explicit mapping that renames each target image to the Registry v2-compatible shape:
+
+```bash
+cat > "$MAPPING_FILE" <<EOF
+$LEGACY_REGISTRY_HOST/team-a/platform/my-app:v1=$TARGET_REGISTRY_HOST/team-a/platform-my-app:v1
+EOF
+
+sed -n '1,20p' "$MAPPING_FILE"
+```
+
+After creating an explicit mapping, derive the metadata backfill list from the target side of the mapping. This keeps `ImageStreamMapping` aligned with the Registry v2 repository name:
+
+```bash
+awk -F= -v target="$TARGET_REGISTRY_HOST/" '
+  NF >= 2 {
+    image=$2
+    if (index(image, target) == 1) {
+      image=substr(image, length(target) + 1)
+    }
+    print image
+  }
+' "$MAPPING_FILE" | sort -u > "$IMAGE_LIST_FILE"
+
+: > "$IMAGE_DIGEST_FILE"
+
+awk '
+  NF {
+    image=$1
+    slash_count=gsub("/", "/", image)
+    if (slash_count != 1 || image !~ ":[^/]+$") {
+      print image
+    }
+  }
+' "$IMAGE_LIST_FILE"
+```
+
+The last command must print no output. If it prints a line, the target mapping still contains an unsupported Registry v2 repository path.
 
 Run a dry run before copying:
 
@@ -652,10 +789,11 @@ sed -n '1,20p' "$MIRROR_DRY_RUN_LOG"
 wc -l "$MIRROR_DRY_RUN_LOG"
 ```
 
-After reviewing the plan, copy the images:
+After reviewing the plan, copy the images. `--continue-on-error` continues with later mappings after a failed image, but the command still returns a non-zero exit code if any mapping failed. Capture that exit code so that log summarization still runs even in a shell that uses `set -e`:
 
 ```bash
 MIRROR_COPY_LOG="$MIGRATION_DIR/mirror-copy.log"
+mirror_rc=0
 
 ac image mirror \
   -f "$MAPPING_FILE" \
@@ -663,14 +801,14 @@ ac image mirror \
   --keep-manifest-list \
   --max-per-registry 4 \
   $REGISTRY_INSECURE_FLAG \
-  > "$MIRROR_COPY_LOG" 2>&1
+  > "$MIRROR_COPY_LOG" 2>&1 || mirror_rc=$?
 
-copied_count="$(grep -c '^Copied ' "$MIRROR_COPY_LOG" || true)"
-warning_count="$(grep -Eci 'error|failed|denied|unauthorized|forbidden' "$MIRROR_COPY_LOG" || true)"
-echo "mirror copy summary: copied=$copied_count warning_lines=$warning_count log=$MIRROR_COPY_LOG"
+echo "mirror copy summary: rc=$mirror_rc log=$MIRROR_COPY_LOG"
+grep -Ein 'error|failed|denied|unauthorized|forbidden' "$MIRROR_COPY_LOG" | sed -n '1,20p' || true
 
-if [ "$warning_count" -gt 0 ]; then
-  grep -Ein 'error|failed|denied|unauthorized|forbidden' "$MIRROR_COPY_LOG" | sed -n '1,20p'
+if [ "$mirror_rc" -ne 0 ]; then
+  echo "mirror copy had failed mappings; fix the failures or remove accepted exceptions before cutover" >&2
+  false
 fi
 ```
 
@@ -700,6 +838,7 @@ For cross-registry sync, rerun image copy and metadata backfill:
 
 ```bash
 MIRROR_COPY_LOG="$MIGRATION_DIR/mirror-rerun.log"
+mirror_rc=0
 
 ac image mirror \
   -f "$MAPPING_FILE" \
@@ -707,14 +846,14 @@ ac image mirror \
   --keep-manifest-list \
   --max-per-registry 4 \
   $REGISTRY_INSECURE_FLAG \
-  > "$MIRROR_COPY_LOG" 2>&1
+  > "$MIRROR_COPY_LOG" 2>&1 || mirror_rc=$?
 
-copied_count="$(grep -c '^Copied ' "$MIRROR_COPY_LOG" || true)"
-warning_count="$(grep -Eci 'error|failed|denied|unauthorized|forbidden' "$MIRROR_COPY_LOG" || true)"
-echo "mirror rerun summary: copied=$copied_count warning_lines=$warning_count log=$MIRROR_COPY_LOG"
+echo "mirror rerun summary: rc=$mirror_rc log=$MIRROR_COPY_LOG"
+grep -Ein 'error|failed|denied|unauthorized|forbidden' "$MIRROR_COPY_LOG" | sed -n '1,20p' || true
 
-if [ "$warning_count" -gt 0 ]; then
-  grep -Ein 'error|failed|denied|unauthorized|forbidden' "$MIRROR_COPY_LOG" | sed -n '1,20p'
+if [ "$mirror_rc" -ne 0 ]; then
+  echo "mirror rerun had failed mappings; inspect $MIRROR_COPY_LOG before backfilling metadata" >&2
+  false
 fi
 
 export METADATA_INSPECT_REGISTRY_HOST="$TARGET_REGISTRY_HOST"
@@ -758,6 +897,21 @@ awk -v digest="$VERIFY_DIGEST" -v safe="$VERIFY_IMAGE_NAME" '
 ' "$VERIFY_IMAGES_OUTPUT"
 ```
 
+For a multi-architecture image or manifest list, verify the list itself and at least one platform-specific child image:
+
+```bash
+ac image info "$VERIFY_REF" --show-multiarch $REGISTRY_INSECURE_FLAG
+ac image info "$VERIFY_REF" --filter-by-os linux/amd64 $REGISTRY_INSECURE_FLAG
+```
+
+Review metadata backfill output and generated manifests:
+
+```bash
+grep -R "failed" "$METADATA_DIR" || true
+sed -n '1,80p' "$METADATA_DIR/${VERIFY_NAMESPACE}-${VERIFY_STREAM}-${VERIFY_TAG}.mapping.yaml"
+sed -n '1,80p' "$METADATA_DIR/${VERIFY_NAMESPACE}-${VERIFY_STREAM}-${VERIFY_TAG}.apply.txt"
+```
+
 Acceptance criteria:
 
 - Registry v2 can inspect or pull the current digest reference from `ImageStreamTag`.
@@ -766,6 +920,11 @@ Acceptance criteria:
 - `ImageStreamTag` points to the expected digest and Registry v2 address.
 - `ac get images` in modern mode shows the migrated Image resources through the ACP Image API.
 - Sample images in critical business namespaces can be read.
+- Representative users and ServiceAccounts pass the `image.alauda.io` RBAC checks in the target namespaces.
+- v2-managed ServiceAccount pull secrets are present where workloads need them, and a test workload can pull a migrated image.
+- Multi-architecture images still expose their manifest list and expected platform child manifests.
+- Any legacy nested repository path has been renamed to a Registry v2-compatible `<namespace>/<repository>:<tag>` target, and workload image references have been updated or scheduled for cutover.
+- Any legacy `registryLimitConfig` equivalent has been applied as `ResourceQuota` or `LimitRange`, or recorded as a manual exception.
 
 ## Switch Registry Mode
 
@@ -788,6 +947,8 @@ ac adm prune images
 
 `ac delete images` and `ac adm prune images` are dry-run by default. Add `--confirm` only after reviewing the output.
 
+After switching a business namespace, rerun the RBAC and pull-secret checks for identities that actually pull or push there.
+
 ## Roll Back
 
 If workloads cannot read business images after cutover, switch the affected context back to legacy mode:
@@ -797,14 +958,18 @@ ac config set-registry-mode legacy
 ac config get-registry-mode
 ```
 
-Keep the following artifacts for troubleshooting and reruns:
+If the failure is caused by v2 ServiceAccount pull secret injection, pause v2 pull secret management before re-enabling the legacy `sa-imagepullsecret-controller`:
 
-- Image lists.
-- Mirror mapping files.
-- `ac image mirror` output.
-- `ac image info` output.
-- Generated `ImageStreamMapping` YAML files.
-- `ac create -f` output.
-- Migration verification output.
+```bash
+ac patch config.imageregistry.operator.alauda.io cluster \
+  --type merge \
+  -p '{"spec":{"imagePullSecret":{"managementState":"Unmanaged"}}}'
+```
+
+Use `Removed` only when you intentionally want the v2 operator to delete its managed pull secrets and remove their ServiceAccount references. Before doing that, keep the inventory files from the handover step so that legacy references can be restored if needed.
+
+If the failure is caused by Registry v2 storage reuse, set Registry v2 to `Removed`, restore the previous `Config/cluster` storage section, and leave the legacy Registry PVC, PV, bucket, or object prefix untouched until the storage administrator confirms the rollback state.
+
+Keep image lists, mirror mapping files, mirror and image-info output, generated `ImageStreamMapping` YAML, `ac create -f` output, RBAC and `can-i` output, pull-secret inventory, converted quota or limit manifests, and verification output.
 
 After the issue is fixed, continue from the image list. You do not need to rebuild the migration scope from the beginning.
