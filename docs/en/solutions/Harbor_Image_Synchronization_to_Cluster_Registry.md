@@ -118,7 +118,11 @@ If the pod starts successfully, the synchronization is working correctly.
 
 ## Summary
 
-This configuration establishes automatic image synchronization from Harbor to cluster registries, maintaining consistent image paths and enabling seamless deployment workflows across your infrastructure. The push-based replication ensures that images are available in target registries immediately after being pushed to Harbor.
+This configuration establishes automatic image synchronization from Harbor to cluster registries. Image paths
+are preserved only when they already match the target Registry shape. For Registry v2 targets, nested source
+repository paths must be flattened or renamed to `<namespace>/<repository>:<tag>`, and workload image
+references must be updated to the target path. The push-based replication ensures that images are available
+in target registries immediately after being pushed to Harbor.
 
 ## References
 
