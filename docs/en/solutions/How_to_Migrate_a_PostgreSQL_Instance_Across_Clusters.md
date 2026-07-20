@@ -260,8 +260,10 @@ Perform these steps **in order** — the standby must be gone before the primary
 
 ```bash
 kubectl --context <source-ctx> -n $SRC_NS delete postgresql $SRC_CLUSTER
-# PVCs are retained on CR deletion — remove them to reclaim storage:
-kubectl --context <source-ctx> -n $SRC_NS delete pvc -l cluster-name=$SRC_CLUSTER
+# PVC retention on CR deletion depends on operator configuration — check and
+# remove any leftovers to reclaim storage:
+kubectl --context <source-ctx> -n $SRC_NS get pvc -l cluster-name=$SRC_CLUSTER
+kubectl --context <source-ctx> -n $SRC_NS delete pvc -l cluster-name=$SRC_CLUSTER --ignore-not-found
 ```
 
 The operator deletes the credential secrets it owns along with the CR.
@@ -273,15 +275,23 @@ kubectl --context <target-ctx> -n $TGT_NS patch postgresql acid-mig --type json 
   -p '[{"op":"remove","path":"/spec/clusterReplication"}]'
 ```
 
-This transition is fully handled by the operator: it re-applies normal-primary Patroni configuration, drops the `sys_operator` metadata schema from the database, and removes the `xdc_hotstandby` replication slot. (The reverse — converting an existing normal instance *into* a standby — is not a supported transition; standbys must be created as standbys.)
+The operator handles this transition: it re-applies normal-primary Patroni configuration, drops the `sys_operator` metadata schema from the database, and removes the `xdc_hotstandby` slot from the replication configuration. (The reverse — converting an existing normal instance *into* a standby — is not a supported transition; standbys must be created as standbys.)
 
-**3. Clean up leftover objects** on the target that the operator does not own:
+**3. Clean up leftover objects** that the operator does not remove:
 
 ```bash
+# Bootstrap secret (user-created, never operator-owned):
 kubectl --context <target-ctx> -n $TGT_NS delete secret standby-bootstrap-secret
-# The <name>-xcr service is owner-referenced to the CR; verify it is gone and
-# delete it manually only if it lingers:
-kubectl --context <target-ctx> -n $TGT_NS get svc acid-mig-xcr
+
+# The <name>-xcr service lingers after the role change (it is only removed
+# with the CR itself) — delete it:
+kubectl --context <target-ctx> -n $TGT_NS delete svc acid-mig-xcr --ignore-not-found
+
+# The physical replication slot can also linger even though it was removed
+# from the Patroni configuration — drop it if the Step 4 check finds it:
+kubectl --context <target-ctx> -n $TGT_NS exec acid-mig-0 -c postgres -- psql -U postgres -c \
+  "SELECT pg_drop_replication_slot('xdc_hotstandby')
+     WHERE EXISTS (SELECT 1 FROM pg_replication_slots WHERE slot_name='xdc_hotstandby' AND NOT active);"
 ```
 
 **4. Verify the target is a clean standalone instance:**
