@@ -5,28 +5,28 @@ kind:
   - Solution
 ProductsVersion:
   - '4.1,4.2,4.3'
-id: TBD
-sourceSHA: dcfa8061a159a35c3c3705bedea2ea1cb54248dac4fbd7130df10e4dd9956876
+id: KB260700062
+sourceSHA: fd125eff503c59c1cbe324f7b67461768e518d0c47bc6d24d20700b728a2d0d8
 ---
 
 # Authorino 安装指南
 
 ## 概述
 
-Authorino 是一个 Kubernetes 原生的外部授权服务，最初由 Kuadrant 项目构建。它通过 [Envoy 外部授权](https://www.envoyproxy.io/docs/envoy/latest/configuration/http/http_filters/ext_authz_filter) gRPC 协议进行集成，并允许您通过 `AuthConfig` 自定义资源声明身份验证和授权规则。本指南描述了如何从 ACP Marketplace 安装 Authorino Operator，创建 `Authorino` 实例，并通过 Envoy 使用 API 密钥示例验证端到端授权。
+Authorino 是一个 Kubernetes 原生的外部授权服务，最初由 Kuadrant 项目构建。它接入了 [Envoy 外部授权](https://www.envoyproxy.io/docs/envoy/latest/configuration/http/http_filters/ext_authz_filter) gRPC 协议，并允许您通过 `AuthConfig` 自定义资源声明身份验证和授权规则。本指南描述了如何从 ACP Marketplace 安装 Authorino Operator，创建 `Authorino` 实例，并通过 Envoy 验证端到端授权，提供 API 密钥示例。
 
 ### 支持的版本
 
-| 组件                                   | 支持的版本       |
-| -------------------------------------- | ---------------- |
-| Authorino Operator                     | 0.25.1           |
-| Authorino (操作数)                    | 0.26.1           |
-| Envoy (快速入门的数据平面)            | 1.31             |
+| 组件                                   | 支持的版本     |
+| -------------------------------------- | -------------- |
+| Authorino Operator                     | 0.25.1        |
+| Authorino (操作数)                    | 0.26.1        |
+| Envoy (快速入门的数据平面)            | 1.31          |
 
 ## 先决条件
 
-- 启用 **OperatorHub** 功能的 ACP 集群。
-- 部署 `Authorino` 实例和受保护工作负载的目标命名空间。
+- 启用了 **OperatorHub** 功能的 ACP 集群。
+- 您将部署 `Authorino` 实例和受保护工作负载的目标命名空间。
 - 业务集群节点可以访问平台镜像注册表。
 - （可选）从 **App Store > App Onboarding** 下载的 `violet` CLI，并与目标平台版本匹配。仅在 Authorino Operator 插件包尚未上传到目标平台时需要。
 
@@ -57,7 +57,7 @@ Authorino 是一个 Kubernetes 原生的外部授权服务，最初由 Kuadrant 
 # CSV 应处于 Succeeded 阶段
 kubectl -n <operator-namespace> get csv | grep authorino
 
-# 操作员 Deployment 应为 Available
+# 操作员 Deployment 应为可用
 kubectl -n <operator-namespace> get deploy -l app=authorino-operator
 ```
 
@@ -66,11 +66,11 @@ kubectl -n <operator-namespace> get deploy -l app=authorino-operator
 - `authorino-operator.v0.25.1` CSV 处于 `Succeeded` 阶段。
 - `authorino-operator` Deployment 为 `1/1` 就绪。
 
-## 快速开始：使用 API 密钥身份验证保护 API
+## 快速入门：使用 API 密钥身份验证保护 API
 
 本节演示一个完整的自包含示例：Authorino 实例通过 Envoy 授权流量到一个示例上游服务。带有有效 API 密钥的请求被允许（HTTP 200），而没有密钥（或使用无效密钥）的请求被拒绝（HTTP 401）。
 
-设置下面命令中使用的变量：
+设置以下命令中使用的变量：
 
 ```bash
 export NAMESPACE=authorino-demo
@@ -99,7 +99,7 @@ spec:
       enabled: false
 ```
 
-应用清单并等待实例准备就绪：
+应用清单并等待实例变为就绪：
 
 ```bash
 kubectl apply -f authorino.yaml
@@ -114,11 +114,11 @@ kubectl -n ${NAMESPACE} rollout status deploy/${CR}
 - 名为 `${CR}-authorino-authorization` 的服务存在，并暴露 `50051/TCP`（gRPC 外部授权）和 `5001/TCP`（OIDC / Festival-Wristband 服务器）。
 
 > \[!NOTE]
-> Authorino 的外部授权接口仅在端口 50051 上提供 **gRPC**。端口 5001 是 OIDC/Festival-Wristband HTTP 服务器，对于普通 HTTP 授权探测将返回 404。验证授权决策时，请始终通过 Envoy（或其他 `ext_authz` 客户端）进行。
+> Authorino 的外部授权接口仅在端口 50051 上支持 **gRPC**。端口 5001 是 OIDC/Festival-Wristband HTTP 服务器，对于普通 HTTP 授权探测将返回 404。验证授权决策时，请始终通过 Envoy（或其他 `ext_authz` 客户端）进行。
 
 ### 2. 创建 API 密钥 Secret 和 AuthConfig
 
-Secret 存储 API 密钥。Authorino 监视携带 `authorino.kuadrant.io/managed-by=authorino` 标签的 Secrets，`AuthConfig` 使用标签匹配器选择它们。
+Secret 存储 API 密钥。Authorino 监视带有 `authorino.kuadrant.io/managed-by=authorino` 标签的 Secrets，`AuthConfig` 通过标签匹配器选择它们。
 
 ```yaml
 apiVersion: v1
@@ -164,7 +164,7 @@ kubectl -n ${NAMESPACE} get authconfig talker-api-protection \
 
 ### 3. 部署示例上游和 Envoy 数据平面
 
-Envoy 是必需的，因为 Authorino 仅支持 gRPC。以下 Envoy 配置在端口 8000 上设置 HTTP 监听器，通过 `ext_authz` 过滤器调用 Authorino，并将允许的流量路由到一个小型回显上游。
+Envoy 是必需的，因为 Authorino 仅支持 gRPC。以下 Envoy 配置在端口 8000 上设置 HTTP 监听器，通过 `ext_authz` 过滤器调用 Authorino，并将允许的流量路由到一个小型回声上游。
 
 ```yaml
 apiVersion: apps/v1
@@ -283,7 +283,7 @@ spec:
 ```
 
 > \[!IMPORTANT]
-> Envoy 配置中的 `authorino` 集群必须通过 `typed_extension_protocol_options` 启用 HTTP/2。Authorino 的 `ext_authz` 端点是 gRPC，并且需要 HTTP/2。
+> Envoy 配置中的 `authorino` 集群必须通过 `typed_extension_protocol_options` 启用 HTTP/2。Authorino 的 `ext_authz` 端点是 gRPC，要求使用 HTTP/2。
 
 应用并等待：
 
@@ -295,14 +295,14 @@ kubectl -n ${NAMESPACE} rollout status deploy/envoy
 
 ### 4. 验证授权决策
 
-在集群中运行一个 curl pod，并进行四种情况的测试：
+在集群中运行一个 curl pod，并测试四种情况：
 
 ```bash
 kubectl -n ${NAMESPACE} run probe --rm -it --restart=Never \
   --image=curlimages/curl:latest -- sh
 ```
 
-在探测容器内：
+在 probe 容器内：
 
 ```sh
 HOST=talker-api.authorino-demo
@@ -343,8 +343,8 @@ kubectl -n ${NAMESPACE} logs deploy/${CR} --tail=30
 
 上述四种情况的典型 Authorino 日志行：
 
-| 情况             | 日志签名                                     |
-| ---------------- | -------------------------------------------- |
+| 情况             | 日志签名                                      |
+| ---------------- | --------------------------------------------- |
 | 有效凭证        | `authorized=true reason=apiKey "api-key-users"` |
 | 错误凭证        | `reason=the API key provided was not found`   |
 | 无凭证          | `reason=credential not found in the request`  |
@@ -352,7 +352,7 @@ kubectl -n ${NAMESPACE} logs deploy/${CR} --tail=30
 
 ## 添加更多身份验证方法
 
-Authorino 支持在同一 `AuthConfig` 上声明多种身份验证类型。通过扩展 `spec.authentication` 添加 JWT 身份：
+Authorino 支持在同一 `AuthConfig` 中声明多种身份验证类型。通过扩展 `spec.authentication` 添加 JWT 身份：
 
 ```yaml
 spec:
@@ -387,19 +387,19 @@ kubectl -n <operator-namespace> delete subscription authorino-operator
 kubectl -n <operator-namespace> delete csv authorino-operator.v0.25.1
 ```
 
-## 常见问题解答
+## 常见问题
 
 ### 为什么我需要在 Authorino 前面使用 Envoy？
 
-Authorino 实现了 [Envoy `ext_authz` gRPC 协议](https://www.envoyproxy.io/docs/envoy/latest/api-v3/service/auth/v3/external_auth.proto)。它不暴露普通的 HTTP 授权端点，因此必须通过 Envoy（或其他 `ext_authz` 客户端）在端口 50051 上通过 HTTP/2 调用 Authorino。直接向 Authorino 服务发送普通 HTTP 请求将不会返回授权决策。
+Authorino 实现了 [Envoy `ext_authz` gRPC 协议](https://www.envoyproxy.io/docs/envoy/latest/api-v3/service/auth/v3/external_auth.proto)。它不暴露普通的 HTTP 授权端点，因此必须通过 HTTP/2 在端口 50051 上调用 Authorino。直接向 Authorino 服务发送普通 HTTP 请求将不会返回授权决策。
 
 ### 为什么 Authorino 服务的端口 5001 对我的请求返回 404？
 
-`<instance>-authorino-authorization` 上的端口 5001 是 OIDC / Festival-Wristband HTTP 服务器。它不是授权端点，对于任意路径将返回 404。在快速入门中，通过端口 8000 通过 Envoy 发送授权探测，而不是直接发送到 Authorino。
+`<instance>-authorino-authorization` 上的端口 5001 是 OIDC / Festival-Wristband HTTP 服务器。它不是授权端点，对于任意路径将返回 404。请通过快速入门中的端口 8000 通过 Envoy 发送授权探测，而不是直接发送到 Authorino。
 
 ### Authorino 没有看到我的 API 密钥 Secret。缺少什么？
 
-Authorino 仅监视携带 `authorino.kuadrant.io/managed-by=authorino` 标签的 Secrets。然后，`AuthConfig` 使用 `apiKey.selector.matchLabels` 进一步缩小选择（例如 `app: talker-api`）。没有 `managed-by` 标签的 Secret 即使匹配 `apiKey.selector` 也会被忽略。
+Authorino 仅监视带有 `authorino.kuadrant.io/managed-by=authorino` 标签的 Secrets。然后，`AuthConfig` 通过 `apiKey.selector.matchLabels` 缩小选择范围（例如 `app: talker-api`）。即使匹配 `apiKey.selector`，没有 `managed-by` 标签的 Secret 也会被忽略。
 
 ### Host 头似乎没有生效
 
