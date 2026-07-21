@@ -5,7 +5,6 @@ kind:
   - Solution
 ProductsVersion:
   - '4.1,4.2,4.3'
-id: TBD
 ---
 
 # Authorino Installation Guide
