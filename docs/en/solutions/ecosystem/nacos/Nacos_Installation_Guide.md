@@ -48,8 +48,9 @@ discovery end to end.
 | Upstream chart | `nacos-group/nacos-k8s` `/helm` @ `1b98fe67a4b2` (appVersion 3.0.1) |
 <!-- factory:auto:supported-versions END -->
 
-> **Networking:** this release supports both IPv4 and IPv6 (single-stack and dual-stack) clusters —
-> every architecture × IP-stack combination is covered by the release e2e matrix.
+> **Networking:** this release is validated on both IPv4 and IPv6 clusters. The release e2e matrix
+> covered ACP 4.3 on amd64/IPv6 and ACP 4.2 + 4.1 on arm64/IPv4; other architecture × IP-stack
+> combinations (including dual-stack) are expected to work but were not exercised in this release.
 
 ## Prerequisites
 
@@ -119,9 +120,13 @@ The Operator reconciles the CR into a Nacos `StatefulSet` (release name `nacos`)
 Service. Wait for the pod to become Ready:
 
 ```bash
-kubectl -n ${NAMESPACE} rollout status statefulset/nacos --timeout=300s
+kubectl -n ${NAMESPACE} rollout status statefulset/nacos --timeout=600s
 kubectl -n ${NAMESPACE} get pods,svc
 ```
+
+> The first rollout can take several minutes — Nacos server 3.x has a slow cold start, and when
+> persistence is enabled the PVC must bind first. Allow up to ~10 minutes before treating a
+> not-yet-Ready pod as a failure.
 
 Expected: the `nacos-0` pod is `1/1` Running and a `nacos-cs` Service exists exposing these ports:
 
@@ -139,40 +144,46 @@ Expected: the `nacos-0` pod is `1/1` Running and a `nacos-cs` Service exists exp
 CONSOLE_PORT=$(kubectl -n ${NAMESPACE} get svc nacos-cs \
   -o jsonpath='{.spec.ports[?(@.name=="console")].nodePort}')
 NODE_IP=$(kubectl get nodes -o jsonpath='{.items[0].status.addresses[?(@.type=="InternalIP")].address}')
-echo "Console: http://${NODE_IP}:${CONSOLE_PORT}/"
 
-# readiness endpoint
-curl -s "http://${NODE_IP}:${CONSOLE_PORT}/v3/console/health/readiness"   # -> 200
+# Bracket the host if it is an IPv6 address (IPv6-only / air-gapped clusters)
+case "$NODE_IP" in *:*) HOST="[$NODE_IP]" ;; *) HOST="$NODE_IP" ;; esac
+echo "Console: http://${HOST}:${CONSOLE_PORT}/"
+
+# readiness endpoint — prints the HTTP status (expect 200)
+curl -s -o /dev/null -w '%{http_code}\n' "http://${HOST}:${CONSOLE_PORT}/v3/console/health/readiness"
 ```
 
 ### 4. Validate configuration management and service discovery
 
-Run an in-cluster probe against the `nacos-cs` Service on the server port `8848` (the v1 client
-open-APIs stay open in the default topology). Publish and read back a config, then register and list
-a service instance:
+Exercise the v1 client open-APIs (which stay open in the default topology) against the `nacos-cs`
+Service on the server port `8848`. The Nacos pod already ships `curl`, so run the probes with
+`kubectl exec` **inside** the pod — this needs no external probe image, which matters on air-gapped /
+IPv6-only clusters where an image like `curlimages/curl` cannot be pulled. Curling the Service DNS
+from inside the pod also exercises the `nacos-cs` Service routing, not just `localhost`:
 
 ```bash
-kubectl -n ${NAMESPACE} run probe --rm -it --restart=Never \
-  --image=curlimages/curl:latest -- sh
-```
+POD=nacos-0
+SVC="nacos-cs.${NAMESPACE}.svc.cluster.local:8848"
 
-Inside the probe container:
-
-```sh
-SVC=nacos-cs.nacos-demo.svc.cluster.local:8848
-
-# (A) publish a config -> "true", then read it back
-curl -s -X POST "http://$SVC/nacos/v1/cs/configs" \
+# (A) publish a config -> "true", then read it back -> key=value
+kubectl -n ${NAMESPACE} exec ${POD} -- curl -s -X POST \
+  "http://${SVC}/nacos/v1/cs/configs" \
   -d 'dataId=demo.properties&group=DEFAULT_GROUP&content=key=value'
-curl -s "http://$SVC/nacos/v1/cs/configs?dataId=demo.properties&group=DEFAULT_GROUP"
-# -> key=value
+kubectl -n ${NAMESPACE} exec ${POD} -- curl -s \
+  "http://${SVC}/nacos/v1/cs/configs?dataId=demo.properties&group=DEFAULT_GROUP"
 
-# (B) register a service instance -> "ok", then list it
-curl -s -X POST "http://$SVC/nacos/v1/ns/instance" \
+# (B) register a service instance -> "ok", then list it -> hosts[] with 10.0.0.1:8080
+kubectl -n ${NAMESPACE} exec ${POD} -- curl -s -X POST \
+  "http://${SVC}/nacos/v1/ns/instance" \
   -d 'serviceName=demo-svc&ip=10.0.0.1&port=8080'
-curl -s "http://$SVC/nacos/v1/ns/instance/list?serviceName=demo-svc"
-# -> JSON with hosts[] containing 10.0.0.1:8080
+kubectl -n ${NAMESPACE} exec ${POD} -- curl -s \
+  "http://${SVC}/nacos/v1/ns/instance/list?serviceName=demo-svc"
 ```
+
+> [!NOTE]
+> If the pod-to-own-Service-ClusterIP path does not converge (some CNIs lack hairpin support),
+> substitute `localhost:8848` for the Service DNS in the commands above to confirm Nacos itself is
+> healthy while you investigate the routing.
 
 ## Configuration via the Install Form
 
@@ -181,8 +192,8 @@ spec descriptors) exposes the main knobs; you can also set them directly on the 
 
 | Group | CR path | Notes |
 |-------|---------|-------|
-| Topology | `global.mode`, `nacos.replicaCount` | `standalone` (default) or `cluster` |
-| Storage | `nacos.storage.type`, `nacos.storage.db.*` | `embedded` (default) or external `mysql` |
+| Topology | `global.mode`, `nacos.replicaCount` | `standalone` (default) or `cluster`. **Cluster mode requires `nacos.replicaCount` ≥ 3 and external MySQL storage** (see Storage), and is subject to the limitations below |
+| Storage | `nacos.storage.type`, `nacos.storage.db.*` | `embedded` (default; standalone only) or external `mysql` (`nacos.storage.db.{host,port,name,username,password}`) — required for cluster mode |
 | Persistence | `persistence.enabled`, `persistence.data.storageClassName`, `persistence.data.resources.requests.storage` | retain embedded data across restarts |
 | Service | `service.type`, `service.nodePort` | `NodePort` (default) or `ClusterIP` + your own Gateway/Ingress |
 | Resources | `resources.requests.cpu`, `resources.requests.memory` | server container requests |
@@ -221,10 +232,13 @@ spec:
   `nacos-group/nacos-k8s` chart declares `appVersion: 3.0.1`; newer upstream server versions (3.2.x)
   are tracked by the factory's oss-watch bot and picked up on a later chart bump. This plugin
   version-follows the chart as a unit.
-- **Cluster mode on arm64 is not covered in this release.** The chart's `peer-finder` init image
+- **Release validation is standalone-focused; cluster mode is not exercised in this release.**
+  Cluster mode (`global.mode: cluster`) requires `nacos.replicaCount` ≥ 3 **and** external MySQL
+  storage (embedded storage is standalone-only), and the release e2e covered the standalone topology.
+- **Cluster mode on arm64 is a known limitation.** The chart's `peer-finder` init image
   (`nacos/nacos-peer-finder-plugin:1.1`) is **amd64-only**, and it is rendered only when
-  `global.mode: cluster`. Standalone (the default) does not use it. Cluster-mode-on-arm awaits a
-  multi-arch peer-finder in a future release.
+  `global.mode: cluster`. Standalone (the default) does not use it, so it is unaffected.
+  Cluster-mode-on-arm awaits a multi-arch peer-finder in a future release.
 - **Production must override the default Auth Token** (see the Security note above) — the shipped
   placeholder is public.
 <!-- factory:auto:known-limitations END -->
