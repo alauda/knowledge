@@ -307,7 +307,7 @@ kubectl -n $TGT_NS exec acid-mig-0 -c postgres -- patronictl list
 
 ## Alternative: Migration Without Inter-Cluster Connectivity
 
-When the clusters have **no network path between them** but your workstation can reach both Kubernetes API servers, the migration can be relayed through the workstation as a logical dump/restore piped between two `kubectl exec` sessions — the clusters never talk to each other. Downtime equals the full copy duration (versus seconds for the streaming switchover), but there are no operator-version, PostgreSQL-major, or CPU-architecture constraints.
+When the clusters have **no network path between them** but your workstation can reach both Kubernetes API servers, the migration can be relayed through the workstation as a logical dump/restore piped between two `kubectl exec` sessions — the clusters never talk to each other. Downtime equals the full copy duration (versus seconds for the streaming switchover), but there are no operator-version or CPU-architecture constraints, and the PostgreSQL major only needs to be the same or newer on the target.
 
 The full validated procedure is a separate solution: [How to Migrate a PostgreSQL Instance Between Network-Isolated Clusters](./How_to_Migrate_a_PostgreSQL_Instance_Between_Network_Isolated_Clusters.md) (KB260721001).
 
