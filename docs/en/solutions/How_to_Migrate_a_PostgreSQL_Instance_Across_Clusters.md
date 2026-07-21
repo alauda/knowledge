@@ -34,7 +34,7 @@ This procedure was validated end-to-end with PostgreSQL Operator v4.3.3 on two s
 - Source and target must run the same PostgreSQL major version.
 - The standby cluster must initially be created with `numberOfInstances: 1`; scale it up after promotion.
 - `replSvcType` must be identical on both clusters.
-- The target cluster must be able to reach the source cluster's node IP + NodePort (standby pulls from primary). Verify this before starting — see Step 2.
+- The target cluster must be able to reach the source cluster's node IP + NodePort (standby pulls from primary). Verify this before starting — see Step 2. If there is **no network path between the clusters**, the streaming approach cannot work — use the [workstation-relayed logical migration](#alternative-migration-without-inter-cluster-connectivity) instead.
 - On mixed-architecture target clusters, pin the instance (and ideally the operator) to nodes matching the source architecture. Streaming replication copies the data directory bit-for-bit; PostgreSQL does not support mixed-architecture replication.
 
 ## Migration Overview
@@ -304,6 +304,49 @@ kubectl -n $TGT_NS exec acid-mig-0 -c postgres -- psql -U postgres -tA -c \
 kubectl -n $TGT_NS exec acid-mig-0 -c postgres -- patronictl list
 # Expect a plain Leader/Replica cluster, no Standby Leader
 ```
+
+## Alternative: Migration Without Inter-Cluster Connectivity
+
+Use this approach when the clusters have **no network path between them** (isolated networks, firewalled environments) but your workstation can reach both Kubernetes API servers. All data flows through the workstation over the two `kubectl exec` channels — the clusters never talk to each other.
+
+**Trade-offs versus the streaming approach:**
+
+| Aspect | Streaming (XCR) | Workstation-relayed logical |
+|---|---|---|
+| Downtime | Seconds (switchover only) | Full duration of dump+restore |
+| Data after copy starts | Continuously replicated | Lost — stop writes first |
+| Network requirement | Target reaches source NodePort | Workstation reaches both API servers only |
+| Version constraints | Same operator + PG major | None (works across PG majors, operator versions, and CPU architectures) |
+| Transfer speed | Cluster-to-cluster bandwidth | Limited by the workstation's bandwidth to both API servers |
+
+**Procedure:**
+
+1. **Create the target instance** as a plain instance (no `clusterReplication`). Define application users and databases in the target CR spec (`spec.users` / `spec.databases`) — do not attempt to dump global objects; the operator manages roles.
+
+2. **Stop application writes** on the source and take the checksum baseline (Step 1 method).
+
+3. **Relay each database** through the workstation with a single pipe (no intermediate file needed for small/medium databases):
+
+```bash
+kubectl --context <source-ctx> -n $SRC_NS exec ${SRC_CLUSTER}-0 -c postgres -- \
+    /usr/lib/postgresql/16/bin/pg_dump -U postgres -Fc \
+    -N metric_helpers -N user_management <dbname> \
+| kubectl --context <target-ctx> -n $TGT_NS exec -i <target-master-pod> -c postgres -- \
+    /usr/lib/postgresql/16/bin/pg_restore -U postgres -d <dbname> --no-owner -x
+```
+
+   Command details (all validated; omitting them produces noisy or failing restores):
+   - **Use the version-matched binaries** (`/usr/lib/postgresql/<major>/bin/`). The image's default `pg_dump` can be a newer major whose output (e.g. `SET transaction_timeout`) the older target server rejects.
+   - **`-N metric_helpers -N user_management`** excludes the schemas the operator image pre-creates in every database; without this the restore reports ~20 "already exists" errors.
+   - **`--no-owner -x`** skips ownership/ACL statements that reference operator-managed roles; objects are owned by the connecting user. Re-grant application permissions afterwards if you use fine-grained ACLs.
+   - The pipe returns exit code 0 on a clean restore — treat any non-zero exit as a failed migration, drop the target database (`DROP DATABASE` must run as its own single statement), and re-run.
+   - For large databases, dump to a compressed file on the workstation first (`... pg_dump -Fc ... > db.dump`) for resumability, then restore with `kubectl exec -i ... pg_restore ... < db.dump`. Parallel restore (`-j`) requires copying the file into the target pod rather than streaming stdin.
+
+4. **Verify checksums** on the target against the baseline, then repoint clients.
+
+5. **Teardown** is trivial: delete the source instance (and PVCs if retained) — there is no replication configuration to remove.
+
+Validation reference: a 100k-row database relayed this way completed in under 6 seconds with exact checksum parity (workstation on a proxied connection to both platforms).
 
 ## Troubleshooting
 
