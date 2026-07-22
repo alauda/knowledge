@@ -145,7 +145,7 @@ kubectl --context $SRC_CTX -n $SRC_NS exec $SRC_POD -c postgres -- \
 
 The script performs the whole migration in one run: it enumerates the source's application databases, creates any that are missing on the target (e.g. `postgres`-owned databases created outside the CR spec — their owner role must exist on the target), pre-creates each database's extensions, transfers each database as its owner, and verifies exact per-table row counts — reporting `PASS`/`FAIL` per database and exiting non-zero if anything failed.
 
-Fill in the six variables at the top, then run it with `bash`:
+Fill in the six variables at the top, then run it with `bash`. Without arguments it migrates every database; pass database names (`bash migrate.sh appdb`) to migrate only those — used to redo a single database after a failure:
 
 ```bash
 #!/usr/bin/env bash
@@ -176,6 +176,10 @@ COUNT_QUERY="SELECT relname, (xpath('/row/c/text()', query_to_xml(format(
 FAILED=""
 while read -r DB OWNER; do
   [ -z "$DB" ] && continue
+  # With arguments, migrate only the named databases (e.g. to redo one FAIL).
+  if [ "$#" -gt 0 ]; then
+    case " $* " in *" $DB "*) ;; *) continue ;; esac
+  fi
   echo "=== migrating database: $DB (owner: $OWNER) ==="
 
   # Ensure the database exists on the target (covers databases created
@@ -224,7 +228,25 @@ if [ -n "$FAILED" ]; then echo "MIGRATION INCOMPLETE — failed:$FAILED"; exit 1
 echo "MIGRATION COMPLETE — all databases verified."
 ```
 
-If a database reports `FAIL`, see [Troubleshooting](#troubleshooting) and the [manual single-database transfer](#reference-manual-single-database-transfer) reference — it explains what each part of the script does, so the failing database can be transferred and debugged in isolation. For very large databases, prefer the file-based variant described there (a straight pipe is not resumable).
+If a database reports `FAIL`, see [Troubleshooting](#troubleshooting); after fixing the cause, redo just that database by passing its name to the script.
+
+### Large databases
+
+A straight pipe is not resumable. For a large database, dump to a file on the workstation first, then restore from it — same flags as the script; `<owner-pw>` is the owner's password from the target secret:
+
+```bash
+PG_BIN=/usr/lib/postgresql/<source-major>/bin
+
+kubectl --context $SRC_CTX -n $SRC_NS exec $SRC_POD -c postgres -- \
+  $PG_BIN/pg_dump -U postgres -Fc --no-comments \
+  -N metric_helpers -N user_management <database> > db.dump
+
+kubectl --context $TGT_CTX -n $TGT_NS exec -i $TGT_POD -c postgres -- \
+  env PGPASSWORD="<owner-pw>" \
+  $PG_BIN/pg_restore -U <owner> -h localhost -d <database> --no-owner -x < db.dump
+```
+
+Parallel restore (`pg_restore -j N`) cannot read from stdin; to use it, copy the dump file into the target pod (`kubectl cp`) and restore from the local path.
 
 ### Security notes
 
@@ -237,6 +259,9 @@ If a database reports `FAIL`, see [Troubleshooting](#troubleshooting) and the [m
 The script has already verified per-table row counts. Confirm in addition that each application user can actually query its data with the **target**-managed credentials (this catches ownership problems immediately), and re-check any Step 2 checksums. If you pre-staged the credential secrets in Step 1, this password is identical to the source one — applications keep their existing credentials and only the connection endpoint changes at cutover:
 
 ```bash
+TGT_POD=$(kubectl --context $TGT_CTX -n $TGT_NS get pod \
+  -l spilo-role=master,cluster-name=$TGT_CLUSTER -o jsonpath='{.items[0].metadata.name}')
+
 APP_PW=$(kubectl --context $TGT_CTX -n $TGT_NS get secret \
   <owner>.$TGT_CLUSTER.credentials.postgresql.acid.zalan.do \
   -o jsonpath='{.data.password}' | base64 -d)
@@ -245,6 +270,8 @@ kubectl --context $TGT_CTX -n $TGT_NS exec $TGT_POD -c postgres -- \
   env PGPASSWORD="$APP_PW" psql -U <owner> -h localhost -d <database> -tA -c \
   "SELECT current_user, count(*) FROM <your-main-table>;"
 ```
+
+The dump deliberately skips ACL statements (`-x`) because they reference roles managed by the source operator — if additional (non-owner) users need privileges on the migrated data, re-grant them on the target now.
 
 ## Step 5: Cut Over and Clean Up
 
@@ -257,80 +284,11 @@ kubectl --context $SRC_CTX -n $SRC_NS delete postgresql $SRC_CLUSTER
 kubectl --context $SRC_CTX -n $SRC_NS delete pvc -l cluster-name=$SRC_CLUSTER --ignore-not-found
 ```
 
-## Reference: Manual Single-Database Transfer
-
-This section is the script's inner loop as standalone commands. Use it to debug a database the script reported as `FAIL`, to migrate a single database only, or to handle very large databases with the resumable file-based variant. The examples transfer a database `appdb` owned by `appuser`.
-
-First inventory the source database's extensions and pre-create (as `postgres`) any that are missing on the target — the restore runs as the application user, which cannot create extensions:
-
-```bash
-TGT_POD=$(kubectl --context $TGT_CTX -n $TGT_NS get pod \
-  -l spilo-role=master,cluster-name=$TGT_CLUSTER -o jsonpath='{.items[0].metadata.name}')
-
-kubectl --context $SRC_CTX -n $SRC_NS exec $SRC_POD -c postgres -- \
-  psql -U postgres -d appdb -tA -c "SELECT extname, extversion FROM pg_extension ORDER BY 1;"
-kubectl --context $TGT_CTX -n $TGT_NS exec $TGT_POD -c postgres -- \
-  psql -U postgres -d appdb -c "CREATE EXTENSION IF NOT EXISTS <extname>;"
-```
-
-Record the exact row counts on the source (do not use `pg_stat_user_tables.n_live_tup` for this — it is a planner statistics *estimate*):
-
-```bash
-kubectl --context $SRC_CTX -n $SRC_NS exec $SRC_POD -c postgres -- \
-  psql -U postgres -d appdb -tA -c \
-  "SELECT relname, (xpath('/row/c/text()', query_to_xml(format(
-     'SELECT count(*) AS c FROM %I.%I', schemaname, relname), false, true, '')))[1]::text::bigint
-   FROM pg_stat_user_tables ORDER BY relname;"
-```
-
-Read the application user's password from the operator-managed secret, then run the pipe — in a shell with `pipefail` set, otherwise a source-side `pg_dump`/`kubectl` failure is masked by the exit status of the last command:
-
-```bash
-APP_PW=$(kubectl --context $TGT_CTX -n $TGT_NS get secret \
-  appuser.$TGT_CLUSTER.credentials.postgresql.acid.zalan.do \
-  -o jsonpath='{.data.password}' | base64 -d)
-
-PG_BIN=/usr/lib/postgresql/16/bin   # match the SOURCE server major (see notes)
-
-set -o pipefail
-kubectl --context $SRC_CTX -n $SRC_NS exec $SRC_POD -c postgres -- \
-    $PG_BIN/pg_dump -U postgres -Fc --no-comments \
-    -N metric_helpers -N user_management appdb \
-| kubectl --context $TGT_CTX -n $TGT_NS exec -i $TGT_POD -c postgres -- \
-    env PGPASSWORD="$APP_PW" \
-    $PG_BIN/pg_restore -U appuser -h localhost -d appdb --no-owner -x
-echo "pipe exit: $? (dump=${PIPESTATUS[0]}, restore=${PIPESTATUS[1]})"
-```
-
-The pipe must exit `0` (with `pipefail`, a non-zero status from *either* side surfaces; `PIPESTATUS` shows which side failed). Rerun the count query on the target afterwards and compare with the baseline. Command details — each flag below was added because omitting it produced a failing, noisy, or broken-permissions restore during validation:
-
-- **Restore as the application user** (`-U appuser` with its password), not as `postgres`: with `--no-owner`, restored objects are owned by the connecting user. Restoring as `postgres` leaves every table owned by `postgres`, and the application user cannot even `SELECT` afterwards (`permission denied for table ...`). Restoring as the CR-defined owner lands the ownership correctly with no post-step. **Scope note:** this pattern fits the operator's standard layout — one application database wholly owned by one CR-defined user. If your database has multiple owning roles, `SECURITY DEFINER` functions, or objects in non-`public` schemas with distinct owners, `--no-owner` collapses all ownership onto the connecting user; plan an explicit post-restore ownership and grant pass for those objects.
-- **Version-matched binaries** (`/usr/lib/postgresql/<major>/bin/`): the container's default `pg_dump` can be a newer major whose output (e.g. `SET transaction_timeout`) an older target server rejects. The images ship binaries for every supported major, so pick the path explicitly (the script auto-detects this from `SHOW server_version`). When migrating to a *newer* target major, use the **target** major's `pg_dump` (also present in the source pod's image).
-- **`--no-comments`**: the dump captures `COMMENT ON EXTENSION` for the extensions the image pre-installs (`pg_stat_statements`, `pg_stat_kcache`, `set_user`); executing those requires superuser, which the application user is not. Object comments are dropped — restore them separately as `postgres` if you rely on them.
-- **`-N metric_helpers -N user_management`**: the operator image pre-creates these schemas in every database; without the exclusion the restore reports ~20 `already exists` errors.
-- **`-x`**: skips ACL statements that reference roles managed by the source operator and absent on the target. Re-grant privileges for any additional (non-owner) users on the target afterwards.
-
-### Large databases
-
-A single pipe has no resume capability. For large databases, dump to a compressed file on the workstation first, then restore from it:
-
-```bash
-kubectl --context $SRC_CTX -n $SRC_NS exec $SRC_POD -c postgres -- \
-  $PG_BIN/pg_dump -U postgres -Fc --no-comments \
-  -N metric_helpers -N user_management appdb > appdb.dump
-
-kubectl --context $TGT_CTX -n $TGT_NS exec -i $TGT_POD -c postgres -- \
-  env PGPASSWORD="$APP_PW" \
-  $PG_BIN/pg_restore -U appuser -h localhost -d appdb --no-owner -x < appdb.dump
-```
-
-Parallel restore (`pg_restore -j N`) cannot read from stdin; to use it, copy the dump file into the target pod (`kubectl cp`) and restore from the local path.
-
 ## Troubleshooting
 
 ### Application user gets `permission denied for table ...` after a successful restore
 
-The restore was run as `postgres` instead of the application user, so all objects are owned by `postgres`. Either rerun the restore as the application user (see the [reference section](#reference-manual-single-database-transfer)), or transfer ownership in place:
+The restore was run as `postgres` instead of the application user, so all objects are owned by `postgres` (the script always restores as the owner; this typically comes from a hand-run restore). Either redo the database — drop and recreate it, then rerun the script with the database name — or transfer ownership in place:
 
 ```sql
 DO $$
@@ -347,6 +305,8 @@ END $$;
 
 This block covers tables and sequences in the `public` schema only. Views, functions, types, and objects in other schemas need analogous `ALTER ... OWNER TO` statements (enumerate them via `pg_views`, `pg_proc`, `pg_type`, or `\dn`/`\df` in psql).
 
+Related scope note: the migration's `--no-owner` model assumes the operator's standard layout — one database wholly owned by one CR-defined user. If a database has multiple owning roles, `SECURITY DEFINER` functions, or objects in non-`public` schemas with distinct owners, ownership collapses onto the restoring user; plan an explicit post-restore ownership and grant pass for those objects.
+
 ### Restore reports `permission denied to create extension ...`
 
 The source database uses an extension that is not pre-installed on the target, and the application user cannot create it. The script warns about this (`WARNING: could not create extension`). Create the extension as `postgres` on the target database, then rerun the restore. If `CREATE EXTENSION` itself fails with a missing-file error, the extension's packages are not present in the target image at all — it must be added to the image/instance before this migration can carry that database.
@@ -357,7 +317,7 @@ The source database uses an extension that is not pre-installed on the target, a
 
 ### Restore reports `unrecognized configuration parameter "transaction_timeout"`
 
-The dump was taken with a `pg_dump` newer than the target server (typically the image's default binary). Rerun using the explicit version-matched binary path (the script auto-detects it; in the manual commands set `PG_BIN` to the source server's major).
+The dump was taken with a `pg_dump` newer than the target server (typically the image's default binary — a hand-run dump without the explicit `PG_BIN` path; the script auto-detects it from `SHOW server_version`). Rerun with the version-matched binary path. When migrating to a *newer* target major, use the **target** major's binaries instead — they are present in the source pod's image too.
 
 ### Restore reports `schema "metric_helpers" already exists` (and similar)
 
@@ -372,7 +332,7 @@ kubectl --context $TGT_CTX -n $TGT_NS exec $TGT_POD -c postgres -- psql -U postg
 kubectl --context $TGT_CTX -n $TGT_NS exec $TGT_POD -c postgres -- psql -U postgres -c "CREATE DATABASE appdb OWNER appuser"
 ```
 
-Then redo **only the failed database** with the [manual transfer](#reference-manual-single-database-transfer). Do not rerun the whole script after a partial success: it would restore into the databases that already transferred, and the resulting `already exists` collisions would mark them as failed.
+Then rerun the script with **only the failed database** as an argument (`bash migrate.sh <database>`). Do not rerun it without arguments after a partial success: restoring into the databases that already transferred produces `already exists` collisions that mark them as failed.
 
 ### Application passwords changed after the migration
 
