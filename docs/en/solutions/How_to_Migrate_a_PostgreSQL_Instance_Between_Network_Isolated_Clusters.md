@@ -87,18 +87,26 @@ The `users:`/`databases:` sections of the target CR can be generated directly fr
 By default the target operator generates **new** passwords for the CR users, which would force every application to be re-configured at cutover. To keep the source passwords, copy each application user's credential secret into the target namespace **before creating the CR** — when the operator finds an existing credential secret, it adopts it and sets the role's password from it instead of generating a new one:
 
 ```bash
+SUFFIX="credentials.postgresql.acid.zalan.do"
 for SEC in $(kubectl --context $SRC_CTX -n $SRC_NS get secret \
     -l application=spilo,cluster-name=$SRC_CLUSTER -o name); do
-  U=$(kubectl --context $SRC_CTX -n $SRC_NS get $SEC -o jsonpath='{.data.username}' | base64 -d)
-  case "$U" in postgres|standby) continue ;; esac   # system users stay operator-managed
-  PW=$(kubectl --context $SRC_CTX -n $SRC_NS get $SEC -o jsonpath='{.data.password}' | base64 -d)
-  kubectl --context $TGT_CTX -n $TGT_NS create secret generic \
-    "$U.$TGT_CLUSTER.credentials.postgresql.acid.zalan.do" \
-    --from-literal=username="$U" --from-literal=password="$PW"
+  NAME=${SEC#secret/}
+  U=${NAME%.$SRC_CLUSTER.$SUFFIX}
+  [ "$U" = "$NAME" ] && continue                          # not a credential secret
+  case "$U" in postgres|standby|pooler) continue ;; esac  # operator-managed system users
+  kubectl --context $TGT_CTX -n $TGT_NS apply -f - <<EOF
+apiVersion: v1
+kind: Secret
+metadata:
+  name: $U.$TGT_CLUSTER.$SUFFIX
+data:
+  username: $(kubectl --context $SRC_CTX -n $SRC_NS get $SEC -o jsonpath='{.data.username}')
+  password: $(kubectl --context $SRC_CTX -n $SRC_NS get $SEC -o jsonpath='{.data.password}')
+EOF
 done
 ```
 
-The `postgres` and `standby` system users are deliberately skipped — they belong to each instance's own operator. The ordering matters: pre-stage the secrets first, then create the CR (see [Troubleshooting](#troubleshooting) if the CR was created first).
+The user name is taken from the **secret's name** (which matches the CR user the target operator will look up), not from the secret's `username` field, and the credential bytes are copied base64-verbatim — no decoding on the workstation. The `postgres`, `standby`, and `pooler` system users are deliberately skipped: they belong to each instance's own operator. The ordering matters: pre-stage the secrets first, then create the CR (see [Troubleshooting](#troubleshooting) if the CR was created first). If **password rotation** (`enable_password_rotation`) is active on the source, the rotated login username inside the secret will not match any role the target operator creates — disable rotation for the migration window and migrate with the base credentials.
 
 Create the target as a plain instance (no `clusterReplication`), sized like the source:
 
@@ -157,29 +165,35 @@ SRC_CTX="<source-context>";  SRC_NS="<source-namespace>";  SRC_CLUSTER="<source-
 TGT_CTX="<target-context>";  TGT_NS="<target-namespace>";  TGT_CLUSTER="<target-instance-name>"
 
 SRC_POD=$(kubectl --context "$SRC_CTX" -n "$SRC_NS" get pod \
-  -l spilo-role=master,cluster-name="$SRC_CLUSTER" -o jsonpath='{.items[0].metadata.name}')
+  -l spilo-role=master,cluster-name="$SRC_CLUSTER" -o jsonpath='{.items[0].metadata.name}') \
+  && [ -n "$SRC_POD" ] || { echo "ERROR: cannot find source master pod for $SRC_CLUSTER" >&2; exit 1; }
 TGT_POD=$(kubectl --context "$TGT_CTX" -n "$TGT_NS" get pod \
-  -l spilo-role=master,cluster-name="$TGT_CLUSTER" -o jsonpath='{.items[0].metadata.name}')
+  -l spilo-role=master,cluster-name="$TGT_CLUSTER" -o jsonpath='{.items[0].metadata.name}') \
+  && [ -n "$TGT_POD" ] || { echo "ERROR: cannot find target master pod for $TGT_CLUSTER" >&2; exit 1; }
 
 srcsql() { local db=$1; shift; kubectl --context "$SRC_CTX" -n "$SRC_NS" exec "$SRC_POD" -c postgres -- psql -U postgres -d "$db" -tA -v ON_ERROR_STOP=1 "$@"; }
 tgtsql() { local db=$1; shift; kubectl --context "$TGT_CTX" -n "$TGT_NS" exec "$TGT_POD" -c postgres -- psql -U postgres -d "$db" -tA -v ON_ERROR_STOP=1 "$@"; }
 
 # Client binaries matching the SOURCE server major (present in both Spilo images).
 SRC_MAJOR=$(srcsql postgres -c "SHOW server_version;" | cut -d. -f1)
+case "$SRC_MAJOR" in ''|*[!0-9]*) echo "ERROR: cannot determine source PostgreSQL major (psql via $SRC_POD failed)" >&2; exit 1 ;; esac
 PG_BIN=/usr/lib/postgresql/$SRC_MAJOR/bin
 echo "Source PostgreSQL major: $SRC_MAJOR (client binaries: $PG_BIN)"
 
-COUNT_QUERY="SELECT relname, (xpath('/row/c/text()', query_to_xml(format(
+# Count every user table outside the schemas the dump excludes.
+COUNT_QUERY="SELECT schemaname||'.'||relname, (xpath('/row/c/text()', query_to_xml(format(
   'SELECT count(*) AS c FROM %I.%I', schemaname, relname), false, true, '')))[1]::text::bigint
-  FROM pg_stat_user_tables ORDER BY relname;"
+  FROM pg_stat_user_tables
+  WHERE schemaname NOT IN ('metric_helpers','user_management') ORDER BY 1;"
 
-FAILED=""
+FAILED=""; ATTEMPTED=0
 while read -r DB OWNER; do
   [ -z "$DB" ] && continue
   # With arguments, migrate only the named databases (e.g. to redo one FAIL).
   if [ "$#" -gt 0 ]; then
     case " $* " in *" $DB "*) ;; *) continue ;; esac
   fi
+  ATTEMPTED=$((ATTEMPTED+1))
   echo "=== migrating database: $DB (owner: $OWNER) ==="
 
   # Ensure the database exists on the target (covers databases created
@@ -224,8 +238,12 @@ done < <(srcsql postgres -F' ' -c \
    WHERE NOT datistemplate AND datname <> 'postgres' ORDER BY 1;")
 
 echo
+if [ "$ATTEMPTED" -eq 0 ]; then
+  echo "ERROR: no databases migrated — source enumeration failed, or no database matched the arguments" >&2
+  exit 1
+fi
 if [ -n "$FAILED" ]; then echo "MIGRATION INCOMPLETE — failed:$FAILED"; exit 1; fi
-echo "MIGRATION COMPLETE — all databases verified."
+echo "MIGRATION COMPLETE — $ATTEMPTED database(s) verified."
 ```
 
 If a database reports `FAIL`, see [Troubleshooting](#troubleshooting); after fixing the cause, redo just that database by passing its name to the script.
@@ -336,17 +354,20 @@ Then rerun the script with **only the failed database** as an argument (`bash mi
 
 ### Application passwords changed after the migration
 
-The target CR was created **before** the credential secrets were pre-staged (Step 1), so the operator generated new passwords. To restore the source credentials after the fact, update both the secret and the role together — the secret alone is not enough, and an `ALTER ROLE` alone would be reverted by the operator's next sync from the secret:
+The target CR was created **before** the credential secrets were pre-staged (Step 1), so the operator generated new passwords. To restore the source credentials after the fact, update both the secret and the role together — the secret alone is not enough, and an `ALTER ROLE` alone would be reverted by the operator's next sync from the secret. The commands below stay safe for passwords containing quotes, backslashes, or JSON metacharacters: the secret is patched with the base64 value (JSON-safe by construction), and the SQL uses psql's `:'pw'` literal quoting instead of string interpolation:
 
 ```bash
-SRC_PW=$(kubectl --context $SRC_CTX -n $SRC_NS get secret \
-  appuser.$SRC_CLUSTER.credentials.postgresql.acid.zalan.do -o jsonpath='{.data.password}' | base64 -d)
+PW_B64=$(kubectl --context $SRC_CTX -n $SRC_NS get secret \
+  appuser.$SRC_CLUSTER.credentials.postgresql.acid.zalan.do -o jsonpath='{.data.password}')
 
 kubectl --context $TGT_CTX -n $TGT_NS patch secret \
   appuser.$TGT_CLUSTER.credentials.postgresql.acid.zalan.do \
-  -p "{\"stringData\":{\"password\":\"$SRC_PW\"}}"
-kubectl --context $TGT_CTX -n $TGT_NS exec $TGT_POD -c postgres -- \
-  psql -U postgres -c "ALTER ROLE appuser PASSWORD '$SRC_PW';"
+  --type merge -p "{\"data\":{\"password\":\"$PW_B64\"}}"
+
+kubectl --context $TGT_CTX -n $TGT_NS exec -i $TGT_POD -c postgres -- \
+  psql -U postgres -v pw="$(printf %s "$PW_B64" | base64 -d)" <<'SQL'
+ALTER ROLE appuser PASSWORD :'pw';
+SQL
 ```
 
 Verify with a login test as in Step 4.
