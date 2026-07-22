@@ -3,9 +3,19 @@ products:
   - Alauda Application Services
 kind:
   - Solution
+ProductsVersion:
+  - '4.1,4.2,4.3'
 id: KB260300008
-sourceSHA: 55617f25eeb466933058c03107fb2a4d6e462e723ff0f03b05d20d3f4e2ceb06
+sourceSHA: db0f56c5c4a2842b1f20d3d82eed0f92f5e41fabffac9a17c7469cc46dc0d8d8
 ---
+
+<!--
+  Authoring model (oss-operator-factory): this guide is authored ONCE by hand. On later
+  OpenSearch releases, only the slots fenced with `factory:auto:*` markers below are updated by
+  the factory pipeline (supported versions, operand image tags, known limitations).
+  Do NOT hand-edit inside a factory:auto block — those are regenerated from component.yaml /
+  release evidence. Prose outside the markers is human-owned and preserved across releases.
+-->
 
 # OpenSearch 安装指南
 
@@ -15,23 +25,33 @@ OpenSearch 是一个由社区驱动的开源搜索和分析套件，源自 Elast
 
 ### 支持的版本
 
-| 组件                   | 支持的版本        |
-| --------------------- | ------------------ |
-| OpenSearch            | 2.19.3, 3.3.1      |
-| OpenSearch Dashboards | 2.19.3, 3.3.0      |
-| OpenSearch Operator   | 2.8.0              |
+<!-- factory:auto:supported-versions BEGIN -->
+
+| 项目                                   | 版本                                                         |
+| -------------------------------------- | ------------------------------------------------------------- |
+| ACP                                    | 4.1, 4.2, 4.3                                                 |
+| 架构                                   | amd64 (x86_64), arm64                                        |
+| Alauda 对 OpenSearch 的支持（捆绑）   | v2.8.0                                                        |
+| OpenSearch Operator                    | 2.8.0                                                         |
+| OpenSearch（操作数）                   | 2.19.6, 3.7.0                                                 |
+| OpenSearch Dashboards（操作数）        | 2.19.6, 3.7.0                                                 |
+| 上游                                   | opensearch-project/opensearch-k8s-operator 2.8.0 (Apache-2.0) |
+
+<!-- factory:auto:supported-versions END -->
+
+> 操作数版本通过 `spec.general.version`（和 `spec.dashboards.version`）按集群选择。只有上述列出的标签被镜像到平台注册表；其他版本在隔离环境中无法拉取。
 
 ## 先决条件
 
-- 支持动态供给的 StorageClass（用于持久卷）
-- 至少有 3 个节点的 ACP 集群用于生产部署（以维持集群管理器的法定人数）
+- 支持动态配置的 StorageClass（用于持久卷）
+- 至少有 3 个节点的 ACP 集群用于生产部署（以维护集群管理器的法定人数）
 - （可选）用于外部访问的 LoadBalancer 或 Ingress Controller
 
 ## 安装 OpenSearch Operator
 
-1. 从 [Alauda Cloud Console](https://cloud.alauda.io/) Marketplace 下载 **OpenSearch Operator** 插件。
-2. 按照 [Upload Packages](https://docs.alauda.io/container_platform/4.2/extend/upload_package.html) 指南将插件上传到集群。
-3. 导航到管理员 -> Marketplace -> OperatorHub。
+1. 从 [Alauda Cloud Console](https://cloud.alauda.io/) 市场下载 **OpenSearch Operator** 插件。
+2. 按照 [上架软件包](https://docs.alauda.io/container_platform/4.2/extend/upload_package.html) 指南将插件上传到集群。
+3. 导航到管理员 -> 市场 -> OperatorHub。
 4. 找到 **OpenSearch Cluster** 并点击安装。
 
 ## 快速开始：创建 OpenSearch 实例
@@ -51,7 +71,7 @@ metadata:
 spec:
   general:
     serviceName: my-opensearch
-    version: 3.3.1
+    version: 3.7.0
     httpPort: 9200
   security:
     tls:
@@ -62,7 +82,7 @@ spec:
         generate: true
   dashboards:
     enable: true
-    version: 3.3.0
+    version: 3.7.0
     replicas: 1
     resources:
       requests:
@@ -128,7 +148,7 @@ kubectl exec -n opensearch-demo my-opensearch-nodes-0 -- curl -sk -u admin:<pass
 
 ## 理解节点角色
 
-OpenSearch 支持多种节点角色（也称为节点类型），这些角色决定了每个节点在集群中执行的功能。正确的角色分配对集群的性能和稳定性至关重要。
+OpenSearch 支持多种节点角色（也称为节点类型），决定每个节点在集群中执行的功能。正确的角色分配对集群的性能和稳定性至关重要。
 
 默认情况下，每个节点都是集群管理器、数据、摄取和协调节点。决定节点数量、分配节点类型以及选择每种节点类型的硬件取决于您的用例。您必须考虑诸如希望保留数据的时间、文档的平均大小、典型工作负载（索引、搜索、聚合）、预期的性价比、风险承受能力等因素。
 
@@ -136,14 +156,14 @@ OpenSearch 支持多种节点角色（也称为节点类型），这些角色决
 
 下表提供了节点类型的描述和生产部署的最佳实践：
 
-| 节点类型               | 描述                                                                                                                                                                                                                                                                                           |
+| 节点类型             | 描述                                                                                                                                                                                                                                                                                           |
 | --------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **`cluster_manager`** | 管理集群的整体操作并跟踪集群状态。这包括创建和删除索引、跟踪加入和离开集群的节点、检查集群中每个节点的健康状况（通过运行 ping 请求）以及将分片分配给节点。 |
+| **`cluster_manager`** | 管理集群的整体操作并跟踪集群状态。这包括创建和删除索引，跟踪加入和离开集群的节点，检查集群中每个节点的健康状况（通过运行 ping 请求），以及将分片分配给节点。 |
 | **`data`**            | 存储和搜索数据。对本地分片执行所有与数据相关的操作（索引、搜索、聚合）。这些是集群的工作节点，需要比任何其他节点类型更多的磁盘空间。                                                                                      |
-| **`ingest`**          | 在将数据存储到集群之前对其进行预处理。运行摄取管道，在将数据添加到索引之前对其进行转换。                                                                                                                                                                  |
-| **`coordinating`**    | 将客户端请求委派给数据节点上的分片，收集并将结果聚合成一个最终结果，并将该结果发送回客户端。                                                                                                                                       |
-| **`dynamic`**         | 将特定节点委派给自定义工作，例如机器学习（ML）任务，防止消耗数据节点的资源，从而不影响任何 OpenSearch 功能。                                                                                                     |
-| **`warm`**            | 提供对可搜索快照的访问。采用技术，如频繁缓存使用的段并删除最少使用的数据段，以访问可搜索快照索引（存储在远程长期存储源中，例如 Amazon S3 或 Google Cloud Storage）。      |
+| **`ingest`**          | 在将数据存储到集群之前对其进行预处理。运行一个摄取管道，在将数据添加到索引之前对其进行转换。                                                                                                                                                                  |
+| **`coordinating`**    | 将客户端请求委派给数据节点上的分片，收集并聚合结果为一个最终结果，并将此结果发送回客户端。                                                                                                                                       |
+| **`dynamic`**         | 为自定义工作（例如机器学习（ML）任务）委派特定节点，防止消耗数据节点的资源，从而不影响任何 OpenSearch 功能。                                                                                                     |
+| **`warm`**            | 提供对可搜索快照的访问。采用技术，如频繁缓存使用的段和删除最少使用的数据段，以访问可搜索快照索引（存储在远程长期存储源中，例如 Amazon S3 或 Google Cloud Storage）。      |
 | **`search`**          | 搜索节点是专用节点，仅托管搜索副本分片，帮助将搜索工作负载与索引工作负载分开。                                                                                                                                                                     |
 
 > \[!NOTE]
@@ -151,9 +171,9 @@ OpenSearch 支持多种节点角色（也称为节点类型），这些角色决
 
 ### 容量规划和基准测试
 
-在评估您的需求后，我们建议您使用基准测试工具，如 [OpenSearch Benchmark](https://github.com/opensearch-project/opensearch-benchmark)，来配置一个小型样本集群，并在不同的工作负载和配置下运行测试。比较和分析这些测试的系统和查询指标，以设计最佳架构。
+在评估需求后，我们建议您使用基准测试工具，如 [OpenSearch Benchmark](https://github.com/opensearch-project/opensearch-benchmark)，来配置一个小型样本集群，并在不同的工作负载和配置下运行测试。比较和分析这些测试的系统和查询指标，以设计最佳架构。
 
-### 何时使用每个角色
+### 何时使用每种角色
 
 #### 小型集群（开发/测试）
 
@@ -188,7 +208,7 @@ nodePools:
 
 ```yaml
 nodePools:
-  # 专用集群管理器节点
+  # 专用集群管理节点
   - component: masters
     replicas: 3
     diskSize: "10Gi"
@@ -235,7 +255,7 @@ nodePools:
 
 ```yaml
 nodePools:
-  # 专用集群管理器节点
+  # 专用集群管理节点
   - component: masters
     replicas: 3
     diskSize: "30Gi"
@@ -296,13 +316,13 @@ nodePools:
 
 ### 节点角色的最佳实践
 
-| 指导原则                  | 建议                                                   |
-| ------------------------ | ------------------------------------------------------ |
-| 集群管理器数量            | 始终使用 **奇数**（3、5、7）以维持法定人数            |
-| 专用集群管理器            | 推荐用于数据节点超过 5 个的集群                      |
-| 数据节点扩展              | 根据数据量和查询负载水平扩展                          |
-| JVM 堆大小                | 设置为 **容器内存的一半**，最大 32GB                   |
-| 协调节点                  | 在大型集群中使用，以减轻数据节点的请求路由负担        |
+| 指南                      | 建议                                                       |
+| ------------------------- | ---------------------------------------------------------- |
+| 集群管理器数量            | 始终使用 **奇数**（3、5、7）以维护法定人数                |
+| 专用集群管理器            | 推荐用于数据节点超过 5 个的集群                          |
+| 数据节点扩展              | 根据数据量和查询负载水平扩展                             |
+| JVM 堆大小                | 设置为 **容器内存的一半**，最大 32GB                      |
+| 协调节点                  | 在大型集群中使用，以减轻数据节点的请求路由负担           |
 
 ## 在受限命名空间中部署（Pod 安全准入）
 
@@ -311,13 +331,13 @@ nodePools:
 1. 设置 `vm.max_map_count` 内核参数
 2. 通过 `chown` 修复卷权限
 
-在具有受限 Pod 安全准入（PSA）的命名空间中部署 OpenSearch 时，需要额外的配置。
+在受限 Pod 安全准入（PSA）命名空间中部署 OpenSearch 时，需要额外的配置。
 
 ### 解决方案
 
 #### 步骤 1：预配置内核参数
 
-由于 operator 无法设置 `vm.max_map_count`，请在所有工作节点上进行配置：
+由于操作员无法设置 `vm.max_map_count`，请在所有工作节点上进行配置：
 
 ```bash
 # 在每个工作节点上
@@ -340,13 +360,13 @@ metadata:
 spec:
   general:
     serviceName: opensearch-restricted
-    version: 3.3.1
+    version: 3.7.0
     httpPort: 9200
     
     # 禁用需要 root 的初始化容器
     setVMMaxMapCount: false
     
-    # Pod 级安全上下文
+    # Pod 级别的安全上下文
     podSecurityContext:
       runAsUser: 1000
       runAsGroup: 1000
@@ -355,7 +375,7 @@ spec:
       seccompProfile:
         type: RuntimeDefault
     
-    # 容器级安全上下文
+    # 容器级别的安全上下文
     securityContext:
       allowPrivilegeEscalation: false
       privileged: false
@@ -397,7 +417,7 @@ spec:
   
   dashboards:
     enable: true
-    version: 3.3.0
+    version: 3.7.0
     replicas: 1
     
     # Dashboards 安全上下文
@@ -430,10 +450,10 @@ spec:
 
 ```yaml
 podSecurityContext:
-  fsGroup: 1000  # Kubernetes 将自动将卷的所有权更改为该组
+  fsGroup: 1000  # Kubernetes 将此组的卷更改为拥有者
 ```
 
-如果使用的 StorageClass 不支持 fsGroup，请确保底层存储预先配置了正确的权限。
+如果使用的 StorageClass 不支持 fsGroup，请确保底层存储预配置了正确的权限。
 
 ## 配置参考
 
@@ -444,14 +464,14 @@ podSecurityContext:
 | `spec.general.version`                | -       | OpenSearch 版本（必需）                                          |
 | `spec.general.httpPort`               | `9200`  | HTTP API 端口                                                    |
 | `spec.general.setVMMaxMapCount`       | `false` | 启用 vm.max_map_count 初始化容器                               |
-| `spec.nodePools[].replicas`           | -       | 节点池中的节点数量                                              |
+| `spec.nodePools[].replicas`           | -       | 池中节点的数量                                                  |
 | `spec.nodePools[].diskSize`           | -       | 每个节点的存储大小                                            |
 | `spec.nodePools[].jvm`                | auto    | JVM 堆设置（例如，`-Xmx4G -Xms4G`）                              |
 | `spec.nodePools[].roles`              | -       | 节点角色（cluster_manager、data、ingest，或为空以协调）       |
 | `spec.dashboards.enable`              | `false` | 启用 OpenSearch Dashboards                                       |
 | `spec.dashboards.version`             | -       | Dashboards 版本                                                 |
 | `spec.security.tls.transport.generate`| `false` | 自动生成传输 TLS 证书                                          |
-| `spec.security.tls.http.generate`     | `false` | 自动生成 HTTP TLS 证书                                          |
+| `spec.security.tls.http.generate`     | `false` | 自动生成 HTTP TLS 证书                                         |
 
 ### 自定义 OpenSearch 配置
 
@@ -472,7 +492,23 @@ spec:
         - "data"
 ```
 
-## 参考
+## 已知限制
+
+<!-- factory:auto:known-limitations BEGIN -->
+
+- **操作数版本仅限于镜像集。** 只有 OpenSearch / OpenSearch Dashboards
+  `2.19.6` 和 `3.7.0` 被同步到平台注册表；选择任何其他
+  `spec.general.version` / `spec.dashboards.version` 将无法在隔离环境中拉取。
+- **部署表单呈现复杂规格较弱。** 上游 CSV 不提供
+  `specDescriptors`，因此 OperatorHub 表单有限 — 对于超出简单集群的任何内容，请直接应用本指南中的 YAML 示例。
+- **此版本遵循稳定的 2.8 操作线。** 上游 `3.0.x` 操作线仍处于 alpha 阶段；此插件版本遵循稳定的 `2.8.0` 操作与 2.19.6 / 3.7.0
+  操作数线。
+- **`vm.max_map_count` 初始化容器。** 在受限 Pod 安全准入命名空间中，sysctl 初始化容器无法运行 — 在工作节点上预设 `vm.max_map_count=262144`（请参见
+  [在受限命名空间中部署](#deploy-in-restricted-namespaces-pod-security-admission)）。
+
+<!-- factory:auto:known-limitations END -->
+
+## 参考文献
 
 1. [OpenSearch Kubernetes Operator 文档](https://github.com/opensearch-project/opensearch-k8s-operator/blob/main/docs/userguide/main.md)
 2. [OpenSearch 官方文档](https://docs.opensearch.org/3.3/about/)
