@@ -5,55 +5,57 @@ kind:
   - Solution
 ProductsVersion:
   - 4.x
-sourceSHA: fd6ae6d0d6bf84265f8445cc06db721bbd2848baeb7a35e108a5d884e3e67de0
+sourceSHA: a8df7361a9a2a9d00ee99bfb5ae573e09269e99080ee9d724484408f10801aa1
 ---
 
 # ACP Registry v2 迁移运行手册
 
-当现有的 ACP 环境将镜像工作负载从旧版 Registry 移动到 **Registry v2**（位于 `image-registry-system` 中）时，需要进行从旧版 ACP Registry 的迁移。Registry v2 是由 `cluster-image-registry-operator` 部署和管理的 Registry。
+当现有的 ACP 环境将镜像工作负载从遗留 Registry 移动到 **Registry v2**（位于 `image-registry-system` 中）时，需要进行从遗留 ACP Registry 的迁移。Registry v2 是指由 `cluster-image-registry-operator` 部署和管理的 Registry。
 
-迁移工作流程基于经过验证的 ACP `ac` 运行手册。无需专用的 Registry 迁移子命令。请使用以下 `ac` 命令：
+迁移工作流程基于经过验证的 ACP `ac` 运行手册。无需专门的 Registry 迁移子命令。请使用以下 `ac` 命令：
 
-- `ac get images` 导出旧版镜像列表。
-- `ac registry login` 写入 OCI Registry 凭据。
-- `ac image mirror` 在源和目标 Registry 不共享存储时复制镜像 blobs。
-- `ac image info` 从选定的 Registry 读取镜像摘要和媒体类型以进行元数据检查。
-- `ac create -f` 创建 `ImageStreamMapping` 资源并回填 Registry v2 的镜像和 ImageStream 元数据。
+- `ac get images` 导出遗留镜像列表。
+- `ac registry login` 写入 OCI registry 凭据。
+- `ac image mirror` 在源和目标注册表不共享存储时复制镜像 blob。
+- `ac image info` 从选定的注册表读取镜像摘要和媒体类型以进行元数据检查。
+- `ac create -f` 创建 `ImageStreamMapping` 资源并填充 Registry v2 镜像和 ImageStream 元数据。
 
-在迁移过程中，尽可能使用维护窗口。至少，暂停对旧版 Registry 的写入。读取可以保持可用。如果在迁移期间推送了新镜像，请在最终切换之前重复镜像复制和元数据回填。
+在迁移过程中，尽可能使用维护窗口。至少，暂停对遗留 Registry 的写入。读取可以保持可用。如果在迁移期间推送了新镜像，请在最终切换之前重复镜像复制和元数据填充。
+
+元数据填充仅写入 Registry v2 镜像 API 对象。它不复制或修复注册表存储数据，例如清单、配置 blob、层、存储库修订链接或标签链接。在 Registry v2 可以通过存储重用或完成的镜像复制访问相应的镜像数据之前，请勿创建 `ImageStreamMapping` 对象。如果故意不保留遗留镜像数据，请勿对这些镜像运行元数据填充；请将镜像再次推送到 Registry v2。
 
 ## 迁移场景
 
-| 场景                | 使用时机                                                                                                                                      | Blob 迁移                                                                                  | 元数据迁移                                                                                                                    |
-| ------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
-| 存储重用            | 旧版 Registry 和 Registry v2 在同一 ACP 环境和业务集群中运行，并且 Registry v2 重用旧版 Registry 存储。 | 不需要。Registry v2 附加到现有的 blob 存储。                                             | 需要。从旧版 Registry 读取摘要和媒体类型，然后回填 `ImageStream` 和 `ImageStreamMapping` 对象。          |
-| 跨 Registry 同步    | 旧版 Registry 和 Registry v2 使用不同的存储、不同的集群或不同的 ACP 环境。                                 | 需要。使用 `ac image mirror` 将镜像从旧版 Registry 复制到目标 Registry。 | 在镜像复制后需要。 从 Registry v2 读取摘要和媒体类型，然后回填 `ImageStream` 和 `ImageStreamMapping` 对象。 |
+| 场景               | 使用时                                                                                                                                       | Blob 迁移                                                                                     | 元数据迁移                                                                                                                       |
+| ------------------ | -------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| 存储重用           | 遗留 Registry 和 Registry v2 在同一 ACP 环境和业务集群中运行，并且 Registry v2 重用遗留 Registry 存储。                                     | 不需要。Registry v2 附加到现有的 blob 存储。                                                | 需要。从遗留 Registry 读取摘要和媒体类型，然后填充 `ImageStream` 和 `ImageStreamMapping` 对象。                               |
+| 跨注册表同步      | 遗留 Registry 和 Registry v2 使用不同的存储、不同的集群或不同的 ACP 环境。                                                                  | 需要。使用 `ac image mirror` 将镜像从遗留 Registry 复制到目标 Registry。                      | 在镜像复制后需要。从 Registry v2 读取摘要和媒体类型，然后填充 `ImageStream` 和 `ImageStreamMapping` 对象。                   |
 
 ## 所需输入
 
 在运行迁移之前，请准备以下输入：
 
-| 变量                             | 描述                                                                                                                                                       | 示例                                             |
-| -------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------- |
-| `MIGRATION_KUBECONFIG`           | 仅用于迁移的可选 kubeconfig。                                                                                                                              | `/tmp/registry-migration/kubeconfig`                |
-| `ACP_PLATFORM_URL`               | ACP 平台登录 URL。                                                                                                                                           | `https://acp.example.com`                           |
-| `ACP_SESSION_NAME`               | 用于迁移的 ACP 登录会话名称。                                                                                                                               | `registry-migration`                                |
-| `ACP_USERNAME`                   | 用于迁移的 ACP 账户。                                                                                                                                       | `admin`                                             |
-| `ACP_PASSWORD`                   | ACP 密码。仅在私有环境文件中存储。                                                                                                                            | `******`                                            |
-| `ACP_CLUSTER`                    | 登录后选择的业务集群。                                                                                                                                      | `business-1`                                        |
-| `ACP_IDP`                        | 登录条目所需的可选身份提供者名称。                                                                                                                            | `ldap-test`                                         |
-| `ACP_AUTH_TYPE`                  | 登录条目所需的可选身份验证类型。                                                                                                                             | `ldap`                                              |
-| `LEGACY_REGISTRY_URL`            | 由 `ac get images --registry-url` 使用的旧版 Registry URL。包括 `http://` 或 `https://`。                                                                  | `http://old-registry.example.com:5000`              |
-| `LEGACY_REGISTRY_HOST`           | 由 `ac image mirror` 使用的旧版 Registry 外部主机。不要包含方案。                                                                                         | `old-registry.example.com:5000`                     |
-| `TARGET_REGISTRY_HOST`           | 由镜像镜像、镜像检查、元数据回填和验证使用的 Registry v2 外部主机。不要包含方案。                                                                          | `image-registry.example.com`                        |
-| `IMAGE_LIST_FILE`                | 要迁移的镜像列表。每行格式为 `namespace/name:tag`。                                                                                                         | `/tmp/registry-migration/image-list.txt`            |
-| `IMAGE_DIGEST_FILE`              | 可选的镜像和摘要列表。每行格式为 `namespace/name:tag sha256:...`。                                                                                         | `/tmp/registry-migration/image-digests.txt`         |
-| `MAPPING_FILE`                   | 跨 Registry 同步的镜像映射文件。每行格式为 `source=target`。                                                                                                | `/tmp/registry-migration/mirror-map.txt`            |
-| `METADATA_DIR`                   | `ac image info`、`ImageStreamMapping` 和应用结果的输出目录。                                                                                               | `/tmp/registry-migration/metadata`                  |
-| `METADATA_INSPECT_REGISTRY_HOST` | 在检查摘要和媒体类型时用于元数据回填的 Registry 主机。对于存储重用使用旧版 Registry，对于跨 Registry 同步使用 Registry v2。 | `old-registry.example.com:5000`                     |
-| `REGISTRY_INSECURE_FLAG`         | 当 Registry 使用 HTTP、自签名证书或测试证书时设置为 `--insecure`。对于受信任的 HTTPS 设置为空字符串。                                                       | `--insecure`                                        |
-| `REGISTRY_AUTH_DIR`              | OCI Registry 身份验证目录。                                                                                                                                 | `/tmp/registry-migration/registry-auth`             |
-| `REGISTRY_AUTH_FILE`             | 由 `ac registry login --to` 写入的 OCI Registry 身份验证文件。                                                                                               | `/tmp/registry-migration/registry-auth/config.json` |
+| 变量                             | 描述                                                                                                                                                       | 示例                                               |
+| -------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------- |
+| `MIGRATION_KUBECONFIG`           | 仅用于迁移的可选 kubeconfig。                                                                                                                               | `/tmp/registry-migration/kubeconfig`              |
+| `ACP_PLATFORM_URL`               | ACP 平台登录 URL。                                                                                                                                         | `https://acp.example.com`                         |
+| `ACP_SESSION_NAME`               | 用于迁移的 ACP 登录会话名称。                                                                                                                               | `registry-migration`                              |
+| `ACP_USERNAME`                   | 用于迁移的 ACP 账户。                                                                                                                                      | `admin`                                           |
+| `ACP_PASSWORD`                   | ACP 密码。仅在私有环境文件中存储。                                                                                                                          | `******`                                          |
+| `ACP_CLUSTER`                    | 登录后选择的业务集群。                                                                                                                                   | `business-1`                                      |
+| `ACP_IDP`                        | 登录条目所需的可选身份提供者名称。                                                                                                                          | `ldap-test`                                       |
+| `ACP_AUTH_TYPE`                  | 登录条目所需的可选身份验证类型。                                                                                                                            | `ldap`                                            |
+| `LEGACY_REGISTRY_URL`            | `ac get images --registry-url` 使用的遗留 Registry URL。包括 `http://` 或 `https://`。                                                                     | `http://old-registry.example.com:5000`            |
+| `LEGACY_REGISTRY_HOST`           | `ac image mirror` 使用的遗留 Registry 外部主机。不要包含方案。                                                                                           | `old-registry.example.com:5000`                   |
+| `TARGET_REGISTRY_HOST`           | 用于镜像镜像、镜像检查、元数据填充和验证的 Registry v2 外部主机。不要包含方案。                                                                          | `image-registry.example.com`                      |
+| `IMAGE_LIST_FILE`                | 要迁移的镜像列表。每行格式为 `namespace/name:tag`。                                                                                                        | `/tmp/registry-migration/image-list.txt`          |
+| `IMAGE_DIGEST_FILE`              | 可选的镜像和摘要列表。每行格式为 `namespace/name:tag sha256:...`。                                                                                       | `/tmp/registry-migration/image-digests.txt`       |
+| `MAPPING_FILE`                   | 跨注册表同步的镜像映射文件。每行格式为 `source=target`。                                                                                                   | `/tmp/registry-migration/mirror-map.txt`          |
+| `METADATA_DIR`                   | `ac image info`、`ImageStreamMapping` 和应用结果的输出目录。                                                                                               | `/tmp/registry-migration/metadata`                |
+| `METADATA_INSPECT_REGISTRY_HOST` | 在检查摘要和媒体类型时用于元数据填充的注册表主机。对于存储重用使用遗留 Registry，对于跨注册表同步使用 Registry v2。                                     | `old-registry.example.com:5000`                   |
+| `REGISTRY_INSECURE_FLAG`         | 当注册表使用 HTTP、自签名证书或测试证书时设置为 `--insecure`。对于受信任的 HTTPS 设置为空字符串。                                                        | `--insecure`                                      |
+| `REGISTRY_AUTH_DIR`              | OCI 注册表身份验证目录。                                                                                                                                 | `/tmp/registry-migration/registry-auth`           |
+| `REGISTRY_AUTH_FILE`             | 由 `ac registry login --to` 写入的 OCI 注册表身份验证文件。                                                                                                 | `/tmp/registry-migration/registry-auth/config.json` |
 
 创建迁移工作区：
 
@@ -73,20 +75,20 @@ export REGISTRY_INSECURE_FLAG="${REGISTRY_INSECURE_FLAG:---insecure}"
 mkdir -p "$REGISTRY_AUTH_DIR" "$METADATA_DIR"
 ```
 
-如果旧版 Registry 使用 HTTP，从 `LEGACY_REGISTRY_HOST` 派生 `LEGACY_REGISTRY_URL`。如果使用 HTTPS，则显式设置完整 URL：
+如果遗留 Registry 使用 HTTP，则从 `LEGACY_REGISTRY_HOST` 派生 `LEGACY_REGISTRY_URL`。如果使用 HTTPS，则显式设置完整 URL：
 
 ```bash
 export LEGACY_REGISTRY_URL="${LEGACY_REGISTRY_URL:-http://$LEGACY_REGISTRY_HOST}"
 ```
 
-`REGISTRY_AUTH_DIR` 存储 OCI Registry 身份验证文件。设置此变量不会启动本地容器运行时。
-如果源和目标 Registry 都使用受信任的 HTTPS 证书，则禁用不安全标志：
+`REGISTRY_AUTH_DIR` 存储 OCI 注册表身份验证文件。设置此变量不会启动本地容器运行时。
+如果源和目标注册表都使用受信任的 HTTPS 证书，则禁用不安全标志：
 
 ```bash
 export REGISTRY_INSECURE_FLAG=""
 ```
 
-## 登录并检查 Registry 模式
+## 登录并检查注册表模式
 
 登录到 ACP 并创建仅用于迁移的 kubeconfig：
 
@@ -108,7 +110,7 @@ export KUBECONFIG="$MIGRATION_KUBECONFIG"
 [ -z "${ACP_CLUSTER:-}" ] || ac config use-cluster "$ACP_CLUSTER"
 ```
 
-如果集群同时具有旧版和 Registry v2 后端，则 `auto` 模式可能需要显式选择。以旧版模式开始迁移并确认可以发现旧版 Registry：
+如果集群同时具有遗留和 Registry v2 后端，则 `auto` 模式可能需要显式选择。以遗留模式开始迁移并确认可以发现遗留 Registry：
 
 ```bash
 ac config set-registry-mode legacy
@@ -117,11 +119,11 @@ ac registry info
 ac registry info --internal
 ```
 
-`ac registry info` 显示当前模式下发现的 Registry。它可能返回一个集群内服务，例如 `image-registry.cpaas-system`，该服务无法直接从管理员工作站访问。使用 `LEGACY_REGISTRY_URL` 进行镜像发现，并使用 `LEGACY_REGISTRY_HOST` 和 `TARGET_REGISTRY_HOST` 进行镜像复制。
+`ac registry info` 显示当前模式下发现的注册表。它可能返回一个集群内服务，例如 `image-registry.cpaas-system`，该服务无法从管理员工作站直接访问。使用 `LEGACY_REGISTRY_URL` 进行镜像发现，并使用 `LEGACY_REGISTRY_HOST` 和 `TARGET_REGISTRY_HOST` 进行镜像复制。
 
 ## 准备镜像列表
 
-导出当前 ACP 用户可见的旧版镜像列表：
+导出当前 ACP 用户可见的遗留镜像列表：
 
 ```bash
 ac config set-registry-mode legacy
@@ -142,7 +144,7 @@ awk 'NR > 1 && NF >= 4 && $4 != "unknown" { print $1 ":" $2 " " $4 }' \
   | sort -u > "$IMAGE_DIGEST_FILE"
 ```
 
-您也可以手动编写列表，当仅选择特定镜像进行迁移时：
+当仅选择特定镜像进行迁移时，您也可以手动编写列表：
 
 ```bash
 cat >> "$IMAGE_LIST_FILE" <<EOF
@@ -162,11 +164,11 @@ sed -n '1,20p' "$IMAGE_DIGEST_FILE"
 wc -l "$IMAGE_LIST_FILE"
 ```
 
-从列表中删除临时测试镜像、已退役的命名空间和不正确的标签。
+从列表中删除临时测试镜像、退役命名空间和不正确的标签。
 
-## 写入 Registry 凭据
+## 写入注册表凭据
 
-写入旧版和目标 Registry 的凭据。`ac image mirror` 和 `ac image info` 读取此文件：
+为遗留和目标注册表写入凭据。`ac image mirror` 和 `ac image info` 读取此文件：
 
 ```bash
 export DOCKER_CONFIG="$REGISTRY_AUTH_DIR"
@@ -184,7 +186,7 @@ ac registry login \
   $REGISTRY_INSECURE_FLAG
 ```
 
-如果源和目标 Registry 属于不同的 ACP 环境，请将两个凭据写入同一个身份验证文件，并使用相应的 kubeconfig：
+如果源和目标注册表属于不同的 ACP 环境，请将两个凭据写入同一身份验证文件中，并使用相应的 kubeconfig：
 
 ```bash
 KUBECONFIG="$SOURCE_KUBECONFIG" \
@@ -194,11 +196,11 @@ KUBECONFIG="$TARGET_KUBECONFIG" \
   ac registry login --registry "$TARGET_REGISTRY_HOST" --skip-check --to "$REGISTRY_AUTH_FILE" $REGISTRY_INSECURE_FLAG
 ```
 
-## 准备元数据回填
+## 准备元数据填充
 
-Registry v2 除了镜像 blobs 之外，还需要 Image API 元数据。使用 `ImageStreamMapping` 回填 `Image`、`ImageStream` 和标签元数据。
+Registry v2 除了镜像 blob 之外，还需要镜像 API 元数据。使用 `ImageStreamMapping` 填充 `Image`、`ImageStream` 和标签元数据。
 
-在迁移 shell 会话中定义元数据回填函数：
+在迁移 shell 会话中定义元数据填充函数：
 
 ```bash
 ensure_imagestream() {
@@ -252,14 +254,24 @@ write_imagestream_mapping() {
     inspect_ref="$inspect_registry_host/$namespace/$stream@$digest"
   fi
 
-  ac image info "$inspect_ref" $REGISTRY_INSECURE_FLAG > "$info_file"
+  if ! ac image info "$inspect_ref" \
+    --registry-config "$REGISTRY_AUTH_FILE" \
+    $REGISTRY_INSECURE_FLAG > "$info_file" 2>&1; then
+    BACKFILL_LAST_ACTION="failed"
+    echo "[metadata] failed to inspect $inspect_ref; output=$info_file" >&2
+    sed -n '1,20p' "$info_file" >&2
+    return 1
+  fi
 
   [ -n "$digest" ] || digest="$(awk '/^Digest:/ { sub(/^Digest:[[:space:]]*/, ""); print; exit }' "$info_file")"
   media_type="$(awk '/^Media Type:/ { sub(/^Media Type:[[:space:]]*/, ""); print; exit }' "$info_file")"
-  [ -n "$media_type" ] || media_type="application/vnd.docker.distribution.manifest.v2+json"
 
   if [ -z "$digest" ]; then
     echo "failed to read digest from $source_ref" >&2
+    return 1
+  fi
+  if [ -z "$media_type" ]; then
+    echo "failed to read media type from $source_ref" >&2
     return 1
   fi
 
@@ -366,29 +378,29 @@ if type backfill_metadata >/dev/null 2>&1; then
 fi
 ```
 
-对于大规模迁移，函数默认每 100 个镜像打印一次进度。如有需要，可以调整间隔：
+对于大规模迁移，该函数默认每 100 个镜像打印一次进度。如有需要，可以调整间隔：
 
 ```bash
 export METADATA_PROGRESS_INTERVAL=500
 ```
 
-仅在排查小规模镜像时设置 `METADATA_VERBOSE=true`。
+仅在排查小型镜像集时设置 `METADATA_VERBOSE=true`。
 
-## 场景 A：重用旧版存储
+## 场景 A：重用遗留存储
 
-当旧版 Registry 和 Registry v2 在同一 ACP 环境和业务集群中运行，并且 Registry v2 可以配置为访问旧版 Registry 使用的相同 blob 存储时，请使用此路径。
+当遗留 Registry 和 Registry v2 在同一 ACP 环境和业务集群中运行，并且 Registry v2 可以配置为访问遗留 Registry 使用的相同 blob 存储时，请使用此路径。
 
 此路径不复制镜像 blobs。但是，请不要假设 Registry v2 可以在元数据存在之前通过标签读取旧 blobs。正确的顺序是：
 
-1. 暂停对旧版 Registry 的写入。
-2. 将 Registry v2 附加到旧版 blob 存储。
-3. 从旧版 Registry 读取摘要和媒体类型。
+1. 暂停对遗留 Registry 的写入。
+2. 将 Registry v2 附加到遗留 blob 存储。
+3. 从遗留 Registry 读取摘要和媒体类型。
 4. 在 Registry v2 中创建 `ImageStream` 和 `ImageStreamMapping` 对象。
 5. 通过 Registry v2 验证读取。
 
-在迁移被接受之前，不要对任何 Registry 运行修剪或 Registry GC。
+在迁移被接受之前，请勿对任何 Registry 运行修剪或 Registry GC。
 
-设置 Registry 命名空间：
+设置注册表命名空间：
 
 ```bash
 export LEGACY_REGISTRY_NAMESPACE="${LEGACY_REGISTRY_NAMESPACE:-cpaas-system}"
@@ -397,9 +409,9 @@ export MODERN_REGISTRY_NAMESPACE="${MODERN_REGISTRY_NAMESPACE:-image-registry-sy
 
 ### 文件系统或 PVC 存储重用
 
-对于 NFS 或 CephFS 等文件系统存储，使 Registry v2 PVC 指向相同的旧版 Registry 数据。确切的 PV/PVC 清单取决于存储后端。以下示例仅适用于旧版 Registry 使用 NFS CSI PV 的情况。
+对于 NFS 或 CephFS 等文件系统存储，使 Registry v2 PVC 指向相同的遗留 Registry 数据。确切的 PV/PVC 清单取决于存储后端。以下示例仅适用于遗留 Registry 使用 NFS CSI PV 的情况。
 
-找到旧版 Registry PVC 和 PV：
+定位遗留 Registry PVC 和 PV：
 
 ```bash
 export LEGACY_REGISTRY_PVC="${LEGACY_REGISTRY_PVC:-image-registry}"
@@ -416,7 +428,7 @@ ac get pvc "$LEGACY_REGISTRY_PVC" -n "$LEGACY_REGISTRY_NAMESPACE"
 ac get pv "$LEGACY_PV_NAME"
 ```
 
-确认旧版 PV 使用 NFS CSI 驱动程序，并收集重用所需的字段：
+确认遗留 PV 使用 NFS CSI 驱动程序并收集重用所需的字段：
 
 ```bash
 LEGACY_STORAGE_DRIVER="$(
@@ -447,7 +459,7 @@ test -n "$LEGACY_NFS_VOLUME_HANDLE"
 test -n "$LEGACY_STORAGE_SIZE"
 ```
 
-如果存储后端不是 NFS CSI，请不要重用此清单。请向存储管理员请求提供一个挂载相同旧版数据的 PV/PVC，并保持 PVC 名称与 `Config/cluster.spec.storage.pvc.claim` 对齐。
+如果存储后端不是 NFS CSI，请勿重用此清单。请向存储管理员请求提供一个挂载相同遗留数据的 PV/PVC，并保持 PVC 名称与 `Config/cluster.spec.storage.pvc.claim` 对齐。
 
 在替换 Registry v2 存储之前，停止 Registry v2 运行时并等待数据平面部署被移除：
 
@@ -465,7 +477,7 @@ while ac get deployment image-api-server -n "$MODERN_REGISTRY_NAMESPACE" >/dev/n
 done
 ```
 
-创建一个指向旧版数据的静态 PV/PVC：
+创建一个指向遗留数据的静态 PV/PVC：
 
 ```bash
 cat > "$MIGRATION_DIR/modern-registry-reuse-legacy-storage.yaml" <<EOF
@@ -530,9 +542,9 @@ ac rollout status deployment/image-api-server -n "$MODERN_REGISTRY_NAMESPACE" --
 
 ### 对象存储重用
 
-对于 S3、OSS、GCS、Azure、Swift 或 IBM COS 等对象存储，配置 Registry v2 使用与旧版 Registry 相同的存储桶或容器、端点、地域、路径前缀、凭据、CA 和访问参数。
+对于 S3、OSS、GCS、Azure、Swift 或 IBM COS 等对象存储，配置 Registry v2 使用与遗留 Registry 相同的存储桶或容器、端点、地域、路径前缀、凭据、CA 和访问参数。
 
-如果旧版 Registry 使用路径前缀，而 Registry v2 无法配置相同的前缀，则请改用场景 B。如果 Registry v2 Operator 不支持旧版对象存储类型或所需的访问参数，也请使用场景 B。
+如果遗留 Registry 使用路径前缀且 Registry v2 无法配置相同的前缀，则请改用场景 B。如果 Registry v2 Operator 不支持遗留对象存储类型或所需的访问参数，也请使用场景 B。
 
 如果 Registry v2 已经使用其他存储后端，请在更改对象存储之前停止运行时：
 
@@ -556,7 +568,7 @@ done
 ac explain configs.imageregistry.operator.alauda.io.spec.storage --recursive
 ```
 
-然后检查旧版 Registry 配置和机密：
+然后检查遗留 Registry 配置和机密：
 
 ```bash
 ac get deployment image-registry -n "$LEGACY_REGISTRY_NAMESPACE" -o yaml
@@ -564,7 +576,7 @@ ac get configmap image-registry-config -n "$LEGACY_REGISTRY_NAMESPACE" -o yaml
 ac get secret -n "$LEGACY_REGISTRY_NAMESPACE"
 ```
 
-以下 S3 结构仅为示例。使用 `ac explain` 和实际的旧版 Registry 配置作为真实来源，替换存储桶、地域、端点、CA 和相关访问设置，并删除当前环境不使用的字段：
+以下 S3 结构仅为示例。使用 `ac explain` 和实际的遗留 Registry 配置作为真实来源，替换存储桶、地域、端点、CA 和相关访问设置，并删除当前环境不使用的字段：
 
 ```yaml
 apiVersion: imageregistry.operator.alauda.io/v1
@@ -598,7 +610,7 @@ while ! ac get deployment image-api-server -n "$MODERN_REGISTRY_NAMESPACE" >/dev
 done
 ```
 
-在迁移环境文件中不要存储对象存储凭据。创建或重用 Registry v2 Operator 所需的机密，然后验证 Registry pod 是否已获取存储设置：
+请勿在迁移环境文件中存储对象存储凭据。创建或重用 Registry v2 Operator 所需的机密，然后验证 Registry pod 是否已获取存储设置：
 
 ```bash
 ac get deployment image-registry -n "$MODERN_REGISTRY_NAMESPACE" -o yaml
@@ -608,7 +620,7 @@ ac rollout status deployment/image-registry -n "$MODERN_REGISTRY_NAMESPACE" --ti
 ac rollout status deployment/image-api-server -n "$MODERN_REGISTRY_NAMESPACE" --timeout=300s
 ```
 
-配置对象存储重用后，通过检查旧版 Registry 回填元数据：
+配置对象存储重用后，通过检查遗留 Registry 填充元数据：
 
 ```bash
 export METADATA_INSPECT_REGISTRY_HOST="$LEGACY_REGISTRY_HOST"
@@ -616,13 +628,13 @@ ac config set-registry-mode modern
 backfill_metadata
 ```
 
-如果在元数据回填之前 `ac image info "$TARGET_REGISTRY_HOST/$image"` 失败，这并不一定意味着存储重用已损坏。当 Image 和 ImageStream 元数据尚不存在时，Registry v2 可能返回 `NAME_UNKNOWN`。使用 `backfill_metadata` 的结果和以下验证步骤作为决策点。
+如果 `ac image info "$TARGET_REGISTRY_HOST/$image"` 在元数据填充之前失败，这并不一定意味着存储重用已损坏。当 `Image` 和 `ImageStream` 元数据尚不存在时，Registry v2 可能返回 `NAME_UNKNOWN`。使用 `backfill_metadata` 的结果和以下验证步骤作为决策点。
 
-## 场景 B：在 Registry 之间复制镜像
+## 场景 B：在注册表之间复制镜像
 
-当源和目标 Registry 不共享存储时，请使用此路径。
+当源和目标注册表不共享存储时，请使用此路径。
 
-生成镜像映射文件。这保留命名空间、存储库和标签名称，仅替换 Registry 主机：
+生成镜像映射文件。这保留命名空间、存储库和标签名称，仅替换注册表主机：
 
 ```bash
 while read -r image; do
@@ -643,6 +655,7 @@ MIRROR_DRY_RUN_LOG="$MIGRATION_DIR/mirror-dry-run.log"
 
 ac image mirror \
   -f "$MAPPING_FILE" \
+  --registry-config "$REGISTRY_AUTH_FILE" \
   --dry-run \
   --keep-manifest-list \
   $REGISTRY_INSECURE_FLAG \
@@ -653,31 +666,33 @@ sed -n '1,20p' "$MIRROR_DRY_RUN_LOG"
 wc -l "$MIRROR_DRY_RUN_LOG"
 ```
 
-在审查计划后，复制镜像：
+在审查计划后，复制镜像。`--continue-on-error` 在失败的镜像后继续后续映射，但如果任何映射失败，命令仍然返回非零退出代码。捕获该退出代码，以便即使在使用 `set -e` 的 shell 中，日志汇总仍然可以运行：
 
 ```bash
 MIRROR_COPY_LOG="$MIGRATION_DIR/mirror-copy.log"
+mirror_rc=0
 
 ac image mirror \
   -f "$MAPPING_FILE" \
+  --registry-config "$REGISTRY_AUTH_FILE" \
   --continue-on-error \
   --keep-manifest-list \
   --max-per-registry 4 \
   $REGISTRY_INSECURE_FLAG \
-  > "$MIRROR_COPY_LOG" 2>&1
+  > "$MIRROR_COPY_LOG" 2>&1 || mirror_rc=$?
 
-copied_count="$(grep -c '^Copied ' "$MIRROR_COPY_LOG" || true)"
-warning_count="$(grep -Eci 'error|failed|denied|unauthorized|forbidden' "$MIRROR_COPY_LOG" || true)"
-echo "mirror copy summary: copied=$copied_count warning_lines=$warning_count log=$MIRROR_COPY_LOG"
+echo "mirror copy summary: rc=$mirror_rc log=$MIRROR_COPY_LOG"
+grep -Ein 'error|failed|denied|unauthorized|forbidden' "$MIRROR_COPY_LOG" | sed -n '1,20p' || true
 
-if [ "$warning_count" -gt 0 ]; then
-  grep -Ein 'error|failed|denied|unauthorized|forbidden' "$MIRROR_COPY_LOG" | sed -n '1,20p'
+if [ "$mirror_rc" -ne 0 ]; then
+  echo "mirror copy had failed mappings; fix the failures before metadata backfill or cutover" >&2
+  false
 fi
 ```
 
-在迁移期间保持 `--keep-manifest-list` 以保留清单列表和多架构镜像。
+在迁移期间保留 `--keep-manifest-list` 以保留清单列表和多架构镜像。
 
-在镜像复制完成后，切换到现代模式并通过检查 Registry v2 回填元数据：
+在镜像复制完成后，切换到现代模式并通过检查 Registry v2 填充元数据：
 
 ```bash
 export METADATA_INSPECT_REGISTRY_HOST="$TARGET_REGISTRY_HOST"
@@ -687,9 +702,9 @@ backfill_metadata
 
 ## 安全地重新运行
 
-迁移步骤设计为可重新运行。如果当前的 `ImageStreamTag` 已指向预期的摘要和目标 Registry 引用，则 `backfill_metadata` 会跳过创建新的 `ImageStreamMapping`，并将该项目计为 `skipped`。
+迁移步骤设计为可重新运行。如果当前的 `ImageStreamTag` 已指向预期的摘要和目标注册表引用，则 `backfill_metadata` 将跳过创建新的 `ImageStreamMapping`，并将该项目计为 `skipped`。
 
-对于存储重用，重新运行元数据回填：
+对于存储重用，重新运行元数据填充：
 
 ```bash
 export METADATA_INSPECT_REGISTRY_HOST="$LEGACY_REGISTRY_HOST"
@@ -697,32 +712,34 @@ ac config set-registry-mode modern
 backfill_metadata
 ```
 
-对于跨 Registry 同步，重新运行镜像复制和元数据回填：
+对于跨注册表同步，重新运行镜像复制和元数据填充：
 
 ```bash
 MIRROR_COPY_LOG="$MIGRATION_DIR/mirror-rerun.log"
+mirror_rc=0
 
 ac image mirror \
   -f "$MAPPING_FILE" \
+  --registry-config "$REGISTRY_AUTH_FILE" \
   --continue-on-error \
   --keep-manifest-list \
   --max-per-registry 4 \
   $REGISTRY_INSECURE_FLAG \
-  > "$MIRROR_COPY_LOG" 2>&1
+  > "$MIRROR_COPY_LOG" 2>&1 || mirror_rc=$?
 
-copied_count="$(grep -c '^Copied ' "$MIRROR_COPY_LOG" || true)"
-warning_count="$(grep -Eci 'error|failed|denied|unauthorized|forbidden' "$MIRROR_COPY_LOG" || true)"
-echo "mirror rerun summary: copied=$copied_count warning_lines=$warning_count log=$MIRROR_COPY_LOG"
+echo "mirror rerun summary: rc=$mirror_rc log=$MIRROR_COPY_LOG"
+grep -Ein 'error|failed|denied|unauthorized|forbidden' "$MIRROR_COPY_LOG" | sed -n '1,20p' || true
 
-if [ "$warning_count" -gt 0 ]; then
-  grep -Ein 'error|failed|denied|unauthorized|forbidden' "$MIRROR_COPY_LOG" | sed -n '1,20p'
+if [ "$mirror_rc" -ne 0 ]; then
+  echo "mirror rerun had failed mappings; inspect $MIRROR_COPY_LOG before metadata backfill" >&2
+  false
 fi
 
 export METADATA_INSPECT_REGISTRY_HOST="$TARGET_REGISTRY_HOST"
 backfill_metadata
 ```
 
-在重新运行后，确认相同的标签仍指向预期的摘要和目标 Registry 引用。
+在重新运行后，确认相同的标签仍指向预期的摘要和目标注册表引用。
 
 ## 验证迁移
 
@@ -746,7 +763,9 @@ VERIFY_REF="$(
     | awk 'NR > 1 && $3 == "current" { print $6; exit }'
 )"
 
-ac image info "$VERIFY_REF" $REGISTRY_INSECURE_FLAG
+ac image info "$VERIFY_REF" \
+  --registry-config "$REGISTRY_AUTH_FILE" \
+  $REGISTRY_INSECURE_FLAG
 
 VERIFY_DIGEST="${VERIFY_REF##*@}"
 VERIFY_IMAGE_NAME="$(printf '%s\n' "$VERIFY_DIGEST" | sed 's/:/-/g')"
@@ -759,16 +778,81 @@ awk -v digest="$VERIFY_DIGEST" -v safe="$VERIFY_IMAGE_NAME" '
 ' "$VERIFY_IMAGES_OUTPUT"
 ```
 
+上述示例仅验证一个样本。在切换之前，针对迁移列表运行完整的存储和元数据一致性门：
+
+```bash
+VERIFY_SOURCE_FILE="$IMAGE_LIST_FILE"
+VERIFY_SOURCE_HAS_DIGEST=false
+if [ -n "${IMAGE_DIGEST_FILE:-}" ] && [ -s "$IMAGE_DIGEST_FILE" ]; then
+  VERIFY_SOURCE_FILE="$IMAGE_DIGEST_FILE"
+  VERIFY_SOURCE_HAS_DIGEST=true
+fi
+
+verify_failed=0
+
+while read -r image digest _; do
+  [ -n "$image" ] || continue
+  namespace="${image%%/*}"
+  rest="${image#*/}"
+  stream="${rest%%:*}"
+  tag="${rest##*:}"
+
+  tag_output_file="$MIGRATION_DIR/verify-${namespace}-${stream}-${tag}.imagestreamtag.txt"
+  tag_info_file="$MIGRATION_DIR/verify-${namespace}-${stream}-${tag}.tag.info.txt"
+  digest_info_file="$MIGRATION_DIR/verify-${namespace}-${stream}-${tag}.digest.info.txt"
+
+  if ! ac get imagestreamtags "$stream:$tag" -n "$namespace" > "$tag_output_file" 2>&1; then
+    echo "[verify] ImageStreamTag missing: $namespace/$stream:$tag output=$tag_output_file" >&2
+    verify_failed=$((verify_failed + 1))
+    continue
+  fi
+
+  ref="$(
+    awk 'NR > 1 && $3 == "current" { print $6; exit }' "$tag_output_file"
+  )"
+  if [ -z "$ref" ]; then
+    echo "[verify] failed to read current reference for $namespace/$stream:$tag output=$tag_output_file" >&2
+    verify_failed=$((verify_failed + 1))
+    continue
+  fi
+
+  if ! ac image info "$ref" \
+    --registry-config "$REGISTRY_AUTH_FILE" \
+    $REGISTRY_INSECURE_FLAG > "$tag_info_file" 2>&1; then
+    echo "[verify] target registry cannot inspect ImageStreamTag reference $ref output=$tag_info_file" >&2
+    verify_failed=$((verify_failed + 1))
+  fi
+
+  if [ "$VERIFY_SOURCE_HAS_DIGEST" = "true" ] && [ -n "$digest" ]; then
+    digest_ref="$TARGET_REGISTRY_HOST/$namespace/$stream@$digest"
+    if ! ac image info "$digest_ref" \
+      --registry-config "$REGISTRY_AUTH_FILE" \
+      $REGISTRY_INSECURE_FLAG > "$digest_info_file" 2>&1; then
+      echo "[verify] target registry cannot inspect expected digest $digest_ref output=$digest_info_file" >&2
+      verify_failed=$((verify_failed + 1))
+    fi
+  fi
+done < "$VERIFY_SOURCE_FILE"
+
+if [ "$verify_failed" -ne 0 ]; then
+  echo "[verify] migration storage/metadata consistency gate failed: $verify_failed images failed" >&2
+  false
+fi
+```
+
+如果此门失败，则至少有一个 Image API 元数据条目与可读的 Registry v2 存储数据不匹配。请勿切换流量、修剪镜像或运行注册表垃圾回收。首先修复存储重用或镜像复制，或在明确接受遗留镜像数据不会被保留后删除过时的填充元数据。
+
 验收标准：
 
 - Registry v2 可以从 `ImageStreamTag` 检查或拉取当前摘要引用。
 - `ImageStreamMapping` 创建成功。
 - 重新运行不会产生无法解释的失败。
 - `ImageStreamTag` 指向预期的摘要和 Registry v2 地址。
-- 在现代模式下，`ac get images` 通过 ACP Image API 显示迁移的镜像资源。
-- 关键业务命名空间中的样本镜像可以读取。
+- 在现代模式下，`ac get images` 通过 ACP 镜像 API 显示迁移的镜像资源。
+- 每个迁移列表中的迁移图像都通过完整的存储和元数据一致性门。
+- 关键业务命名空间中的示例镜像可以被读取。
 
-## 切换 Registry 模式
+## 切换注册表模式
 
 验证后，将当前 kubeconfig 上下文切换到现代 Registry 模式：
 
@@ -791,14 +875,14 @@ ac adm prune images
 
 ## 回滚
 
-如果在切换后工作负载无法读取业务镜像，请将受影响的上下文切换回旧版模式：
+如果工作负载在切换后无法读取业务镜像，请将受影响的上下文切换回遗留模式：
 
 ```bash
 ac config set-registry-mode legacy
 ac config get-registry-mode
 ```
 
-保留以下工件以供故障排除和重新运行：
+保留以下工件以进行故障排除和重新运行：
 
 - 镜像列表。
 - 镜像映射文件。
@@ -808,4 +892,4 @@ ac config get-registry-mode
 - `ac create -f` 输出。
 - 迁移验证输出。
 
-在问题解决后，从镜像列表继续。您无需从头开始重建迁移范围。
+在问题修复后，从镜像列表继续。您无需从头开始重建迁移范围。
