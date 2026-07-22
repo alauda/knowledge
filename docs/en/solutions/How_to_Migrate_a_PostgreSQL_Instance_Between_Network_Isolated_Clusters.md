@@ -156,7 +156,7 @@ The script performs the whole migration in one run: it enumerates the source's a
 Fill in the six variables at the top, then run it with `bash`. Without arguments it migrates every database; pass database names (`bash migrate.sh appdb`) to migrate only those — used to redo a single database after a failure. Every transfer goes through the same script in one of two modes:
 
 - **Pipe mode** (default): source streams straight into the target — no intermediate storage.
-- **File mode** (`DUMP_DIR=/path bash migrate.sh`): each database is dumped to `$DUMP_DIR/<db>.dump` first, then restored from the file. A rerun **reuses completed dumps**, making the transfer resumable — use this for large databases or unreliable links.
+- **File mode** (`DUMP_DIR=/path bash migrate.sh`): each database is dumped to `$DUMP_DIR/<db>.dump` first, then restored from the file — use this for large databases or unreliable links. By default every run takes a **fresh** dump; add `REUSE_DUMPS=1` to reuse completed dumps (resumable). Reuse is only safe **within the same stopped-write maintenance window** — a dump taken before source writes resumed would silently migrate stale data.
 
 ```bash
 #!/usr/bin/env bash
@@ -221,11 +221,12 @@ while read -r DB OWNER; do
     -o jsonpath='{.data.password}' | base64 -d) || { FAILED="$FAILED $DB(secret)"; continue; }
 
   # Transfer: straight pipe by default; with DUMP_DIR set, dump to a file
-  # first and restore from it (resumable — completed dumps are reused).
+  # first and restore from it. REUSE_DUMPS=1 reuses completed dumps — only
+  # safe while source writes have stayed stopped since the dump was taken.
   if [ -n "${DUMP_DIR:-}" ]; then
     mkdir -p "$DUMP_DIR"
     DUMP_FILE="$DUMP_DIR/$DB.dump"
-    if [ -s "$DUMP_FILE" ]; then
+    if [ -n "${REUSE_DUMPS:-}" ] && [ -s "$DUMP_FILE" ]; then
       echo "  reusing existing dump $DUMP_FILE"
     else
       kubectl --context "$SRC_CTX" -n "$SRC_NS" exec "$SRC_POD" -c postgres -- \
@@ -253,7 +254,7 @@ while read -r DB OWNER; do
   if [ "$RC" -eq 0 ] && [ "$SRC_COUNTS" = "$TGT_COUNTS" ]; then
     echo "  PASS: $DB (tables/rows identical)"
   else
-    echo "  FAIL: $DB (pipe exit $RC; counts $( [ "$SRC_COUNTS" = "$TGT_COUNTS" ] && echo match || echo DIFFER ))"
+    echo "  FAIL: $DB (transfer exit $RC; counts $( [ "$SRC_COUNTS" = "$TGT_COUNTS" ] && echo match || echo DIFFER ))"
     FAILED="$FAILED $DB"
   fi
 done < <(srcsql postgres -F' ' -c \
@@ -269,7 +270,7 @@ if [ -n "$FAILED" ]; then echo "MIGRATION INCOMPLETE — failed:$FAILED"; exit 1
 echo "MIGRATION COMPLETE — $ATTEMPTED database(s) verified."
 ```
 
-If a database reports `FAIL`, see [Troubleshooting](#troubleshooting); after fixing the cause, redo just that database by passing its name to the script (in file mode, its completed dump is reused).
+If a database reports `FAIL`, see [Troubleshooting](#troubleshooting); after fixing the cause, redo just that database by passing its name to the script (in file mode, add `REUSE_DUMPS=1` to skip re-dumping if writes have stayed stopped).
 
 ### Security notes
 
@@ -354,7 +355,7 @@ Drop the target database first — a partial restore leaves objects that collide
 kubectl --context $TGT_CTX -n $TGT_NS exec $TGT_POD -c postgres -- psql -U postgres -c "DROP DATABASE appdb"
 ```
 
-Then rerun the script with **only the failed database** as an argument (`bash migrate.sh <database>`) — it recreates the database with the correct owner, and in file mode it reuses the completed dump. Do not rerun it without arguments after a partial success: restoring into the databases that already transferred produces `already exists` collisions that mark them as failed.
+Then rerun the script with **only the failed database** as an argument (`bash migrate.sh <database>`) — it recreates the database with the correct owner; in file mode, add `REUSE_DUMPS=1` to restore from the completed dump instead of re-dumping (only if source writes have stayed stopped). Do not rerun it without arguments after a partial success: restoring into the databases that already transferred produces `already exists` collisions that mark them as failed.
 
 ### Application passwords changed after the migration
 
