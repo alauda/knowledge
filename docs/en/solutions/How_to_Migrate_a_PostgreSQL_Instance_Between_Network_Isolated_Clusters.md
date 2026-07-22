@@ -61,7 +61,24 @@ kubectl --context $SRC_CTX -n $SRC_NS exec $SRC_POD -c postgres -- \
    WHERE NOT datistemplate AND datname <> 'postgres' ORDER BY 1;"
 ```
 
-Every database in this list must be declared in the target CR below (`spec.databases`, with its owner in `spec.users`), and Steps 2–4 are then **repeated once per database**, substituting the database name and owner each round. The examples throughout use a single database `appdb` owned by `appuser`. The `postgres` maintenance database is managed by the operator/image on each side and is not migrated.
+Every database in this list must be declared in the target CR below (`spec.databases`, with its owner in `spec.users`), and Steps 2–4 are then **repeated once per database**, substituting the database name and owner each round — or run all of them in one pass with the [whole-instance script](#scripted-whole-instance-migration) below. The examples throughout use a single database `appdb` owned by `appuser`. The `postgres` maintenance database is managed by the operator/image on each side and is not migrated.
+
+The `users:`/`databases:` sections of the target CR can be generated directly from the source instead of hand-written (databases owned by `postgres` are deliberately excluded — the migration script creates those on the fly):
+
+```bash
+{
+  echo "  users:"
+  kubectl --context $SRC_CTX -n $SRC_NS exec $SRC_POD -c postgres -- \
+    psql -U postgres -tA -c \
+    "SELECT DISTINCT '    ' || pg_get_userbyid(datdba) || ': []' FROM pg_database
+     WHERE NOT datistemplate AND datname <> 'postgres' AND pg_get_userbyid(datdba) <> 'postgres';"
+  echo "  databases:"
+  kubectl --context $SRC_CTX -n $SRC_NS exec $SRC_POD -c postgres -- \
+    psql -U postgres -tA -c \
+    "SELECT '    ' || datname || ': ' || pg_get_userbyid(datdba) FROM pg_database
+     WHERE NOT datistemplate AND datname <> 'postgres' AND pg_get_userbyid(datdba) <> 'postgres' ORDER BY 1;"
+}
+```
 
 Create the target as a plain instance (no `clusterReplication`), sized like the source. Define the application databases and their owner users **in the CR spec** — the operator creates the roles and databases and manages their credentials; do not attempt to dump global objects (roles) from the source:
 
@@ -209,6 +226,91 @@ kubectl --context $SRC_CTX -n $SRC_NS delete postgresql $SRC_CLUSTER
 # PVC retention depends on operator configuration — remove leftovers:
 kubectl --context $SRC_CTX -n $SRC_NS delete pvc -l cluster-name=$SRC_CLUSTER --ignore-not-found
 ```
+
+## Scripted Whole-Instance Migration
+
+The manual steps above migrate one database at a time. The script below performs the same procedure for **every** application database of the source instance in a single run: it enumerates the databases, pre-creates extensions, transfers each database as its owner, and verifies exact per-table row counts — reporting `PASS`/`FAIL` per database and exiting non-zero if anything failed.
+
+Before running it: the target instance must exist and be `Running` (Step 1), and **application writes on the source must already be stopped** (Step 2) — the script does not stop them for you. Databases missing on the target (e.g. created outside the CR spec, owned by `postgres`) are created on the fly, provided their owner role exists on the target. For stronger guarantees than row counts, add per-table checksum comparison (Step 2) for your critical tables afterwards.
+
+```bash
+#!/usr/bin/env bash
+# Whole-instance PostgreSQL migration relayed through the workstation.
+# Migrates every application database of $SRC_CLUSTER into $TGT_CLUSTER.
+set -u -o pipefail
+
+SRC_CTX="<source-context>";  SRC_NS="<source-namespace>";  SRC_CLUSTER="<source-instance-name>"
+TGT_CTX="<target-context>";  TGT_NS="<target-namespace>";  TGT_CLUSTER="<target-instance-name>"
+
+SRC_POD=$(kubectl --context "$SRC_CTX" -n "$SRC_NS" get pod \
+  -l spilo-role=master,cluster-name="$SRC_CLUSTER" -o jsonpath='{.items[0].metadata.name}')
+TGT_POD=$(kubectl --context "$TGT_CTX" -n "$TGT_NS" get pod \
+  -l spilo-role=master,cluster-name="$TGT_CLUSTER" -o jsonpath='{.items[0].metadata.name}')
+
+srcsql() { local db=$1; shift; kubectl --context "$SRC_CTX" -n "$SRC_NS" exec "$SRC_POD" -c postgres -- psql -U postgres -d "$db" -tA -v ON_ERROR_STOP=1 "$@"; }
+tgtsql() { local db=$1; shift; kubectl --context "$TGT_CTX" -n "$TGT_NS" exec "$TGT_POD" -c postgres -- psql -U postgres -d "$db" -tA -v ON_ERROR_STOP=1 "$@"; }
+
+# Client binaries matching the SOURCE server major (present in both Spilo images).
+SRC_MAJOR=$(srcsql postgres -c "SHOW server_version;" | cut -d. -f1)
+PG_BIN=/usr/lib/postgresql/$SRC_MAJOR/bin
+echo "Source PostgreSQL major: $SRC_MAJOR (client binaries: $PG_BIN)"
+
+COUNT_QUERY="SELECT relname, (xpath('/row/c/text()', query_to_xml(format(
+  'SELECT count(*) AS c FROM %I.%I', schemaname, relname), false, true, '')))[1]::text::bigint
+  FROM pg_stat_user_tables ORDER BY relname;"
+
+FAILED=""
+while read -r DB OWNER; do
+  [ -z "$DB" ] && continue
+  echo "=== migrating database: $DB (owner: $OWNER) ==="
+
+  # Ensure the database exists on the target (covers databases created
+  # outside the CR spec; the owner role must already exist on the target).
+  if [ "$(tgtsql postgres -c "SELECT 1 FROM pg_database WHERE datname = '$DB';")" != "1" ]; then
+    echo "  creating database $DB on target"
+    tgtsql postgres -c "CREATE DATABASE \"$DB\" OWNER \"$OWNER\";" >/dev/null || { FAILED="$FAILED $DB(create)"; continue; }
+  fi
+
+  # Pre-create the source's extensions (extension creation needs superuser).
+  for EXT in $(srcsql "$DB" -c "SELECT extname FROM pg_extension;"); do
+    tgtsql "$DB" -c "CREATE EXTENSION IF NOT EXISTS \"$EXT\";" >/dev/null 2>&1 \
+      || echo "  WARNING: could not create extension $EXT on target — restore may fail"
+  done
+
+  # Baseline on the source (exact counts).
+  SRC_COUNTS=$(srcsql "$DB" -c "$COUNT_QUERY")
+
+  # Restore as the database's owner, with the target-managed password.
+  OWNER_PW=$(kubectl --context "$TGT_CTX" -n "$TGT_NS" get secret \
+    "$OWNER.$TGT_CLUSTER.credentials.postgresql.acid.zalan.do" \
+    -o jsonpath='{.data.password}' | base64 -d) || { FAILED="$FAILED $DB(secret)"; continue; }
+
+  kubectl --context "$SRC_CTX" -n "$SRC_NS" exec "$SRC_POD" -c postgres -- \
+      "$PG_BIN/pg_dump" -U postgres -Fc --no-comments \
+      -N metric_helpers -N user_management "$DB" \
+  | kubectl --context "$TGT_CTX" -n "$TGT_NS" exec -i "$TGT_POD" -c postgres -- \
+      env PGPASSWORD="$OWNER_PW" \
+      "$PG_BIN/pg_restore" -U "$OWNER" -h localhost -d "$DB" --no-owner -x
+  RC=$?
+
+  # Verify: exact counts must match the baseline.
+  TGT_COUNTS=$(tgtsql "$DB" -c "$COUNT_QUERY")
+  if [ "$RC" -eq 0 ] && [ "$SRC_COUNTS" = "$TGT_COUNTS" ]; then
+    echo "  PASS: $DB (tables/rows identical)"
+  else
+    echo "  FAIL: $DB (pipe exit $RC; counts $( [ "$SRC_COUNTS" = "$TGT_COUNTS" ] && echo match || echo DIFFER ))"
+    FAILED="$FAILED $DB"
+  fi
+done < <(srcsql postgres -F' ' -c \
+  "SELECT datname, pg_get_userbyid(datdba) FROM pg_database
+   WHERE NOT datistemplate AND datname <> 'postgres' ORDER BY 1;")
+
+echo
+if [ -n "$FAILED" ]; then echo "MIGRATION INCOMPLETE — failed:$FAILED"; exit 1; fi
+echo "MIGRATION COMPLETE — all databases verified."
+```
+
+With this, the human operations reduce to: create the target CR (Step 1, with the generated `users:`/`databases:` fragment), stop application writes, run the script, and cut over (Step 5). The per-database sections above remain the reference for what each part of the script does and for troubleshooting a `FAIL`.
 
 ## Troubleshooting
 
