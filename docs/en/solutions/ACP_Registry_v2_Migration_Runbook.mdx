@@ -21,6 +21,8 @@ The migration workflow is based on the validated ACP `ac` runbook. No dedicated 
 
 During migration, use a maintenance window when possible. At minimum, pause writes to the legacy Registry. Reads can remain available. If new images are pushed during migration, repeat image copy and metadata backfill before the final cutover.
 
+Metadata backfill writes Registry v2 Image API objects only. It does not copy or repair registry storage data such as manifests, config blobs, layers, repository revision links, or tag links. Do not create `ImageStreamMapping` objects until Registry v2 can access the corresponding image data through storage reuse or a completed image copy. If legacy image data is intentionally not preserved, do not run metadata backfill for those images; push the images again to Registry v2 instead.
+
 ## Migration Scenarios
 
 | Scenario | Use when | Blob migration | Metadata migration |
@@ -251,14 +253,24 @@ write_imagestream_mapping() {
     inspect_ref="$inspect_registry_host/$namespace/$stream@$digest"
   fi
 
-  ac image info "$inspect_ref" $REGISTRY_INSECURE_FLAG > "$info_file"
+  if ! ac image info "$inspect_ref" \
+    --registry-config "$REGISTRY_AUTH_FILE" \
+    $REGISTRY_INSECURE_FLAG > "$info_file" 2>&1; then
+    BACKFILL_LAST_ACTION="failed"
+    echo "[metadata] failed to inspect $inspect_ref; output=$info_file" >&2
+    sed -n '1,20p' "$info_file" >&2
+    return 1
+  fi
 
   [ -n "$digest" ] || digest="$(awk '/^Digest:/ { sub(/^Digest:[[:space:]]*/, ""); print; exit }' "$info_file")"
   media_type="$(awk '/^Media Type:/ { sub(/^Media Type:[[:space:]]*/, ""); print; exit }' "$info_file")"
-  [ -n "$media_type" ] || media_type="application/vnd.docker.distribution.manifest.v2+json"
 
   if [ -z "$digest" ]; then
     echo "failed to read digest from $source_ref" >&2
+    return 1
+  fi
+  if [ -z "$media_type" ]; then
+    echo "failed to read media type from $source_ref" >&2
     return 1
   fi
 
@@ -642,6 +654,7 @@ MIRROR_DRY_RUN_LOG="$MIGRATION_DIR/mirror-dry-run.log"
 
 ac image mirror \
   -f "$MAPPING_FILE" \
+  --registry-config "$REGISTRY_AUTH_FILE" \
   --dry-run \
   --keep-manifest-list \
   $REGISTRY_INSECURE_FLAG \
@@ -652,25 +665,27 @@ sed -n '1,20p' "$MIRROR_DRY_RUN_LOG"
 wc -l "$MIRROR_DRY_RUN_LOG"
 ```
 
-After reviewing the plan, copy the images:
+After reviewing the plan, copy the images. `--continue-on-error` continues with later mappings after a failed image, but the command still returns a non-zero exit code if any mapping failed. Capture that exit code so that log summarization still runs even in a shell that uses `set -e`:
 
 ```bash
 MIRROR_COPY_LOG="$MIGRATION_DIR/mirror-copy.log"
+mirror_rc=0
 
 ac image mirror \
   -f "$MAPPING_FILE" \
+  --registry-config "$REGISTRY_AUTH_FILE" \
   --continue-on-error \
   --keep-manifest-list \
   --max-per-registry 4 \
   $REGISTRY_INSECURE_FLAG \
-  > "$MIRROR_COPY_LOG" 2>&1
+  > "$MIRROR_COPY_LOG" 2>&1 || mirror_rc=$?
 
-copied_count="$(grep -c '^Copied ' "$MIRROR_COPY_LOG" || true)"
-warning_count="$(grep -Eci 'error|failed|denied|unauthorized|forbidden' "$MIRROR_COPY_LOG" || true)"
-echo "mirror copy summary: copied=$copied_count warning_lines=$warning_count log=$MIRROR_COPY_LOG"
+echo "mirror copy summary: rc=$mirror_rc log=$MIRROR_COPY_LOG"
+grep -Ein 'error|failed|denied|unauthorized|forbidden' "$MIRROR_COPY_LOG" | sed -n '1,20p' || true
 
-if [ "$warning_count" -gt 0 ]; then
-  grep -Ein 'error|failed|denied|unauthorized|forbidden' "$MIRROR_COPY_LOG" | sed -n '1,20p'
+if [ "$mirror_rc" -ne 0 ]; then
+  echo "mirror copy had failed mappings; fix the failures before metadata backfill or cutover" >&2
+  false
 fi
 ```
 
@@ -700,21 +715,23 @@ For cross-registry sync, rerun image copy and metadata backfill:
 
 ```bash
 MIRROR_COPY_LOG="$MIGRATION_DIR/mirror-rerun.log"
+mirror_rc=0
 
 ac image mirror \
   -f "$MAPPING_FILE" \
+  --registry-config "$REGISTRY_AUTH_FILE" \
   --continue-on-error \
   --keep-manifest-list \
   --max-per-registry 4 \
   $REGISTRY_INSECURE_FLAG \
-  > "$MIRROR_COPY_LOG" 2>&1
+  > "$MIRROR_COPY_LOG" 2>&1 || mirror_rc=$?
 
-copied_count="$(grep -c '^Copied ' "$MIRROR_COPY_LOG" || true)"
-warning_count="$(grep -Eci 'error|failed|denied|unauthorized|forbidden' "$MIRROR_COPY_LOG" || true)"
-echo "mirror rerun summary: copied=$copied_count warning_lines=$warning_count log=$MIRROR_COPY_LOG"
+echo "mirror rerun summary: rc=$mirror_rc log=$MIRROR_COPY_LOG"
+grep -Ein 'error|failed|denied|unauthorized|forbidden' "$MIRROR_COPY_LOG" | sed -n '1,20p' || true
 
-if [ "$warning_count" -gt 0 ]; then
-  grep -Ein 'error|failed|denied|unauthorized|forbidden' "$MIRROR_COPY_LOG" | sed -n '1,20p'
+if [ "$mirror_rc" -ne 0 ]; then
+  echo "mirror rerun had failed mappings; inspect $MIRROR_COPY_LOG before metadata backfill" >&2
+  false
 fi
 
 export METADATA_INSPECT_REGISTRY_HOST="$TARGET_REGISTRY_HOST"
@@ -745,7 +762,9 @@ VERIFY_REF="$(
     | awk 'NR > 1 && $3 == "current" { print $6; exit }'
 )"
 
-ac image info "$VERIFY_REF" $REGISTRY_INSECURE_FLAG
+ac image info "$VERIFY_REF" \
+  --registry-config "$REGISTRY_AUTH_FILE" \
+  $REGISTRY_INSECURE_FLAG
 
 VERIFY_DIGEST="${VERIFY_REF##*@}"
 VERIFY_IMAGE_NAME="$(printf '%s\n' "$VERIFY_DIGEST" | sed 's/:/-/g')"
@@ -758,6 +777,70 @@ awk -v digest="$VERIFY_DIGEST" -v safe="$VERIFY_IMAGE_NAME" '
 ' "$VERIFY_IMAGES_OUTPUT"
 ```
 
+The example above verifies one sample only. Before cutover, run a full storage and metadata consistency gate against the migration list:
+
+```bash
+VERIFY_SOURCE_FILE="$IMAGE_LIST_FILE"
+VERIFY_SOURCE_HAS_DIGEST=false
+if [ -n "${IMAGE_DIGEST_FILE:-}" ] && [ -s "$IMAGE_DIGEST_FILE" ]; then
+  VERIFY_SOURCE_FILE="$IMAGE_DIGEST_FILE"
+  VERIFY_SOURCE_HAS_DIGEST=true
+fi
+
+verify_failed=0
+
+while read -r image digest _; do
+  [ -n "$image" ] || continue
+  namespace="${image%%/*}"
+  rest="${image#*/}"
+  stream="${rest%%:*}"
+  tag="${rest##*:}"
+
+  tag_output_file="$MIGRATION_DIR/verify-${namespace}-${stream}-${tag}.imagestreamtag.txt"
+  tag_info_file="$MIGRATION_DIR/verify-${namespace}-${stream}-${tag}.tag.info.txt"
+  digest_info_file="$MIGRATION_DIR/verify-${namespace}-${stream}-${tag}.digest.info.txt"
+
+  if ! ac get imagestreamtags "$stream:$tag" -n "$namespace" > "$tag_output_file" 2>&1; then
+    echo "[verify] ImageStreamTag missing: $namespace/$stream:$tag output=$tag_output_file" >&2
+    verify_failed=$((verify_failed + 1))
+    continue
+  fi
+
+  ref="$(
+    awk 'NR > 1 && $3 == "current" { print $6; exit }' "$tag_output_file"
+  )"
+  if [ -z "$ref" ]; then
+    echo "[verify] failed to read current reference for $namespace/$stream:$tag output=$tag_output_file" >&2
+    verify_failed=$((verify_failed + 1))
+    continue
+  fi
+
+  if ! ac image info "$ref" \
+    --registry-config "$REGISTRY_AUTH_FILE" \
+    $REGISTRY_INSECURE_FLAG > "$tag_info_file" 2>&1; then
+    echo "[verify] target registry cannot inspect ImageStreamTag reference $ref output=$tag_info_file" >&2
+    verify_failed=$((verify_failed + 1))
+  fi
+
+  if [ "$VERIFY_SOURCE_HAS_DIGEST" = "true" ] && [ -n "$digest" ]; then
+    digest_ref="$TARGET_REGISTRY_HOST/$namespace/$stream@$digest"
+    if ! ac image info "$digest_ref" \
+      --registry-config "$REGISTRY_AUTH_FILE" \
+      $REGISTRY_INSECURE_FLAG > "$digest_info_file" 2>&1; then
+      echo "[verify] target registry cannot inspect expected digest $digest_ref output=$digest_info_file" >&2
+      verify_failed=$((verify_failed + 1))
+    fi
+  fi
+done < "$VERIFY_SOURCE_FILE"
+
+if [ "$verify_failed" -ne 0 ]; then
+  echo "[verify] migration storage/metadata consistency gate failed: $verify_failed images failed" >&2
+  false
+fi
+```
+
+If this gate fails, at least one Image API metadata entry does not match readable Registry v2 storage data. Do not switch traffic, prune images, or run registry garbage collection. Fix storage reuse or image copy first, or remove stale backfilled metadata after explicitly accepting that legacy image data will not be preserved.
+
 Acceptance criteria:
 
 - Registry v2 can inspect or pull the current digest reference from `ImageStreamTag`.
@@ -765,6 +848,7 @@ Acceptance criteria:
 - Reruns do not produce unexplained failures.
 - `ImageStreamTag` points to the expected digest and Registry v2 address.
 - `ac get images` in modern mode shows the migrated Image resources through the ACP Image API.
+- The full storage and metadata consistency gate passes for every migrated image in the migration list.
 - Sample images in critical business namespaces can be read.
 
 ## Switch Registry Mode
