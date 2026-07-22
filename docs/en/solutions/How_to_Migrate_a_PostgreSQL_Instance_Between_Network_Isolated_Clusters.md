@@ -153,7 +153,10 @@ kubectl --context $SRC_CTX -n $SRC_NS exec $SRC_POD -c postgres -- \
 
 The script performs the whole migration in one run: it enumerates the source's application databases, creates any that are missing on the target (e.g. `postgres`-owned databases created outside the CR spec — their owner role must exist on the target), pre-creates each database's extensions, transfers each database as its owner, and verifies exact per-table row counts — reporting `PASS`/`FAIL` per database and exiting non-zero if anything failed.
 
-Fill in the six variables at the top, then run it with `bash`. Without arguments it migrates every database; pass database names (`bash migrate.sh appdb`) to migrate only those — used to redo a single database after a failure:
+Fill in the six variables at the top, then run it with `bash`. Without arguments it migrates every database; pass database names (`bash migrate.sh appdb`) to migrate only those — used to redo a single database after a failure. Every transfer goes through the same script in one of two modes:
+
+- **Pipe mode** (default): source streams straight into the target — no intermediate storage.
+- **File mode** (`DUMP_DIR=/path bash migrate.sh`): each database is dumped to `$DUMP_DIR/<db>.dump` first, then restored from the file. A rerun **reuses completed dumps**, making the transfer resumable — use this for large databases or unreliable links.
 
 ```bash
 #!/usr/bin/env bash
@@ -217,13 +220,33 @@ while read -r DB OWNER; do
     "$OWNER.$TGT_CLUSTER.credentials.postgresql.acid.zalan.do" \
     -o jsonpath='{.data.password}' | base64 -d) || { FAILED="$FAILED $DB(secret)"; continue; }
 
-  kubectl --context "$SRC_CTX" -n "$SRC_NS" exec "$SRC_POD" -c postgres -- \
-      "$PG_BIN/pg_dump" -U postgres -Fc --no-comments \
-      -N metric_helpers -N user_management "$DB" \
-  | kubectl --context "$TGT_CTX" -n "$TGT_NS" exec -i "$TGT_POD" -c postgres -- \
-      env PGPASSWORD="$OWNER_PW" \
-      "$PG_BIN/pg_restore" -U "$OWNER" -h localhost -d "$DB" --no-owner -x
-  RC=$?
+  # Transfer: straight pipe by default; with DUMP_DIR set, dump to a file
+  # first and restore from it (resumable — completed dumps are reused).
+  if [ -n "${DUMP_DIR:-}" ]; then
+    mkdir -p "$DUMP_DIR"
+    DUMP_FILE="$DUMP_DIR/$DB.dump"
+    if [ -s "$DUMP_FILE" ]; then
+      echo "  reusing existing dump $DUMP_FILE"
+    else
+      kubectl --context "$SRC_CTX" -n "$SRC_NS" exec "$SRC_POD" -c postgres -- \
+          "$PG_BIN/pg_dump" -U postgres -Fc --no-comments \
+          -N metric_helpers -N user_management "$DB" > "$DUMP_FILE.partial" \
+        && mv "$DUMP_FILE.partial" "$DUMP_FILE" \
+        || { rm -f "$DUMP_FILE.partial"; FAILED="$FAILED $DB(dump)"; continue; }
+    fi
+    kubectl --context "$TGT_CTX" -n "$TGT_NS" exec -i "$TGT_POD" -c postgres -- \
+        env PGPASSWORD="$OWNER_PW" \
+        "$PG_BIN/pg_restore" -U "$OWNER" -h localhost -d "$DB" --no-owner -x < "$DUMP_FILE"
+    RC=$?
+  else
+    kubectl --context "$SRC_CTX" -n "$SRC_NS" exec "$SRC_POD" -c postgres -- \
+        "$PG_BIN/pg_dump" -U postgres -Fc --no-comments \
+        -N metric_helpers -N user_management "$DB" \
+    | kubectl --context "$TGT_CTX" -n "$TGT_NS" exec -i "$TGT_POD" -c postgres -- \
+        env PGPASSWORD="$OWNER_PW" \
+        "$PG_BIN/pg_restore" -U "$OWNER" -h localhost -d "$DB" --no-owner -x
+    RC=$?
+  fi
 
   # Verify: exact counts must match the baseline.
   TGT_COUNTS=$(tgtsql "$DB" -c "$COUNT_QUERY")
@@ -246,30 +269,12 @@ if [ -n "$FAILED" ]; then echo "MIGRATION INCOMPLETE — failed:$FAILED"; exit 1
 echo "MIGRATION COMPLETE — $ATTEMPTED database(s) verified."
 ```
 
-If a database reports `FAIL`, see [Troubleshooting](#troubleshooting); after fixing the cause, redo just that database by passing its name to the script.
-
-### Large databases
-
-A straight pipe is not resumable. For a large database, dump to a file on the workstation first, then restore from it — same flags as the script; `<owner-pw>` is the owner's password from the target secret:
-
-```bash
-PG_BIN=/usr/lib/postgresql/<source-major>/bin
-
-kubectl --context $SRC_CTX -n $SRC_NS exec $SRC_POD -c postgres -- \
-  $PG_BIN/pg_dump -U postgres -Fc --no-comments \
-  -N metric_helpers -N user_management <database> > db.dump
-
-kubectl --context $TGT_CTX -n $TGT_NS exec -i $TGT_POD -c postgres -- \
-  env PGPASSWORD="<owner-pw>" \
-  $PG_BIN/pg_restore -U <owner> -h localhost -d <database> --no-owner -x < db.dump
-```
-
-Parallel restore (`pg_restore -j N`) cannot read from stdin; to use it, copy the dump file into the target pod (`kubectl cp`) and restore from the local path.
+If a database reports `FAIL`, see [Troubleshooting](#troubleshooting); after fixing the cause, redo just that database by passing its name to the script (in file mode, its completed dump is reused).
 
 ### Security notes
 
 - While a restore runs, the owner password is expanded into the workstation's `kubectl` argument list and is visible in local process listings (`ps`). Run the migration from a trusted, single-user workstation, and do not enable shell tracing (`set -x`) around these commands.
-- A dump file (file-based variant) is a full plaintext logical copy of the database. Create it with restrictive permissions (`umask 077` before dumping, or `chmod 600` immediately after), encrypt it at rest if your policy requires, and delete it once the migration is verified.
+- In file mode, `$DUMP_DIR` holds full plaintext logical copies of the databases. Point it at a directory with restrictive permissions (`umask 077` before running, or `chmod 700` on the directory), encrypt at rest if your policy requires, and delete the dumps once the migration is verified.
 - The data itself only traverses the two TLS-protected `kubectl exec` channels; nothing is exposed on the network beyond the two Kubernetes API connections.
 
 ## Step 4: Verify Application Access
@@ -343,14 +348,13 @@ The `-N metric_helpers -N user_management` exclusions were omitted. These errors
 
 ### Rerunning after a failed restore
 
-Drop and recreate the target database first — a partial restore leaves objects that collide (`relation already exists`, duplicate-key COPY failures). Note `DROP DATABASE` must be executed as its own single statement:
+Drop the target database first — a partial restore leaves objects that collide (`relation already exists`, duplicate-key COPY failures). Note `DROP DATABASE` must be executed as its own single statement:
 
 ```bash
 kubectl --context $TGT_CTX -n $TGT_NS exec $TGT_POD -c postgres -- psql -U postgres -c "DROP DATABASE appdb"
-kubectl --context $TGT_CTX -n $TGT_NS exec $TGT_POD -c postgres -- psql -U postgres -c "CREATE DATABASE appdb OWNER appuser"
 ```
 
-Then rerun the script with **only the failed database** as an argument (`bash migrate.sh <database>`). Do not rerun it without arguments after a partial success: restoring into the databases that already transferred produces `already exists` collisions that mark them as failed.
+Then rerun the script with **only the failed database** as an argument (`bash migrate.sh <database>`) — it recreates the database with the correct owner, and in file mode it reuses the completed dump. Do not rerun it without arguments after a partial success: restoring into the databases that already transferred produces `already exists` collisions that mark them as failed.
 
 ### Application passwords changed after the migration
 
@@ -374,4 +378,4 @@ Verify with a login test as in Step 4.
 
 ### Pipe is slow
 
-Throughput is bounded by the workstation's link to both API servers (every byte traverses it twice: exec stream in, exec stream out). Run the relay from a machine with good connectivity to both platforms (e.g. a jump host), or use the file-based variant to at least make progress resumable.
+Throughput is bounded by the workstation's link to both API servers (every byte traverses it twice: exec stream in, exec stream out). Run the migration from a machine with good connectivity to both platforms (e.g. a jump host), and use file mode (`DUMP_DIR`) so progress is resumable. If a very large restore needs parallelism, note `pg_restore -j N` cannot read from stdin — copy the dump file into the target pod (`kubectl cp`) and restore from the local path there.
