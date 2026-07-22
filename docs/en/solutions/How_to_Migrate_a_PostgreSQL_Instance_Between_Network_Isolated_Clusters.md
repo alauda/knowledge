@@ -47,7 +47,21 @@ kubectl --context $TGT_CTX -n $TGT_NS get postgresql $TGT_CLUSTER 2>/dev/null ||
 - Sufficient Kubernetes permissions in both namespaces: `get` on `postgresqls.acid.zalan.do`, `pods`, and `secrets`; `create` on `pods/exec`; plus `create` on `postgresqls` (target side) and, for the final cleanup, `delete` on `postgresqls` and `persistentvolumeclaims` (source side).
 - The commands assume the operator's standard Spilo image: pod labels `spilo-role`/`cluster-name`, database container named `postgres`, and client binaries for every supported major under `/usr/lib/postgresql/<major>/bin/`. Custom or non-Spilo images require adapting these labels and paths.
 
-## Step 1: Create the Target Instance
+## Step 1: Enumerate Source Databases and Create the Target Instance
+
+An instance can hold several application databases, and **the whole procedure migrates one database at a time**. First list what the source actually holds:
+
+```bash
+SRC_POD=$(kubectl --context $SRC_CTX -n $SRC_NS get pod \
+  -l spilo-role=master,cluster-name=$SRC_CLUSTER -o jsonpath='{.items[0].metadata.name}')
+
+kubectl --context $SRC_CTX -n $SRC_NS exec $SRC_POD -c postgres -- \
+  psql -U postgres -tA -c \
+  "SELECT datname, pg_get_userbyid(datdba) AS owner FROM pg_database
+   WHERE NOT datistemplate AND datname <> 'postgres' ORDER BY 1;"
+```
+
+Every database in this list must be declared in the target CR below (`spec.databases`, with its owner in `spec.users`), and Steps 2–4 are then **repeated once per database**, substituting the database name and owner each round. The examples throughout use a single database `appdb` owned by `appuser`. The `postgres` maintenance database is managed by the operator/image on each side and is not migrated.
 
 Create the target as a plain instance (no `clusterReplication`), sized like the source. Define the application databases and their owner users **in the CR spec** — the operator creates the roles and databases and manages their credentials; do not attempt to dump global objects (roles) from the source:
 
@@ -80,12 +94,9 @@ kubectl --context $TGT_CTX -n $TGT_NS get postgresql $TGT_CLUSTER \
 
 ## Step 2: Stop Writes, Inventory Extensions, and Take a Baseline
 
-Stop application writes on the source, then record **exact** row counts (and, for stronger guarantees, per-table checksums) to compare after the restore. Do not use `pg_stat_user_tables.n_live_tup` for this comparison — it is a planner statistics *estimate*, not an exact count:
+Run Steps 2–4 once per database from the Step 1 list; the commands below use `appdb`. Stop application writes on the source, then record **exact** row counts (and, for stronger guarantees, per-table checksums) to compare after the restore. Do not use `pg_stat_user_tables.n_live_tup` for this comparison — it is a planner statistics *estimate*, not an exact count:
 
 ```bash
-SRC_POD=$(kubectl --context $SRC_CTX -n $SRC_NS get pod \
-  -l spilo-role=master,cluster-name=$SRC_CLUSTER -o jsonpath='{.items[0].metadata.name}')
-
 # Exact row count of every user table:
 kubectl --context $SRC_CTX -n $SRC_NS exec $SRC_POD -c postgres -- \
   psql -U postgres -d appdb -tA -c \
@@ -119,7 +130,7 @@ kubectl --context $TGT_CTX -n $TGT_NS exec $TGT_POD -c postgres -- \
   psql -U postgres -d appdb -c "CREATE EXTENSION IF NOT EXISTS <extname>;"
 ```
 
-Read the application user's password from the operator-managed secret, then run the pipe — in a shell with `pipefail` set, otherwise a source-side `pg_dump`/`kubectl` failure is masked by the exit status of the last command. One pipe per database:
+Read the application user's password from the operator-managed secret, then run the pipe — in a shell with `pipefail` set, otherwise a source-side `pg_dump`/`kubectl` failure is masked by the exit status of the last command. This transfers **one database**; run it once per database from the Step 1 list, substituting the database name and its owner user (in the secret name, `-U`, and `-d`) each time:
 
 ```bash
 APP_PW=$(kubectl --context $TGT_CTX -n $TGT_NS get secret \
