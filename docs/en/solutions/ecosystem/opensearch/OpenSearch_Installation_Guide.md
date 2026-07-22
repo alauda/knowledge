@@ -3,8 +3,18 @@ products:
   - Alauda Application Services
 kind:
   - Solution
+ProductsVersion:
+  - '4.1,4.2,4.3'
 id: KB260300008
 ---
+
+<!--
+  Authoring model (oss-operator-factory): this guide is authored ONCE by hand. On later
+  OpenSearch releases, only the slots fenced with `factory:auto:*` markers below are updated by
+  the factory pipeline (supported versions, operand image tags, known limitations).
+  Do NOT hand-edit inside a factory:auto block — those are regenerated from component.yaml /
+  release evidence. Prose outside the markers is human-owned and preserved across releases.
+-->
 
 # OpenSearch Installation Guide
 
@@ -14,11 +24,21 @@ OpenSearch is a community-driven, open-source search and analytics suite derived
 
 ### Supported Versions
 
-| Component | Supported Versions |
-|-----------|-------------------|
-| OpenSearch | 2.19.3, 3.3.1 |
-| OpenSearch Dashboards | 2.19.3, 3.3.0 |
+<!-- factory:auto:supported-versions BEGIN -->
+| Item | Version |
+|------|---------|
+| ACP | 4.1, 4.2, 4.3 |
+| Architectures | amd64 (x86_64), arm64 |
+| Alauda support for OpenSearch (bundle) | v2.8.0 |
 | OpenSearch Operator | 2.8.0 |
+| OpenSearch (operand) | 2.19.6, 3.7.0 |
+| OpenSearch Dashboards (operand) | 2.19.6, 3.7.0 |
+| Upstream | opensearch-project/opensearch-k8s-operator 2.8.0 (Apache-2.0) |
+<!-- factory:auto:supported-versions END -->
+
+> The operand version is selected per cluster via `spec.general.version` (and
+> `spec.dashboards.version`). Only the tags listed above are mirrored into the platform
+> registry; other versions are not pullable in air-gapped environments.
 
 ## Prerequisites
 
@@ -50,7 +70,7 @@ metadata:
 spec:
   general:
     serviceName: my-opensearch
-    version: 3.3.1
+    version: 3.7.0
     httpPort: 9200
   security:
     tls:
@@ -61,7 +81,7 @@ spec:
         generate: true
   dashboards:
     enable: true
-    version: 3.3.0
+    version: 3.7.0
     replicas: 1
     resources:
       requests:
@@ -339,7 +359,7 @@ metadata:
 spec:
   general:
     serviceName: opensearch-restricted
-    version: 3.3.1
+    version: 3.7.0
     httpPort: 9200
     
     # Disable init containers that require root
@@ -396,7 +416,7 @@ spec:
   
   dashboards:
     enable: true
-    version: 3.3.0
+    version: 3.7.0
     replicas: 1
     
     # Dashboards security context
@@ -470,6 +490,23 @@ spec:
       roles:
         - "data"
 ```
+
+## Known Limitations
+
+<!-- factory:auto:known-limitations BEGIN -->
+- **Operand versions are limited to the mirrored set.** Only OpenSearch / OpenSearch Dashboards
+  `2.19.6` and `3.7.0` are synced into the platform registry; selecting any other
+  `spec.general.version` / `spec.dashboards.version` will fail to pull in air-gapped environments.
+- **The deployment form renders complex specs weakly.** The upstream CSV ships no
+  `specDescriptors`, so the OperatorHub form is limited — apply the YAML examples in this guide
+  directly for anything beyond a trivial cluster.
+- **This release follows the stable 2.8 operator line.** The upstream `3.0.x` operator line is
+  still alpha; this plugin version-follows the stable `2.8.0` operator with the 2.19.6 / 3.7.0
+  operand lines.
+- **`vm.max_map_count` init container.** In restricted Pod Security Admission namespaces the
+  sysctl init container cannot run — pre-set `vm.max_map_count=262144` on worker nodes (see
+  [Deploy in Restricted Namespaces](#deploy-in-restricted-namespaces-pod-security-admission)).
+<!-- factory:auto:known-limitations END -->
 
 ## References
 
