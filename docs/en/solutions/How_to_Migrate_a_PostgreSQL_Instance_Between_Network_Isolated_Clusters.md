@@ -82,6 +82,24 @@ The `users:`/`databases:` sections of the target CR can be generated directly fr
 }
 ```
 
+### Preserve application credentials
+
+By default the target operator generates **new** passwords for the CR users, which would force every application to be re-configured at cutover. To keep the source passwords, copy each application user's credential secret into the target namespace **before creating the CR** — when the operator finds an existing credential secret, it adopts it and sets the role's password from it instead of generating a new one:
+
+```bash
+for SEC in $(kubectl --context $SRC_CTX -n $SRC_NS get secret \
+    -l application=spilo,cluster-name=$SRC_CLUSTER -o name); do
+  U=$(kubectl --context $SRC_CTX -n $SRC_NS get $SEC -o jsonpath='{.data.username}' | base64 -d)
+  case "$U" in postgres|standby) continue ;; esac   # system users stay operator-managed
+  PW=$(kubectl --context $SRC_CTX -n $SRC_NS get $SEC -o jsonpath='{.data.password}' | base64 -d)
+  kubectl --context $TGT_CTX -n $TGT_NS create secret generic \
+    "$U.$TGT_CLUSTER.credentials.postgresql.acid.zalan.do" \
+    --from-literal=username="$U" --from-literal=password="$PW"
+done
+```
+
+The `postgres` and `standby` system users are deliberately skipped — they belong to each instance's own operator. The ordering matters: pre-stage the secrets first, then create the CR (see [Troubleshooting](#troubleshooting) if the CR was created first).
+
 Create the target as a plain instance (no `clusterReplication`), sized like the source:
 
 ```yaml
@@ -216,7 +234,7 @@ If a database reports `FAIL`, see [Troubleshooting](#troubleshooting) and the [m
 
 ## Step 4: Verify Application Access
 
-The script has already verified per-table row counts. Confirm in addition that each application user can actually query its data with the **target**-managed credentials (this catches ownership problems immediately), and re-check any Step 2 checksums:
+The script has already verified per-table row counts. Confirm in addition that each application user can actually query its data with the **target**-managed credentials (this catches ownership problems immediately), and re-check any Step 2 checksums. If you pre-staged the credential secrets in Step 1, this password is identical to the source one — applications keep their existing credentials and only the connection endpoint changes at cutover:
 
 ```bash
 APP_PW=$(kubectl --context $TGT_CTX -n $TGT_NS get secret \
@@ -355,6 +373,23 @@ kubectl --context $TGT_CTX -n $TGT_NS exec $TGT_POD -c postgres -- psql -U postg
 ```
 
 Then redo **only the failed database** with the [manual transfer](#reference-manual-single-database-transfer). Do not rerun the whole script after a partial success: it would restore into the databases that already transferred, and the resulting `already exists` collisions would mark them as failed.
+
+### Application passwords changed after the migration
+
+The target CR was created **before** the credential secrets were pre-staged (Step 1), so the operator generated new passwords. To restore the source credentials after the fact, update both the secret and the role together — the secret alone is not enough, and an `ALTER ROLE` alone would be reverted by the operator's next sync from the secret:
+
+```bash
+SRC_PW=$(kubectl --context $SRC_CTX -n $SRC_NS get secret \
+  appuser.$SRC_CLUSTER.credentials.postgresql.acid.zalan.do -o jsonpath='{.data.password}' | base64 -d)
+
+kubectl --context $TGT_CTX -n $TGT_NS patch secret \
+  appuser.$TGT_CLUSTER.credentials.postgresql.acid.zalan.do \
+  -p "{\"stringData\":{\"password\":\"$SRC_PW\"}}"
+kubectl --context $TGT_CTX -n $TGT_NS exec $TGT_POD -c postgres -- \
+  psql -U postgres -c "ALTER ROLE appuser PASSWORD '$SRC_PW';"
+```
+
+Verify with a login test as in Step 4.
 
 ### Pipe is slow
 
