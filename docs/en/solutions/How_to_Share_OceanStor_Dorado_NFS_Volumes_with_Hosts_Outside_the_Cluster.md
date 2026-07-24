@@ -5,6 +5,7 @@ kind:
    - Solution
 ProductsVersion:
    - 4.x
+id: KB260700085
 ---
 
 # How to Share OceanStor Dorado NFS Volumes with Hosts Outside the Cluster

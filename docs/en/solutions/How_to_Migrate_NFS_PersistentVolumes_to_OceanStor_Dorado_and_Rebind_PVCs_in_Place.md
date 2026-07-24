@@ -5,6 +5,7 @@ kind:
    - Solution
 ProductsVersion:
    - 4.x
+id: KB260700088
 ---
 
 # How to Migrate NFS PersistentVolumes to OceanStor Dorado and Rebind PVCs in Place
