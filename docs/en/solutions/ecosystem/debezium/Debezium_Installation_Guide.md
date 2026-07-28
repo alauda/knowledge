@@ -24,16 +24,14 @@ ProductsVersion:
 row-level database changes to messaging and streaming systems — listed on the Alauda Cloud
 marketplace and installable from the ACP OperatorHub.
 
-Because the upstream community OLM bundle for Debezium is abandoned (it stops at `3.0.7`, while the
-operator itself ships monthly and is now at 3.6), this plugin is delivered in **chart-wrap** mode:
-the official `debezium/debezium-operator` Helm chart is wrapped by an operator-sdk helm-operator and
-shipped as an OLM Operator. The packaging has **two tiers**, which is important to understand before
-you install:
+This plugin packages the official Debezium Operator (built from its upstream `debezium/debezium-operator`
+Helm chart) as an installable Marketplace Operator. Installing and using it has **two tiers**, which is
+worth understanding before you start:
 
 1. You install the **Operator** from the Marketplace (creates the CSV).
-2. You create a single **`Debezium`** custom resource. The helm-operator runs `helm install` under
-   the hood, which stands up the **Debezium Operator** itself (the `debezium-operator` Deployment) and
-   registers the **`DebeziumServer`** CRD.
+2. You create a single **`Debezium`** custom resource. This installs the **Debezium Operator** itself
+   (the `debezium-operator` Deployment) with default settings and registers the **`DebeziumServer`**
+   CRD.
 3. You then create one or more **`DebeziumServer`** custom resources. The Debezium Operator reconciles
    each into a standalone **Debezium Server** instance that captures changes from a source database
    and streams them to a configurable sink.
@@ -56,15 +54,15 @@ the Debezium Operator, and run a CDC pipeline end to end.
 | ACP | 4.1, 4.2, 4.3 |
 | Architectures | amd64 (x86_64), arm64 |
 | Alauda support for Debezium (bundle) | v3.6.0 |
-| Debezium Operator (operand) | `quay.io/debezium/operator:3.6.0` (multi-arch) |
-| Debezium Server (operand) | `quay.io/debezium/server:3.6.0.Final` (multi-arch) |
+| Debezium Operator image | `quay.io/debezium/operator:3.6.0` (multi-arch) |
+| Debezium Server image | `quay.io/debezium/server:3.6.0.Final` (multi-arch) |
 | Upstream chart | `debezium/debezium-operator` `debezium-operator-3.6.0.tgz` (release asset, appVersion 3.6.0.Final) |
 <!-- factory:auto:supported-versions END -->
 
-> **Networking:** this release is validated on both IPv4 and IPv6 clusters. The release e2e matrix
-> covered ACP 4.3 on amd64/IPv6, ACP 4.2 + 4.1 on arm64/IPv4, and ACP 4.1 on amd64/IPv4 — a full
+> **Networking:** this release is validated on both IPv4 and IPv6 clusters. Validation covered
+> ACP 4.3 on amd64/IPv6, ACP 4.2 + 4.1 on arm64/IPv4, and ACP 4.1 on amd64/IPv4 — a full
 > two-architecture × two-IP-stack matrix, with a live PostgreSQL → Debezium Server → HTTP-sink CDC
-> round-trip on every cell. Dual-stack clusters are expected to work but were not exercised.
+> round-trip on every combination. Dual-stack clusters are expected to work but were not exercised.
 
 ## Prerequisites
 
@@ -105,9 +103,9 @@ Expected: the CSV `debezium-operator.v3.6.0` reaches phase `Succeeded`.
 
 ### 1. Deploy the Debezium Operator (the `Debezium` CR)
 
-Create one `Debezium` resource. An empty `spec` is sufficient — the helm-operator renders the chart
-with its defaults and stands up the `debezium-operator` Deployment. (The `spec` mirrors the chart's
-`values.yaml` under `app.*`; see [Configuration](#configuration).)
+Create one `Debezium` resource. An empty `spec` is sufficient — this installs the Debezium Operator
+(the `debezium-operator` Deployment) with its default settings. (The `spec` mirrors the upstream
+chart's `values.yaml` under `app.*`; see [Configuration](#configuration).)
 
 ```yaml
 apiVersion: debezium-operator.alauda.io/v1
@@ -129,9 +127,8 @@ Wait for the operator Deployment to become Ready:
 kubectl -n debezium rollout status deployment/debezium-operator --timeout=600s
 ```
 
-> The first rollout can take a few minutes — the helm-operator must reconcile the CR, run the chart
-> install, and the Debezium Operator (Quarkus) has a cold start. Allow up to ~10 minutes before
-> treating a not-yet-Ready Deployment as a failure.
+> The first rollout can take a few minutes — the plugin installs the Debezium Operator, which has a
+> cold start. Allow up to ~10 minutes before treating a not-yet-Ready Deployment as a failure.
 
 Expected: the `debezium-operator` Deployment is `1/1` Available, and the `DebeziumServer` CRD
 (`debeziumservers.debezium.io`) is registered:
@@ -207,8 +204,8 @@ durable.
 
 ## Configuration
 
-The wrapped `Debezium` CR `spec` mirrors the upstream chart `values.yaml` (deep-merged over chart
-defaults by the helm-operator). Common knobs:
+The `Debezium` CR `spec` mirrors the upstream chart's `values.yaml` settings (your values are merged
+over the chart defaults). Common knobs:
 
 | Group | CR path (`Debezium.spec`) | Notes |
 |-------|---------------------------|-------|
@@ -231,18 +228,17 @@ Kinesis, and HTTP.
 ## Known Limitations
 
 <!-- factory:auto:known-limitations BEGIN -->
-- **First release follows the chart-declared operator version (3.6.0.Final).** The official
-  `debezium/debezium-operator` chart ships per release as a `debezium-operator-<ver>.tgz` asset; newer
-  upstream versions are tracked by the factory's oss-watch bot and picked up on a later chart bump.
-  This plugin version-follows the chart (operator + `DebeziumServer` API) as a unit.
+- **First release ships Debezium Operator 3.6.0.Final.** Newer upstream Debezium versions are picked
+  up in later plugin releases published to the Marketplace. The Operator and its `DebeziumServer` API
+  are released together as a unit.
 - **Source-database CDC prerequisites are the user's responsibility.** Debezium reads a source
   database's transaction log; the source must be configured for CDC (e.g. PostgreSQL `wal_level =
   logical` + a replication-capable role, MySQL binlog `ROW` format, etc.) before a `DebeziumServer`
   can stream from it. This is outside the plugin's scope.
-- **Release validation used a PostgreSQL source and an HTTP/Redis sink.** The e2e round-trip exercised
-  the PostgreSQL connector (`pgoutput`) into an HTTP and a Redis sink across the full arch × IP-stack
-  matrix. Other connectors and sinks are upstream-supported but were not exercised in this release's
-  e2e.
+- **Release validation used a PostgreSQL source and an HTTP/Redis sink.** Validation exercised the
+  PostgreSQL connector (`pgoutput`) into an HTTP and a Redis sink across the full architecture ×
+  IP-stack matrix. Other connectors and sinks are supported by Debezium but were not exercised in this
+  release's validation.
 <!-- factory:auto:known-limitations END -->
 
 ## Cleanup
@@ -258,23 +254,25 @@ kubectl -n <operator-namespace> delete csv debezium-operator.v3.6.0
 ```
 
 > [!NOTE]
-> Deleting the namespace while a `Debezium` CR still exists can wedge on the helm-operator's
-> `uninstall-release` finalizer (the operator that must run the uninstall is being torn down with the
-> namespace). Delete the `DebeziumServer` and `Debezium` resources **first**, wait for them to clear,
-> then delete the namespace.
+> Deleting the namespace while a `Debezium` CR still exists can hang: the resource's cleanup cannot
+> finish once the operator that manages it is being removed at the same time. Delete the
+> `DebeziumServer` and `Debezium` resources **first**, wait for them to clear, then delete the
+> namespace.
 
 ## FAQ
 
 **Q: The `debezium-operator` Deployment never becomes Ready after I create the `Debezium` CR.**
-Check the helm-operator logs on the plugin's controller pod and the `Debezium` CR status. A common
-cause is the operand image not being pullable on an air-gapped cluster — see the next question.
+Check the plugin's operator (controller) pod logs and the `Debezium` CR status. A common cause is one
+of the images not being pullable on an air-gapped cluster — see the next question.
 
 **Q: A pod is stuck in `ImagePullBackOff`.**
-The plugin declares `quay.io/debezium/operator:3.6.0` and `quay.io/debezium/server:3.6.0.Final` in its
-CSV so the platform image allowlist can rewrite them to the in-cluster registry. On an air-gapped
-cluster, ensure the `sync-images` step mirrored both images to the platform registry and that the
-ImageWhiteList rewrite is in effect. Note the Debezium **Server** tag carries the `.Final` suffix
-(`3.6.0.Final`) while the **Operator** tag does not (`3.6.0`).
+The plugin runs two images: `quay.io/debezium/operator:3.6.0` (the operator) and
+`quay.io/debezium/server:3.6.0.Final` (each Debezium Server). On a cluster with internet access these
+are pulled automatically. On an **offline / air-gapped cluster**, both images must be available in
+your cluster's image registry — uploading the plugin package to the cluster mirrors them for you, so
+make sure the upload completed successfully. One common trap: the Debezium **Server** tag carries the
+`.Final` suffix (`3.6.0.Final`) while the **Operator** tag does not (`3.6.0`) — a wrong or missing tag
+here shows up as `ImagePullBackOff`.
 
 **Q: My `DebeziumServer` starts but no change events appear at the sink.**
 Confirm the source database is configured for CDC (for PostgreSQL: `wal_level = logical`, and the
@@ -288,5 +286,5 @@ connector `config` for production so the server resumes from its last committed 
 
 **Q: How do I upgrade Debezium?**
 Upgrade the Operator to the new version from the Marketplace; it reconciles the `Debezium` CR to the
-matching chart/operand version, and `DebeziumServer` resources pick up the new Server image.
-Version-following upgrades are handled by the factory's version-follow pipeline.
+matching Debezium version, and `DebeziumServer` resources pick up the new Server image. New Debezium
+releases are published to the Marketplace as they are certified.
