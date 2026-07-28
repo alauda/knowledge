@@ -266,13 +266,12 @@ Check the plugin's operator (controller) pod logs and the `Debezium` CR status. 
 of the images not being pullable on an air-gapped cluster — see the next question.
 
 **Q: A pod is stuck in `ImagePullBackOff`.**
-The plugin runs two images: `quay.io/debezium/operator:3.6.0` (the operator) and
-`quay.io/debezium/server:3.6.0.Final` (each Debezium Server). On a cluster with internet access these
-are pulled automatically. On an **offline / air-gapped cluster**, both images must be available in
-your cluster's image registry — uploading the plugin package to the cluster mirrors them for you, so
-make sure the upload completed successfully. One common trap: the Debezium **Server** tag carries the
-`.Final` suffix (`3.6.0.Final`) while the **Operator** tag does not (`3.6.0`) — a wrong or missing tag
-here shows up as `ImagePullBackOff`.
+This is unusual, because the plugin package is **self-contained**: it bundles the images it needs, and
+uploading the package to your cluster loads them into the cluster's image registry for you — including
+on **offline / air-gapped clusters**, which is the whole point of the package. So if a pod cannot pull
+an image, the most likely cause is that the plugin package did not finish uploading (a partial upload
+can leave an image missing) — re-upload it and confirm it completes. Then run
+`kubectl -n <namespace> describe pod <pod>` and read the events for the exact registry error.
 
 **Q: My `DebeziumServer` starts but no change events appear at the sink.**
 Confirm the source database is configured for CDC (for PostgreSQL: `wal_level = logical`, and the
