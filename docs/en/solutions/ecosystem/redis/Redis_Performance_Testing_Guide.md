@@ -20,14 +20,14 @@ There is no hardware-independent "best" result. Define the workload, durability 
 
 Use one of two access-path profiles and never merge their results:
 
-- **In-cluster capacity profile (recommended)**: run the load Pod in the Redis cluster and connect through the ClusterIP Service. This follows the current Redis Operator suite and removes external load-balancer/wide area network (WAN) capacity from the Redis result.
-- **External end-to-end profile**: run the same open-source client image from the customer-selected source cluster or host through NodePort or LoadBalancer. This follows the cross-cluster capability of the earlier validation suite. Record the client location, access type, round-trip latency, packet loss, and every network hop. For Cluster mode, every node address announced by Cluster discovery must be reachable from the load generator; reaching only the seed endpoint is insufficient.
+- **In-cluster capacity profile (recommended)**: run the load Pod in the Redis cluster and connect through the ClusterIP Service. This removes external load-balancer/wide area network (WAN) capacity from the Redis result.
+- **External end-to-end profile**: run the same open-source client image from the customer-selected source cluster or host through NodePort or LoadBalancer. Record the client location, access type, round-trip latency, packet loss, and every network hop. For Cluster mode, every node address announced by Cluster discovery must be reachable from the load generator; reaching only the seed endpoint is insufficient.
 
 ## Test design
 
 Use the following workload matrix for both Cluster and Sentinel.
 
-Redis Database (RDB) persistence, Append Only File (AOF) persistence, and a non-persistent cache are the three profiles. Select a product parameter template first, keep it unchanged for the baseline run, and then change only one tuning axis at a time. The value-size, pipeline, command, and keyspace rows reproduce the Redis Operator performance suite and earlier validation cases.
+Redis Database (RDB) persistence, Append Only File (AOF) persistence, and a non-persistent cache are the three profiles. Select a product parameter template first, keep it unchanged for the baseline run, and then change only one tuning axis at a time.
 
 | Axis | Standard values | Purpose |
 |---|---|---|
@@ -99,7 +99,7 @@ Prepare the following before the test window:
 
   Use a distinct password Secret for each fresh Redis instance. The current Operator can attach the supplied Secret to an instance-owned `RedisUser`; deleting the instance then removes that Secret through Kubernetes ownership. Before creating the next matrix instance, create its new Secret and recreate the load-generator Pod so its projected volume references the new name. Do not assume that a Secret shared with a deleted instance will remain available.
 
-- An approved [Redis Docker Official Image](https://hub.docker.com/_/redis/) containing `redis-benchmark` and `redis-cli`. Match the server major/minor version where practical, mirror the exact image into the customer registry for an air-gapped cluster, and record its immutable digest. Do not use an Alauda-internal load-generator image.
+- An approved [Redis Docker Official Image](https://hub.docker.com/_/redis/) containing `redis-benchmark` and `redis-cli`. Match the server major/minor version where practical, mirror the exact image into the customer registry for an air-gapped cluster, and record its immutable digest. Do not depend on a private vendor registry for the load-generator image.
 - Metrics Server for sampled Pod CPU/memory, or Prometheus for time-series CPU, memory, network, storage, and Redis exporter metrics.
 
 Before applying examples, confirm the installed schema with:
@@ -201,7 +201,7 @@ The standard matrix fits within the template capacities because it has a bounded
 
 Redis serialization, AOF protocol framing, key names, and other files are not included in the payload-only peak. The safety factor provides space for these items and for variation around the bounded test. Redis writes a temporary RDB before replacing the old file. Redis 7.2 multipart AOF retains the current file set while rewrite creates a new base and continues accepting writes, which is why both generations are included before applying the factor.
 
-Use a fresh instance for every parameter-template, value-size, pipeline, and Redis I/O-thread scenario, as the Operator performance suite does. During a client-concurrency sweep on an AOF instance, either recreate the instance for every measured point or run `BGREWRITEAOF` after warm-up and after each point, wait for `aof_rewrite_in_progress:0`, and require `aof_last_bgrewrite_status:ok` before continuing. Run this housekeeping outside the measured interval.
+Use a fresh instance for every parameter-template, value-size, pipeline, and Redis I/O-thread scenario. During a client-concurrency sweep on an AOF instance, either recreate the instance for every measured point or run `BGREWRITEAOF` after warm-up and after each point, wait for `aof_rewrite_in_progress:0`, and require `aof_last_bgrewrite_status:ok` before continuing. Run this housekeeping outside the measured interval.
 
 If `-n`, `-r`, `-d`, or `S` changes, recompute the capacity before creating the instance. Do not reuse the standard values for the earlier 5-30-million-request Ares cases or a customer workload without recalculation. Multiply the per-Pod result by two for the standard Sentinel topology or by six for the standard three-primary, one-replica-per-primary Cluster topology to obtain total Kubernetes-requested capacity. Storage-system replication, thin-provisioning reserve, and filesystem overhead are additional. For local block storage, every eligible node must have enough allocatable local capacity for the Redis data Pods that can be scheduled there. Provision the calculated capacity before testing; do not resize a PVC during a measured run.
 
@@ -389,11 +389,11 @@ test "$(wc -l < "${CSV_OUTPUT}")" -ge 3
 
 | Parameter | Meaning and selection rule |
 |---|---|
-| `-c` | Parallel connections. Start at `50` (the community default) or `100` (the Operator suite default), then increase. Earlier internal validation used `200` for Cluster and `1000` for Sentinel as high-concurrency reference points. |
-| `-n` | Requests per selected operation. Use `1,000,000` for a quick measured run. Earlier internal validation used 5-30 million depending on topology/value size. Increase it until the measurement contains enough monitoring samples and reaches steady state. |
+| `-c` | Parallel connections. Start at `50` (the community default) or `100`, then increase until throughput stops scaling or another measured limit is reached. |
+| `-n` | Requests per selected operation. Use `1,000,000` for a quick measured run. Increase it until the measurement contains enough monitoring samples and reaches steady state. |
 | `-d` | `SET`/`GET` value size in bytes. Use `512` and `4096` (4 KiB) for the standard matrix. Add separately named sizes when the application's payload distribution differs. |
 | `-P` | Pipeline depth. `1` is no pipelining; `16` is the standard throughput-oriented point. Use the application's average pipeline depth for a production-realistic test. Never compare `P=1` and `P=16` as if they were the same workload. |
-| `--threads` | Load-generator threads, independent of Redis `io-threads`. Begin with `4`; increase only if the client Pod is CPU-bound before Redis. Earlier internal reference values were `16` for Cluster and `8` for Sentinel. During a server I/O-thread sweep, provision enough client threads for the largest candidate and then hold this value constant. |
+| `--threads` | Load-generator threads, independent of Redis `io-threads`. Begin with `4`; increase only if the client Pod is CPU-bound before Redis. During a server I/O-thread sweep, provision enough client threads for the largest candidate and then hold this value constant. |
 | `-r` | Random keyspace. `100000` is the implemented baseline; enlarge it when the real dataset has a larger working set. |
 | `-t` | Commands to test. `set,get` is the standard comparison. Add a separate scenario for the application's actual command mix; do not mix incomparable command sets in one result table. |
 | `--cluster` | Required for Redis Cluster so the tool discovers and routes across Cluster nodes. Omit for Sentinel. All announced Cluster node addresses must be reachable from the client Pod. |
@@ -419,7 +419,7 @@ Repeat runs until results are reproducible and retain all runs. Do not report on
 
 ### Kubernetes resource metrics
 
-The Operator test harness samples the standard `metrics.k8s.io` API every five seconds and records maximum/average CPU and memory. Metrics Server does not provide network, storage, or historical series; use Prometheus for those metrics.
+For short benchmark phases, sample the standard `metrics.k8s.io` API every five seconds and calculate maximum and average CPU and memory. Metrics Server does not provide network, storage, or historical series; use Prometheus for those metrics.
 
 ```bash
 kubectl -n redis-perf top pod --containers
@@ -607,12 +607,12 @@ kubectl label node replace-with-loadgen-node redis-perf/loadgen-
 
 Confirm the operator's PersistentVolumeClaim retention behavior before deleting volumes. Do not delete retained data unless the namespace and volumes are dedicated to this test and the customer has approved removal.
 
-## Method and source traceability
+## Community references
 
-This procedure is traceable to the following implementations; customers do not need these source repositories to run it:
-
-- Redis Operator: `tests/perf/config.go`, `tests/perf/scenarios.go`, `tests/perf/helpers_test.go`, and `tests/framework/bench/{runner,metrics,parse,report}.go`; `internal/builder/clusterbuilder/configmap.go` and `internal/builder/failoverbuilder/configmap.go` derive an unset `maxmemory` from the Redis container memory limit and configured eviction policy; `internal/builder/clusterbuilder/configmap.go` and `internal/controller/middleware/redis/rediscluster.go` define `io-threads` and `io-threads-do-reads` as restart-required custom configuration.
-- Internal validation repository: `performance_case/middleware/redis/test_cluster.py` and `test_sentinel.py` for the 4-CPU/8-GiB sizing, persistence/value/pipeline matrix, long request counts, and CPU/memory/network collection; `performance_case/staging/performance_testing.py` uses `sc-topolvm` as the example performance-test `StorageClass`.
-- Product parameter templates: `middleware/charts/redis-param/templates/redis-7.2-paramtemplate-{0,1,2}.yaml` and `redis-7.2-paramdefinition.yaml` define the shipped RDB, no-persistence, and AOF baselines. `redis-frontend/src/app/components/params-template-select/{component.ts,template.html}`, `components/form/component.ts`, and `modules/meepo-shared/src/lib/utils/param-template.ts` define default selection, identifier display, localized descriptions, and application of template values to the form.
-- Product schema and monitoring: `api/middleware/v1/redis_types.go`, `config/samples/middleware.alauda.io_v1_redis.yaml`, and `resources/dashboard/data/redis-dashboard.yaml`.
-- Community references: [Redis benchmark](https://redis.io/docs/latest/operate/oss_and_stack/management/optimization/benchmarks/), [Redis 7.2 reference configuration](https://github.com/redis/redis/blob/7.2/redis.conf), [Redis `INFO`](https://redis.io/docs/latest/commands/info/), [Redis persistence](https://redis.io/docs/latest/operate/oss_and_stack/management/persistence/), [`BGSAVE`](https://redis.io/docs/latest/commands/bgsave/), [`BGREWRITEAOF`](https://redis.io/docs/latest/commands/bgrewriteaof/), [Redis Cluster health](https://redis.io/docs/latest/commands/cluster-info/), [Redis Sentinel](https://redis.io/docs/latest/operate/oss_and_stack/management/sentinel/), [TopoLVM](https://github.com/topolvm/topolvm), [Kubernetes Storage Classes](https://kubernetes.io/docs/concepts/storage/storage-classes/), [Ceph architecture](https://docs.ceph.com/en/latest/architecture/), [Kubernetes resource metrics](https://kubernetes.io/docs/tasks/debug/debug-cluster/resource-metrics-pipeline/), and [Kubernetes Pod QoS](https://kubernetes.io/docs/concepts/workloads/pods/pod-qos/).
+- [Redis benchmark](https://redis.io/docs/latest/operate/oss_and_stack/management/optimization/benchmarks/)
+- [Redis 7.2 reference configuration](https://github.com/redis/redis/blob/7.2/redis.conf)
+- [Redis `INFO`](https://redis.io/docs/latest/commands/info/)
+- [Redis persistence](https://redis.io/docs/latest/operate/oss_and_stack/management/persistence/), [`BGSAVE`](https://redis.io/docs/latest/commands/bgsave/), and [`BGREWRITEAOF`](https://redis.io/docs/latest/commands/bgrewriteaof/)
+- [Redis Cluster health](https://redis.io/docs/latest/commands/cluster-info/) and [Redis Sentinel](https://redis.io/docs/latest/operate/oss_and_stack/management/sentinel/)
+- [TopoLVM](https://github.com/topolvm/topolvm), [Kubernetes Storage Classes](https://kubernetes.io/docs/concepts/storage/storage-classes/), and [Ceph architecture](https://docs.ceph.com/en/latest/architecture/)
+- [Kubernetes resource metrics](https://kubernetes.io/docs/tasks/debug/debug-cluster/resource-metrics-pipeline/) and [Kubernetes Pod QoS](https://kubernetes.io/docs/concepts/workloads/pods/pod-qos/)
