@@ -6,10 +6,17 @@ products:
 ProductsVersion:
   - 4.x
 id: KB260100023
-sourceSHA: 986b9b0d5648d8648b27487418da8454b121df6b232f4ad72ca51ad0e34d344b
+sourceSHA: 4b2825346285eb4dd498efd8702bb9774604dcc8baa75cdb044387a3d640b6f6
 ---
 
 # 如何部署和使用 Konveyor
+
+> \[!重要]
+> **此页面适用于哪个软件包？**
+>
+> 本页面描述了基于较旧社区 `konveyor-operator` 目录条目的自管理 Konveyor 部署。它**不是**认证的 **Alauda 对 Konveyor 的支持** 软件包的安装指南。
+>
+> 如果您是从 Marketplace 安装的 **Alauda 对 Konveyor 的支持**，请改为遵循 [Alauda 对 Konveyor 的支持 — 安装指南](./ecosystem/konveyor/Konveyor_Installation_Guide.md)。本页面上的某些设置不适用于该软件包——特别是 `feature_auth_required`、Keycloak 管理步骤和 KAI 配置，其容器镜像未随之提供。
 
 ## 概述
 
@@ -24,13 +31,16 @@ Konveyor 是一个 CNCF（云原生计算基金会）项目，提供了一个模
 
 ## 安装 Konveyor Operator
 
-从 [Alauda Cloud Console](https://cloud.alauda.io/) Marketplace 下载 Konveyor Operator 插件，并按照 [上架软件包](https://docs.alauda.io/container_platform/4.2/extend/upload_package.html) 指南将插件上传到集群。
+从 [Alauda Cloud Console](https://cloud.alauda.io/) Marketplace 下载 Konveyor Operator 插件，并遵循 [上架软件包](https://docs.alauda.io/container_platform/4.2/extend/upload_package.html) 指南将插件上传到集群。
 
 ## 部署 Konveyor Hub (Tackle)
 
 ### 创建 Tackle 实例
 
 通过创建 Tackle CR 部署 Tackle 平台。Tackle 实例必须在与 konveyor-operator 相同的命名空间中部署。
+
+> \[!警告]
+> 以下示例是为社区 `konveyor-operator` 条目编写的，并假设有一个 ReadWriteMany StorageClass 以及 ~200Gi 的容量。**请勿直接将其复制到 Alauda 对 Konveyor 的支持中**——在该软件包中，`feature_auth_required` 必须保持为 `false`，并且 `rwx_supported: true` 和 100Gi 的存储桶对大多数集群来说可能过于庞大。请使用 [安装指南](./ecosystem/konveyor/Konveyor_Installation_Guide.md) 作为有效的起点。
 
 ```yaml
 cat << EOF | kubectl create -f -
@@ -55,16 +65,16 @@ EOF
 
 ### 验证部署
 
-检查 `konveyor-tackle` 命名空间中的 pod 状态：
+检查 `konveyor-tackle` 命名空间中 pod 的状态：
 
 ```bash
 kubectl get pods -n konveyor-tackle
 ```
 
-确保所有 pod 都处于 `Running` 或 `Completed` 状态，然后再继续。
+确保所有 pod 都处于 `Running` 或 `Completed` 状态后再继续。
 
-> \[!WARNING]
-> Tackle 实例必须在与 `konveyor-operator` 相同的命名空间中部署。如果您在不同的命名空间中部署，操作员创建的一些资源（如 PersistentVolumeClaims、ConfigMaps、Secrets 和 ServiceAccounts）在删除 Tackle 自定义资源时可能不会自动删除。在这种情况下，您必须手动清理受影响命名空间中的这些资源，例如：
+> \[!警告]
+> Tackle 实例必须在与 `konveyor-operator` 相同的命名空间中部署。如果您在不同的命名空间中部署，则 operator 创建的一些资源（如 PersistentVolumeClaims、ConfigMaps、Secrets 和 ServiceAccounts）在删除 Tackle 自定义资源时可能不会自动删除。在这种情况下，您必须手动清理受影响命名空间中的这些资源，例如：
 >
 > ```bash
 > # 删除标记为 Tackle 实例的公共资源
@@ -84,8 +94,8 @@ kubectl get pods -n konveyor-tackle
 | `spec.keycloak_database_data_volume_size` | `1Gi`   | 请求的 Keycloak 数据库卷大小                                  |
 | `spec.cache_data_volume_size`             | `100Gi` | 请求的 Tackle 缓存卷大小                                      |
 | `spec.cache_storage_class`                | N/A     | 请求的 Tackle 缓存卷的 StorageClass                          |
-| `spec.hub_bucket_storage_class`           | N/A     | 请求的 Tackle Hub 存储桶卷的 StorageClass（RWX）             |
-| `spec.rwo_storage_class`                  | N/A     | 请求的 RWO 数据库卷的 StorageClass                            |
+| `spec.hub_bucket_storage_class`           | N/A     | 请求的 Tackle Hub 存储桶卷的 StorageClass (RWX)              |
+| `spec.rwo_storage_class`                  | N/A     | 请求的 RWO 数据库卷的 StorageClass                           |
 
 ## 访问 Tackle UI
 
@@ -101,9 +111,9 @@ kubectl get pods -n konveyor-tackle
 
 ### 初始化管理员账户
 
-内置的 Keycloak 在启动时生成一个随机密码。这是 Keycloak 的根密码，存储在 `tackle-keycloak-sso` secret 中。
+内置的 Keycloak 在启动时生成随机密码。这是 Keycloak 的根密码，存储在 `tackle-keycloak-sso` secret 中。
 
-1. 检索 Keycloak 管理员凭据：
+1. 检索 Keycloak 管理凭据：
 
    ```bash
    # 获取用户名（默认：admin）
@@ -113,11 +123,11 @@ kubectl get pods -n konveyor-tackle
    kubectl -n konveyor-tackle get secret tackle-keycloak-sso -o jsonpath='{.data.password}' | base64 -d
    ```
 
-2. 登录到 Keycloak 管理控制台 <http://127.0.0.1:8080/auth/admin/>
+2. 登录 Keycloak 管理控制台 <http://127.0.0.1:8080/auth/admin/>
 
 3. 重置 Tackle 管理员密码：
    - 从下拉菜单中选择 **tackle** Realm（而不是 Master Realm）
-   - 在左侧菜单中点击 **Users**
+   - 点击左侧菜单中的 **Users**
    - 找到并选择 **admin** 用户
    - 点击 **Credentials** 标签
    - 输入新密码（例如，`admin@123`）
@@ -132,7 +142,7 @@ kubectl get pods -n konveyor-tackle
 
 #### Ingress 先决条件
 
-- 一个域名（例如，`tackle.example.com`）
+- 域名（例如，`tackle.example.com`）
 - 部署的 LoadBalancer 服务（请参见 [ALB 部署指南](https://docs.alauda.io/container_platform/4.1/configure/networking/how_to/alb/deploy_alb.html)）
 - 安装 cert-manager
 
@@ -169,7 +179,7 @@ metadata:
   name: tackle-ui-tls-ingress
   namespace: konveyor-tackle
 spec:
-  ingressClassName: nginx    # 替换为您的 Ingress Class
+  ingressClassName: nginx    # 替换为您的 Ingress 类
   rules:
     - host: tackle.example.com
       http:
@@ -187,26 +197,29 @@ spec:
       secretName: tackle-tls-secret
 ```
 
-> \[!NOTE]
+> \[!注意]
 > 将 `tackle.example.com` 替换为您的实际域名。
 
 通过 `https://tackle.example.com` 访问 Tackle。
 
-## 启用 KAI（Konveyor AI）
+## 启用 KAI (Konveyor AI)
 
 KAI 使用 AI 服务提供 AI 驱动的代码迁移辅助。它支持多个提供商和模型。
+
+> \[!注意]
+> KAI 在认证的 **Alauda 对 Konveyor 的支持** 软件包中**不可用**——它所需的镜像仅发布为 amd64，并未随之提供。本节适用于社区 `konveyor-operator` 条目。
 
 ### 支持的提供商和模型
 
 | 提供商 (`kai_llm_provider`) | 模型 (`kai_llm_model`)                                                        |
-| --------------------------- | ------------------------------------------------------------------------------ |
-| `openai`                    | `gpt-4`、`gpt-4o`、`gpt-4o-mini`、`gpt-3.5-turbo`                              |
-| `azure_openai`              | `gpt-4`、`gpt-35-turbo`                                                        |
-| `bedrock`                   | `anthropic.claude-3-5-sonnet-20241022-v2:0`、`meta.llama3-1-70b-instruct-v1:0` |
-| `google`                    | `gemini-2.0-flash-exp`、`gemini-1.5-pro`                                       |
-| `ollama`                    | `llama3.1`、`codellama`、`mistral`                                             |
-| `groq`                      | `llama-3.1-70b-versatile`、`mixtral-8x7b-32768`                                |
-| `anthropic`                 | `claude-3-5-sonnet-20241022`、`claude-3-haiku-20240307`                        |
+| ----------------------------- | ------------------------------------------------------------------------------ |
+| `openai`                      | `gpt-4`、`gpt-4o`、`gpt-4o-mini`、`gpt-3.5-turbo`                              |
+| `azure_openai`                | `gpt-4`、`gpt-35-turbo`                                                        |
+| `bedrock`                     | `anthropic.claude-3-5-sonnet-20241022-v2:0`、`meta.llama3-1-70b-instruct-v1:0` |
+| `google`                      | `gemini-2.0-flash-exp`、`gemini-1.5-pro`                                       |
+| `ollama`                      | `llama3.1`、`codellama`、`mistral`                                             |
+| `groq`                        | `llama-3.1-70b-versatile`、`mixtral-8x7b-32768`                                |
+| `anthropic`                   | `claude-3-5-sonnet-20241022`、`claude-3-haiku-20240307`                        |
 
 ### 在 Tackle 中启用 KAI
 
@@ -241,7 +254,7 @@ KAI 使用 AI 服务提供 AI 驱动的代码迁移辅助。它支持多个提�
      --from-literal=GOOGLE_API_KEY='<YOUR_GOOGLE_API_KEY>'
    ```
 
-3. 强制操作员进行调和并获取新凭据：
+3. 强制 operator 进行调和并获取新的凭据：
 
    ```bash
    kubectl patch tackle tackle -n konveyor-tackle --type=merge -p \
@@ -250,16 +263,16 @@ KAI 使用 AI 服务提供 AI 驱动的代码迁移辅助。它支持多个提�
 
 ## Konveyor 组件概述
 
-Konveyor 提供了一个模块化架构用于应用现代化：
+Konveyor 提供了一个模块化的架构用于应用现代化：
 
-| 组件                     | 描述                                                                                                                                                                                                        |
-| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| **Konveyor Hub**        | 提供统一应用清单、评估模块（风险评估）和分析模块（静态代码分析）的中央控制平面。实现了带有管理员、架构师和迁移者角色的 RBAC。                                                                 |
-| **Kantra & Analyzer-LSP** | CLI 工具用于离线静态分析。Analyzer-LSP 通过语言服务器协议集成到 IDE（VSCode）中，以实时检测迁移问题。                                                                                                 |
-| **Konveyor AI (KAI)**   | 基于 RAG 的 AI 助手，用于自动化代码修复。使用已解决事件存储进行上下文感知的代码补丁生成。                                                                                                                   |
-| **Move2Kube**           | 自动化从 Cloud Foundry/OpenShift 转换到 Kubernetes。三个阶段：收集、计划、转换。生成 Dockerfile、K8s 清单、Helm Charts 和 Tekton Pipelines。                                                              |
-| **Forklift**            | 用于将虚拟机从 VMware vSphere、oVirt 或 OpenStack 迁移到 KubeVirt 的虚拟机迁移工具。                                                                                                                                 |
-| **Crane**               | 用于集群升级或跨分发迁移的 Kubernetes 到 Kubernetes 迁移工具。使用 Restic 或 VolSync 处理 PV 数据同步。                                                                                                     |
+| 组件                     | 描述                                                                                                                                                      |
+| ------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Konveyor Hub**         | 提供统一应用库存、评估模块（风险评估）和分析模块（静态代码分析）的中央控制平面。实现了带有管理员、架构师和迁移者角色的 RBAC。                             |
+| **Kantra & Analyzer-LSP**| 用于离线静态分析的 CLI 工具。Analyzer-LSP 通过语言服务器协议集成到 IDE（VSCode）中，以实时检测迁移问题。                                             |
+| **Konveyor AI (KAI)**    | 基于 RAG 的 AI 助手，用于自动化代码修复。使用解决事件存储进行上下文感知的代码补丁生成。                                                                 |
+| **Move2Kube**            | 自动将 Cloud Foundry/OpenShift 转换为 Kubernetes。三个阶段：收集、计划、转换。生成 Dockerfile、K8s 清单、Helm Charts 和 Tekton Pipelines。               |
+| **Forklift**             | 用于将虚拟机从 VMware vSphere、oVirt 或 OpenStack 迁移到 KubeVirt 的虚拟机迁移工具。                                                                          |
+| **Crane**                | 用于集群升级或跨分发迁移的 Kubernetes 到 Kubernetes 迁移工具。使用 Restic 或 VolSync 处理 PV 数据同步。                                                  |
 
 ## 参考
 
