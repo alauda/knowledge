@@ -10,6 +10,19 @@ id: KB260100023
 
 # How to Deploy and Use Konveyor
 
+> [!IMPORTANT]
+> **Which package does this page apply to?**
+>
+> This page describes a self-managed Konveyor deployment based on the older community
+> `konveyor-operator` catalog entry. It is **not** the installation guide for the certified
+> **Alauda support for Konveyor** package.
+>
+> If you installed **Alauda support for Konveyor** from the Marketplace, follow
+> [Alauda support for Konveyor — Installation Guide](./ecosystem/konveyor/Konveyor_Installation_Guide.md)
+> instead. Several settings on this page do not apply to that package — in particular
+> `feature_auth_required`, the Keycloak admin steps, and the KAI configuration, whose container
+> images are not shipped with it.
+
 ## Overview
 
 Konveyor is a CNCF (Cloud Native Computing Foundation) project that provides a modular platform for application modernization. It supports the entire lifecycle of modernization: discovery, assessment, analysis, and execution. This guide covers deploying the Konveyor Hub (Tackle) platform and its core components.
@@ -30,6 +43,14 @@ Download the Konveyor Operator plugin from [Alauda Cloud Console](https://cloud.
 ### Create Tackle Instance
 
 Deploy the Tackle platform by creating a Tackle CR. The Tackle instance must be deployed in the same namespace as the konveyor-operator.
+
+> [!WARNING]
+> The example below is written for the community `konveyor-operator` entry and assumes a
+> ReadWriteMany StorageClass plus ~200Gi of capacity. **Do not copy it as-is onto
+> Alauda support for Konveyor** — on that package `feature_auth_required` must stay `false`, and
+> `rwx_supported: true` with a 100Gi bucket is more than most clusters can bind. Use the
+> [Installation Guide](./ecosystem/konveyor/Konveyor_Installation_Guide.md) for a working starting
+> point.
 
 ```yaml
 cat << EOF | kubectl create -f -
@@ -194,6 +215,11 @@ Access Tackle at `https://tackle.example.com`.
 ## Enable KAI (Konveyor AI)
 
 KAI uses AI services to provide AI-powered code migration assistance. It supports multiple providers and models.
+
+> [!NOTE]
+> KAI is **not available** in the certified **Alauda support for Konveyor** package — the images it
+> needs are published for amd64 only and are not shipped with it. This section applies to the
+> community `konveyor-operator` entry.
 
 ### Supported Providers and Models
 
