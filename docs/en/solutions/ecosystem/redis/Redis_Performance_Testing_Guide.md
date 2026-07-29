@@ -429,7 +429,7 @@ kubectl get --raw '/apis/metrics.k8s.io/v1beta1/namespaces/redis-perf/pods' \
 
 Export range data covering at least the benchmark start/end time. Adapt label selectors to the installed monitoring stack:
 
-```promql
+```text
 sum by (pod) (rate(container_cpu_usage_seconds_total{namespace="redis-perf",container!=""}[5m]))
 sum by (pod) (container_memory_working_set_bytes{namespace="redis-perf",container!=""})
 sum by (pod) (rate(container_network_receive_bytes_total{namespace="redis-perf"}[5m]))
@@ -443,7 +443,7 @@ the report.
 
 Calculate utilization against declared container limits with a ratio of sums:
 
-```promql
+```text
 100 *
 sum(rate(container_cpu_usage_seconds_total{namespace="redis-perf",container="redis"}[5m]))
 /
