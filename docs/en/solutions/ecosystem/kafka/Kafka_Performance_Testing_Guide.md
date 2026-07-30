@@ -213,9 +213,12 @@ kubectl --kubeconfig "$MGMT_KUBECONFIG" get paramdefinition kafka-general -o yam
 
 ### 5.1 Additional snapshot for a ZooKeeper-based instance
 
-The legacy generated `Kafka` resource stores the broker and ZooKeeper specifications separately. Save both before testing:
+The product-facing `RdsKafka` API and the generated Strimzi `Kafka` resource are different layers. Save both before testing. The first snapshot records the requested mode and ZooKeeper sizing; the second records what the operator generated:
 
 ```bash
+kubectl -n "$NS" get rdskafka "$CLUSTER" \
+  -o jsonpath='{.spec.mode}{"\n"}{.spec.version}{"\n"}{.spec.zookeeper}{"\n"}' \
+  >"$OUT/rdskafka-zookeeper-requested.txt"
 kubectl -n "$NS" get kafka "$CLUSTER" \
   -o jsonpath='{.spec.kafka.version}{"\n"}' \
   >"$OUT/kafka-version.txt"
@@ -229,7 +232,7 @@ kubectl -n "$NS" get kafka "$CLUSTER" \
 
 Record `log.message.format.version` and `inter.broker.protocol.version` when present. A value that does not match the broker major and minor version can indicate an incomplete upgrade. Do not change either value during a performance comparison.
 
-ZooKeeper settings under `spec.zookeeper.config` are version-specific, and the operator prevents changes to settings that it owns, including server addresses, data directories, client ports, quorum authentication, and several TLS properties. Query the installed custom resource definition before changing a ZooKeeper setting. Keep the complete ZooKeeper configuration, resources, JVM options, and metrics mapping fixed unless one of them is the single variable under test.
+The `RdsKafka` API exposes ZooKeeper replicas, resources, storage, JVM options, Pod template, and logging. It does not expose arbitrary ZooKeeper configuration or `metricsConfig`. The product operator injects the generated Strimzi `Kafka.spec.zookeeper.metricsConfig` and the corresponding metrics ConfigMap. Do not patch the generated `Kafka` resource to bypass the `RdsKafka` API; reconciliation can overwrite that change. Keep the exposed ZooKeeper fields and the generated metrics mapping fixed unless one of them is the single variable under test.
 
 ## 6. Persistent-Volume Capacity and Storage Qualification
 
@@ -327,7 +330,40 @@ kubectl explain rdskafka.spec --recursive \
   >"$OUT/rdskafka-spec-schema.txt"
 ```
 
-For a ZooKeeper-based instance, also verify these fields in the generated `Kafka` resource. Field availability is determined by the installed CRD:
+For a ZooKeeper-based instance, verify the product-facing fields below against the installed `RdsKafka` CRD:
+
+```bash
+kubectl explain rdskafka.spec.zookeeper --recursive \
+  >"$OUT/rdskafka-zookeeper-schema.txt"
+kubectl get imageversion \
+  -l 'middleware.instance/type=kafka,middleware.instance/current=true' \
+  -o jsonpath='{range .items[*].spec.components.kafka.versions[*]}{.displayVersion}{"\t"}{.version}{"\n"}{end}' \
+  >"$OUT/kafka-supported-versions.txt"
+test -s "$OUT/kafka-supported-versions.txt"
+```
+
+| `RdsKafka` field | Standard test requirement |
+| --- | --- |
+| `spec.mode` | Explicitly set to the API enum value `Zookeeper` |
+| `spec.version` | A ZooKeeper-capable version advertised by the installed product; for the deployed operator 2.x path, select a supported Kafka 2.x version |
+| `spec.replicas` | 3 brokers |
+| `spec.resources.requests/limits` | Current broker matrix size; record both requests and limits |
+| `spec.storage` | Qualified broker persistent storage sized by section 6 |
+| `spec.config` | Frozen broker baseline; record `inter.broker.protocol.version` and `log.message.format.version` when present |
+| `spec.kafka` | Listener, authorization, Pod template, JVM, and logging settings for brokers |
+| `spec.zookeeper.replicas` | Odd count, with at least 3 for a production-representative test |
+| `spec.zookeeper.resources` | Fixed requests and limits; required when `spec.zookeeper` is present |
+| `spec.zookeeper.storage` | Persistent, low-latency block storage with fixed class, size, and `deleteClaim`; required when `spec.zookeeper` is present |
+| `spec.zookeeper.jvmOptions` | Fixed heap settings, when explicitly configured |
+| `spec.zookeeper.template` | Fixed Pod security, affinity, and toleration settings, when explicitly configured |
+| `spec.zookeeper.logging` | Fixed inline logging settings, when explicitly configured |
+| `spec.kafkaExporter` | Enabled when consumer group lag is required, with topic and group regular expressions limited to the test scope |
+
+The operator 2.x implementation is selected from `spec.version`, not from `spec.mode`. For the legacy Kafka 2.x versions supported by the installed release, the `RdsKafka` reconciler always builds a ZooKeeper-based Strimzi resource. Still set `spec.mode: Zookeeper` explicitly so the declared API state matches the generated topology and remains unambiguous to automation.
+
+If `spec.zookeeper` is omitted, the current implementation copies broker replica, resource, and storage settings into ZooKeeper defaults. Do not rely on that fallback for a performance baseline: specify `spec.zookeeper` so metadata-service sizing is explicit and can be held constant while broker sizes change.
+
+Also verify these read-only results in the generated Strimzi `Kafka` resource. Field availability is determined by the installed Strimzi CRD:
 
 | Generated `Kafka` field | Standard test requirement |
 | --- | --- |
@@ -340,11 +376,10 @@ For a ZooKeeper-based instance, also verify these fields in the generated `Kafka
 | `spec.zookeeper.resources` | Fixed requests and limits |
 | `spec.zookeeper.storage` | Persistent, low-latency block storage with a fixed type, class, and size |
 | `spec.zookeeper.jvmOptions` | Fixed heap and JVM settings |
-| `spec.zookeeper.config` | Frozen ZooKeeper configuration |
-| `spec.zookeeper.metricsConfig` | Java Management Extensions (JMX) Prometheus Exporter mapping enabled for the test |
+| `spec.zookeeper.metricsConfig` | Automatically generated Java Management Extensions (JMX) Prometheus Exporter mapping is present |
 | `spec.kafkaExporter` | Enabled when consumer group lag is required, with topic and group regular expressions limited to the test scope |
 
-Do not apply KRaft-only fields such as `spec.mode`, `spec.controller`, or `KafkaNodePool` to a legacy ZooKeeper-based resource.
+Do not set the KRaft-only `RdsKafka.spec.controller` field or create `KafkaNodePool` resources for a ZooKeeper-based instance.
 
 ### 7.2 Fixed variables
 
@@ -417,7 +452,7 @@ kubectl -n "$NS" get pod \
   -l "strimzi.io/name=${CLUSTER}-zookeeper" -o wide
 ```
 
-If the last command finds no Pod, Kafka Exporter is disabled or the current version uses different labels. Check `RdsKafka`, the generated `Kafka` resource, and actual Pod labels. Do not interpret an empty result as zero lag.
+If the Kafka Exporter query finds no Pod, Kafka Exporter is disabled or the current version uses different labels. Do not interpret that empty result as zero lag. If the ZooKeeper query finds no Pod, stop the ZooKeeper-mode test and inspect `RdsKafka` status, the generated `Kafka` resource, and actual Pod labels.
 
 ## 8. Deploy Load-Test Clients
 
@@ -1060,7 +1095,7 @@ fi
 
 Raw endpoint output proves only that the exporter exposes metrics; it does not prove that the platform is collecting time-series data. Before formal testing, query broker metrics for the last 15 minutes in platform monitoring or Prometheus and confirm continuous samples for every broker. If the query is empty or has collection gaps, stop the test and correct the ServiceMonitor or PodMonitor and metric mapping for the current platform. Selector labels depend on the current Prometheus configuration; do not copy labels from another cluster.
 
-For ZooKeeper mode, enable the `spec.zookeeper.metricsConfig` mapping and collect at least:
+For ZooKeeper mode, verify that the product operator populated the generated `Kafka.spec.zookeeper.metricsConfig` mapping. This is generated output, not a configurable field in `RdsKafka.spec.zookeeper`. Collect at least:
 
 | ZooKeeper evidence | Purpose |
 | --- | --- |
