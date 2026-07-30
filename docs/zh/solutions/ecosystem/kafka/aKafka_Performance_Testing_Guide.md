@@ -891,7 +891,7 @@ kubectl -n "$NS" get pvc -o wide \
 
 以下 PromQL 仅表示计算意图。先在当前 Prometheus 中检查实际指标名和标签，再替换 `$NS`、`$TOPIC`、`$GROUP` 和集群标签；保存查询表达式、时间范围、步长和原始响应。
 
-```promql
+```text
 sum(rate(kafka_server_brokertopicmetrics_messagesin_total{namespace="$NS",topic="$TOPIC"}[5m]))
 
 sum(rate(kafka_server_brokertopicmetrics_bytesin_total{namespace="$NS",topic="$TOPIC"}[5m]))
