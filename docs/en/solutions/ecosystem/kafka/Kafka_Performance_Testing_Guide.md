@@ -3,6 +3,9 @@ products:
   - Alauda Application Services
 kind:
   - Solution
+ProductsVersion:
+  - 3.x
+  - 4.x
 ---
 
 # Kafka Performance Testing Guide
@@ -22,7 +25,7 @@ In-sync replica (ISR) terminology follows the Apache Kafka documentation.
 
 This guide covers both Kafka Raft metadata mode (KRaft) and legacy ZooKeeper-based instances. Treat the metadata mode as part of the test profile. Do not compare or combine results across metadata modes.
 
-The primary commands use the Apache Kafka 4.2.0 script interfaces. Section 8.5 lists the required command changes for the legacy Kafka 2.x clients shipped with ZooKeeper-based operator releases. For any installed version, first save the `--version` and `--help` output and use only the options shown by that version.
+The primary commands use the Apache Kafka 4.2.0 script interfaces. Several of these options were standardized only in Kafka 4.2 and do not exist in earlier clients: operator releases based on Strimzi 0.48 ship Kafka 4.0 or 4.1 images, and the ZooKeeper-based operator line ships legacy Kafka 2.x images. Section 8.5 lists the equivalent commands for clients older than Kafka 4.2. For any installed version, first save the `--version` and `--help` output and use only the options shown by that version.
 
 This guide does not provide a universally applicable "best throughput" or "best configuration." A change in hardware, storage, network, message size, compression ratio, reliability policy, or workload can make results incomparable.
 
@@ -163,26 +166,9 @@ Export only non-sensitive metadata. Do not write kubeconfig files, Secret data, 
 
 ## 5. Export and Freeze Instance Parameters
 
-The general Kafka parameter template is usually named `general-kafka`. The template is product configuration in the management cluster. The `RdsKafka` resource in the business cluster stores the final effective instance configuration. Templates can change between product versions, so export the installed version for every test instead of relying on the table in this guide.
+The general Kafka parameter template is usually named `general-kafka`. Parameter templates are product configuration stored in the global cluster, not in the business cluster, so do not read them with `kubectl` from the test environment. Select and review the template in the product console; the `RdsKafka` resource in the business cluster stores the final effective instance configuration. Templates can change between product versions, so freeze the baseline from the created instance for every test instead of relying on the table in this guide.
 
-If you have read access to the management cluster, run:
-
-```bash
-export MGMT_KUBECONFIG=/path/to/management-cluster.kubeconfig
-
-kubectl --kubeconfig "$MGMT_KUBECONFIG" get paramtemplate -A \
-  -l component=kafka
-
-export TEMPLATE_NS="$(kubectl --kubeconfig "$MGMT_KUBECONFIG" \
-  get paramtemplate -A -l component=kafka \
-  -o jsonpath='{range .items[?(@.metadata.name=="general-kafka")]}{.metadata.namespace}{"\n"}{end}')"
-test -n "$TEMPLATE_NS"
-kubectl --kubeconfig "$MGMT_KUBECONFIG" -n "$TEMPLATE_NS" \
-  get paramtemplate general-kafka -o yaml \
-  >"$OUT/general-kafka-paramtemplate.yaml"
-```
-
-If management-cluster access is unavailable, select the general Kafka parameter template in the product console and export the final `spec.config` from the instance. Do not infer values from the template name.
+When creating the instance, select the general Kafka parameter template in the product console and record the template name, description, and displayed parameter values. After the instance is created, treat the final `spec.config` exported in section 7.2 as the frozen baseline. Do not infer values from the template name.
 
 Review at least the following parameters in the current standard general template. The example baseline only identifies parameters; it does not replace the installed template.
 
@@ -204,12 +190,7 @@ Review at least the following parameters in the current standard general templat
 | `delete.topic.enable` | `true` | Allows test topics to be deleted |
 | `unclean.leader.election.enable` | `false` | Prevents a replica outside the ISR from becoming leader |
 
-The current product version determines how parameter-template changes are applied. Before testing, query the parameter definition and record its `applyStrategy`. If it is `RestartApply`, exclude the rolling-restart interval from the measurement window.
-
-```bash
-kubectl --kubeconfig "$MGMT_KUBECONFIG" get paramdefinition kafka-general -o yaml \
-  >"$OUT/kafka-general-paramdefinition.yaml"
-```
+The current product version determines how parameter changes are applied. Before changing a parameter, check in the console parameter editor whether the change is marked as requiring a restart, and record that classification in the report. If applying the change performs a rolling restart, exclude the rolling-restart interval from the measurement window.
 
 ### 5.1 Additional snapshot for a ZooKeeper-based instance
 
@@ -321,7 +302,7 @@ After submitting the console form, verify the following KRaft fields against the
 | `spec.storage.size` | At least the value calculated in section 6 |
 | `spec.storage.deleteClaim` | Select according to data-retention and destruction requirements; do not set it to `true` only to simplify cleanup |
 | `spec.controller` | Roles, count, resources, and storage match the production plan; use at least 3 voting nodes for dedicated controllers |
-| `spec.config` | Exported `general-kafka` baseline plus the one parameter changed in this run |
+| `spec.config` | Baseline recorded from the selected general template plus the one parameter changed in this run |
 | `spec.kafka.listeners` | Matches the in-cluster or external access path for this run |
 | `spec.kafkaExporter` | Enabled when consumer group lag is required, with topic and group regular expressions limited to the test scope |
 
@@ -458,7 +439,7 @@ If the Kafka Exporter query finds no Pod, Kafka Exporter is disabled or the curr
 
 ### 8.1 Reuse the instance Kafka image
 
-Read the Kafka image used by the operator from a broker Pod. This keeps the script version aligned with the server version without exposing an image-registry address in an external document.
+Read the Kafka image used by the operator from a broker Pod. This keeps the script version aligned with the server version without exposing an image-registry address in an external document. The Kafka version of this image also determines which script options exist; record it in section 8.4 and use the section 8.5 forms when the image is older than Kafka 4.2.
 
 ```bash
 export KAFKA_IMAGE="$(kubectl -n "$NS" get pod \
@@ -619,15 +600,15 @@ kubectl -n "$NS" exec kafka-consumer-perf -- \
 
 If Kafka is installed at a path other than `/opt/kafka` in the image, confirm the path from the image documentation or broker container environment and update the commands. Do not mix in scripts downloaded from an unknown version.
 
-### 8.5 Legacy Kafka 2.x script compatibility
+### 8.5 Script compatibility for clients older than Kafka 4.2
 
-The ZooKeeper-based operator line uses Kafka 2.x client scripts whose interfaces differ from the Kafka 4.2 examples. The reviewed legacy scripts have these differences:
+The standardized options used in the primary examples were introduced in Apache Kafka 4.2 and are absent from earlier clients. This affects two shipped client generations: operator releases based on Strimzi 0.48 provide Kafka 4.0 or 4.1 images, and the ZooKeeper-based operator line provides legacy Kafka 2.x images. Replace the affected options for both generations as follows:
 
-| Operation | Kafka 4.2 example in this guide | Legacy Kafka 2.x form |
+| Operation | Kafka 4.2 example in this guide | Form for Kafka 2.x, 4.0, and 4.1 |
 | --- | --- | --- |
 | Producer bootstrap and property file | `--bootstrap-server` and `--command-config` | Put `bootstrap.servers=$BOOTSTRAP` in the property file and use `--producer.config` |
-| Producer warmup | `--warmup-records` | No equivalent option in the reviewed scripts; run a separate, predefined warmup cycle |
-| Producer interval option | `--reporting-interval` | Not exposed by the reviewed producer script; preserve its raw interval output |
+| Producer warmup | `--warmup-records` | No equivalent option (`--warmup-records` was added in Kafka 4.2); run a separate, predefined warmup cycle |
+| Producer interval option | `--reporting-interval` | Not exposed before Kafka 4.2; preserve the script's raw interval output |
 | Producer property override | `--command-property` | Use a separate complete `--producer.config` file |
 | Consumer record target | `--num-records` | `--messages` |
 | Consumer property file | `--command-config` | `--consumer.config` |
@@ -635,7 +616,7 @@ The ZooKeeper-based operator line uses Kafka 2.x client scripts whose interfaces
 
 Some earlier Kafka 2.x scripts implement `--threads`, while later Kafka 2.x scripts accept it but ignore it. Never use `--threads` to establish the standard concurrency point. Use independent processes or Pods and verify the actual consumer group membership.
 
-For a legacy test, add the resolved bootstrap address to the producer property file before creating the ConfigMap or Secret:
+For a pre-4.2 producer test, add the resolved bootstrap address to the producer property file before creating the ConfigMap or Secret:
 
 ```properties
 bootstrap.servers=perf-kafka-kafka-bootstrap.kafka-perf.svc:9092
@@ -709,7 +690,7 @@ kubectl -n "$NS" exec kafka-producer-perf -- \
 
 `--throughput -1` disables client-side throttling and searches for the limit at the current client concurrency. It does not prove that the brokers are saturated; evaluate client and broker metrics together. Keep `--warmup-records` fixed in formal comparisons and use only the script's steady-state summary. Do not include warmup in the result.
 
-For a legacy ZooKeeper-based instance, use the same payload and producer properties with the legacy interface:
+For a pre-4.2 client (a Kafka 4.0/4.1 image or a legacy ZooKeeper-based instance), use the same payload and producer properties with the earlier interface:
 
 ```bash
 kubectl -n "$NS" exec kafka-producer-perf -- \
@@ -723,7 +704,7 @@ kubectl -n "$NS" exec kafka-producer-perf -- \
   | tee "$OUT/producer-${RECORD_SIZE}B.txt"
 ```
 
-Run a separate, fixed warmup cycle before the measured legacy command. Do not count its records in the test target, and use a fresh topic or account explicitly for warmup data before a consumer-only test.
+Run a separate, fixed warmup cycle before the measured pre-4.2 command. Do not count its records in the test target, and use a fresh topic or account explicitly for warmup data before a consumer-only test.
 
 ### 10.2 Leader acknowledgment ceiling
 
@@ -759,7 +740,7 @@ kubectl -n "$NS" exec kafka-producer-perf -- \
 
 Label the result `leader-ack`. Do not compare it directly with `acks=all` capacity.
 
-For a legacy client, create a separate `producer-leader-ack.properties` file containing the same properties as the baseline except for `acks=1` and `enable.idempotence=false`, then pass it with `--producer.config`. Save a redacted diff between the two files. Do not use an unsupported `--command-property` option.
+For a pre-4.2 client, create a separate `producer-leader-ack.properties` file containing the same properties as the baseline except for `acks=1` and `enable.idempotence=false`, then pass it with `--producer.config`. Save a redacted diff between the two files. Do not use an unsupported `--command-property` option.
 
 ### 10.3 Consumer-only test
 
@@ -791,7 +772,7 @@ kubectl -n "$NS" exec kafka-consumer-perf -- \
 
 In Kafka 4.2, `--messages` is deprecated; use `--num-records`. `--fetch-size` limits the data fetched from one partition in one request, and the `max.partition.fetch.bytes` client property also applies. Save `records-consumed-total` from the `--print-metrics` output and confirm that the consumer read the target count. A timeout, insufficient topic data, or authorization error can make the script exit early, so do not rely only on the final throughput line.
 
-For a legacy ZooKeeper-based instance, use `--messages` and `--consumer.config`:
+For a pre-4.2 client, use `--messages` and `--consumer.config`:
 
 ```bash
 kubectl -n "$NS" exec kafka-consumer-perf -- \
@@ -809,7 +790,7 @@ kubectl -n "$NS" exec kafka-consumer-perf -- \
   | tee "$OUT/consumer-${RECORD_SIZE}B.txt"
 ```
 
-The legacy script reports messages rather than records in some headings. Preserve its original output labels and normalize only in separate report fields.
+The legacy Kafka 2.x script reports messages rather than records in some headings. Preserve its original output labels and normalize only in separate report fields.
 
 ### 10.4 Concurrent produce and consume
 
@@ -823,7 +804,7 @@ Do not run one consumer command in the foreground and then attempt to start the 
 
 ### 10.5 Example with 20 consumers on Kafka 4.2
 
-This example starts 20 independent consumer processes in one client Pod and checks every `kubectl exec` exit code. Before a formal test, use section 12.1 to confirm that Pod CPU, memory, and network are not bottlenecks. If resources are insufficient, replicate the consumer Pod from section 8.3 and distribute the processes across load-test nodes.
+This example starts 20 independent consumer processes in one client Pod and checks every `kubectl exec` exit code. The consumer Pod from section 8.3 cannot run it unchanged: each script process starts a JVM whose default maximum heap is 512 MiB, so 20 processes can demand several times the Pod's 2Gi limit, and 20 consumers sharing 1 vCPU make the client the bottleneck before Kafka. Increase the consumer Pod's resources, or replicate the Pod from section 8.3 and spread the processes across load-test nodes, for example four Pods with five processes each; then use section 12.1 to confirm that client CPU, memory, and network are not bottlenecks. Also account for the partition arithmetic: with 30 partitions and 20 consumers, ten consumers receive two partitions and ten receive one, so the equal per-process record targets complete only as finished consumers leave the group and rebalances reassign their partitions. Expect rebalances near the end of the point and verify the summed record counts as described below.
 
 ```bash
 export CONSUMER_COUNT=20
@@ -866,7 +847,7 @@ test "$failed" -eq 0
 
 Sum the actual records consumed across all 20 files and confirm the total equals `NUM_RECORDS`. Calculate aggregate throughput as total records or bytes divided by the common measurement window. If process start and end times differ, do not add the individual average rates. A timeout, nonzero exit, or record-count mismatch in any process invalidates the test point.
 
-For legacy Kafka 2.x, use the same 20-process allocation but replace `--num-records` with `--messages` and `--command-config` with `--consumer.config`. Do not add `--threads`; on later Kafka 2.x scripts it is deprecated and ignored.
+For pre-4.2 clients, use the same 20-process allocation but replace `--num-records` with `--messages` and `--command-config` with `--consumer.config`, and omit `--command-property`; if a per-process `client.id` is required, use a separate properties file for each process. Do not add `--threads`; on later Kafka 2.x scripts it is deprecated and ignored.
 
 ## 11. Client Parameter Reference
 
@@ -877,7 +858,7 @@ For legacy Kafka 2.x, use the same 20-process allocation but replace `--num-reco
 | `--num-records` | See the matrix | Records sent; total payload is approximately this value multiplied by `--record-size` |
 | `--record-size` | 100/500/1000 | Bytes in the synthetic record value; mutually exclusive with a message payload file |
 | `--throughput` | `-1` | Unthrottled limit search; for controlled load, set the target records/s |
-| `--warmup-records` | Fixed value | Kafka 4.2 option that excludes connection setup, metadata, and JVM warmup; use a separate fixed warmup cycle on the reviewed legacy scripts |
+| `--warmup-records` | Fixed value | Added in Kafka 4.2; excludes connection setup, metadata, and JVM warmup from the summary; use a separate fixed warmup cycle on pre-4.2 clients |
 | `acks` | `all` or `1` | Acknowledgment strength; changing it changes reliability and performance semantics |
 | `enable.idempotence` | `true` | Prevents duplicates caused by retries; requires compatible acknowledgments, retries, and in-flight request settings |
 | `batch.size` | `50000` | Target maximum batch size per partition; a large value can increase memory use and wait time |
@@ -892,7 +873,7 @@ Each partition has an independent batch. More producers, partitions, batch capac
 | Parameter | Standard value | Mechanism and boundary |
 | --- | ---: | --- |
 | `--group` | Unique per run | Consumers in the same group share partitions; a reused group can start at old offsets |
-| `--num-records` or legacy `--messages` | Matches preloaded data | Planned total records; select the version-supported option and verify the actual value with client metrics |
+| `--num-records` or pre-4.2 `--messages` | Matches preloaded data | Planned total records; select the version-supported option and verify the actual value with client metrics |
 | `--fetch-size` | `200000` | Per-partition fetch size passed by the script |
 | `--timeout` | `60000` | Maximum time between returned records, not total test duration; a timeout makes the tool exit early with a warning |
 | `fetch.min.bytes` | `1` | Minimum data before the broker returns a Fetch response; increasing it can improve batching but can add wait latency |

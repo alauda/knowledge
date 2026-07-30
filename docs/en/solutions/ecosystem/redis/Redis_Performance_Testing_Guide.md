@@ -2,7 +2,9 @@
 products:
   - Alauda Application Services
 kind:
-  - Solutions
+  - Solution
+ProductsVersion:
+  - 4.x
 ---
 
 # Redis Cluster and Sentinel Performance Testing Guide
@@ -32,7 +34,7 @@ Redis Database (RDB) persistence, Append Only File (AOF) persistence, and a non-
 | Axis | Standard values | Purpose |
 |---|---|---|
 | Parameter template | RDB persistence; AOF persistence; no persistence (cache) | Quantifies durability and replication cost separately using shipped product baselines |
-| Value size (`-d`) | `512` bytes; `4096` bytes (4 KiB) | Matches the latest performance e2e matrix for small and medium values |
+| Value size (`-d`) | `512` bytes; `4096` bytes (4 KiB) | Standard small and medium value sizes for comparable baseline results |
 | Pipeline (`-P`) | `1`, `16` | `1` measures non-pipelined behavior; `16` measures a throughput-oriented workload |
 | Commands (`-t`) | `set,get` | Produces separate write and read results |
 | Random keyspace (`-r`) | `100000` | Avoids benchmarking a single hot key |
@@ -40,7 +42,7 @@ Redis Database (RDB) persistence, Append Only File (AOF) persistence, and a non-
 
 ### Select a product parameter template
 
-This procedure uses the shipped Redis 7.2 templates as its only parameter baseline. In the Redis create form, choose Redis 7.2 and the topology first. Under **Parameter Templates** in the English interface or **参数模板** in the Chinese interface, select the exact identifier that matches both. The identifier displayed in the selector is `metadata.name` and is the same in both languages; only the description is localized. The bilingual profile names below describe the intent and are not alternative resource names.
+This procedure uses the shipped Redis 7.2 templates as its only parameter baseline. In the Redis create form, choose Redis 7.2 and the topology first. Under **Parameter Templates** in the English interface or **参数模板** in the Chinese interface, select the exact identifier that matches both. The identifier displayed in the selector is the template's unique name and is the same in both languages; only the description is localized. The bilingual profile names below describe the intent and are not alternative resource names.
 
 | Profile name (中文 / English) | Redis 7.2 Sentinel | Redis 7.2 Cluster |
 |---|---|---|
@@ -58,34 +60,24 @@ The shipped Redis 7.2 templates establish these test baselines:
 | AOF persistence | `appendonly=yes`; `appendfsync=everysec`; `save=""` | AOF durability/throughput balance |
 | No persistence (cache) | `appendonly=no`; `save=""`; `repl-diskless-sync=yes`; `repl-backlog-size=50mb` | Cache workloads that can tolerate data loss |
 
-All listed templates leave `maxmemory` unset and set `maxmemory-policy=noeviction`, `repl-diskless-sync=yes`, `io-threads=4`, and `io-threads-do-reads=no`. With this combination, the Operator generates `maxmemory` as 80% of the Redis data container's memory limit. This is Operator behavior, not the native Redis default. Because installed package revisions can differ, export the installed template and verify the effective configuration rather than reproducing these values manually.
+All listed templates leave `maxmemory` unset and set `maxmemory-policy=noeviction`, `repl-diskless-sync=yes`, `io-threads=4`, and `io-threads-do-reads=no`. With this combination, the Operator generates `maxmemory` as 80% of the Redis data container's memory limit. This is Operator behavior, not the native Redis default. Because installed package revisions can differ, review the selected template's parameters in the product console and verify the effective configuration on the running instance rather than reproducing these values manually.
 
 For Sentinel topology, template selection also supplies Sentinel-process parameters. Keep them unchanged during a data-plane throughput comparison; Sentinel processes do not serve the benchmark traffic, and failover testing is outside this steady-state procedure.
 
 The no-persistence profile is not "diskless persistence": it disables local persistence and uses diskless synchronization only for replication. Use it only when the application can tolerate data loss. Redis documents the durability and performance trade-offs of RDB, AOF, and no persistence in [Redis persistence](https://redis.io/docs/latest/operate/oss_and_stack/management/persistence/).
 
-List and export the installed templates before testing. Discover the namespace instead of assuming one:
-
-```bash
-kubectl get paramtemplate.middleware.alauda.io -A \
-  -l component=redis,support_version=7.2
-
-TEMPLATE_NS=replace-with-template-namespace
-TEMPLATE=system-rdb-redis-7.2-cluster
-kubectl -n "${TEMPLATE_NS}" get paramtemplate.middleware.alauda.io \
-  "${TEMPLATE}" -o yaml > "paramtemplate-${TEMPLATE}.yaml"
-```
+Parameter templates are stored in the global cluster and are not visible from the business cluster, so verify them through the product console instead of `kubectl`. Before testing, open the parameter-template list in the console, confirm that the identifiers above exist for the selected Redis version and topology, and record each selected template's displayed parameters for the report. After instance creation, verify the effective values with `CONFIG GET` as described later in this guide.
 
 ### Other Redis versions
 
-Template identifiers, supported parameters, defaults, persistence behavior, and apply strategies can differ by Redis and product package version. For any version other than 7.2, select a template whose labels match that exact version and topology, export the installed `ParamTemplate`, and build a separately named test matrix from its effective values. Do not reuse the Redis 7.2 identifiers or assume that its resource, storage, persistence, or I/O-thread defaults apply.
+Template identifiers, supported parameters, defaults, persistence behavior, and apply strategies can differ by Redis and product package version. For any version other than 7.2, select the template that the console offers for that exact version and topology, record its displayed parameters, and build a separately named test matrix from the instance's effective values. Do not reuse the Redis 7.2 identifiers or assume that its resource, storage, persistence, or I/O-thread defaults apply.
 
 ## Prerequisites
 
 Prepare the following before the test window:
 
 - A Kubernetes cluster with the Redis Operator installed and a qualified `StorageClass` for RDB and AOF profiles.
-- The Redis 7.2 system `ParamTemplate` resources installed for the topology under test.
+- The Redis 7.2 system parameter templates available in the Redis create form for the topology under test.
 - A namespace dedicated to the test, for example `redis-perf`.
 - Product-console permission to create Redis instances and select parameter templates, plus `kubectl` access that can create the load Pod and read Redis resources and metrics. Install `jq` for producing allowlisted evidence exports.
 - A Redis password Secret with key `password`. Reuse the instance Secret or create it from a protected file; never place the password in a manifest or report:
@@ -139,13 +131,9 @@ SC_NAME=sc-topolvm  # Example; replace with the selected StorageClass.
 kubectl get storageclass "${SC_NAME}" -o yaml \
   > "${OUT}/storageclass-${SC_NAME}.yaml"
 
-TEMPLATE_NS=replace-with-template-namespace
-TEMPLATE=replace-with-selected-template-identifier
-kubectl -n "${TEMPLATE_NS}" get paramtemplate.middleware.alauda.io \
-  "${TEMPLATE}" -o yaml > "${OUT}/paramtemplate-${TEMPLATE}.yaml"
 ```
 
-Also record the Redis Operator version, Redis server version, image IDs, node CPU model and frequency policy, network link speed, StorageClass/Container Storage Interface (CSI) implementation, volume performance class, service mesh status, and test time zone. Redis recommends isolated hardware, stable CPU frequency, known client/server network latency, and no unrelated storage I/O for reproducible results. Verify `vm.overcommit_memory=1` and Transparent Huge Pages are disabled on Redis nodes according to [Redis administration guidance](https://redis.io/docs/latest/operate/oss_and_stack/management/admin/); platform administrators must apply host changes through the supported node-management process.
+Also record the selected parameter-template identifier and its displayed parameters, the Redis Operator version, Redis server version, image IDs, node CPU model and frequency policy, network link speed, StorageClass/Container Storage Interface (CSI) implementation, volume performance class, service mesh status, and test time zone. Redis recommends isolated hardware, stable CPU frequency, known client/server network latency, and no unrelated storage I/O for reproducible results. Verify `vm.overcommit_memory=1` and Transparent Huge Pages are disabled on Redis nodes according to [Redis administration guidance](https://redis.io/docs/latest/operate/oss_and_stack/management/admin/); platform administrators must apply host changes through the supported node-management process.
 
 ## Configure Redis instances
 
@@ -155,10 +143,10 @@ Create each test instance through the product console so the selected system tem
 2. Select the exact **Parameter Templates / 参数模板** identifier from the table above. Do this before manually changing Redis parameters.
 3. The listed system templates assign limits of `4` CPU and `8Gi` memory to each Redis server, matching the standard capacity profile. Confirm those values after selection and set requests equal to limits where the form exposes both. Configure three primary shards and one replica per primary for Cluster, or one primary, one replica, and three Sentinel processes for Sentinel. Treat any resource or topology change as a separately named profile.
 4. For RDB or AOF, choose the qualified `StorageClass` for the declared performance-ceiling or production-representative profile. For both topologies, the shipped templates prefill `24Gi` for RDB and `32Gi` for AOF. Treat these values as minimum starting capacities, calculate the requirement as described below, and use the larger value. The no-persistence templates do not require persistent data storage.
-5. Enable the Redis exporter. Expand **Parameters / 参数配置** and verify `appendonly`, `appendfsync`, `save`, `maxmemory`, `maxmemory-policy`, `repl-diskless-sync`, `io-threads`, and `io-threads-do-reads` against the exported template. An empty template value for `maxmemory` is intentional; verify the Operator-derived effective value after creation.
+5. Enable the Redis exporter. Expand **Parameters / 参数配置** and verify `appendonly`, `appendfsync`, `save`, `maxmemory`, `maxmemory-policy`, `repl-diskless-sync`, `io-threads`, and `io-threads-do-reads` against the parameters displayed for the selected template. An empty template value for `maxmemory` is intentional; verify the Operator-derived effective value after creation.
 6. After correcting resource and storage capacity for the target dataset, create the baseline with the Redis parameters unchanged. For a tuned comparison, start again from the same template and change only the documented target parameter. If the installed platform supports customer-owned templates, save the tuned copy under a new name; never edit the shipped system template in place.
 
-Template selection materializes the template values into the Redis instance configuration; the Redis custom resource does not retain a template-name reference. Therefore, the report must preserve both the exact exported `ParamTemplate` and the resulting Redis custom resource. Do not invent a `spec.paramTemplate` field for automation.
+Template selection materializes the template values into the Redis instance configuration; the Redis custom resource does not retain a template-name reference. Therefore, the report must record the exact template identifier selected in the console, its displayed parameter values, and the resulting Redis custom resource. Do not invent a `spec.paramTemplate` field for automation.
 
 ### Set persistent volume capacity for the standard matrix
 
@@ -186,7 +174,7 @@ For the standard matrix (`N=1,000,000`, `K=100,000`, `S=1`), the calculation is:
 | Persistence | Value size | Calculated peak | Peak × `1.5` | Template minimum | Provision per data Pod |
 |---|---:|---:|---:|---:|---:|
 | RDB | 512 B | 0.095 GiB | 0.143 GiB | 24Gi | **24Gi** |
-| RDB | 4096 B | 0.763 GiB | 1.145 GiB | 24Gi | **24Gi** |
+| RDB | 4096 B | 0.763 GiB | 1.144 GiB | 24Gi | **24Gi** |
 | AOF | 512 B | 0.572 GiB | 0.858 GiB | 32Gi | **32Gi** |
 | AOF | 4096 B | 4.578 GiB | 6.867 GiB | 32Gi | **32Gi** |
 
@@ -203,7 +191,7 @@ Redis serialization, AOF protocol framing, key names, and other files are not in
 
 Use a fresh instance for every parameter-template, value-size, pipeline, and Redis I/O-thread scenario. During a client-concurrency sweep on an AOF instance, either recreate the instance for every measured point or run `BGREWRITEAOF` after warm-up and after each point, wait for `aof_rewrite_in_progress:0`, and require `aof_last_bgrewrite_status:ok` before continuing. Run this housekeeping outside the measured interval.
 
-If `-n`, `-r`, `-d`, or `S` changes, recompute the capacity before creating the instance. Do not reuse the standard values for the earlier 5-30-million-request Ares cases or a customer workload without recalculation. Multiply the per-Pod result by two for the standard Sentinel topology or by six for the standard three-primary, one-replica-per-primary Cluster topology to obtain total Kubernetes-requested capacity. Storage-system replication, thin-provisioning reserve, and filesystem overhead are additional. For local block storage, every eligible node must have enough allocatable local capacity for the Redis data Pods that can be scheduled there. Provision the calculated capacity before testing; do not resize a PVC during a measured run.
+If `-n`, `-r`, `-d`, or `S` changes, recompute the capacity before creating the instance. Do not reuse the standard values for larger request counts (for example, 5 to 30 million requests) or a customer workload without recalculation. Multiply the per-Pod result by two for the standard Sentinel topology or by six for the standard three-primary, one-replica-per-primary Cluster topology to obtain total Kubernetes-requested capacity. Storage-system replication, thin-provisioning reserve, and filesystem overhead are additional. For local block storage, every eligible node must have enough allocatable local capacity for the Redis data Pods that can be scheduled there. Provision the calculated capacity before testing; do not resize a PVC during a measured run.
 
 Wait for `.status.phase` to become `Ready`, then verify Pod placement:
 
@@ -250,7 +238,7 @@ io-threads 3
 io-threads-do-reads no
 ```
 
-The product `ParamDefinition` classifies both keys as `RestartApply`. Use a fresh instance for the cleanest comparison, or allow the managed restart to finish, wait for `Ready`, and confirm that all expected primaries and replicas have returned before loading data. Verify the effective values on every Redis data Pod with the collection helper below; a mixed value across nodes invalidates the run.
+The product applies changes to both keys through a restart. Use a fresh instance for the cleanest comparison, or allow the managed restart to finish, wait for `Ready`, and confirm that all expected primaries and replicas have returned before loading data. Verify the effective values on every Redis data Pod with the collection helper below; a mixed value across nodes invalidates the run.
 
 Calibrate the load generator before comparing server candidates. Redis 7.2 recommends running `redis-benchmark` in threaded mode when evaluating I/O threads. Set client `--threads` high enough that the client retains CPU and network headroom at the largest server candidate, then hold the client setting constant across the `io-threads` comparison. The load-generator thread count and the server I/O thread count are different parameters and must be reported separately.
 
@@ -584,7 +572,7 @@ topology,redis_version,parameter_template,persistence,storage_profile,storage_cl
 |---|---|
 | Environment | Date/time, Kubernetes/Alauda Container Platform (ACP)/Operator/Redis versions, node count/type, CPU model, memory, network, storage profile, `StorageClass`, provisioner, parameters, `volumeBindingMode`, `allowVolumeExpansion`, filesystem/backing media, PVC capacity per Redis Pod, qualification results, image names and immutable digests |
 | Topology | Cluster shard/replica count or Sentinel primary/replica/Sentinel count; Pod-to-node placement; Service access path |
-| Redis configuration | Exact `ParamTemplate` identifier, `metadata.resourceVersion`, `cpaas.io/description` (Chinese), `cpaas.io/description-en` (English), exported template YAML, and allowlisted effective keys (`save`, `appendonly`, `appendfsync`, `maxmemory`, `maxmemory-policy`, `repl-diskless-sync`, `io-threads`, `io-threads-do-reads`, `hz`); approved tuning delta; TLS/ACL state without credentials |
+| Redis configuration | Exact parameter-template identifier and description as shown in the console, the resulting Redis custom resource, and allowlisted effective keys (`save`, `appendonly`, `appendfsync`, `maxmemory`, `maxmemory-policy`, `repl-diskless-sync`, `io-threads`, `io-threads-do-reads`, `hz`) verified with `CONFIG GET`; approved tuning delta; TLS/ACL state without credentials |
 | Load | Tool version/image digest, client location, access type and round-trip latency, commands, `-c`, `-n`, `-d`, `-P`, `--threads`, `-r`, warm-up method, start/end/duration |
 | Results | `SET`/`GET` requests per second; average, min, p50, p95, p99, max latency when emitted; raw CSV |
 | Resources | Client and server peak/average CPU/memory, throttling, network receive/transmit, storage operation rate/throughput/latency/queue depth/throttling, storage recovery or rebalancing activity, node pressure |
