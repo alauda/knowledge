@@ -202,8 +202,9 @@ The setup page asks for an administrator user name and hands back an **access ke
 access key**. Copy them now — the secret is shown only once. They are what `lakectl`, the S3 gateway
 and the API all authenticate with.
 
-You can also do the setup unattended by putting an `installation` block in `lakefsConfig` before you
-first apply the resource:
+For an **evaluation** deployment — one using the shipped embedded metadata store — you can do this
+step unattended instead, by putting an `installation` block in `lakefsConfig` before you first apply
+the resource:
 
 ```yaml
   lakefsConfig: |
@@ -212,6 +213,18 @@ first apply the resource:
       access_key_id: AKIAIOSFODNN7EXAMPLE
       secret_access_key: <a-long-random-secret>
 ```
+
+> **This does not work when the metadata store is PostgreSQL.** With `database.type: postgres` the
+> server starts normally but stays uninitialized, and every API call is rejected with
+> `credentials not found`. Set a PostgreSQL-backed deployment up through the setup page above, or
+> run the setup command once inside the pod:
+>
+> ```bash
+> kubectl -n lakefs exec deploy/lakefs -- /app/lakefs setup --user-name admin
+> ```
+>
+> That command prints the access key ID and secret access key it created — copy them, as they are
+> not shown again. It generates its own key pair and ignores any `installation` values you set.
 
 ### 5. Try the Git-like workflow
 
@@ -306,6 +319,11 @@ not in the ConfigMap.
 Repositories you create against this deployment must use an `s3://` storage namespace, for example
 `lakectl repo create lakefs://demo s3://my-bucket/demo`.
 
+**Set it up before first use.** A PostgreSQL-backed deployment starts uninitialized and will reject
+every request until you complete setup — through the setup page, or with
+`kubectl -n lakefs exec deploy/lakefs -- /app/lakefs setup --user-name admin`. See the note in
+[Complete the first-time setup](#4-complete-the-first-time-setup).
+
 ## Configuration reference
 
 Everything under `spec` is passed to the underlying Helm chart, so any chart value is settable. The
@@ -348,6 +366,10 @@ Two behaviours of this package differ from the upstream chart defaults, delibera
 - **The lakeFS Enterprise features are not included.** This package is the Apache-2.0 open-source
   lakeFS. Enterprise-only capabilities (RBAC beyond the built-in model, SSO, audit logs) are not
   available.
+- **Unattended setup does not work with a PostgreSQL metadata store.** The `installation` block in
+  `lakefsConfig` initializes an evaluation deployment only. With `database.type: postgres` the
+  deployment starts but stays uninitialized until you complete setup through the setup page or with
+  `/app/lakefs setup`. See [Complete the first-time setup](#4-complete-the-first-time-setup).
 <!-- factory:auto:known-limitations END -->
 
 ## Uninstall
