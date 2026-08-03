@@ -59,15 +59,7 @@ You can also disable only one probe by leaving its field empty. When configuring
    kubectl -n kube-system rollout status daemonset/kube-ovn-pinger
    ```
 
-6. Confirm that the DaemonSet contains the expected arguments:
-
-   ```bash
-   kubectl -n kube-system get daemonset kube-ovn-pinger \
-     -o jsonpath='{.spec.template.spec.containers[?(@.name=="pinger")].args}'
-   echo
-   ```
-
-   If the probes are disabled, the output must include `--external-dns=` and `--external-address=` with empty values. If the probes are redirected, verify the expected `--external-dns=<internal-FQDN>` and `--external-address=<internal-IP>` values.
+6. Use the argument inspection under **Diagnostic Steps** to confirm that the DaemonSet matches the selected probe policy before checking logs or traffic-audit records.
 
 7. If public-domain queries were previously observed, verify that CoreDNS no longer reports them after the rollout:
 
