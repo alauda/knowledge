@@ -214,6 +214,51 @@ spec:
 > and the resulting cluster reports UTF8 / C / C with `data_checksums=on`. Clusters using ICU
 > locale settings are the ones most at risk of silent loss here.
 
+### If a CloudNativePG bootstrap has already been failing for a while
+
+Patching the Cluster spec only works if the `-initdb` Job is still retrying. Once it has
+exhausted its backoff, **the fix above has no effect on its own** — and the cluster gives you
+almost no signal that this has happened. Sequence observed end-to-end on operator
+`v1.29.1-acp.1`:
+
+1. The `-initdb` Job runs `restartPolicy: Never` with the default `backoffLimit: 6`, so it
+   stops after 7 pod attempts (about 10 minutes of exponential backoff) and is marked
+   `Failed / BackoffLimitExceeded`.
+2. **`status.phase` stays `Setting up primary` regardless.** The reconciler is stuck earlier,
+   logging `Selected PVC is not ready yet, waiting for 1 second` in a tight loop, because the
+   PVC from the failed attempt never received its ready marker. Diagnose from the Job, not the
+   Cluster phase:
+
+   ```bash
+   kubectl -n <ns> get jobs -l cnpg.io/cluster=<cluster>
+   kubectl -n <ns> get cluster <cluster> -o jsonpath='{.status.danglingPVC}{"\n"}'
+   ```
+
+   A `Failed` Job plus a non-empty `danglingPVC` is this state. (Operator v1.29.2 and later
+   include upstream #11035, "report failed instance creation jobs instead of waiting forever",
+   which surfaces it in the phase instead. `v1.29.1-acp.1` does not.)
+3. Patching the spec does nothing — the failed Job is not replaced.
+4. Deleting the Job does not help either; the PVC loop continues.
+5. **Do not delete the PVC by itself.** That moves the cluster into a second and worse state:
+   `One or more instances were previously created, but no PersistentVolumeClaims (PVCs) exist.
+   The cluster is in an unrecoverable state. To resolve this, restore the cluster from a recent
+   backup.`
+
+**Recovery: delete the Cluster and recreate it with the fix already in the spec.**
+
+```bash
+kubectl -n <ns> delete cluster <cluster>
+kubectl -n <ns> apply -f cluster-with-huge-pages-off.yaml
+```
+
+This is safe *specifically because bootstrap never completed* — there is no data in that PVC to
+lose. Verified: the recreated cluster reached `Running` with `huge_pages=off` on the same
+hugepage-enabled node. **Never do this to a cluster that bootstrapped successfully and later
+failed to restart** — that one has data, and the GUC-only fix in the table above applies.
+
+The practical conclusion is to put the fix in the manifest *before* first apply on any node
+that has, or might get, a hugepage pool.
+
 ### Option: let PostgreSQL use the hugepages
 
 If the pool is meant for the database, give the pod a real limit instead of removing the
