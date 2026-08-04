@@ -46,9 +46,13 @@ Reproduced and fixed on:
 - CloudNativePG operator v1.29.1-acp.1 with PostgreSQL 18.4, and the Zalando operator with
   `spilo v4.3.0-beta.36`
 
-The mechanism is a property of kubelet plus the hugetlb cgroup controller, so it is not
-limited to these versions. The exact cgroup paths below were verified on cgroup v1; on cgroup
-v2 the equivalent file is `hugetlb.<size>.max` under the same pod slice.
+Everything asserted below was observed in that environment. The underlying mechanism is a
+property of kubelet plus the hugetlb cgroup controller rather than of these specific versions,
+so it is expected to generalise — but the concrete paths, filenames and numbers here are the
+tested ones, and the cgroup layout in particular depends on the **systemd** cgroup driver
+(`cgroupDriver: systemd`) and the default kubelet cgroup root. On cgroup v2 the equivalent file
+is `hugetlb.<size>.max`; the filename is correct, but the unified hierarchy means the mount
+point differs, and that combination was not tested here.
 
 ## Root cause
 
@@ -83,6 +87,12 @@ kubectl -n <ns> exec <pod> -- initdb -D /tmp/hugetlb-check -U postgres
 
 A `Bus error (core dumped)` confirms it. (Clean up `/tmp/hugetlb-check` afterwards.)
 
+`<pod>` can be **any** pod on the suspect node that contains PostgreSQL binaries — it does not
+have to be the failing one, and often cannot be. With CloudNativePG the crashing entity is the
+`-initdb` Job pod, which runs with `restartPolicy: Never` and may already be `Terminated` by
+the time you look, so `exec` returns `container not running`. Start a throwaway pod pinned to
+that node with the same image instead.
+
 ### Read the cgroup counters at the correct level
 
 > **This is the step that is easy to get wrong.** The `/sys/fs/cgroup` view inside a pod is the
@@ -93,14 +103,30 @@ A `Bus error (core dumped)` confirms it. (Clean up `/tmp/hugetlb-check` afterwar
 Read the **pod slice**, from the host:
 
 ```bash
-POD_UID=$(kubectl -n <ns> get pod <pod> -o jsonpath='{.metadata.uid}' | tr - _)
+set -o pipefail
+POD_UID=$(kubectl -n <ns> get pod <pod> -o jsonpath='{.metadata.uid}' | tr - _) \
+  || { echo "kubectl failed"; exit 1; }
+[ -n "$POD_UID" ] || { echo "pod not found"; exit 1; }
 D=/sys/fs/cgroup/hugetlb/kubepods.slice/kubepods-burstable.slice/kubepods-burstable-pod${POD_UID}.slice
-cat $D/hugetlb.2MB.limit_in_bytes $D/hugetlb.2MB.failcnt
+cat "$D/hugetlb.2MB.limit_in_bytes" "$D/hugetlb.2MB.failcnt"
 ```
 
-Adjust `burstable` to `besteffort`, or drop that path element for Guaranteed pods. A `limit` of
-`0` with a `failcnt` that increments on every crash confirms the diagnosis. Measured values
-around a single failing `initdb`:
+`set -o pipefail` matters: without it the assignment takes the exit status of `tr`, so a failed
+`kubectl` yields status 0 and an empty UID, and you go on to read a path built from nothing.
+
+> This path is the **systemd** cgroup-driver layout, which is what the tested cluster uses
+> (`cgroupDriver: systemd` in `/var/lib/kubelet/config.yaml`) and the common default. Under the
+> `cgroupfs` driver the shape differs — `/sys/fs/cgroup/hugetlb/kubepods/burstable/pod<uid>/`,
+> with the UID keeping its hyphens and no `.slice` suffix. Check `cgroupDriver` on the node
+> before assuming either. A non-default `--cgroup-root` shifts the prefix as well.
+
+Adjust `burstable` to `besteffort`, or drop that path element entirely for Guaranteed pods —
+only Burstable and BestEffort get a QoS-level cgroup. Substitute the node's default hugepage
+size in the filenames: `hugetlb.2MB.*` on x86_64, `hugetlb.512MB.*` on arm64 builds that
+default to 512 MiB pages (`grep Hugepagesize /proc/meminfo`).
+
+A `limit` of `0` with a `failcnt` that increments on every crash confirms the diagnosis.
+Measured values around a single failing `initdb`:
 
 | cgroup level | `limit_in_bytes` | `failcnt` before → after |
 | --- | --- | --- |
@@ -116,6 +142,10 @@ refused at fault time, and never allocated.
 kubectl get node <node> -o jsonpath='{.status.allocatable.hugepages-2Mi}{"\n"}'
 ```
 
+(Use the resource name matching the node's default page size — `hugepages-512Mi` on arm64
+builds that default to 512 MiB pages.) **Blank output means the node is not advertising that
+hugepage size** — the command still exits 0, so an empty line is a result, not a failure.
+
 kubelet caches machine information, so a runtime `sysctl -w vm.nr_hugepages=N` is **not
 visible to kubelet until it is restarted**. A node with a live pool but
 `hugepages-2Mi: 0` is the worst state: pods are capped at zero **and** cannot request
@@ -129,7 +159,7 @@ those pages usually belong to another workload, and removing them has taken appl
 
 | Situation | Action |
 | --- | --- |
-| Instance already bootstrapped, only failing to restart | Set the `huge_pages: "off"` parameter. Works on every major version. |
+| Instance already bootstrapped, only failing to restart | Set the `huge_pages: "off"` parameter. Applies to every major version in scope here (13-18). |
 | Fresh bootstrap needed, PostgreSQL **16 or later** | Set the parameter **and** pass `huge_pages=off` to `initdb`. |
 | Fresh bootstrap needed, PostgreSQL **15 or earlier** | No `initdb` option exists. Request hugepages instead, or bootstrap on a node without a pool and move the instance afterwards. |
 | PostgreSQL should genuinely use the hugepages | Request `hugepages-<size>` in `resources` and set `huge_pages: "on"`. |
@@ -169,11 +199,20 @@ spec:
       options: ["-c", "huge_pages=off"]
 ```
 
-> **Caution.** `bootstrap.initdb.options` is a deprecated field, and setting it makes the
-> operator ignore every explicit `initdb` setting — `dataChecksums`, `encoding`,
-> `localeCollate`, `localeCType`, `walSegmentSize`. If you rely on any of them, restate them as
-> raw flags in the same list, for example
-> `["-c", "huge_pages=off", "--encoding=UTF8", "--lc-collate=C", "--lc-ctype=C", "-k"]`.
+> **Caution.** `bootstrap.initdb.options` is a deprecated field. Setting it makes
+> `buildInitDBFlags` return early, so the operator ignores **every** explicit `initdb` setting:
+> `dataChecksums`, `encoding`, `locale`, `localeCollate`, `localeCType`, `localeProvider`,
+> `icuLocale`, `icuRules`, `builtinLocale`, and `walSegmentSize`. The cluster-level
+> `logLevel` → `-d` side effect is skipped too. Diff your current `bootstrap.initdb` block
+> before adding `options`, and restate everything you rely on as raw flags in the same list:
+>
+> ```yaml
+> options: ["-c", "huge_pages=off", "--encoding=UTF8", "--lc-collate=C", "--lc-ctype=C", "-k"]
+> ```
+>
+> Verified in that argv order: `initdb` exits 0, `postgresql.conf` carries `huge_pages = off`,
+> and the resulting cluster reports UTF8 / C / C with `data_checksums=on`. Clusters using ICU
+> locale settings are the ones most at risk of silent loss here.
 
 ### Option: let PostgreSQL use the hugepages
 
@@ -191,10 +230,48 @@ spec:
     limits:   { cpu: "1",  memory: 1Gi, hugepages-2Mi: 512Mi }
 ```
 
-Size the request from `postgres -C shared_memory_size_in_huge_pages` plus headroom. An
-exact-fit limit means any later growth of the shared memory segment faults into SIGBUS instead
-of failing cleanly at startup. The node must advertise `hugepages-2Mi` — see the kubelet
-restart note above.
+**PostgreSQL 15 and later** can estimate the requirement for you. The parameter needs a data
+directory — it cannot be queried on an empty container:
+
+```bash
+# against an existing instance
+kubectl -n <ns> exec <pod> -- bash -c \
+  'postgres -D "$PGDATA" -c shared_buffers=256MB -C shared_memory_size_in_huge_pages'
+```
+
+**It returns a page count, not a size.** Multiply by the node's default hugepage size to get the
+resource quantity. The same default `shared_buffers` returns `75` on a node with 2 MiB pages
+and `1` on a node with 512 MiB pages — writing the raw number into
+`hugepages-2Mi: <count>Mi` under-provisions by the page-size factor.
+
+Measured on PostgreSQL 18.4 with 2 MiB pages: 75 pages at the 128 MB default, 543 at
+`shared_buffers=1GB`, 4222 at `8GB` — roughly `shared_buffers` plus 10-15% of control
+structures, so budget headroom rather than an exact fit. An exact-fit limit means any later
+growth of the shared memory segment faults into SIGBUS instead of failing cleanly at startup.
+
+**PostgreSQL 14 and earlier do not have this parameter** — `postgres -C
+shared_memory_size_in_huge_pages` returns `FATAL: unrecognized configuration parameter`
+(verified on 13 and 14; present from 15). Size those manually: `shared_buffers` plus about 15%,
+divided by the page size, rounded up.
+
+Before a first bootstrap there is no data directory on any version, so the query is unavailable
+— there is no `--config-file` shortcut, `postgres` still demands `-D`. Either run `initdb` into
+a throwaway directory purely to take the measurement, or use the manual estimate.
+
+> **Match the page size to the node.** The resource name and the page count both follow the
+> node's *default* hugepage size, which is what `huge_pages=on` consumes
+> (`huge_page_size = 0` means "use the system default"). Check it first:
+>
+> ```bash
+> grep Hugepagesize /proc/meminfo
+> ```
+>
+> x86_64 nodes are normally `2048 kB` → request `hugepages-2Mi`. Some arm64 builds, including
+> Kylin Linux Advanced Server V10 on 64 KiB pages, default to `524288 kB` → the resource is
+> `hugepages-512Mi` and every count above is in 512 MiB units. Requesting `hugepages-2Mi` on
+> such a node asks for a resource it does not advertise, and the pod stays `Pending`.
+
+The node must also advertise the resource at all — see the kubelet restart note above.
 
 ## Verification
 
