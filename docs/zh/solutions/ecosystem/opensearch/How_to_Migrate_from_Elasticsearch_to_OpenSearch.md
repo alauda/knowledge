@@ -62,7 +62,7 @@ curl -k -u "admin:<password>" "https://localhost:9200/_cat/plugins?v"
 请记得在此处以及后续所有命令中，将 `<password>` 替换为您集群的凭据。
 
 - 对于 Elasticsearch，默认用户为 `elastic`，密码在创建时随机生成。
-- 对于 OpenSearch，默认用户为 `admin`，密码保存在 `<集群名称>-admin-password` Secret 中。详见 *How to Set and Update the OpenSearch Admin Password*。
+- 对于 OpenSearch，默认用户为 `admin`，密码保存在 `<集群名称>-admin-password` Secret 中。详见 [如何设置和更新 OpenSearch 管理员密码](./How_to_update_opensearch_admin_password.md)。
 :::
 
 #### 安装 repository-s3 插件
@@ -277,7 +277,7 @@ curl -u "elastic:<password>" -X PUT "http://localhost:9200/_snapshot/migration_r
 
 #### 第 1 步：部署 OpenSearch 2.x 集群
 
-使用 OpenSearch Operator 部署一个新的 OpenSearch **2.x** 集群。完整的部署流程请参见 *OpenSearch Installation Guide*；下面的片段只列出本次迁移需要的字段。
+使用 OpenSearch Operator 部署一个新的 OpenSearch **2.x** 集群。完整的部署流程请参见 [OpenSearch 安装指南](./OpenSearch_Installation_Guide.md)；下面的片段只列出本次迁移需要的字段。
 
 :::note
 请将 `version` 设置为您环境中可用的 OpenSearch 版本。在没有外网访问的集群上，只有已安装插件包中包含的 OpenSearch 版本才能拉取到镜像 —— 请先确认哪些版本可用，并在 `pluginsList` 的 URL 中使用同一版本。

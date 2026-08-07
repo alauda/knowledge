@@ -62,7 +62,7 @@ curl -k -u "admin:<password>" "https://localhost:9200/_cat/plugins?v"
 Remember to replace `<password>` with your cluster's credentials, here and in every command that follows.
 
 - For Elasticsearch, the default user is `elastic`, and the password is randomly generated during creation.
-- For OpenSearch, the default user is `admin`, and the password is stored in the `<cluster-name>-admin-password` Secret. See *How to Set and Update the OpenSearch Admin Password* for details.
+- For OpenSearch, the default user is `admin`, and the password is stored in the `<cluster-name>-admin-password` Secret. See [How to Set and Update the OpenSearch Admin Password](./How_to_update_opensearch_admin_password.md) for details.
 :::
 
 #### Install repository-s3 Plugin
@@ -277,7 +277,7 @@ Because these indices are not migrated, the objects they hold do not come across
 
 #### Step 1: Deploy OpenSearch 2.x Cluster
 
-Deploy a new OpenSearch **2.x** cluster using the OpenSearch Operator. For the full deployment procedure, see the *OpenSearch Installation Guide*; the fragment below shows only the fields this migration needs.
+Deploy a new OpenSearch **2.x** cluster using the OpenSearch Operator. For the full deployment procedure, see the [OpenSearch Installation Guide](./OpenSearch_Installation_Guide.md); the fragment below shows only the fields this migration needs.
 
 :::note
 Set `version` to an OpenSearch version that is available in your environment. On a cluster without external network access, only the OpenSearch versions included in the installed plugin package can be pulled — check which ones are available before you deploy, and use that version in the `pluginsList` URL as well.
