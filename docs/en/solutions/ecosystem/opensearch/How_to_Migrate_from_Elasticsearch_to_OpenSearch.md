@@ -16,17 +16,36 @@ This document provides detailed guidance for migrating from Elasticsearch (ES) t
 
 ## Migration Strategy Overview
 
+There are two migration mechanisms. Choose the mechanism first, then follow the matching section.
+
 | Source Version | Target Version | Migration Method | Notes |
 | :--- | :--- | :--- | :--- |
 | **ES 7.10** | **OS 2.x** | Snapshot & Restore | ✅ Direct restore supported |
-| **ES 7.10** | **OS 3.x** | Snapshot & Restore → Upgrade | ⚠️ Must restore to OS 2.x first, then upgrade |
+| **ES 7.10** | **OS 3.x** | Snapshot & Restore → Reindex → Upgrade | ⚠️ Must restore to OS 2.x first, then upgrade |
+| **ES 7.10** | **OS 3.x** | Reindex from Remote | ✅ Single step, no intermediate 2.x cluster |
 | **ES 8.x** | **OS 3.x** | Reindex from Remote | ✅ Direct migration supported |
+
+### Choosing a Method
+
+**Snapshot & Restore** copies the index files themselves. It is much faster for large datasets and it
+preserves index settings, mappings and aliases exactly. Its limitation is version compatibility:
+OpenSearch 3.x can only open indices created by OpenSearch 2.0.0 or later, so an ES 7.10 index has to
+be landed on OpenSearch 2.x and reindexed there before the cluster is upgraded. It also requires a
+snapshot repository that both clusters can reach.
+
+**Reindex from Remote** reads documents over HTTP from the source cluster and writes them as new
+documents on the target. Because every document is indexed afresh, the source's file format never
+matters — this is why it can go from ES 7.10 straight to OpenSearch 3.x, and why it is the only
+option for ES 8.x. The costs are that it pays the full indexing cost for every document (far slower
+than restoring files at scale), it requires network connectivity from OpenSearch to the source, and
+it copies **only documents** — index settings, mappings and aliases are not carried over and must be
+created on the target beforehand.
 
 :::warning Key Compatibility Note
 
-- **ES 7.10 → OS 3.x direct restore is NOT supported**. OpenSearch 3.x requires indices to be created with OpenSearch 2.0.0+.
-- ES 7.10 snapshots must be restored to OpenSearch 2.x first, then upgrade the cluster to OS 3.x.
-- ES 8.x uses incompatible Lucene versions, so Snapshot & Restore is not available; use Reindex from Remote instead.
+- **ES 7.10 → OS 3.x direct restore is NOT supported**. OpenSearch 3.x requires indices to be created with OpenSearch 2.0.0+. Attempting it fails with `snapshot_restore_exception: cannot restore index ... because it cannot be upgraded`.
+- ES 7.10 snapshots must be restored to OpenSearch 2.x first, reindexed there, and only then upgraded to OS 3.x. Reindex from Remote avoids this entirely.
+- **OpenSearch cannot restore snapshots taken by Elasticsearch 8.x.** Use Reindex from Remote for an ES 8.x source.
 
 :::
 
@@ -166,7 +185,7 @@ spec:
 :::warning Every change to `additionalConfig` or `pluginsList` restarts the whole cluster
 
 - Both approaches trigger a **rolling restart of every node**, one at a time, to load the new configuration or plugin.
-- Values under `additionalConfig` are written straight into `opensearch.yml` and are **not validated by the Operator**. An unknown or misspelled setting is only rejected when the node boots, and the node then fails to start — see [Troubleshooting](#troubleshooting).
+- Every entry under `additionalConfig` is rendered as an environment variable on **every** pod, including the transient bootstrap pod, and OpenSearch reads it as a setting. The Operator **does not validate these values**. An unknown or misspelled setting is only rejected when the node boots, and the node then fails to start — see [Troubleshooting](#troubleshooting).
 - Because nodes are restarted one at a time, verify that the first restarted node returns to `Running` and `Ready` before letting the rollout continue. If it does not, fix the configuration before the remaining nodes pick it up.
 - Plugins in `pluginsList` are downloaded and installed **on every pod start**, not once. The URL must stay reachable from every node, or use an image with the plugin pre-installed.
 :::
@@ -200,7 +219,16 @@ For security reasons, avoid including access keys directly in API request bodies
     ```
 
     :::warning Repeat on every Elasticsearch pod
-    The keystore is a file inside each node's own config directory, and `reload_secure_settings` only reloads what is already present on each node. **Run step 1 on every Elasticsearch pod** (masters and data nodes) before calling the reload, otherwise snapshots fail on whichever nodes lack the credentials.
+    The keystore is a file inside each node's own config directory, and `reload_secure_settings` only reloads what is already present on each node. **Run step 1 on every Elasticsearch pod** (masters and data nodes) before calling the reload.
+
+    Two things make this easy to get wrong:
+
+    - `reload_secure_settings` reports success for **every** node even when most of them have no credentials at all, so its output is not a check that the credentials are in place.
+    - The failure surfaces later, when the repository is registered, and it names the **elected master** — which is usually not the pod you ran the keystore commands in:
+
+      ```text
+      repository_verification_exception: [migration_repo] path [es_710_backup] is not accessible on master node
+      ```
 
     The keystore also lives in the container filesystem: unless your chart persists the Elasticsearch config directory, the credentials are lost when a pod restarts and must be added again.
     :::
@@ -289,12 +317,19 @@ kind: OpenSearchCluster
 metadata:
   name: my-cluster
 spec:
+  bootstrap:
+    # REQUIRED: the bootstrap pod also receives general.additionalConfig, so it needs the
+    # plugin that defines the s3.client.* settings, or it will not start.
+    pluginsList:
+      - https://artifacts.opensearch.org/releases/plugins/repository-s3/2.19.3/repository-s3-2.19.3.zip
   general:
     version: 2.19.3
     additionalConfig:
       s3.client.default.endpoint: "http://minio.example.com:9000"
       s3.client.default.region: "us-east-1"
       s3.client.default.path_style_access: "true"
+      # OpenSearch 2.12 and later refuse to start without an initial admin password.
+      OPENSEARCH_INITIAL_ADMIN_PASSWORD: "<strong-password>"
     pluginsList:
       - https://artifacts.opensearch.org/releases/plugins/repository-s3/2.19.3/repository-s3-2.19.3.zip
     keystore:
@@ -308,7 +343,29 @@ spec:
           base_path: es_710_backup
           readonly: "true"
     ...
+  security:
+    config:
+      # credentials the Operator itself uses to reach the cluster; the password must be the
+      # same one set through OPENSEARCH_INITIAL_ADMIN_PASSWORD above
+      adminCredentialsSecret:
+        name: admin-credentials
 ```
+
+:::warning Two settings the cluster will not start without
+
+**1. `bootstrap.pluginsList`.** The Operator renders every `general.additionalConfig` entry as an environment variable on **all** pods, including the transient bootstrap pod. The `s3.client.*` entries are only valid settings when `repository-s3` is installed, so if the bootstrap pod does not install the plugin it fails immediately with:
+
+```text
+StartupException: unknown setting [s3.client.default.region] please check that any
+required plugins are installed, or check the breaking changes documentation for removed settings
+```
+
+The bootstrap pod then crash-loops, and because the other nodes are pinned to it through `cluster.initial_master_nodes`, the cluster never forms.
+
+**2. An initial admin password.** From OpenSearch 2.12 onwards the demo password is rejected and the node exits with `No custom admin password found. Please provide a password via the environment variable OPENSEARCH_INITIAL_ADMIN_PASSWORD`. `security.config.adminCredentialsSecret` does **not** supply it — that secret is only used by the Operator to authenticate to the cluster. Because the bootstrap pod has no `env` field of its own, the password has to be passed through `additionalConfig`, which the Operator turns into environment variables on every pod.
+
+Note that a value placed in `additionalConfig` is stored in plain text in the cluster resource. Restrict access to the resource accordingly, and prefer supplying a complete security configuration through `security.config.securityConfigSecret` for anything beyond a short-lived migration cluster.
+:::
 
 #### Step 2: Restore the Snapshot on OpenSearch
 
@@ -401,7 +458,7 @@ Repeat for all restored indices. After reindexing, verify the new index version:
 curl -k -u "admin:<password>" "https://localhost:9200/migration_test_v2/_settings?filter_path=**.version"
 ```
 
-The `version.created` should show an OpenSearch 2.x internal version number (for example `136408127` for OS 2.19.x), rather than the `7102099` that ES 7.10.2 indices carry. Any `136xxxxxx` value means the index was created by OpenSearch 2.x and the reindex was successful.
+The `version.created` should show an OpenSearch 2.x internal version number (for example `136408427` for OS 2.19.6), rather than the `7100299` that ES 7.10.2 indices carry. The exact number varies with the patch release, so do not compare against a literal: any `136xxxxxx` value means the index was created by OpenSearch 2.x and the reindex was successful.
 
 #### Step 2: Upgrade OpenSearch Cluster
 
@@ -434,11 +491,14 @@ curl -k -u "admin:<password>" "https://localhost:9200/_cluster/health?pretty"
 
 ## Migrate from ES 8.x to OpenSearch 3.x
 
-Elasticsearch 8.x uses a newer Lucene version with incompatible metadata protocols, making snapshots unreadable by OpenSearch. Use **Reindex from Remote** instead.
+OpenSearch cannot restore snapshots taken by Elasticsearch 8.x, so **Reindex from Remote** is the only available method for this source version.
+
+The same method also works for an ES 7.10 source and, unlike Snapshot & Restore, can target OpenSearch 3.x directly without an intermediate 2.x cluster. See [Choosing a Method](#choosing-a-method) for the trade-offs.
 
 ### Prerequisites
 
-- **Network Connectivity**: The OpenSearch cluster must be able to reach the ES 8.x cluster's HTTP/REST port (typically 9200).
+- **Network Connectivity**: The OpenSearch cluster must be able to reach the source cluster's HTTP/REST port (typically 9200).
+- **Index settings and mappings**: reindex copies documents only. Create the target index with the settings and mappings you need **before** reindexing, or the target index is created from dynamic mapping defaults and will not reproduce the source's shard count, custom analyzers or field types.
 
 ### Deploy ES 8.x Using ECK Operator
 
@@ -580,7 +640,7 @@ curl -k -u "elastic:<password>" "https://es8-cluster-host:9200/migration_test/_c
 
 ### A node stays in CrashLoopBackOff after a configuration change
 
-Values placed under `spec.general.additionalConfig` are written directly into `opensearch.yml` and are not validated by the Operator. An unknown or misspelled setting is rejected when the node boots, and the node never starts:
+Every entry under `spec.general.additionalConfig` is rendered as an environment variable on the pods and read by OpenSearch as a setting. The Operator does not validate these values. An unknown or misspelled setting is rejected when the node boots, and the node never starts:
 
 ```text
 [ERROR][o.o.b.OpenSearchUncaughtExceptionHandler] uncaught exception in thread [main]
@@ -601,8 +661,11 @@ kubectl logs -n <namespace> <cluster-name>-masters-0 --tail=50
 # 2. Correct the setting in the cluster resource
 kubectl edit opensearchcluster -n <namespace> <cluster-name>
 
-# 3. Confirm the Operator has regenerated the configuration
-kubectl get cm -n <namespace> -o yaml | grep -n '<setting-name>'
+# 3. Confirm the Operator has regenerated the configuration.
+#    additionalConfig entries become environment variables on the pods - the Operator does
+#    not write an opensearch.yml ConfigMap, so check the StatefulSet, not a ConfigMap.
+kubectl get sts -n <namespace> <cluster-name>-<nodepool> \
+  -o jsonpath='{.spec.template.spec.containers[0].env}' | tr ',' '\n' | grep '<setting-name>'
 
 # 4. Restart the failing pod so it picks up the new configuration
 kubectl delete pod -n <namespace> <cluster-name>-masters-0
