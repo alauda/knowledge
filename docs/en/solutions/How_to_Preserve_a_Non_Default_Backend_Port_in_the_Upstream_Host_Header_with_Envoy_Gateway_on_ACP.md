@@ -7,6 +7,7 @@ ProductsVersion:
   - 4.3.x and later
 tags:
   - LB
+id: KB260800008
 ---
 
 # How to Preserve a Non-Default Backend Port in the Upstream Host Header with Envoy Gateway on ACP
