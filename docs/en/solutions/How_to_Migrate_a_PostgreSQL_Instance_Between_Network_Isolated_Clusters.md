@@ -34,7 +34,7 @@ A logical migration carries less than a byte-level copy. Know the boundary befor
 |---|---|
 | Tables, data, indexes, views, functions, sequences (including positions) | `GRANT`s (`-x` skips ACLs at restore; they remain inside the dump file — see Step 4) |
 | Roles and their attributes (generated into the target CR in Step 1) | `COMMENT ON` metadata (`--no-comments`; a deliberate, lossy trade for a verifiable exit code) |
-| Database encoding and locale (enforced by the script) | CR spec beyond `users`/`databases`/`volume`: `resources`, `postgresql.parameters`, `patroni.pg_hba`, `connectionPooler`, sidecars, load-balancer flags — port them in the target CR yourself |
+| Database encoding and locale (enforced by the script) | CR spec beyond `users`/`databases`/`volume`: `resources`, `postgresql.parameters`, `patroni.pg_hba`, `connectionPooler`, `restrictedPsaEnabled`, sidecars, load-balancer flags — port them in the target CR yourself |
 | Database- and role-in-database-level settings (`ALTER DATABASE/ROLE ... SET`) | Objects requiring superuser: event triggers, publications/subscriptions, FDW servers and user mappings |
 | Extensions (schema placement and version preserved) | Tablespace layout (`--no-tablespaces` maps everything to the default) |
 | Planner statistics (regenerated via `ANALYZE` in the window) | Instances using `preparedDatabases` (its `<db>_owner/_reader/_writer` role model and `user_management` schema are out of scope for this guide) |
@@ -159,6 +159,7 @@ spec:
   numberOfInstances: 1       # restore on a single instance; scale out AFTER Step 4
   postgresql:
     version: "16"            # same as source, or newer major
+  restrictedPsaEnabled: true # match the source; omit if the source does not set it (see below)
   users:
     app_owner: []            # generated above
   databases:
@@ -188,6 +189,28 @@ do sleep 5; done
 ```
 
 Note the secret's name: the operator sanitizes role names into RFC 1123 form, so a role like `app_owner` gets the secret `app-owner.<cluster>.credentials...` (`_` becomes `-`). Use the sanitized form wherever a secret is fetched by name.
+
+### Match the source's pod security setting
+
+`restrictedPsaEnabled` is a property of the CR, not of the data — nothing in this procedure carries it over, so the target runs with whatever its own CR declares. Read the source's value and mirror it:
+
+```bash
+kubectl --context $SRC_CTX -n $SRC_NS get postgresql $SRC_CLUSTER \
+  -o jsonpath='{.spec.restrictedPsaEnabled}{"\n"}'
+```
+
+An empty line means the flag is not set. With it set, the operator gives the instance pods `runAsNonRoot: true`, a `RuntimeDefault` seccomp profile, `allowPrivilegeEscalation: false` and `capabilities.drop: [ALL]` — the shape the restricted Pod Security Standard requires. Instances created through the platform console generally carry it; hand-applied CRs generally do not. Both directions of mismatch cost you something:
+
+- **The target namespace enforces restricted PSA and the flag is missing** — the pods are rejected at admission, the instance never reaches `Running`, and Step 3 has no target pod to exec into. Check the namespace before creating the CR:
+
+  ```bash
+  kubectl --context $TGT_CTX get ns $TGT_NS \
+    -o jsonpath='{.metadata.labels.pod-security\.kubernetes\.io/enforce}{"\n"}'
+  ```
+
+- **The source had it and the target does not** — the migration silently returns the application to a weaker security posture than it ran with before cutover.
+
+The migration itself is unaffected either way: every operation in Step 3 runs through `kubectl exec` and the pod-local socket, and the dump files are written on the workstation, not inside the pod.
 
 ## Step 2: Stop Writes
 
