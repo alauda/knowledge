@@ -21,121 +21,42 @@ MetalLB speakers use `hostNetwork: true`. With the `frr` BGP backend, the speake
 
 Change MetalLB to its `native` BGP backend. This removes the MetalLB-managed FRR containers from the speaker Pod, so MetalLB no longer runs an FRR process in the node network namespace.
 
-Use this workaround only when all of the following conditions are met:
+Use this workaround only on a non-OpenShift cluster. The native BGP backend is not supported on OpenShift.
 
-- The cluster is not OpenShift. The MetalLB native BGP backend is not supported on OpenShift.
-- The customer accepts the native MetalLB BGP implementation instead of the MetalLB FRR backend.
-- MetalLB and the host FRR service do not use the same BGP local address, neighbor, router ID, or advertised prefixes.
-- A maintenance window is available. Updating the `MetalLB` resource rolls the MetalLB speaker DaemonSet.
+### 1. Configure BGP peers in the console
 
-This workaround prevents MetalLB from deploying its own FRR containers. It does **not** make two independent BGP implementations safe to use with the same BGP identity or the same advertised routes. Configure independent BGP peers and non-overlapping advertised prefixes, or schedule MetalLB speakers only on nodes that do not run the customer FRR service.
+Open the target cluster, then go to **Networking -> BGP Peers**. Create or edit the BGP peer used by MetalLB.
 
-The change is a configuration workaround. Verify the configuration after a MetalLB plugin upgrade or reinstall.
+Do not edit a ConfigMap or manually create `BGPPeer` resources for this configuration. Set these fields in the console:
 
-### 1. Check the current MetalLB configuration
+- **Local AS**, **Remote AS**, and **Remote IP**: use the values assigned for MetalLB by the network team.
+- **Local IP**: use an address that is not used by the host FRR service.
+- **Router ID**: use an identifier that is not used by the host FRR service.
+- **BGP connection node**: select only the nodes assigned to MetalLB. When available, select nodes that do not run the customer-managed FRR service.
 
-Identify the MetalLB custom resource and record its current BGP backend:
+MetalLB and host FRR must not use the same local address, neighbor, router ID, or advertised prefixes.
 
-```bash
-kubectl -n metallb-system get metallb
-kubectl -n metallb-system get metallb metallb -o jsonpath='{.spec.bgpBackend}{"\n"}'
-```
+### 2. Configure the BGP external address pool in the console
 
-The commands in this article use the default resource name `metallb`. If the cluster uses a different resource name, replace it in all subsequent commands.
+Go to **Networking -> External IP Pools** and create or edit the pool used by the LoadBalancer Services:
 
-Before changing the backend, record the current speaker placement and BGP configuration:
+1. Set **Type** to **BGP**.
+2. Enter the MetalLB VIP range in **IP Resources**.
+3. Associate the BGP peer created in the previous step.
+4. Select only the nodes that are allowed to advertise the VIP range.
 
-```bash
-kubectl -n metallb-system get ds speaker -o wide
-kubectl -n metallb-system get bgppeers,bgpadvertisements,ipaddresspools
-```
+The VIP range must not overlap with prefixes advertised by the host FRR service.
 
-Confirm with the network administrator that the MetalLB BGP peers and advertised address pools do not overlap with the host FRR service on every node where a speaker will run.
+### 3. Switch the MetalLB backend
 
-### 2. Back up the MetalLB resource
+The current console exposes BGP peers and external address pools, but does not expose the MetalLB `bgpBackend` setting. An S2 engineer changes this setting to `native` during the maintenance window. The change rolls the speaker DaemonSet.
 
-Save the current custom resource so that the change can be reverted:
+### 4. Verify the result
 
-```bash
-kubectl -n metallb-system get metallb metallb -o yaml > metallb-before-native-backend.yaml
-```
+After the speaker rollout, confirm that the speaker Pod no longer contains `frr`, `reloader`, or `frr-metrics` containers. Then use the normal network monitoring tools to confirm the MetalLB BGP session and VIP route advertisement.
 
-Do not use the backup file to restore `status` fields. The rollback command in this article updates only `spec.bgpBackend`.
-
-### 3. Switch to the native BGP backend
-
-Set `spec.bgpBackend` to `native`:
-
-```bash
-kubectl -n metallb-system patch metallb metallb \
-  --type=merge \
-  -p '{"spec":{"bgpBackend":"native"}}'
-```
-
-Wait for the speaker DaemonSet rollout to complete:
-
-```bash
-kubectl -n metallb-system rollout status daemonset/speaker
-```
-
-### 4. Verify that MetalLB FRR containers are removed
-
-List the speaker Pod template containers:
-
-```bash
-kubectl -n metallb-system get daemonset speaker \
-  -o jsonpath='{range .spec.template.spec.containers[*]}{.name}{"\n"}{end}'
-```
-
-The output must not include these containers:
-
-- `frr`
-- `reloader`
-- `frr-metrics`
-- `metrics-auth-proxy-frr` (when secure FRR metrics had been enabled)
-
-Confirm that all speaker Pods are ready:
-
-```bash
-kubectl -n metallb-system get pods -l app=metallb,component=speaker
-```
-
-Finally, verify BGP session state and route advertisement using the customer's normal network monitoring tools. Do not treat Pod readiness as proof that BGP sessions are established or that the expected LoadBalancer prefixes are advertised.
-
-### 5. Optional: isolate speaker nodes from host FRR nodes
-
-When a separate set of nodes is available for MetalLB speakers, constrain the speaker DaemonSet through the `MetalLB` resource. Label only nodes that do not run the customer-managed FRR service:
-
-```bash
-kubectl label node <metallb-node> metallb.alauda.io/speaker=true
-```
-
-Then add the node selector to the MetalLB resource:
-
-```bash
-kubectl -n metallb-system patch metallb metallb \
-  --type=merge \
-  -p '{"spec":{"nodeSelector":{"metallb.alauda.io/speaker":"true"}}}'
-```
-
-Wait for the speaker DaemonSet rollout and confirm that speakers run only on the intended nodes:
-
-```bash
-kubectl -n metallb-system rollout status daemonset/speaker
-kubectl -n metallb-system get pods -l app=metallb,component=speaker -o wide
-```
-
-Use this optional step when node isolation is needed. It reduces the chance of a host-level conflict, but it does not remove the requirement for distinct BGP peers and prefixes.
+Pod readiness alone does not prove that the BGP session is established or that the expected VIP prefixes are advertised.
 
 ## Rollback
 
-If native mode does not meet the BGP requirements, restore the MetalLB FRR backend:
-
-```bash
-kubectl -n metallb-system patch metallb metallb \
-  --type=merge \
-  -p '{"spec":{"bgpBackend":"frr"}}'
-kubectl -n metallb-system rollout status daemonset/speaker
-```
-
-After the rollout, confirm that the required FRR-related containers are present again and validate BGP sessions before returning the cluster to service. Do not roll back to `frr` while the original host FRR conflict is unresolved.
+If native mode cannot meet the BGP requirements, an S2 engineer can change the backend back to `frr`. Do not roll back while the original host FRR conflict is unresolved.
