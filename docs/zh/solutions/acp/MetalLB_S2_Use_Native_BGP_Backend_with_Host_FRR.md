@@ -21,121 +21,42 @@ MetalLB speaker 使用 `hostNetwork: true`。当 BGP 后端为 `frr` 时，speak
 
 将 MetalLB 切换为 `native` BGP 后端。此操作会从 speaker Pod 中移除 MetalLB 管理的 FRR 容器，使 MetalLB 不再在节点网络命名空间中运行 FRR 进程。
 
-仅在满足以下全部条件时使用本方案：
+本方案仅适用于非 OpenShift 集群。MetalLB native BGP 后端不支持 OpenShift。
 
-- 集群不是 OpenShift。MetalLB native BGP 后端不支持 OpenShift。
-- 客户接受使用 MetalLB native BGP 实现替代 MetalLB FRR 后端。
-- MetalLB 与主机 FRR 不使用相同的 BGP 本地地址、邻居、router ID 或宣告前缀。
-- 已安排维护窗口。更新 `MetalLB` 资源会滚动更新 MetalLB speaker DaemonSet。
+### 1. 在控制台配置 BGP 对等体
 
-本方案仅防止 MetalLB 部署自身的 FRR 容器，**不代表**两套独立 BGP 实现可以使用相同的 BGP 身份或相同的宣告路由。应配置独立的 BGP 邻居和不重叠的宣告前缀，或仅将 MetalLB speaker 调度到未运行客户 FRR 服务的节点。
+进入目标集群，选择 **网络 -> BGP 对等体**，创建或编辑 MetalLB 使用的 BGP 对等体。
 
-该变更属于配置临时方案。MetalLB 插件升级或重装后，需要重新验证配置。
+此处不需要编辑 ConfigMap，也不需要手动创建 `BGPPeer` 资源。请在控制台中配置以下字段：
 
-### 1. 检查当前 MetalLB 配置
+- **本地 AS**、**对端 AS**、**对端 IP**：使用网络团队分配给 MetalLB 的参数。
+- **本地 IP**：必须与主机 FRR 使用的地址不同。
+- **Router ID**：必须与主机 FRR 使用的 Router ID 不同。
+- **BGP 连接节点**：仅选择分配给 MetalLB 的节点；如有条件，选择未运行客户 FRR 服务的节点。
 
-确认 MetalLB 自定义资源并记录当前 BGP 后端：
+MetalLB 与主机 FRR 不得使用相同的本地地址、邻居、Router ID 或宣告前缀。
 
-```bash
-kubectl -n metallb-system get metallb
-kubectl -n metallb-system get metallb metallb -o jsonpath='{.spec.bgpBackend}{"\n"}'
-```
+### 2. 在控制台配置 BGP 外部地址池
 
-本文使用默认资源名 `metallb`。如果实际集群使用其他资源名，请在后续命令中替换。
+选择 **网络 -> 外部地址池**，创建或编辑 LoadBalancer 服务使用的地址池：
 
-切换前，记录当前 speaker 调度位置和 BGP 配置：
+1. 将 **类型** 设置为 **BGP**。
+2. 在 **IP 资源** 中填写 MetalLB VIP 范围。
+3. 关联上一步创建的 BGP 对等体。
+4. 仅选择允许宣告该 VIP 范围的节点。
 
-```bash
-kubectl -n metallb-system get ds speaker -o wide
-kubectl -n metallb-system get bgppeers,bgpadvertisements,ipaddresspools
-```
+VIP 范围不得与主机 FRR 服务宣告的前缀重叠。
 
-与网络管理员确认：所有运行 speaker 的节点上，MetalLB 的 BGP 邻居和宣告地址池均不与主机 FRR 服务重叠。
+### 3. 切换 MetalLB 后端
 
-### 2. 备份 MetalLB 资源
+当前控制台已提供 BGP 对等体和外部地址池配置，但未提供 MetalLB `bgpBackend` 配置项。由 S2 工程师在维护窗口内将其切换为 `native`，该操作会滚动更新 speaker DaemonSet。
 
-保存当前自定义资源，以便回滚：
+### 4. 验证结果
 
-```bash
-kubectl -n metallb-system get metallb metallb -o yaml > metallb-before-native-backend.yaml
-```
+speaker 滚动更新完成后，确认 speaker Pod 中不再包含 `frr`、`reloader`、`frr-metrics` 容器。然后使用正常的网络监控工具确认 MetalLB BGP 会话及 VIP 路由宣告。
 
-请勿使用该备份文件恢复 `status` 字段。本文的回滚命令只更新 `spec.bgpBackend`。
-
-### 3. 切换到 native BGP 后端
-
-将 `spec.bgpBackend` 设置为 `native`：
-
-```bash
-kubectl -n metallb-system patch metallb metallb \
-  --type=merge \
-  -p '{"spec":{"bgpBackend":"native"}}'
-```
-
-等待 speaker DaemonSet 滚动更新完成：
-
-```bash
-kubectl -n metallb-system rollout status daemonset/speaker
-```
-
-### 4. 验证 MetalLB FRR 容器已移除
-
-列出 speaker Pod 模板中的容器：
-
-```bash
-kubectl -n metallb-system get daemonset speaker \
-  -o jsonpath='{range .spec.template.spec.containers[*]}{.name}{"\n"}{end}'
-```
-
-输出中不应包含以下容器：
-
-- `frr`
-- `reloader`
-- `frr-metrics`
-- `metrics-auth-proxy-frr`（此前启用安全 FRR 指标时）
-
-确认所有 speaker Pod 都已就绪：
-
-```bash
-kubectl -n metallb-system get pods -l app=metallb,component=speaker
-```
-
-最后，请使用客户正常的网络监控工具验证 BGP 会话状态和路由宣告。Pod 就绪并不能证明 BGP 会话已建立，也不能证明预期的 LoadBalancer 前缀已完成宣告。
-
-### 5. 可选：将 speaker 节点与主机 FRR 节点隔离
-
-如果有可供 MetalLB speaker 专用的节点，请通过 `MetalLB` 资源约束 speaker DaemonSet。仅为未运行客户 FRR 服务的节点添加标签：
-
-```bash
-kubectl label node <metallb-node> metallb.alauda.io/speaker=true
-```
-
-然后为 MetalLB 资源添加节点选择器：
-
-```bash
-kubectl -n metallb-system patch metallb metallb \
-  --type=merge \
-  -p '{"spec":{"nodeSelector":{"metallb.alauda.io/speaker":"true"}}}'
-```
-
-等待 speaker DaemonSet 滚动更新，并确认 speaker 只运行在目标节点：
-
-```bash
-kubectl -n metallb-system rollout status daemonset/speaker
-kubectl -n metallb-system get pods -l app=metallb,component=speaker -o wide
-```
-
-当需要节点隔离时使用此可选步骤。它可以降低主机级冲突风险，但不能替代独立 BGP 邻居和非重叠前缀的要求。
+Pod 就绪并不能证明 BGP 会话已建立，也不能证明预期 VIP 前缀已完成宣告。
 
 ## 回滚
 
-如果 native 模式无法满足 BGP 要求，可恢复 MetalLB FRR 后端：
-
-```bash
-kubectl -n metallb-system patch metallb metallb \
-  --type=merge \
-  -p '{"spec":{"bgpBackend":"frr"}}'
-kubectl -n metallb-system rollout status daemonset/speaker
-```
-
-滚动更新完成后，确认所需的 FRR 相关容器已恢复，并在恢复集群服务前验证 BGP 会话。原有主机 FRR 冲突未解决时，不应回滚至 `frr`。
+若 native 模式无法满足 BGP 要求，S2 工程师可将后端恢复为 `frr`。原有主机 FRR 冲突未解决时，不应回滚。
