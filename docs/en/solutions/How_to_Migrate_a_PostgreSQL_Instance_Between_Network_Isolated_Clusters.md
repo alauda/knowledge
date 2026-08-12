@@ -34,7 +34,7 @@ A logical migration carries less than a byte-level copy. Know the boundary befor
 |---|---|
 | Tables, data, indexes, views, functions, sequences (including positions) | `GRANT`s (`-x` skips ACLs at restore; they remain inside the dump file — see Step 4) |
 | Roles and their attributes (generated into the target CR in Step 1) | `COMMENT ON` metadata (`--no-comments`; a deliberate, lossy trade for a verifiable exit code) |
-| Database encoding and locale (enforced by the script) | CR spec beyond `users`/`databases`/`volume`: `resources`, `postgresql.parameters`, `patroni.pg_hba`, `connectionPooler`, `restrictedPsaEnabled`, sidecars, load-balancer flags — port them in the target CR yourself |
+| Database encoding and locale (enforced by the script) | CR spec beyond `users`/`databases`/`volume`: `resources`, `postgresql.parameters`, `patroni.pg_hba`, `connectionPooler`, the pod security settings (`restrictedPsaEnabled`, `spiloPrivileged`, `spiloRunAsUser`, …), sidecars, load-balancer flags — port them in the target CR yourself |
 | Database- and role-in-database-level settings (`ALTER DATABASE/ROLE ... SET`) | Objects requiring superuser: event triggers, publications/subscriptions, FDW servers and user mappings |
 | Extensions (schema placement and version preserved) | Tablespace layout (`--no-tablespaces` maps everything to the default) |
 | Planner statistics (regenerated via `ANALYZE` in the window) | Instances using `preparedDatabases` (its `<db>_owner/_reader/_writer` role model and `user_management` schema are out of scope for this guide) |
@@ -159,7 +159,14 @@ spec:
   numberOfInstances: 1       # restore on a single instance; scale out AFTER Step 4
   postgresql:
     version: "16"            # same as source, or newer major
-  restrictedPsaEnabled: true # operator 4.2.0+ only; match the source, omit if unset (see below)
+  # Pod security — copy the source's values; see "Match the source's pod
+  # security settings" below. Required as a set for a restricted namespace;
+  # operator 4.2.0+ only. Omit the whole block if the source omits it.
+  restrictedPsaEnabled: true
+  spiloAllowPrivilegeEscalation: false
+  spiloPrivileged: false
+  spiloRunAsUser: 101
+  spiloRunAsGroup: 103
   users:
     app_owner: []            # generated above
   databases:
@@ -190,36 +197,44 @@ do sleep 5; done
 
 Note the secret's name: the operator sanitizes role names into RFC 1123 form, so a role like `app_owner` gets the secret `app-owner.<cluster>.credentials...` (`_` becomes `-`). Use the sanitized form wherever a secret is fetched by name.
 
-### Match the source's pod security setting
+### Match the source's pod security settings
 
-`restrictedPsaEnabled` is a property of the CR, not of the data — nothing in this procedure carries it over, so the target runs with whatever its own CR declares. Read the source's value and mirror it:
+Pod security is a property of the CR, not of the data — nothing in this procedure carries it over, so the target runs with whatever its own CR declares. Copy the whole set from the source:
 
 ```bash
-kubectl --context $SRC_CTX -n $SRC_NS get postgresql $SRC_CLUSTER \
-  -o jsonpath='{.spec.restrictedPsaEnabled}{"\n"}'
+kubectl --context $SRC_CTX -n $SRC_NS get postgresql $SRC_CLUSTER -o jsonpath='
+restrictedPsaEnabled:          {.spec.restrictedPsaEnabled}
+spiloAllowPrivilegeEscalation: {.spec.spiloAllowPrivilegeEscalation}
+spiloPrivileged:               {.spec.spiloPrivileged}
+spiloRunAsUser:                {.spec.spiloRunAsUser}
+spiloRunAsGroup:               {.spec.spiloRunAsGroup}
+{"\n"}'
 ```
 
-An empty line means the flag is not set. With it set, the operator gives the instance pods `runAsNonRoot: true`, a `RuntimeDefault` seccomp profile, `allowPrivilegeEscalation: false` and `capabilities.drop: [ALL]` — the shape the restricted Pod Security Standard requires. Instances created through the platform console generally carry it; hand-applied CRs generally do not. Both directions of mismatch cost you something:
+**Treat these five as one setting, not five independent ones.** If the target namespace enforces the restricted Pod Security Standard, `restrictedPsaEnabled: true` on its own is *not* enough to get the instance running:
 
-- **The target namespace enforces restricted PSA and the flag is missing** — the pods are rejected at admission, the instance never reaches `Running`, and Step 3 has no target pod to exec into. Check the namespace before creating the CR:
+- `restrictedPsaEnabled` gives the pods `runAsNonRoot: true`, a `RuntimeDefault` seccomp profile, `allowPrivilegeEscalation: false` and `capabilities.drop: [ALL]`. It does **not** clear `privileged`, which follows the operator's own configuration and can default to `true` — a privileged container is rejected under the restricted standard no matter what else the CR says. `spiloPrivileged: false` is what clears it.
+- `runAsNonRoot: true` without a non-root uid is a runtime failure rather than an admission one: the pod is admitted, then kubelet refuses to start a container whose image would run as root. `spiloRunAsUser: 101` / `spiloRunAsGroup: 103` are the operator's own defaults for the Spilo image.
 
-  ```bash
-  kubectl --context $TGT_CTX get ns $TGT_NS \
-    -o jsonpath='{.metadata.labels.pod-security\.kubernetes\.io/enforce}{"\n"}'
-  ```
+Instances created through the platform console carry all five together; hand-applied CRs generally carry none. Check what the target namespace demands before creating the CR:
 
-- **The source had it and the target does not** — the migration silently returns the application to a weaker security posture than it ran with before cutover.
+```bash
+kubectl --context $TGT_CTX get ns $TGT_NS \
+  -o jsonpath='{.metadata.labels.pod-security\.kubernetes\.io/enforce}{"\n"}'
+```
+
+Both directions of mismatch cost you something. Set too little and the target never reaches `Running`, so Step 3 has no pod to exec into. Set nothing while the source was restricted and the migration quietly returns the application to a weaker security posture than it ran with before cutover.
 
 The migration itself is unaffected either way: every operation in Step 3 runs through `kubectl exec` and the pod-local socket, and the dump files are written on the workstation, not inside the pod.
 
-**This one field does have a version floor.** `restrictedPsaEnabled` exists only from operator **4.2.0** onward — no 4.0.x or 4.1.x release has it, and it is carried by the CRD the operator bundle installs, not by the CRD in the Helm chart. Where it is missing from the CRD, the API server **prunes it on apply**: no error, no warning, the property simply is not there afterwards. So on an older target you can apply the CR above, see it accepted, and get pods with none of the security context you thought you asked for. Confirm the value survived rather than assuming it:
+**These fields have a version floor.** They exist only from operator **4.2.0** onward — no 4.0.x or 4.1.x release has them, and they are carried by the CRD the operator bundle installs, not by the CRD in the Helm chart. Where a property is missing from the CRD, the API server **prunes it on apply**: no error, no warning, it simply is not there afterwards. So on an older target you can apply the CR above, see it accepted, and get pods with none of the security context you thought you asked for. Read the values back rather than trusting the apply:
 
 ```bash
 kubectl --context $TGT_CTX -n $TGT_NS get postgresql $TGT_CLUSTER \
   -o jsonpath='{.spec.restrictedPsaEnabled}{"\n"}'
 ```
 
-An empty line here — immediately after applying a CR that set the flag — means this target cannot honour it. If the source is restricted and the target operator predates 4.2.0, the target cannot reproduce the source's pod security shape at all: upgrade the target operator before migrating, or accept the difference as a deliberate decision rather than discovering it after cutover.
+An empty line here — immediately after applying a CR that set it — means this target cannot honour these settings at all. If the source is restricted and the target operator predates 4.2.0, upgrade the target operator before migrating, or accept the difference as a deliberate decision rather than discovering it after cutover.
 
 ## Step 2: Stop Writes
 
@@ -297,13 +312,16 @@ echo "Source PostgreSQL major: $SRC_MAJOR (client binaries: $PG_BIN)"
 # databases can legitimately have different collations, and a text comparison
 # of differently-ordered output would report false differences. The object
 # census excludes extension-owned objects (extension versions differ across
-# PostgreSQL majors) and counts everything else by kind.
+# PostgreSQL majors) and counts everything else by kind. The ::text cast on
+# relkind is required: relkind is type "char", and from PostgreSQL 15 onward
+# "char" || <literal> is ambiguous ("operator is not unique") — uncast, the
+# census errors out on every modern target.
 COUNT_QUERY="SELECT schemaname||'.'||relname, (xpath('/row/c/text()', query_to_xml(format(
   'SELECT count(*) AS c FROM %I.%I', schemaname, relname), false, true, '')))[1]::text::bigint
   FROM pg_stat_user_tables
   WHERE schemaname NOT IN ('metric_helpers','user_management')
   ORDER BY (schemaname||'.'||relname) COLLATE \"C\";"
-OBJ_QUERY="SELECT c.relkind||':'||count(*) FROM pg_class c
+OBJ_QUERY="SELECT c.relkind::text||':'||count(*) FROM pg_class c
   JOIN pg_namespace n ON n.oid = c.relnamespace
   WHERE n.nspname NOT IN ('pg_catalog','information_schema','pg_toast','metric_helpers','user_management')
     AND NOT EXISTS (SELECT 1 FROM pg_depend dep WHERE dep.objid = c.oid AND dep.deptype = 'e')
@@ -362,8 +380,20 @@ while read -r DB OWNER; do
        JOIN pg_namespace n ON n.oid = e.extnamespace WHERE e.extname <> 'plpgsql';")
 
   # Baseline on the source (exact counts, object census, sequence positions).
-  SRC_COUNTS=$(srcsql "$DB" -c "$COUNT_QUERY")
-  SRC_OBJS=$(srcsql "$DB" -c "$OBJ_QUERY"); SRC_SEQS=$(srcsql "$DB" -c "$SEQ_QUERY")
+  # Every capture is guarded. A verification query that ERRORS must never be
+  # mistaken for one that returned nothing: psql exits non-zero, the script
+  # carries on (there is deliberately no `set -e` — one bad database must not
+  # abort a multi-hour run), and two failed queries would then compare equal
+  # and report PASS for a database nobody verified. An unverifiable database
+  # is a FAILED database.
+  VERIFY_ERR=""
+  SRC_COUNTS=$(srcsql "$DB" -c "$COUNT_QUERY") || VERIFY_ERR="source row counts"
+  SRC_OBJS=$(srcsql "$DB" -c "$OBJ_QUERY")     || VERIFY_ERR="source object census"
+  SRC_SEQS=$(srcsql "$DB" -c "$SEQ_QUERY")     || VERIFY_ERR="source sequence positions"
+  if [ -n "$VERIFY_ERR" ]; then
+    echo "  FAIL: $DB (baseline query failed: $VERIFY_ERR — not migrating a database that cannot be verified)"
+    FAILED="$FAILED $DB(verify)"; continue
+  fi
 
   # Transfer. The restore connects as postgres over the pod-local socket and
   # switches to the owner with --role: objects land owned by the owner, with
@@ -420,10 +450,15 @@ while read -r DB OWNER; do
 
   # Verify: rows, object census, and sequence positions must match — and the
   # source must not have changed while the transfer ran (writes not stopped).
-  TGT_COUNTS=$(tgtsql "$DB" -c "$COUNT_QUERY")
-  TGT_OBJS=$(tgtsql "$DB" -c "$OBJ_QUERY"); TGT_SEQS=$(tgtsql "$DB" -c "$SEQ_QUERY")
-  SRC_RECHECK=$(srcsql "$DB" -c "$COUNT_QUERY")
-  if [ "$SRC_RECHECK" != "$SRC_COUNTS" ]; then
+  VERIFY_ERR=""
+  TGT_COUNTS=$(tgtsql "$DB" -c "$COUNT_QUERY")  || VERIFY_ERR="target row counts"
+  TGT_OBJS=$(tgtsql "$DB" -c "$OBJ_QUERY")      || VERIFY_ERR="target object census"
+  TGT_SEQS=$(tgtsql "$DB" -c "$SEQ_QUERY")      || VERIFY_ERR="target sequence positions"
+  SRC_RECHECK=$(srcsql "$DB" -c "$COUNT_QUERY") || VERIFY_ERR="source re-check"
+  if [ -n "$VERIFY_ERR" ]; then
+    echo "  FAIL: $DB (verification query failed: $VERIFY_ERR — the data may be intact, but this run did NOT verify it; do not cut over on this result)"
+    FAILED="$FAILED $DB(verify)"
+  elif [ "$SRC_RECHECK" != "$SRC_COUNTS" ]; then
     echo "  FAIL: $DB (SOURCE CHANGED DURING DUMP — enforce the write stop per Step 2, then redo this database)"
     FAILED="$FAILED $DB"
   elif [ "$RC" -eq 0 ] && [ "$SRC_COUNTS" = "$TGT_COUNTS" ] && [ "$SRC_OBJS" = "$TGT_OBJS" ] && [ "$SRC_SEQS" = "$TGT_SEQS" ]; then
