@@ -159,7 +159,7 @@ spec:
   numberOfInstances: 1       # restore on a single instance; scale out AFTER Step 4
   postgresql:
     version: "16"            # same as source, or newer major
-  restrictedPsaEnabled: true # match the source; omit if the source does not set it (see below)
+  restrictedPsaEnabled: true # operator 4.2.0+ only; match the source, omit if unset (see below)
   users:
     app_owner: []            # generated above
   databases:
@@ -211,6 +211,15 @@ An empty line means the flag is not set. With it set, the operator gives the ins
 - **The source had it and the target does not** — the migration silently returns the application to a weaker security posture than it ran with before cutover.
 
 The migration itself is unaffected either way: every operation in Step 3 runs through `kubectl exec` and the pod-local socket, and the dump files are written on the workstation, not inside the pod.
+
+**This one field does have a version floor.** `restrictedPsaEnabled` exists only from operator **4.2.0** onward — no 4.0.x or 4.1.x release has it, and it is carried by the CRD the operator bundle installs, not by the CRD in the Helm chart. Where it is missing from the CRD, the API server **prunes it on apply**: no error, no warning, the property simply is not there afterwards. So on an older target you can apply the CR above, see it accepted, and get pods with none of the security context you thought you asked for. Confirm the value survived rather than assuming it:
+
+```bash
+kubectl --context $TGT_CTX -n $TGT_NS get postgresql $TGT_CLUSTER \
+  -o jsonpath='{.spec.restrictedPsaEnabled}{"\n"}'
+```
+
+An empty line here — immediately after applying a CR that set the flag — means this target cannot honour it. If the source is restricted and the target operator predates 4.2.0, the target cannot reproduce the source's pod security shape at all: upgrade the target operator before migrating, or accept the difference as a deliberate decision rather than discovering it after cutover.
 
 ## Step 2: Stop Writes
 
