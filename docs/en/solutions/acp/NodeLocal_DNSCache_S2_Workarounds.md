@@ -7,7 +7,7 @@ ProductsVersion:
   - '4.2.x,4.3.x,4.4.x'
 ---
 
-# Temporary Workarounds for NodeLocal DNSCache Port 8080 Conflicts and DNS Single-Point Risk
+# Temporary Workarounds for NodeLocal DNSCache Port Conflicts, DNS Single-Point Risk, and Metrics Access Issues
 
 ## Problem
 
@@ -15,6 +15,7 @@ After NodeLocal DNSCache is enabled in an ACP cluster, the following risks may o
 
 - The `node-cache` Pod runs with `hostNetwork: true` and exposes its health check endpoint on the node loopback `127.0.0.1:8080`. If a business process, operations agent, or `hostNetwork` Pod on the same node also binds `127.0.0.1:8080` or `0.0.0.0:8080`, a port conflict occurs.
 - After NodeLocal DNSCache takes effect, newly created Pods use the node-local DNS address as their DNS server. If the `node-cache` Pod on a node is unavailable, DNS resolution for Pods on that node may fail and does not automatically switch to CoreDNS without impact.
+- If the Corefile `prometheus` directive binds to the NodeLocal DNSCache IP, for example `169.254.20.10:9253`, external monitoring systems or dashboards may fail to access the metrics endpoint.
 
 ## Root Cause
 
@@ -33,6 +34,8 @@ livenessProbe:
 ```
 
 The plugin installation job also configures kubelet `--cluster-dns` to the NodeLocal DNSCache IP. To release port `8080`, or to use CoreDNS ClusterIP as an additional DNS server, you need to temporarily modify runtime resources or node kubelet configuration.
+
+For metrics access issues, the common root cause is that the Corefile `prometheus` directive binds to the NodeLocal DNSCache IP instead of listening only on a port. If the external monitoring path cannot reach that node-local address, metrics cannot be collected.
 
 ## Resolution
 
@@ -163,6 +166,53 @@ nameserver 10.96.0.10
 
 If NetworkPolicy is enabled in the cluster, allow Pods to access both the NodeLocal DNSCache IP and CoreDNS ClusterIP on TCP/UDP port `53`.
 
+### Workaround 3: Remove the fixed IP binding from Prometheus metrics
+
+Use this workaround when external monitoring systems or dashboards cannot access NodeLocal DNSCache metrics. Change only the `prometheus` listen address in the Corefile. Do not change the DNS service port.
+
+Back up the current ConfigMap first:
+
+```bash
+NS=kube-system
+CM=node-local-dns
+DS=node-local-dns
+
+kubectl -n "$NS" get cm "$CM" -o yaml > node-local-dns-cm.backup.yaml
+```
+
+Edit the ConfigMap:
+
+```bash
+kubectl -n "$NS" edit cm "$CM"
+```
+
+Change the `prometheus` directive that binds to a fixed IP:
+
+```text
+prometheus 169.254.20.10:9253
+```
+
+to listen only on the port:
+
+```text
+prometheus :9253
+```
+
+If the target environment uses a metrics port other than `9253`, keep the existing port and remove only the IP binding.
+
+Restart the DaemonSet to apply the configuration:
+
+```bash
+kubectl -n "$NS" rollout restart ds "$DS"
+kubectl -n "$NS" rollout status ds "$DS"
+```
+
+Confirm that the Corefile is updated, and verify that metrics can be accessed from the monitoring collection path:
+
+```bash
+kubectl -n "$NS" get cm "$CM" -o yaml | grep 'prometheus'
+```
+
 ## Diagnostic Steps
 
 Confirm that NodeLocal DNSCache is installed and Pods are Ready:
@@ -177,6 +227,12 @@ Confirm whether the current Corefile and DaemonSet probe still use `8080`:
 ```bash
 kubectl -n kube-system get cm node-local-dns -o yaml | grep 'health 127.0.0.1'
 kubectl -n kube-system get ds node-local-dns -o yaml | grep -A5 -E 'livenessProbe|readinessProbe'
+```
+
+Confirm the metrics listen address in the Corefile:
+
+```bash
+kubectl -n kube-system get cm node-local-dns -o yaml | grep 'prometheus'
 ```
 
 Confirm the DNS servers used by newly created Pods:
@@ -204,6 +260,14 @@ sudo systemctl restart kubelet
 
 Then recreate the affected Pods so their `/etc/resolv.conf` is regenerated.
 
+If changing the metrics listen address causes problems, restore the backed-up ConfigMap and restart the DaemonSet:
+
+```bash
+kubectl apply -f node-local-dns-cm.backup.yaml
+kubectl -n kube-system rollout restart ds/node-local-dns
+kubectl -n kube-system rollout status ds/node-local-dns
+```
+
 ## Related Information
 
 If the cluster is upgraded by rebuilding nodes, directly changing `/var/lib/kubelet/kubeadm-flags.env` on nodes is lost after node rebuild. You need to synchronize the same multi-address `cluster-dns` value to every `kubeletExtraArgs` location in the cluster template:
@@ -212,4 +276,4 @@ If the cluster is upgraded by rebuilding nodes, directly changing `/var/lib/kube
 - `KubeadmControlPlane` → `joinConfiguration` → `nodeRegistration` → `kubeletExtraArgs`
 - `KubeadmConfigTemplate` → `template` → `spec` → `joinConfiguration` → `nodeRegistration` → `kubeletExtraArgs`
 
-The long-term fix should be implemented on the product side, for example by exposing the health check port in the NodeLocal DNSCache plugin parameters, or by supporting multiple kubelet `cluster-dns` addresses in the plugin or cluster configuration.
+The long-term fix should be implemented on the product side, for example by exposing the health check port and metrics listen address in the NodeLocal DNSCache plugin parameters, or by supporting multiple kubelet `cluster-dns` addresses in the plugin or cluster configuration.
