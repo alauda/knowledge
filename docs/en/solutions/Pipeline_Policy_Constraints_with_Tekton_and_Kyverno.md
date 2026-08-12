@@ -61,7 +61,7 @@ Once your environment is prepared per [§3](#s3), you should be able to:
 | Project administrator (maintains per-project constraints) | Namespaced `Policy`, per-project tightening, permission boundaries | [§1.3](#s1-3) per-project differentiation and scope safety (the two-tier model) → [§5.1](#s5-1)–[§5.2](#s5-2) scope and RBAC → [§4](#s4) Cookbook (pick what you need; remember to convert the demo's cross-namespace scoping into a `Policy` in your own namespace) |
 | Template / Task author (supplies governed pipelines) | Hard-gate contracts, extension contracts | [§2.3](#s2-3) hard-gate contracts → [§2.4](#s2-4) extension model → [§3.2](#s3-2) versions and dependent features → [§3.3](#s3-3) fixtures → [§4.3](#s4-3) genuine gate failure → the relevant parts of [§4.1](#s4-1)–[§4.2](#s4-2) |
 | Pipeline user (runs pipelines, gets blocked by policy) | Quick reference of failure shapes, exemption path | [§1.5](#s1-5) quick reference of outcome shapes → [§6.2](#s6-2) user-side FAQ (only read [§6.2.3](#s6-2-3) if your run was auto-cancelled) |
-| Walkthrough operator (runs the whole document as a lab) | Every step copy-pasteable, and no leftovers on a shared cluster | [§3.1](#s3-1) verification → **[§3.2](#s3-2) first confirm object results are enabled** (`enable-api-fields`; acceptable values per [§3.2](#s3-2) — if it is off, the very first fixture creation is rejected, with an error that looks like a Kyverno problem) → **[§4.0.3](#s4-0-3) placeholders + [§4.0.4](#s4-0-4) cleanup discipline (read before creating anything: self-created namespaces plus a pre-check for cluster-scoped name collisions are what make deletion possible afterwards)** → [§3.3](#s3-3) build the fixtures and **keep your walkthrough id at hand** → [§4.0.1](#s4-0-1) install order + **[§4.0.5](#s4-0-5) cross-section interference between demos** (the number-one reason "the probe won't run") → your target sections (**run each section's "cleanup" immediately after finishing it** — do not batch them up for the end) → the "final cleanup" in [§3.3](#s3-3) to delete the two shared namespaces; and if you did [§5.3](#s5-3), go back to [§3.1.1](#s3-1-1) at the very end to revert the platform configuration |
+| Walkthrough operator (runs the whole document as a lab) | Policies and run manifests copy-pasteable; probes assembled yourself from the [§3.4.1](#s3-4-1) skeleton (nine sections give only an expectation table); and no leftovers on a shared cluster | [§3.1](#s3-1) verification → **[§3.2](#s3-2) first confirm object results are enabled** (`enable-api-fields`; acceptable values per [§3.2](#s3-2) — if it is off, the very first fixture creation is rejected, with an error that looks like a Kyverno problem) → **[§4.0.3](#s4-0-3) placeholders + [§4.0.4](#s4-0-4) cleanup discipline (read before creating anything: self-created namespaces plus a pre-check for cluster-scoped name collisions are what make deletion possible afterwards)** → [§3.3](#s3-3) build the fixtures and **keep your walkthrough id at hand** → [§4.0.1](#s4-0-1) install order + **[§4.0.5](#s4-0-5) cross-section interference between demos** (the number-one reason "the probe won't run") → your target sections (**run each section's "cleanup" immediately after finishing it** — do not batch them up for the end) → the "final cleanup" in [§3.3](#s3-3) to delete the two shared namespaces; and if you did [§5.3](#s5-3), go back to [§3.1.1](#s3-1-1) at the very end to revert the platform configuration |
 
 **A few items in the [§3.1](#s3-1) checklist are forward references** (`--exceptionNamespace` in [§3.1.1](#s3-1-1), the mutate-existing RBAC in the [§4.6](#s4-6) introduction, replica planning in [§6.1.8](#s6-1-8)): that checklist is a **capability inventory**, not an "all green before you may proceed" gate — items 1 and 2 are shared prerequisites; come back for the rest depending on which chapter's capabilities you actually use.
 
@@ -111,7 +111,7 @@ The accompanying semantics (which likewise only hold once you deploy per the tar
 
 The division of labor in one sentence: **hard gates are implemented by gate Tasks inside the pipeline (below the bar → `exit 1` → the pipeline fails natively); Kyverno's role is to narrow the paths by which a gate gets removed, tampered with, or bypassed from the side — and to provide audit and response actions.**
 
-**Deliberately, this does not say "impossible to bypass"** — that property only emerges from **policies + RBAC + template design combined**; Kyverno alone cannot deliver it. The last two items under "cannot do" below are exactly where the gaps are; the document-wide conditional phrasing is in [§4.0.1](#s4-0-1), "what the minimal usable set guarantees is conditional".
+**Deliberately, this does not say "impossible to bypass"** — that property only emerges from **policies + RBAC + template design combined**; Kyverno alone cannot deliver it. The **last three items** under "cannot do" below correspond to the two responsibilities **not borne by Kyverno** — "the wiring between the gate and the release" belongs to **template design**, while "the path that avoids Tekton" and "protecting the policy system itself" belong to **RBAC**. The document-wide conditional phrasing is in [§4.0.1](#s4-0-1), "what the minimal usable set guarantees is conditional"; the item-by-item exposures are in [§2.5](#s2-5).
 
 What Kyverno can do:
 
@@ -126,20 +126,22 @@ What Kyverno explicitly cannot do (the boundaries):
 - **Never block writes to `*/status` subresources with Enforce**: what you would be blocking is the Tekton controller's status write-back. The result is a resource stuck in Running with the controller retrying forever (a wedge) — not a failure ([§2.2](#s2-2), [§6.1.4](#s6-1-4)).
 - **Remotely referenced definitions (hub / git resolver) never pass through cluster admission**: Kyverno can only lock the **identity** (which catalog entry, which commit); trust in the content comes from external governance (catalog release process, repository permissions). The three tiers of strength are in [§2.1](#s2-1).
 - **It cannot see a skipped gate**: when a `when` expression is false, or a matrix expands to nothing, that gate **never produces a TaskRun**, so admission has no object to reject — "the gate must run" can only be guaranteed by template design (do not give the gate a `when` that business teams can switch off) plus the **after-the-fact Audit** of `status.skippedTasks` in [§4.1.5](#s4-1-5). It is not an admission-time hard block.
+- **It cannot see whether the wiring between the gate and the release is right**: whether the gate consumes the result of **the intended task** ([§2.3](#s2-3) contract 4), whether release-type tasks are ordered after the gate (contract 5), whether finally hides a gate-protected side effect (contract 6) — these three are **template design responsibility**. Contract 4 has not even an after-the-fact Audit on the admission side (in the [§2.3](#s2-3) table its only guarantor is `T`); contracts 5 / 6 have only the after-the-fact Audit backstop of [§4.1.4](#s4-1-4). **"The gate is present and its parameters were not switched off" does not equal "the gate actually governed the release"** — this is the **template design** share of the "combined" sentence above.
 - **It cannot block the path that avoids Tekton entirely**: an identity with workload API permissions can create Pods / Jobs / Deployments directly, or use the deployment credentials somewhere else, without a single PipelineRun. **Only RBAC can close this layer** ([§4.5.4](#s4-5-4)) — the entry-closure policies in this document seal off bare `TaskRun` / `CustomRun`, not every API capable of running a container.
 - **It cannot protect itself**: every conclusion in this document rests on "the policy system and Kyverno's own configuration are controlled". Whoever can modify `ClusterPolicy` / `PolicyException` can modify the gates ([§5.3](#s5-3) / [§5.0](#s5-0)); whoever can modify Kyverno's `resourceFilters` or its webhooks can make an entire chapter of policies **silently stop enforcing** ([§3.1](#s3-1) checklist item 7 / [§5.0](#s5-0)); whoever can modify Tekton's platform configuration can swap out the template resolution source ([§4.1.1](#s4-1-1)) or break the scoping labels the image policy relies on ([§3.6](#s3-6)). **These identities are outside this document's threat model** — they are closed off by RBAC separation of duties, change auditing, and the policy system's self-protection ([§5.0](#s5-0)), not by writing yet another policy.
 
 ### 1.5 Quick reference of outcome shapes (for pipeline users) {#s1-5}
 
-When a policy acts on your pipeline, you will see one of the following five shapes (mechanisms in [§2](#s2), troubleshooting in [§6](#s6)):
+When a policy acts on your pipeline, you will see one of the following six shapes (mechanisms in [§2](#s2), troubleshooting in [§6](#s6)) — **note that the last one is "you see nothing at all"**:
 
 | What you see | What it means | Where to look for the reason |
 |---|---|---|
 | Creating the PipelineRun is rejected outright (kubectl / UI shows an admission error) | Admission blocking: template / parameters / entry non-compliant | The error message itself is the policy message (policy name, rule name, reason) |
 | PipelineRun fails with reason `CreateRunFailed`; some mid-pipeline Task was never created | Mid-run admission blocking: the effective parameters of a gate Task are non-compliant | `kubectl describe pipelinerun`; the condition message carries the full policy message |
-| PipelineRun fails with reason `Failed`; the gate Task is red | A genuine quality-gate failure (coverage / vulnerabilities below the bar). **Exception**: a non-empty `spec.status` (`CancelledRunFinally`) means **someone — or some policy — did request cancellation** and the task's own failure merely outranked it; `spec.status` alone cannot tell you who wrote it | The gate Task's logs; if `spec.status` is non-empty, follow [§6.2.3](#s6-2-3) to look for `cancel-reason` / `statusMessage` — only with those markers is it a policy cancellation; without them the origin is unknown (a manual cancel looks exactly the same) |
+| PipelineRun fails with reason `Failed`; the gate Task is red | A genuine quality-gate failure (coverage / vulnerabilities below the bar). **Exception**: a `spec.status` holding **a cancellation value** (`Cancelled` / `CancelledRunFinally` / `StoppedRunFinally`) means **someone — or some policy — did request cancellation** and the task's own failure merely outranked it; `spec.status` alone cannot tell you who wrote it | The gate Task's logs; if `spec.status` holds a cancellation value, follow [§6.2.3](#s6-2-3) to look for `cancel-reason` / `statusMessage` — only with those markers is it a policy cancellation; without them the origin is unknown (a manual cancel looks exactly the same). **Do not equate "non-empty" with "cancelled"**: the field has one more legitimate value unrelated to cancellation, `PipelineRunPending` (see [§6.2.3](#s6-2-3)) |
 | TaskRun fails with reason `PodCreationFailed`; the Pod never appeared | Pod-level admission blocking: the container image for this step is not on the approved list ([§4.5.3](#s4-5-3)) | `kubectl describe taskrun`; the message carries the full policy message |
-| The PipelineRun turns `Cancelled` (and you didn't cancel it) | A policy response action. **There are four possible origins**: parent run cancelled for non-compliant gate parameters ([§4.2.2](#s4-2-2)), gate TaskRun cancelled for non-compliant parameters ([§4.2.3](#s4-2-3)), results below the bar ([§4.6.1](#s4-6-1)), definition drift ([§4.6.2](#s4-6-2)) | The four leave their evidence in different places; work through them in the order given in [§6.2.3](#s6-2-3) (the mechanism differences are summarized in the table in the [§4.6](#s4-6) introduction) |
+| The PipelineRun turns `Cancelled` (and you didn't cancel it) | A policy response action. **There are four possible origins**, listed here in the troubleshooting order of [§6.2.3](#s6-2-3): gate TaskRun cancelled ([§4.2.3](#s4-2-3)), parent run cancelled ([§4.2.2](#s4-2-2)), definition drift ([§4.6.2](#s4-6-2)), results below the bar ([§4.6.1](#s4-6-1)) | The evidence lives in only two places: for the first, on that gate TaskRun; the latter three share the parent run's `cancel-reason` annotation, distinguished by its text. Work through them in the order given in [§6.2.3](#s6-2-3) (the mechanism differences are summarized in the table in the [§4.6](#s4-6) introduction) |
+| **The pipeline is perfectly fine, green — yet a violation was recorded anyway** | Audit-mode policies record without blocking ([§4.4](#s4-4)). **"It ran through" does not equal "it is compliant"**: [§4](#s4) contains several pure-Audit policies, and [§4.2.4](#s4-2-4) has one more policy carrying an Audit rule — all of them completely invisible to you (which ones are Audit is in the policy quick reference of [§4.0.2](#s4-0-2)) | Only in the PolicyReport: `kubectl get policyreport -n <your-namespace>`, look for entries with `result: fail` ([§6.1.5](#s6-1-5)) |
 
 ## 2. Understanding the Mechanisms {#s2}
 
@@ -172,7 +174,7 @@ PipelineRun status UPDATE (terminal state, pipelineResults)
 
 | # | Observation point | What is visible | What can be done / caveats |
 |---|---|---|---|
-| 1 | Pipeline / Task definition resource CREATE/UPDATE (**in-cluster definitions only**) | The full definition spec is introspectable: tasks, finally, parameter defaults, labels | Enforce-validate the stored content (must contain the gate task, etc.) + lock change permissions (only platform administrators / a designated CI identity may modify, [§4.1](#s4-1)). **Coverage comes in three tiers**: ① inline / in-cluster direct ref — introspectable and lockable at admission; ② hub / git **immutable reference** (pinned version / commit SHA) — in-cluster you can only lock the **identity**; content trust comes from external catalog / repository governance; ③ hub / git **mutable reference** (branch / tag) — content changes take effect automatically as the remote moves; Kyverno can only lock "which branch / tag is referenced". Using this tier requires repository-side permission controls (protected branches / tags); otherwise it should be rejected |
+| 1 | Pipeline / Task definition resource CREATE/UPDATE (**in-cluster definitions only**) | The full definition spec is introspectable: tasks, finally, parameter defaults, labels | In theory two things can be done here: Enforce-validate the stored content (must contain the gate task, etc.) + lock change permissions. **This document uses only the latter**, and hands it to standard RBAC rather than a policy ([§4.1.2](#s4-1-2)) — **not a single policy in this document matches the `Pipeline` / `Task` definition resources**; why not is in the [§4.1](#s4-1) introduction (including "what kind of site is worth building its own"). **Coverage comes in three tiers**: ① inline / in-cluster direct ref — introspectable and lockable at admission; ② hub / git **immutable reference** (pinned version / commit SHA) — in-cluster you can only lock the **identity**; content trust comes from external catalog / repository governance; ③ hub / git **mutable reference** (branch / tag) — content changes take effect automatically as the remote moves; Kyverno can only lock "which branch / tag is referenced". Using this tier requires repository-side permission controls (protected branches / tags); otherwise it should be rejected |
 | 2 | `PipelineRun` CREATE admission | `pipelineRef` (resolver type + all resolver parameters), **`spec.params` with values**, workspaces, labels, **`request.userInfo`** (creator identity) | Enforce: template identity allowlist, PipelineRun-level parameter contracts, entry identity constraints; mutate: inject defaults (timeout / label, [§4.2.6](#s4-2-6)). ⚠️ For a reference-style pipeline, `spec.pipelineSpec` is **empty** at this moment — the definition content is invisible, and so are task-level parameters |
 | 3 | `PipelineRun/status` UPDATE (subresource) | The resolver-resolved **`status.pipelineSpec`** (the only place in the cluster a referenced definition can be introspected), `status.childReferences`, **`status.skippedTasks`** (each skipped task's `name` + `reason` + `whenExpressions`; `reason` values come from Tekton's `SkippingReason` enum), `status.pipelineResults` (only present after completion — far too late for admission) | Past admission = after-the-fact view. **Never Enforce-deny** (wedge, [§2.2](#s2-2)). Correct uses: **Audit as defense in depth** (resolved definition missing the gate task → record in PolicyReport, [§4.1.4](#s4-1-4); gate skipped by `when` / empty matrix → read `status.skippedTasks` and record, [§4.1.5](#s4-1-5)); **response action**: trigger self-cancellation ([§4.6.2](#s4-6-2)) |
 | 4 | `TaskRun` CREATE admission | `spec.taskRef` (resolver + kind/catalog/name/version/namespace), labels (visible but **untrusted**: `tekton.dev/pipeline` / `tekton.dev/pipelineTask` / `tekton.dev/pipelineRun` can be overridden via `taskRunSpecs` — usable as troubleshooting hints, never to locate a trusted profile or the parent run), `request.userInfo`, the controller ownerReference, and **`spec.params` = the expanded, effective parameter values** (`$(params.x)` already resolved to concrete values — **task-level gate parameters can be validated without being surfaced at the PipelineRun level**); step images visible only for inline taskSpec. ⚠️ `tekton.dev/task` is visible on the final TaskRun but may not yet be present at real CREATE admission time, so it likewise cannot serve as an identity precondition at this stage; parent identity must be derived from the controller ownerReference + an `apiCall` for the live parent's UID/`spec.pipelineRef` | Enforce: **validation of the gate task's effective parameters** (deny → the parent run fails cleanly with `CreateRunFailed`, the policy message passed through verbatim into the run condition, [§4.2](#s4-2)), bare-TaskRun closure ([§4.5.4](#s4-5-4)), taskRef allowlist. ⚠️ A parameter the pipeline did not bind **does not appear** in `spec.params` (the task definition's default takes effect) — a policy may interpret absence as that trusted default only when `spec.taskRef` is already locked to an exact Task version whose defaults are trusted; with untrusted identity or unknown defaults it must fail closed |
@@ -226,9 +228,9 @@ In detail:
 
 | Shape | Trigger | Run terminal reason | Downstream release tasks | finally | How the failure is surfaced |
 |---|---|---|---|---|---|
-| Admission rejects the gate TaskRun's creation (contract 2 response) | Gate's effective parameters non-compliant | `CreateRunFailed` (terminal, no retry) | Never created (`skippedTasks` empty) | **Does not run** | The Kyverno policy message is passed through verbatim into the PipelineRun condition |
+| Admission rejects the gate TaskRun's creation (contract 2 response) | Gate's effective parameters non-compliant | `CreateRunFailed` (terminal; **"no retry" has a precondition** — see the last item in the info block below) | Never created (`skippedTasks` empty) | **Does not run** | The Kyverno policy message is passed through verbatim into the PipelineRun condition |
 | Gate task exits 1 (the mainline hard gate) | Results below the bar | `Failed` | Skipped by the DAG; listed in `skippedTasks` (reason `PipelineRun was stopping`) | **Runs** | The gate task's logs + "Tasks Completed: N (Failed: 1)" |
-| mutate-existing cancellation ([§4.6.1](#s4-6-1)) | Results below the bar (status-event triggered); a missing / malformed result triggers the same way, fail-closed | Usually `Cancelled`; when the result-producing task itself failed first it is `Failed` (the failure verdict outranks the cancellation; `spec.status` still reads `CancelledRunFinally`) | In-flight ones are stopped with `TaskRunCancelled` | **Runs** | The parent run's `cancel-reason` annotation (written by the same patch; the text names the triggering TaskRun and the out-of-bounds result value) + events; with the companion Audit rule there is also a PolicyReport record |
+| mutate-existing cancellation ([§4.6.1](#s4-6-1)) | Results below the bar (status-event triggered); a missing / malformed result triggers the same way, fail-closed (**criterion direction fail-closed ≠ delivery guarantee**: the cancellation is delivered asynchronously in the background and silently fails to happen when that chain breaks — see the "asynchronous delivery chain" row in [§3.7](#s3-7)) | Usually `Cancelled`; when the result-producing task itself failed first it is `Failed` (the failure verdict outranks the cancellation; `spec.status` still reads `CancelledRunFinally`) | In-flight ones are stopped with `TaskRunCancelled` | **Runs** | The parent run's `cancel-reason` annotation (written by the same patch; the text names the triggering TaskRun and the out-of-bounds result value) + events; with the companion Audit rule there is also a PolicyReport record |
 | mutate-existing self-cancellation ([§4.6.2](#s4-6-2)) | Resolved-definition drift (the `pipelineSpec` written back into `status` does not match the approved identity) | `Cancelled` | Same as above | **Runs** | The parent run's `cancel-reason` annotation (stating the drift) + events |
 | **mutate-existing cancellation (RunFinally) replacing deny on non-compliant gate parameters ([§4.2.2](#s4-2-2))** | Non-compliant effective parameters detected on the gate TaskRun | `Cancelled` | Tasks before the gate already ran; from the gate onward, cancelled | **Runs** | Generic cancellation text + the `cancel-reason` annotation |
 | **Admission-mutate cancelling the gate TaskRun itself (the synchronous alternative to deny, [§4.2.3](#s4-2-3))** | Gate's effective parameters non-compliant | `Cancelled` | Skipped by the DAG; listed in `skippedTasks` (reason `PipelineRun was stopping`) | **Runs** | The TaskRun condition carries the policy-written `statusMessage` verbatim (visible in tkn / the UI); no violation record in PolicyReport |
@@ -240,6 +242,7 @@ The behavior has been reported upstream: https://github.com/tektoncd/pipeline/is
 - **Mechanism**: finally is scheduled only after the whole DAG has finished, and "finished" requires every DAG task to land in one of succeeded / failed / **skipped**. A gate TaskRun rejected at admission **was never created**, so that node can never reach any of the three — the DAG never counts as finished, finally is never scheduled, and the controller promptly moves the run to the `CreateRunFailed` terminal state.
 - **Contrast**: when the gate task exits 1, the TaskRun was created, ran, and failed — the node has a terminal state, the DAG can finish, and finally runs as usual. The dividing line is **whether the gate node reached a terminal state**, not whether the run failed.
 - **How to recognize this shape**: the run is `CreateRunFailed`, there are no child TaskRuns, finally never got created, and `skippedTasks` is empty.
+- **Why a terminal state, rather than endless retries**: when creating a child run fails, the controller first classifies the error (`handleRunCreationError` in upstream `pkg/reconciler/pipelinerun/pipelinerun.go`), and **only errors judged "permanent" are written as `CreateRunFailed`** — everything else is treated as retryable. An admission rejection lands in the permanent bucket because the API server uniformly returns 400 for a "webhook denied but supplied no status code" response. **So one more shape exists**: if your rejection response carries a known failure reason (such as `Forbidden`), the error may be classified as retryable — the symptom becomes a run **stuck in Running while the controller retries creating the same child run over and over**, rather than failing outright. When you see that stuck shape, do not go inspect the DAG; look at the rejection response's status code and reason.
 
 :::
 
@@ -270,6 +273,37 @@ Beyond the platform's built-in scanning / gating capabilities, every organizatio
 **Trust prerequisite**: custom Tasks fall under contract 1 like everything else — immutable reference + trusted image. Otherwise "push a script version that always prints pass" is the cheapest bypass there is.
 
 [§4](#s4), the Cookbook, threads this extension path through a fictional, self-contained scanner task (`policy-demo-scanner`); real Tasks from the platform catalog such as sonarqube / trivy appear as profile subsections with their real result contracts.
+
+### 2.5 The residual-risk ledger (once the minimal usable set is installed, which paths remain) {#s2-5}
+
+[§1.4](#s1-4) said what Kyverno does and does not govern, [§2.3](#s2-3) said who guarantees each of the seven contracts, and every section carries its own "what this does not cover" note. This section merges them into one table: **assuming you installed the minimal usable set per [§4.0.1](#s4-0-1) and fixed the scopes, this is the actual set of guarantees and exposures in your hands.** The table is also this document's scope statement — rows marked ❌ are **explicitly not covered** by this document; they are not omissions.
+
+Legend: ✅ = hard admission Enforce block (the precondition shared by the allowlist types is a fully populated list, see [§4.0.7](#s4-0-7) — not repeated row by row below); 🟡 = after-the-fact Audit / asynchronous response only, or blocking depends on conditions outside Kyverno such as template design; ❌ = not covered by this document.
+
+| # | Bypass or failure path | Coverage | What closes it |
+|---|---|---|---|
+| 1 | Not going through Tekton: creating Pods / Jobs / Deployments directly, or using the deployment credentials somewhere else | ❌ | RBAC narrowing of workload APIs and credentials ([§1.4](#s1-4) / [§4.5.4](#s4-5-4)) — this document cannot seal this layer |
+| 2 | Bare `TaskRun` / `CustomRun` bypassing the pipeline | ✅ | [§4.5.4](#s4-5-4); this row's "list" is **the legitimate automation creator identities** — omitting one blocks a legitimate path outright |
+| 3 | Referencing an unapproved template, or an inline definition | ✅ | The three-channel allowlist of [§4.1.1](#s4-1-1) — inline is **naturally denied** by it (not in any of the three channels). For a cluster-wide flat ban there is also `disable-inline-spec` in [§4.1.2](#s4-1-2), but that is **Tekton's own webhook, not Kyverno**; [§4.1.3](#s4-1-3) covers the reverse operation (carefully opening an exception), not a blocking means for this row |
+| 4 | The reference coordinates unchanged, but **the remote definition's content** swapped out | 🟡 | Identity locking only; content trust comes from catalog / repository governance (the three tiers in [§2.1](#s2-1)), layered with the after-the-fact drift Audit of [§4.1.4](#s4-1-4) |
+| 5 | Gate skipped via `when` / an empty matrix (no TaskRun produced at all) | 🟡 | Admission has no object to reject; rely on the template offering no skip path + the after-the-fact Audit reading `skippedTasks` in [§4.1.5](#s4-1-5) |
+| 6 | Gate switches turned off, thresholds tuned, override injection (`taskRunSpecs` / `taskRunTemplate`) | ✅ | Official templates take the real profiles of [§4.2.5](#s4-2-5) / [§4.2.4](#s4-2-4), **usable once scope and placeholders are fixed**; self-built templates take [§4.2.1](#s4-2-1), but that one **is a template, not a ready-made implementation** — its identity and parameter contract must be rewritten for your gate ([§4.0.1](#s4-0-1) stage 3) |
+| 7 | Release-type tasks not dominated by the gate, or a gate-protected side effect placed in finally | 🟡 | Contracts 5 / 6 are template design responsibility; on the K side there is only the after-the-fact Audit of [§4.1.4](#s4-1-4). **The definition-side admission route was not taken in this document**; its shape and cost are at the end of the [§4.1](#s4-1) introduction |
+| 8 | The gate consumes a result that is not the intended task's (mis-wired, or rewired) | ❌ | Contract 4: admission cannot see expression-level bindings; only the template can guarantee this |
+| 9 | The execution image swapped for another image **inside an approved registry**, or a mutable tag's content replaced | 🟡 | [§4.5.3](#s4-5-3) judges prefixes; for more strength pin digests or add `verifyImages` (the companion document) |
+| 10 | The other Pod-level surfaces: privileged / `securityContext` / `automountServiceAccountToken` / mounts | ❌ | The same observation point could do it ([§2.1](#s2-1) row 5), but **this document ships only the registry-prefix allowlist**; governing these needs additional policies |
+| 11 | Workspace bindings: Secrets / PVCs other than the [§4.5.5](#s4-5-5) kubeconfig mounted into the pipeline | ❌ | This document governs only the one binding "where the release step's kubeconfig comes from"; the credential surface as a whole is borne by RBAC and Secret governance |
+| 12 | A forged result (the scan step writing a `pass` of its own) | 🟡 | Falls under contract 1: immutable reference + trusted image; [§4.6.1](#s4-6-1) additionally has an identity anti-forgery check |
+| 13 | A cancellation that should have happened but did not (mutate-existing's asynchronous delivery chain broken) | 🟡 | Fail-open; monitor per the "asynchronous delivery chain" row in [§3.7](#s3-7); for a synchronous hard guarantee switch to [§4.2.1](#s4-2-1) / [§4.2.3](#s4-2-3) |
+| 14 | Modifying Kyverno's own configuration, the policy objects, or PolicyException | ❌ | Outside this document's threat model; closed off by RBAC separation of duties and change auditing ([§5.0](#s5-0) / [§5.3](#s5-3)) |
+| 15 | A new namespace / a new cluster not brought under governance | 🟡 | Both are **silently allowed**: update the scopes per the first row of [§3.6](#s3-6); there is no cross-cluster distribution mechanism ([§7.3](#s7-3)) |
+| 16 | Submitting `PipelineRun` / `TaskRun` as `v1beta1` (while the environment still serves that version) | ✅ | **This row is not an exposure; it is listed because it is routinely mistaken for one**: the webhooks Kyverno generates are `matchPolicy: Equivalent` and register only `v1`, so the API server converts `v1beta1` requests to `v1` before sending them for review — writing only `tekton.dev/v1` in `kinds` already covers it. **What actually opens a hole is "adding `v1beta1` to `kinds` to be safe"** — from then on the conversion no longer happens, **field paths renamed across versions** read empty, and the criteria that depend on them silently skip (paths shared by both versions still resolve, so it is a **partial** failure — harder to notice). Details in [§3.2](#s3-2), "API group-version prerequisite"; `CustomRun` is the exception — it exists only as v1beta1 |
+| 17 | `StepAction` (step-level remote references), Tekton Chains / provenance, resource quotas and concurrency abuse | ❌ | Out of this document's scope; no analysis and no criteria given — govern each by its own mechanism when needed |
+| 18 | The "effective values" a criterion depends on have sources outside the request (sonar's properties file can come from the scanned repository or a workspace) | 🟡 | Admission sees only the request. For the branch value [§4.2.4](#s4-2-4) is already immune to the file source (when the parameter is non-empty the Task overrides the file value with it; when it is absent the criteria handle it per the protection scope); the remaining path is a non-empty `sonar.pullrequest.key` injected in the file silently switching the analysis into PR mode — borne by repository governance ([§2.1](#s2-1)) and content control of reviewed objects ([§2.3](#s2-3) contract 1) |
+| 19 | The known false-rejection surface of [§4.2.4](#s4-2-4)'s contract narrowing: ① out-of-contract forms are denied across the board — governed keys inside `sonarProperties` (even though a parameter would override them), comment lines, leading whitespace, a single element carrying an embedded newline, duplicated PR declarations or values containing whitespace; ② the combination of `sonarBranchName` absent + the repository properties file pointing the analysis at a feature branch + the gate explicitly switched off | 🟡 | Direction fail-closed: ① rewrite to the recommended form per the denial message and the reference table in the first warning of [§4.2.4](#s4-2-4), and it is allowed; ② explicitly pass the feature-branch value for that run. Legacy shapes genuinely outside the contract go through the explicit exemption of [§5.3](#s5-3) |
+
+**How to use this table**: ① before go-live, walk the rows marked ❌ / 🟡 and confirm "who in my organization owns this" — a row with no owner is a real exposure; ② when reporting "what this policy set guarantees", quote the rows marked ✅, and never present a 🟡 as a ✅; ③ come back and re-read it after every upgrade or scope change ([§3.6](#s3-6)).
+
 ## 3. Common Configuration and Operating Discipline {#s3}
 
 This chapter completes, in one pass, the environment verification and shared resources that every later chapter depends on ([§3.1](#s3-1)–[§3.4](#s3-4)), and lays down the operating discipline you keep observing once these policies are live ([§3.5](#s3-5)–[§3.8](#s3-8): staged rollout, change triggers, scale and failure budgets, the upgrade regression set). **Only the first half is needed to get started; the second half is what you come back to, again and again, once the policies are in production.**
@@ -351,8 +385,8 @@ fi
 # The kyverno CLI is a LOCAL binary, separate from the in-cluster Kyverno install --
 # having Kyverno running does not give you this command. Only §6.1.6's offline
 # evaluation uses it, so missing it blocks nothing on the walkthrough path.
-# Probe by RUNNING it, not by resolving a path: a version-manager shim (mise/asdf)
-# resolves fine yet fails on every invocation, so `command -v` reports a false "ok".
+# Probed by running it rather than by resolving its path, so a broken install is
+# reported as missing instead of as "ok".
 kyverno version >/dev/null 2>&1 \
   && echo "kyverno (CLI): ok" \
   || echo "kyverno (CLI): MISSING or not runnable -- optional, only §6.1.6 uses it"
@@ -383,6 +417,49 @@ kubectl get cm -n "$TEKTON_NS" resolvers-feature-flags -o jsonpath='{.data}{"\n"
 #    Expect enable-cluster-resolver / enable-hub-resolver / enable-git-resolver to be
 #    "true" as required by the resolvers you actually use
 echo "hub default-type: $(kubectl get cm -n "$TEKTON_NS" hubresolver-config -o jsonpath='{.data.default-type}')"
+HUB_API=$(kubectl get cm -n "$TEKTON_NS" hubresolver-config -o jsonpath='{.data.artifact-hub-api}')
+echo "artifact-hub-api: $HUB_API"
+#    Expect the in-cluster Artifact Hub (the Shim service) here. A public https://artifacthub.io/
+#    means every hub reference in this document resolves against the public hub and 404s --
+#    and the flags above stay green while it happens, which is why the next probe exists.
+
+# 2b. Hub endpoint smoke test: the flags only say the resolver is ON, never that its endpoint
+#     can actually serve the coordinates this document pins. Resolve-side failures surface far
+#     later as CouldntGetPipeline / CouldntGetTask, so probe the five coordinates up front.
+#     Pass criterion: every exact version detail endpoint returns HTTP 200 AND a non-empty
+#     data.manifestRaw. A package-list 200 is insufficient: the pinned version or its
+#     manifest can still be absent. Any failed coordinate makes the whole block exit non-zero.
+echo "== 2b) hub endpoint smoke (expect five usable exact-version manifests) =="
+kubectl -n <your-pipeline-namespace> run hub-smoke-$$ --rm -i --restart=Never \
+  --image=<registry>/busybox:latest --env="HUB_API=$HUB_API" --command -- sh -c '
+failed=0
+for coordinate in \
+  tekton-task/catalog/sonarqube-scanner/0.7 \
+  tekton-task/catalog/trivy-scanner/0.6 \
+  tekton-task/catalog/skopeo-copy/0.1 \
+  tekton-pipeline/catalog/java-image-build-scan-deploy/0.3 \
+  tekton-pipeline/catalog/python-image-build-scan-deploy/0.3; do
+  body=/tmp/hub-detail.json
+  headers=$(wget -S -O "$body" "${HUB_API%/}/api/v1/packages/$coordinate" 2>&1) || true
+  code=$(printf "%s\n" "$headers" | awk "/^  HTTP\// { code=\$2 } END { print code }")
+  if [ "$code" != 200 ]; then
+    echo "$coordinate -> ${code:-UNREACHABLE}"
+    failed=1
+  elif ! grep -Eq "\"manifestRaw\"[[:space:]]*:[[:space:]]*\"[^\"].*\"" "$body"; then
+    echo "$coordinate -> 200 but data.manifestRaw is empty or absent"
+    failed=1
+  else
+    echo "$coordinate -> 200 + non-empty data.manifestRaw"
+  fi
+done
+exit "$failed"'
+#     The detail path is
+#     <hub-api>/api/v1/packages/<package-type>/<catalog>/<name>/<exact-version>: package type
+#     is tekton-task / tekton-pipeline, and <catalog> is the value pinned by taskRef /
+#     pipelineRef (this document pins `catalog`) -- NOT the default-*-catalog keys, which only
+#     apply when the reference omits the catalog param. The Shim accepts normalized exact
+#     SemVer forms (for example 0.1 and 0.1.0), but the probe should use the exact coordinates
+#     present in your Run references. Adjust catalog, name and version together.
 
 # 3. RBAC prerequisite for mutate-existing (required by the cancellation policies in §4.6)
 echo "== 3) mutate-existing RBAC (only needed for §4.6) =="
@@ -428,11 +505,11 @@ kubectl get cm -n kyverno kyverno -o jsonpath='{.data.resourceFilters}' | tr ' '
 | Check | Expected | If not as expected |
 |---|---|---|
 | 1 Controllers ready | All four controllers Ready | First check the plugin's installation status (Marketplace → Cluster Plugins) and the Pod events to locate the failure; size the replica count per the HA plan in [§6.1.8](#s6-1-8), and make that change through the [§3.1.1](#s3-1-1) `ModuleInfo.spec.valuesOverride` entry point too — **do not edit the Deployment directly** (the platform reconcile reverts it) |
-| 2 Resolver switches | The resolvers you actually use are `true`; Hub's `default-type` is `artifact` | These two ConfigMaps are managed by the Tekton operator and direct edits get reverted — change `TektonConfig.spec.pipeline` instead: set `enable-cluster-resolver` / `enable-hub-resolver` / `enable-git-resolver` to `true` as needed; the Hub output type is changed via `default-type: artifact` in the `hubresolver-config` entry under `TektonConfig.spec.hub.options.configMaps` (**not** `spec.pipeline` — that only holds the three `enable-*-resolver` switches). If you would rather not touch platform configuration, have every Hub reference carry an explicit `type=artifact` ([§4.5.1](#s4-5-1)) |
+| 2 Resolver switches and hub endpoint | The resolvers you actually use are `true`; Hub's `default-type` is `artifact`; `artifact-hub-api` points at the in-cluster Artifact Hub (Shim) service; **all five coordinates of the 2b smoke test return 200** | These two ConfigMaps are managed by the Tekton operator and direct edits get reverted — change `TektonConfig.spec.pipeline` instead: set `enable-cluster-resolver` / `enable-hub-resolver` / `enable-git-resolver` to `true` as needed; the Hub endpoint and the output type both live in **the same place**, `TektonConfig.spec.pipeline.hub-resolver-config` (a single string map whose keys match the ConfigMap: `artifact-hub-api` / `default-type` / `default-artifact-hub-task-catalog` / `default-artifact-hub-pipeline-catalog`), which the operator reconciles into `tekton-pipelines/hubresolver-config`. **Do not go through `spec.hub`** — that section configures the Tekton Hub component itself, not the hub resolver. If you would rather not touch platform configuration, have every Hub reference carry an explicit `type=artifact` ([§4.5.1](#s4-5-1)). **404s in the 2b smoke test**: first check whether `artifact-hub-api` is the in-cluster Shim address (pointed at the public hub, every hub reference in this document fails as `CouldntGetPipeline` / `CouldntGetTask` while the three switches above stay green), then check whether the catalog and package names in the coordinates match what your environment actually publishes; if the endpoint points at the public Artifact Hub, treat it as an environment configuration problem — have a platform administrator point it back at the in-cluster Shim before continuing. **UNREACHABLE in the smoke test**: the probe Pod has no network / DNS path to that address; fix connectivity before talking about policy |
 | 3 mutate-existing RBAC | Returns `yes` if you use the [§4.6](#s4-6) cancellation capability | On `no`, grant the aggregated ClusterRole given in the [§4.6](#s4-6) preamble (the `rbac.kyverno.io/aggregate-to-background-controller: "true"` label in its labels aggregates it into the background controller's permissions). **If you want to use a namespaced Role instead, you must also change `mutate.targets[].namespace` from `{{ request.namespace }}` to a namespace literal** — otherwise Kyverno's creation-time authorization check cannot resolve that variable, recognizes only cluster-level permissions, and the policy still fails to install (see the [§4.6](#s4-6) preamble). **If you do not install the [§4.6](#s4-6) cancellation policies, this permission is not needed** |
 | 4 reports-controller reads status | All six `yes` (optional, not required) | A `no` **usually needs no action** (rationale in the third interpretation below). Only when some other feature genuinely needs the reports-controller to read status directly, add one more least-privilege ClusterRole the same aggregated way as item 3, with the aggregation label swapped to `rbac.kyverno.io/aggregate-to-reports-controller: "true"` |
 | 5 PolicyException switches | Both `--enablePolicyException=true` and `--exceptionNamespace=<trusted-namespace>` present | Seeing only the former is ACP's default state — per [§3.1.1](#s3-1-1), write the `enabled` / `namespace` of `features.policyExceptions` into the kyverno `ModuleInfo`'s `spec.valuesOverride["ait/chart-kyverno"]` (**`ModuleInfo` exists only on the global management cluster**, see the warning in [§3.1.1](#s3-1-1)); **do not patch the Deployment args**. [§3.1.1](#s3-1-1) provides copy-pasteable atomic patch and rollback commands. **If you do not plan to use PolicyException exemptions ([§5.3](#s5-3)), you need not configure this** |
-| 6 Webhook failure policy and timeout | **No fixed expected value** — it is planning input, not a pass/fail criterion. ⚠️ **The reading is timing-sensitive**: `kyverno-resource-validating-webhook-cfg` (the one that actually governs `PipelineRun` / `TaskRun` / `Pod`) is **generated dynamically by Kyverno from the installed policies** — with none of this document's policies installed its `webhooks` is empty and this line prints `<none>` (observed in practice). The `Fail/10` lines you can read at that point all belong to the webhooks of Kyverno's **own CRs** (policy / exception / cleanup / ttl). To get the actual values for pipeline resources, **come back and read this line after installing any [§4](#s4) policy** | Record the actual values and build your playbook around them: `Fail` requires guaranteed controller replicas and HA ([§6.1.8](#s6-1-8)); `Ignore` means accepting a policy vacuum while Kyverno is unavailable. `timeoutSeconds` is the **total budget for a single request** (this document's verification environment measured `failurePolicy=Fail` / `timeoutSeconds=10`); the external calls in [§3.7](#s3-7) must fit inside that number. If you genuinely need to adjust it, go through the [§3.1.1](#s3-1-1) entry point as well — **do not edit the `ValidatingWebhookConfiguration` directly**: it is an object Kyverno itself maintains (it carries `webhook.kyverno.io/managed-by=kyverno`) |
+| 6 Webhook failure policy and timeout | **No fixed expected value** — it is planning input, not a pass/fail criterion. ⚠️ **The reading is timing-sensitive**: `kyverno-resource-validating-webhook-cfg` (the one that actually governs `PipelineRun` / `TaskRun` / `Pod`) is **generated dynamically by Kyverno from the installed policies** — with none of this document's policies installed its `webhooks` is empty and this line prints `<none>`. The `Fail/10` lines you can read at that point all belong to the webhooks of Kyverno's **own CRs** (policy / exception / cleanup / ttl). To get the actual values for pipeline resources, **come back and read this line after installing any [§4](#s4) policy** | Record the actual values and build your playbook around them: `Fail` requires guaranteed controller replicas and HA ([§6.1.8](#s6-1-8)); `Ignore` means accepting a policy vacuum while Kyverno is unavailable. `timeoutSeconds` is the **total budget for a single request** (the default under the applicable versions is `failurePolicy=Fail` / `timeoutSeconds=10`); the external calls in [§3.7](#s3-7) must fit inside that number. If you genuinely need to adjust it, go through the [§3.1.1](#s3-1-1) entry point as well — **do not edit the `ValidatingWebhookConfiguration` directly**: it is an object Kyverno itself maintains (it carries `webhook.kyverno.io/managed-by=kyverno`) |
 | 7 Resources Kyverno ignores outright | The filter list has **no** entry covering a namespace where pipelines run, and none covering `PipelineRun` / `TaskRun` / `Pod` | The `resourceFilters` in the `kyverno` ConfigMap take effect **before any policy**: a matched request is neither denied, nor recorded in a PolicyReport, nor logged — a **completely silent** exemption channel. The factory value in this document's verification environment excludes four namespaces — `kyverno` / `kube-system` / `kube-public` / `kube-node-lease`: the same violating Pod is denied in `policy-poc` yet sails straight through in `kube-system`. Therefore ① do not run pipelines in an excluded namespace; ② know that a policy written with `namespaces: ["*"]` carries this hole by construction; ③ write permission on this configuration must be controlled at the same level as `ClusterPolicy` ([§5.0](#s5-0)) |
 
 Three of the interpretations above are easy to get wrong:
@@ -622,11 +699,8 @@ fi
 ```bash
 # Same-shell state from the inputs block, a)-b) and the save block; fail by name here
 # instead of feeding jq an empty --argjson or patching a nameless object.
-# `: "${VAR:?msg}"` reports a missing variable but does NOT stop an INTERACTIVE shell --
-# it fails that one command and the next line runs regardless. That is precisely the trap
-# this document describes in block b), so the same shape cannot be left guarding the block
-# that WRITES. Collect what is missing and branch: either every input is present, or nothing
-# below runs.
+# Collected and branched, not `: "${VAR:?msg}"` -- see block b) for why that shape does
+# not guard a block that writes.
 #
 # `$MODULE` is also checked against the name the save block recorded. An unset variable is
 # caught by the emptiness test; a STALE one -- left in a reused shell by an earlier attempt
@@ -678,8 +752,13 @@ else
   #    on -- that is the global cluster only when Kyverno is installed there.
   EXPECTED_ARG="--exceptionNamespace=$TRUSTED_EXCEPTION_NS"
   elapsed=0
+  #    `--` before the pattern is required, not tidiness: the pattern itself starts with
+  #    `--`, and without the separator grep parses it as an option and dies with
+  #    "unrecognized option" on every iteration. The loop would then never succeed --
+  #    it burns the full timeout and reports the reconcile as stuck on an enable that
+  #    actually worked, sending you off to debug an operator that is fine.
   until kubectl get deploy -n kyverno kyverno-admission-controller \
-          -o jsonpath='{.spec.template.spec.containers[0].args}' | grep -qF "$EXPECTED_ARG"; do
+          -o jsonpath='{.spec.template.spec.containers[0].args}' | grep -qF -- "$EXPECTED_ARG"; do
     if [ "$elapsed" -ge 120 ]; then
       echo "no $EXPECTED_ARG on the Deployment template after ${elapsed}s -- the reconcile"
       echo "is stuck, not merely slow. Check the kyverno AppRelease/operator, then re-run d)."
@@ -722,11 +801,8 @@ Once d)'s three confirmations pass, go run [§5.3](#s5-3); come back and execute
 ```bash
 # Same-shell state again -- from the shell that ran a)-d), or rebuilt by the recovery
 # block below. Refuse by name rather than patch a nameless object as the admin user.
-# `: "${VAR:?msg}"` reports a missing variable but does NOT stop an INTERACTIVE shell --
-# it fails that one command and the next line runs regardless. That is precisely the trap
-# this document describes in block b), so the same shape cannot be left guarding the block
-# that WRITES. Collect what is missing and branch: either every input is present, or nothing
-# below runs.
+# Collected and branched, not `: "${VAR:?msg}"` -- see block b) for why that shape does
+# not guard a block that writes.
 #
 # `$MODULE` is also checked against the name the save block recorded. An unset variable is
 # caught by the emptiness test; a STALE one -- left in a reused shell by an earlier attempt
@@ -915,6 +991,45 @@ The specific features depended on (your degradation checklist on older versions)
 - **Tekton**: the `tekton.dev/v1` API, object results (`enable-api-fields: beta`), the `status.pipelineSpec` write-back, `status.childReferences`, `spec.status: CancelledRunFinally`, cluster / hub / git resolvers;
 - **Kyverno**: subresource match (the `kind/subresource` form), mutate-existing (`targets`), `context.apiCall`, `foreach` + `element`, PolicyException v2 (`--enablePolicyException` + `--exceptionNamespace`).
 
+**API group-version prerequisite**: the `match` blocks of this document's policies write `tekton.dev/v1` throughout for `PipelineRun` / `TaskRun` and their `/status` subresources, on the grounds that in the applicable versions Tekton makes `v1` the storage and served version for all three. **The one exception is `CustomRun`** (the entry-closure policies of [§4.5.4](#s4-5-4) and [§5.3](#s5-3)): Tekton defines and registers this type only in `v1beta1` — it simply does not exist in `v1` — so writing `tekton.dev/v1beta1/CustomRun` in those two places is not an omission, and must not be "tidied up to v1" in passing — change it and the rules **silently mismatch**.
+
+**Their `v1beta1` is usually still being served as well**: in the CRDs upstream Tekton Pipelines ships per release, `pipelineruns.tekton.dev` and `taskruns.tekton.dev` have **both `v1beta1` and `v1` at `served: true`** (only `v1` is `storage: true`) — "both versions submittable at once" is the default shape, not an unusual configuration. **But this does not constitute a bypass** — the warning below explains why (in one sentence: the request has already been converted to `v1` by the API server before it reaches Kyverno, **so do not** add `v1beta1` to `kinds` on account of this). Evidence from the upstream CRDs is not the same as the copy in your environment; after installing, it is still advisable to confirm the served versions once:
+
+```bash
+# Which tekton.dev versions this cluster actually serves. A v1beta1 row for
+# PipelineRun / TaskRun is NORMAL and does not bypass these policies -- see the
+# warning below for why (the API server converts such requests to v1 first).
+kubectl get crd pipelineruns.tekton.dev taskruns.tekton.dev customruns.tekton.dev \
+  -o jsonpath='{range .items[*]}{.metadata.name}{": "}{range .spec.versions[*]}{.name}{"(served="}{.served}{",storage="}{.storage}{") "}{end}{"\n"}{end}'
+```
+
+:::warning Submitting `v1beta1` does not bypass these policies — writing `v1beta1` into `kinds` does
+
+**Bottom line: add nothing** — write only `tekton.dev/v1` in `kinds`. The resource webhook Kyverno generates is `matchPolicy: Equivalent` and registers only `v1`, so the API server **first converts a `v1beta1` request to `v1` and then sends it for admission**, field names already normalized (`spec.serviceAccountName` → `spec.taskRunTemplate.serviceAccountName`, `taskPodTemplate` → `podTemplate`, and so on). **Conversely, the moment `v1beta1` appears in `kinds`, that conversion no longer happens** and what goes to admission is the raw `v1beta1` object — **the field paths that moved house between the two versions** read empty from then on, the criteria that depend on them silently skip, and that is the actual allow hole.
+
+**Note that the failure here is "partial", not "total"** — do not expect the whole rule to collapse where you can see it: fields the two versions share at unchanged paths (`spec.taskRef` with its resolver params, `spec.params`, and so on) still read fine on a `v1beta1` object, and criteria built on them keep denying as usual. What genuinely reads empty are the ones that moved house — `spec.serviceAccountName` → `spec.taskRunTemplate.serviceAccountName`, `taskPodTemplate` → `podTemplate` and their like. So the symptom is **part of the criteria within one rule going dead**, which is harder to notice than a whole-rule skip.
+
+For a policy declaring only `tekton.dev/v1/PipelineRun`, the actual behavior of the two spellings is as follows (applicable versions per the table at the top of this document):
+
+| Submitting as `v1beta1`, with the policy's `kinds` being | Object Kyverno sees | Values the criteria read |
+|---|---|---|
+| `v1` only (this document's spelling) | `apiVersion: tekton.dev/v1` (`requestKind` still `v1beta1`) | Everything reads normally |
+| `v1` **plus** `v1beta1` | `apiVersion: tekton.dev/v1beta1` | Shared paths read as usual; **paths renamed across versions** come back `ABSENT`, and the criteria depending on them skip |
+
+Self-check once after installing (the object **has content only once policies are installed**; empty output only means no policy is installed yet):
+
+```bash
+# matchPolicy must be Equivalent, and apiVersions must NOT list v1beta1.
+kubectl get validatingwebhookconfiguration kyverno-resource-validating-webhook-cfg \
+  -o jsonpath='{range .webhooks[*]}{.name}{" matchPolicy="}{.matchPolicy}{" apiVersions="}{range .rules[*]}{.apiVersions}{end}{"\n"}{end}'
+```
+
+**`CustomRun` is unaffected by this passage**: it has only the one version, `v1beta1`, and no counterpart to be converted to; writing `tekton.dev/v1beta1/CustomRun` in [§4.5.4](#s4-5-4) / [§5.3](#s5-3) is mandatory.
+
+:::
+
+
+
 Of these, **only `enable-api-fields` will stop you at the very start**: the fixture Task in [§3.3](#s3-3) declares a result of `type: object`, and when this switch is not `beta` (or `alpha`), Tekton's own admission rejects `kubectl apply -f public-fixtures.yaml` outright — **the blocking point is in the shared fixtures, not in any policy**, and it is easy to misdiagnose as a Kyverno problem. So read it first (`TEKTON_NS` per [§3.1](#s3-1)):
 
 ```bash
@@ -957,9 +1072,9 @@ Degradation on older versions: fall back to the aggregate-string result only whe
 
 :::info What the walkthrough leaves behind (see where things land before copy-pasting)
 
-- **The local working directory**: the rollback files of [§3.1.1](#s3-1-1) — `moduleinfo-target.txt` / `moduleinfo-original.json` / `moduleinfo-expected.json` (**deleted only by rollback step g); if they are still there, that round was never wrapped up**); the snapshots and verdict files written along the six steps of [§5.3](#s5-3) (`gate-snapshot.txt`, `step*-verdict.txt`, `exemption-id.txt` and the like — whatever each step actually writes); the side files `*.err` used to split off stderr (**empty on success, and left in the directory all the same**); plus the YAML / JSON you copied out in each section. Cluster cleanup never touches these local files — keeping them as evidence is your call.
+- **The local working directory**: the rollback files of [§3.1.1](#s3-1-1) — `moduleinfo-target.txt` / `moduleinfo-original.json` / `moduleinfo-expected.json` (**deleted only by rollback step g); if they are still there, that round was never wrapped up**); the `cluster-scoped-ownership.tsv` of [§4.0.4](#s4-0-4); the snapshots and verdict files written along the six steps of [§5.3](#s5-3) (`gate-snapshot.txt`, `step*-verdict.txt`, `exemption-id.txt` / `exemption-uid.txt` and the like — whatever each step actually writes); the side files `*.err` used to split off stderr (**empty on success, and left in the directory all the same**); plus the YAML / JSON you copied out in each section. Cluster cleanup never touches these local files — keeping them as evidence is your call.
 - **On the cluster**: the two shared namespaces this section creates, `policy-poc` / `tekton-templates`; the namespaces created by the probe block of [§5.2](#s5-2) (`proj-a` / `proj-b` / `rogue-ns` — defer to that section's creation loop); and [§5.3](#s5-3)'s `policy-exempt-runs` / `policy-exceptions` (**all of them get the walkthrough-id label only when this walkthrough created them by hand** — pre-existing ones are never labelled and never touched by cleanup). The namespaced demo objects — `PipelineRun` / `TaskRun`, the fixture `Task` / `Pipeline` objects, allowlist-type `ConfigMap`s, the `Role` / `RoleBinding` of [§4.2.2](#s4-2-2) and [§5.3](#s5-3), `PolicyException` — all live inside these namespaces. Beyond that, individual sections also create **cluster-scoped objects**: `ClusterPolicy` and the aggregated `ClusterRole` of [§4.6](#s4-6) — **deleting the namespaces does not take those along**.
-- **Where cleanup lands ([§4.0.4](#s4-0-4)'s two rules)**: cluster-scoped objects are deleted one by one, by name, in each section's closing "cleanup"; namespaces are deleted after checking the walkthrough-id label, cascading away everything inside ([§5.2](#s5-2) / [§5.3](#s5-3)'s namespaces are handled by their own cleanup passages; `policy-poc` / `tekton-templates` by the "final cleanup" at the end of this section). Hence **clean up as each section finishes — do not batch it up for the end**. And one thing **no cleanup passage will do for you**: the platform configuration changed per [§3.1.1](#s3-1-1) for [§5.3](#s5-3) (the PolicyException switch in the `ModuleInfo`) — after finishing [§5.3](#s5-3), go back to [§3.1.1](#s3-1-1) yourself and run its rollback step.
+- **Where cleanup lands ([§4.0.4](#s4-0-4)'s two rules)**: cluster-scoped objects are deleted one by one, by the UID in the creation-time ledger, in each section's closing "cleanup"; namespaces are deleted after checking the walkthrough-id label, cascading away everything inside ([§5.2](#s5-2) / [§5.3](#s5-3)'s namespaces are handled by their own cleanup passages; `policy-poc` / `tekton-templates` by the "final cleanup" at the end of this section). Hence **clean up as each section finishes — do not batch it up for the end**. And one thing **no cleanup passage will do for you**: the platform configuration changed per [§3.1.1](#s3-1-1) for [§5.3](#s5-3) (the PolicyException switch in the `ModuleInfo`) — after finishing [§5.3](#s5-3), go back to [§3.1.1](#s3-1-1) yourself and run its rollback step.
 
 :::
 
@@ -1625,7 +1740,7 @@ done
 # re-export WALKTHROUGH_ID with the value you wrote down, then run this again.
 ```
 
-Deleting the namespaces cascades away the Pipelines / Tasks / runs inside and the Pods they spawned; `PolicyReport`s vanish along with their objects ([§4.4.4](#s4-4-4)). **The one thing not inside any namespace is `ClusterPolicy`** — a cluster-scoped object that must be deleted item by item per each section's cleanup list; deleting the namespaces does not take it along.
+Deleting the namespaces cascades away the Pipelines / Tasks / runs inside and the Pods they spawned; `PolicyReport`s vanish along with their objects ([§4.4.4](#s4-4-4)). **Deleting the namespaces does not take cluster-scoped objects along** — they must be deleted item by item per each section's cleanup list: first, each section's `ClusterPolicy`; second, the `ClusterRole kyverno-background-update-pipelineruns` that the [§4.6](#s4-6) introduction creates for mutate-existing (that section carries its own "look at the creation time, then delete" cleanup block — do not skip it: leaving the role in place keeps granting the background-controller cluster-wide update permission on PipelineRuns).
 
 ### 3.4 Policy verification methods (three kinds, strictly separated by scenario) {#s3-4}
 
@@ -1635,20 +1750,24 @@ Once a policy is written, which method verifies it depends on which observation 
 - **Result policies** (matching `*/status`): run results are not available at admission, so there are two routes — offline evaluation on your machine with `kyverno apply <policy> --resource <fixture>` (limitations in [§6.1.6](#s6-1-6)), or use a real emitter task in an **experiment namespace** to produce the target result shape (for example the scanner fixture in [§3.3](#s3-3)).
 - **End-to-end verification**: actually run a minimal pipeline and verify the complete failure / skip / cancellation shapes and the parent-child timing. An admission probe **cannot prove** runtime timing; any conclusion involving `CreateRunFailed`, whether finally runs, or cancellation semantics must go through this tier.
 
+The **command shapes** of these three kinds are given in [§3.4.1](#s3-4-1) in the same order (types 1 / 2 / 3 correspond one-to-one to the three bullets above; the cancellation kind is the most commonly used evidence-collection shape within the end-to-end tier).
+
 **Production troubleshooting is read-only**: look only at status / events / PolicyReport ([§6](#s6)). **Never** hand-edit the status of a running object in production.
 
 #### 3.4.1 Turning an "expectation table" into commands (the generic recipe) {#s3-4-1}
 
-Later sections supply probes in one of two ways: some give complete manifests and commands directly ([§3.3](#s3-3), [§4.4.1](#s4-4-1), [§4.4.2](#s4-4-2), [§4.6.1](#s4-6-1)); the others give only an **expectation table** (listing which inputs should be allowed / denied / skipped) and leave the commands to this section — because these three kinds of commands are mechanical, and repeating them section by section would make the document longer, not clearer.
+Later sections supply probes in one of three ways: some give complete manifests and commands directly ([§3.3](#s3-3), [§4.4.1](#s4-4-1), [§4.4.2](#s4-4-2)); [§4.2.2](#s4-2-2), [§4.6.1](#s4-6-1) and [§4.6.2](#s4-6-2) give complete run manifests, but the evidence commands are in [§6.2.3](#s6-2-3) (what the cancellation kind reads is `spec.status` and the annotation on the object, not an admission return value); the rest give only an **expectation table** (listing which inputs should be allowed / denied / skipped) and leave the commands to this section — because these three kinds of commands are mechanical, and repeating them section by section would make the document longer, not clearer.
 
-**Eight sections give only an expectation table and need you to turn it into commands yourself**: [§4.1.1](#s4-1-1), [§4.2.4](#s4-2-4), [§4.5.1](#s4-5-1), [§4.5.3](#s4-5-3), [§4.5.4](#s4-5-4), [§4.5.5](#s4-5-5), [§5.2](#s5-2), [§5.3](#s5-3). (The method behind this list is "the section has an expectation table but no `kubectl create` that submits a probe" — after the document changes, recount by that method instead of trusting the list. The `kubectl apply` commands already present in [§4.5.3](#s4-5-3), [§5.2](#s5-2), [§5.3](#s5-3) create **prerequisite objects** (ConfigMaps, namespaces), not the probes themselves.) In addition, [§4.1.4](#s4-1-4) and [§4.1.5](#s4-1-5) have no expectation table: they are Audit defense in depth on `*/status`, their criteria are stated in the body, and the expected shape is "which fail entry should appear in the report" — follow **type 2** below.
+**Nine sections give only an expectation table and need you to turn it into commands yourself**: [§4.1.1](#s4-1-1), [§4.2.4](#s4-2-4), [§4.2.5](#s4-2-5), [§4.5.1](#s4-5-1), [§4.5.3](#s4-5-3), [§4.5.4](#s4-5-4), [§4.5.5](#s4-5-5), [§5.2](#s5-2), [§5.3](#s5-3). (The `kubectl apply` commands already present in [§4.5.3](#s4-5-3), [§5.2](#s5-2), [§5.3](#s5-3) create **prerequisite objects** (ConfigMaps, namespaces), not the probes themselves.)
+
+Three further groups of sections are not on the list above, and their probes come from different places: [§4.1.4](#s4-1-4) and [§4.1.5](#s4-1-5) have no expectation table — they are Audit defense in depth on `*/status`, their criteria are stated in the body, and the expected shape is "which fail entry should appear in the report" — follow **type 2** below; [§4.2.1](#s4-2-1) and [§4.2.3](#s4-2-3) judge the same set of gate switches, so reuse [§3.3](#s3-3)'s negative fixture directly (`demo-run-gates-off` with the switches off, `demo-run-pass` as the positive control — recreate them under a different `metadata.name`). These two sections **cannot use the type 1 `--dry-run` probe**: the criteria land on the child TaskRun the Tekton controller creates, and they must look back up the ownerReference to a **live** parent run — a dry-run PipelineRun neither gets persisted nor spawns a child. The only way is to really run a pipeline per the third kind of [§3.4](#s3-4): [§4.2.1](#s4-2-1) watches whether the parent run goes `CreateRunFailed`; [§4.2.3](#s4-2-3)'s cancellation shape follows **type 3**, reading **the gate TaskRun itself** (it is an admission mutate and this is the very object it patches — the parent run carries no `spec.status` to look at); [§4.2.2](#s4-2-2), [§4.6.1](#s4-6-1) and [§4.6.2](#s4-6-2) carry complete run manifests of their own — check the outcome per **type 3**.
 
 When following along, apply one of the three types below:
 
 ```bash
 # Type 1 - Admission (the table says "allow / deny"; the policy matches CREATE/UPDATE on main resources)
 #   Take the matching one of the three skeletons below, edit the fields per that table row, then:
-kubectl create --dry-run=server -n policy-poc -f probe.yaml
+kubectl create --dry-run=server -n policy-poc --as=<probe-identity> -f probe.yaml
 #   ALLOW  = the object is echoed back (ending with "(server dry run)")
 #   DENY   = admission webhook "validate.kyverno.svc-fail" denied the request,
 #            and the message carries <policy-name>: <rule-name>: <message>
@@ -1656,15 +1775,49 @@ kubectl create --dry-run=server -n policy-poc -f probe.yaml
 
 # Type 2 - Result (the table says "pass / fail / skip"; the policy matches */status and is Audit)
 #   An Audit policy denies no request; the verdict lives only in the report. You must really run it and wait for the terminal state:
-kubectl create -n policy-poc -f probe.yaml
+kubectl create -n policy-poc --as=<probe-identity> -f probe.yaml
 kubectl get taskrun,pipelinerun -n policy-poc \
   -o custom-columns='NAME:.metadata.name,STATUS:.status.conditions[0].status,REASON:.status.conditions[0].reason'
-kubectl get policyreport -n policy-poc \
-  -o custom-columns=SUBJECT:.scope.name,RESULT:.results[*].result
+PROBE_KIND='<TaskRun-or-PipelineRun>'
+PROBE_NAME='<probe-object-name>'
+EXPECTED_POLICY='<expected-policy-name>'
+EXPECTED_RULE='<expected-rule-name>'
+case "$PROBE_KIND/$PROBE_NAME/$EXPECTED_POLICY/$EXPECTED_RULE" in
+  *'<'*'>'*) echo "fill in PROBE_KIND, PROBE_NAME, EXPECTED_POLICY and EXPECTED_RULE first"; false;;
+esac &&
+if ! PROBE_UID=$(kubectl get "${PROBE_KIND,,}" "$PROBE_NAME" -n policy-poc \
+  -o jsonpath='{.metadata.uid}'); then
+  echo "$PROBE_KIND/$PROBE_NAME: read failed or object gone; no result verdict is possible" >&2
+  false
+fi &&
+if ! matches=$(kubectl get policyreport -n policy-poc -o json | jq -r \
+  --arg kind "$PROBE_KIND" --arg uid "$PROBE_UID" \
+  --arg policy "$EXPECTED_POLICY" --arg rule "$EXPECTED_RULE" '
+  [.items[]
+   | select(.scope.kind == $kind and .scope.uid == $uid)
+   | .results[]
+   | select(.policy == $policy and .rule == $rule)
+   | [.policy, .rule, .result, .message]
+   | @tsv][]'); then
+  echo "PolicyReport read or parse failed; no result verdict is possible" >&2
+  false
+fi &&
+if [ -z "$matches" ]; then
+  echo "$PROBE_KIND/$PROBE_NAME ($PROBE_UID): zero matching PolicyReport results -- not pass; wait for convergence or debug policy scope" >&2
+  false
+else
+  printf '%s\n' "$matches"
+fi
+#   A zero-row result is non-convergence / non-match, never pass.
 #   Before the terminal state the report records skip; do not read once and conclude (the closing paragraph of §4.4.2)
 
-# Type 3 - mutate-existing (the table says "cancelled / unaffected", §4.6)
-#   Look at the target object itself: whether spec.status was written to CancelledRunFinally, plus the terminal reason.
+# Type 3 - Cancellation (the table says "cancelled / unaffected") -- the evidence-collection shape of §3.4's third kind, "end-to-end"
+#   Always read spec.status and the terminal reason off the object itself, but WHICH
+#   object depends on the cancellation path (full table in the §4.6 intro). Query the
+#   wrong one and you read an empty value and call a working policy broken:
+#     * §4.2.2 / §4.6.1 / §4.6.2 are mutate-existing -- they patch the PARENT run;
+#     * §4.2.3 is an admission mutate -- it patches the gate TaskRun itself, and the
+#       parent run carries no spec.status at all.
 #   The run name is the only thing to fill in -- set it first, on its own line:
 PROBE_RUN='<probe-pipelinerun-name>'
 #   Quoting makes the line parse; this makes it MEAN something. Without the guard the
@@ -1672,12 +1825,16 @@ PROBE_RUN='<probe-pipelinerun-name>'
 case "$PROBE_RUN" in '<'*'>') echo "fill in PROBE_RUN first"; false;; esac &&
 kubectl get pipelinerun -n policy-poc "$PROBE_RUN" \
   -o jsonpath='{.spec.status} {.status.conditions[0].reason}{"\n"}'
+#   §4.2.3 only: the verdict lives on the gate TaskRun, together with the reason
+#   text the policy wrote (the parent run merely ends up Cancelled).
+kubectl get taskrun -n policy-poc -l tekton.dev/pipelineRun="$PROBE_RUN" \
+  -o custom-columns='NAME:.metadata.name,STATUS:.spec.status,MSG:.spec.statusMessage'
 ```
 
-**The "example manifest for that section" mentioned above is exactly what those eight sections do not provide** — so first pick one of the three skeletons below, then edit the fields per the expectation-table row. All three pass the `kubectl create --dry-run=server` admission check (how to obtain `<registry>` / `<catalog>` is in [§4.0.3](#s4-0-3)):
+**The "example manifest for that section" mentioned above is exactly what those nine sections do not provide** — so first pick one of the three skeletons below, then edit the fields per the expectation-table row. All three pass the `kubectl create --dry-run=server` admission check (how to obtain `<registry>` / `<catalog>` is in [§4.0.3](#s4-0-3)):
 
 ```yaml
-# Skeleton A - PipelineRun entry (used by §4.1.1, §4.5.5, §5.2, §5.3)
+# Skeleton A - PipelineRun entry (used by §4.1.1, §4.2.5, §4.5.5, §5.2, §5.3)
 apiVersion: tekton.dev/v1
 kind: PipelineRun
 metadata:
@@ -1749,12 +1906,13 @@ spec:
         - "true"
 ```
 
-What each of the eight sections edits:
+What each of the nine sections edits:
 
 | Section | Which skeleton | What each expectation-table row is changing |
 |---|---|---|
 | [§4.1.1](#s4-1-1) template allowlist | A | The whole `pipelineRef` block: change `name` / `namespace`, change the `resolver` (cluster → git), write the git reference as a mutable reference |
-| [§4.2.4](#s4-2-4) protected-branch gate | B | Keep the five hub items in `taskRef.params` exactly as listed in that section's body; vary the `spec.params` combinations: the value of `sonarBranchName` (protected branch / feature branch / removed entirely) × the gate switch (absent / `"true"` / `"false"` / empty string); for the PR best-effort probe additionally vary the `sonar.pullrequest.key=` entry in the `sonarProperties` array (empty / non-empty) and the `sonar.pullrequest.base=` entry |
+| [§4.2.4](#s4-2-4) protected-branch gate | B | Keep the five hub items in `taskRef.params` exactly as listed in that section's body; vary the `spec.params` combinations: the value of `sonarBranchName` (protected branch / feature branch / removed entirely — absence enters the protected scope as the default branch) × the gate switch (absent / `"true"` / `"false"` / empty string) × the `sonarProperties` entries (normative / non-normative shapes, governed keys, `sonar.pullrequest.key=` empty and non-empty, `sonar.pullrequest.base=`) — expectations in that section's probe table |
+| [§4.2.5](#s4-2-5) official-template early blocking | A | Change `pipelineRef` to the official-template coordinates in that section's body (java / python 0.3), then per the self-check table edit, row by row, the `spec.params` (gate switches, `sonarProperties` entries, `trivyExitCode` / `trivySeverity` / `images`, and so on) and the objects bound by `workspaces` — **the criteria sit at the PipelineRun level, hence skeleton A, not B** |
 | [§4.5.1](#s4-5-1) source allowlist | B | Change `name` / `version` in `taskRef.params` to that section's `skopeo-copy` entry, then vary `spec.params`' `srcTransport` / `srcImage` / `imageMappings`, and whether a workspace is mounted |
 | [§4.5.3](#s4-5-3) image allowlist | C | `containers[].image`; `initContainers` likewise, as an extra block; for the `ephemeralcontainers` cell use `kubectl patch pod <name> --subresource=ephemeralcontainers` instead (it is a subresource UPDATE, not a CREATE) |
 | [§4.5.4](#s4-5-4) bare-entry closure | B | The manifest barely changes; **what varies is the identity**: run the same request once with `--as=<platform-admin-identity>` and once with `--as=<business-identity>` — only when the two cells come out opposite has this policy been hit; for the CustomRun cell change `kind` to `CustomRun` and `taskRef` to `customRef` |
@@ -1762,7 +1920,7 @@ What each of the eight sections edits:
 | [§5.2](#s5-2) namespace layering | A | The manifest stays put; **change `-n`** (`proj-a` / `proj-b` / `rogue-ns`), then add the field that violates the baseline / the project policy per that section's body |
 | [§5.3](#s5-3) exemption boundary | A | Switch `-n` between `policy-exempt-runs` and an ordinary namespace, set both gate switches in `spec.params` to `"false"`, and carry `--as` throughout |
 
-**Every command must carry an explicit identity** (`--as=<...>`): without it you run as your own kubeconfig identity, which is most likely an administrator — an identity carved out by `exclude` never triggers the policy, and you will record "was not denied" as "the policy allowed it".
+**Every command must carry an explicit identity** (the `--as=<probe-identity>` in the recipes above, swapped for the identity that row of the expectation table means to test — e.g. `--as=<business-identity>` or `--as=<platform-admin-identity>`): without it you run as your own kubeconfig identity, which is most likely an administrator — an identity carved out by `exclude` never triggers the policy, and you will record "was not denied" as "the policy allowed it".
 
 **There is exactly one acceptance criterion**: only seeing `<policy>: <rule>: <message>` (admission kind) or a `pass`/`fail` under that policy's name in the report (result kind) counts as this policy being hit. **"Was not denied" does not equal "the policy allowed it"** — it may just as well mean the policy did not match, the preconditions short-circuited, or another policy denied something else first. When unsure, follow [§6.1.2](#s6-1-2) (the three-step check for "installed but not in force") and [§6.1.3](#s6-1-3) (locating a false block); for being blocked first by another section's policy, see [§4.0.5](#s4-0-5).
 
@@ -1790,7 +1948,7 @@ Basis: `kubectl explain clusterpolicy.spec.validationFailureAction` itself reads
 
 | Form | Submit a necessarily-violating request | Notes |
 |---|---|---|
-| Rule-level `validate.failureAction: Enforce` only, no top-level field (all assets in this document) | **Denied** | Measured in the verification environment (Kyverno v1.15.9, see the version table in [§1](#s1)) |
+| Rule-level `validate.failureAction: Enforce` only, no top-level field (all assets in this document) | **Denied** | Actual behavior under the applicable versions; see the "Applicable versions" box at the top of this document |
 | Top-level `spec.validationFailureAction: Enforce` (the common legacy form) | **Denied** | Still effective today, but Deprecated |
 | **Neither is set** | **Allowed** (the policy still shows `Ready=True`) | The default equals Audit |
 
@@ -1806,20 +1964,20 @@ Therefore:
 
 ### 3.6 Change and upgrade triggers (whenever the environment changes, come back to this table first) {#s3-6}
 
-The criteria of this chapter's policies lean heavily on three kinds of **external facts**: template / Task versions and contracts, Tekton's `config-defaults`, and the approval lists you maintain yourself. When any of these changes and the policies do not follow, the consequence is one of the two shapes this whole document keeps warning about — the **silent allow** (the policy is still there but no longer blocks) or the **silent false denial** (every compliant request is denied, with a message pointing at some criterion).
+The criteria of this document's policies lean heavily on three kinds of **external facts**: template / Task versions and contracts, Tekton's `config-defaults`, and the approval lists you maintain yourself. When any of these changes and the policies do not follow, the consequence is one of the two shapes this whole document keeps warning about — the **silent allow** (the policy is still there but no longer blocks) or the **silent false denial** (every compliant request is denied, with a message pointing at some criterion).
 
 | Triggering action | Affected criteria | Consequence | What the change must include |
 |---|---|---|---|
-| Adding a workload namespace, or migrating pipelines to a new namespace | The `namespaces:` enumeration of **every** policy in this chapter (demo value `policy-poc`) | **Silent allow**: the new namespace matches no rule | First add the new namespace to every scope (or switch to namespaced `Policy` per [§5](#s5); for "covered by default" switch to a platform-level ClusterPolicy with a negative `exclude` for system namespaces, instead of enumerating one by one), run the positive/negative probes against the new namespace, and only **then** let the business move in |
-| **Adding a workload cluster**, or migrating pipelines to another cluster | **All** policies in this chapter — `ClusterPolicy` / `Policy` are in-cluster objects and **do not sync across clusters** | **Silent allow**: the new cluster has not a single policy, while the old cluster's reports look perfectly fine — completely invisible from the old cluster | Write "install the minimal set ([§4.0.1](#s4-0-1)) + run the positive/negative probes" into the cluster onboarding process; distribute the policy inventory via GitOps / a platform module rather than installing by hand; periodically diff the `kubectl get clusterpolicy` inventories across clusters (listed as a lossy item in [§7.3](#s7-3)) |
+| Adding a workload namespace, or migrating pipelines to a new namespace | The `namespaces:` enumeration of **every** policy in [§4](#s4) (demo value `policy-poc`) | **Silent allow**: the new namespace matches no rule | First add the new namespace to every scope (or switch to namespaced `Policy` per [§5](#s5); for "covered by default" switch to a platform-level ClusterPolicy with a negative `exclude` for system namespaces, instead of enumerating one by one), run the positive/negative probes against the new namespace, and only **then** let the business move in |
+| **Adding a workload cluster**, or migrating pipelines to another cluster | **Every policy in the whole document** ([§4](#s4) and [§5](#s5) alike) — `ClusterPolicy` / `Policy` are in-cluster objects and **do not sync across clusters** | **Silent allow**: the new cluster has not a single policy, while the old cluster's reports look perfectly fine — completely invisible from the old cluster | Write "install the minimal set ([§4.0.1](#s4-0-1)) + run the positive/negative probes" into the cluster onboarding process; distribute the policy inventory via GitOps / a platform module rather than installing by hand; periodically diff the `kubectl get clusterpolicy` inventories across clusters (listed as a lossy item in [§7.3](#s7-3)) |
 | A template version bump (e.g. 0.3 → 0.4) | Every policy pinning `refVersion` | **Silent allow** (identity mismatch = skip) | See ordering constraint 3 in [§4.0.1](#s4-0-1); the only layer that can stop "a new version sneaking in" is `pipeline-template-allowlist` |
 | **A Task version bump** (decoupled from the template; happens on its own) | The result-reading policies of [§4.4](#s4-4).x, and the Task-identity criteria inside the full profiles | **Silent allow** (the old-version identity no longer matches → the PolicyReport looks "clean"); changing the version but not the result paths turns into **false positives** | Change all three places together: the Task identity version, the result **name**, and the property **path**. After the change, confirm with **one genuinely failing scan** that a fail appears in the PolicyReport — this is the positive control for an Audit policy: **if no fail shows up, first suspect the identity did not match, not "no violations"** |
-| Changing `default-service-account` in `config-defaults` | The run-level SA approval list of [§4.5.5](#s4-5-5) | **Silent false denial**: every compliant request with deployment enabled is denied | Update the list in the same change, and run the three probe cells (new default SA / site-approved SA / off-list SA) |
+| Changing `default-service-account` in `config-defaults` | The run-level SA approval list of [§4.5.5](#s4-5-5) | **Both directions occur, depending on what you change it to**: to **another non-empty value** → **silent false denial** (every compliant request with deployment enabled is denied); to an **empty value** → Tekton stops filling the field, the criterion's `!= ''` precondition no longer holds and the whole rule skips ⇒ **silent allow** (fail-open; see that placeholder's row in [§4.0.3](#s4-0-3)) | Update the list in the same change, and run the three probe cells (new default SA / site-approved SA / off-list SA); **plus one extra cell**: read the effective value once with the [§3.3](#s3-3) fixture and confirm it is **not empty** — an empty value must first be set back to a real SA name before the list is even worth discussing |
 | Changing `default-pod-template` in `config-defaults`, **especially adding `env`** | `runWideEnvCount` in [§4.2.5](#s4-2-5) and [§4.5.5](#s4-5-5) | **Silent false denial**: once the platform injects env by default, every run's count is > 0 and **all** pipelines are denied | Add the **names** of the platform-injected env entries to the allow list (a usable form is given below) — do not delete the criterion |
 | Changing `default-managed-by-label-value` | The Pod scoping label of [§4.5.3](#s4-5-3) | **Silent allow**: the Pod rules no longer hit any Tekton Pod | Change the placeholder in the same change, verify the match hits with a real Tekton Pod, then verify an image outside the approved registries is still denied |
 | The **content** of an approved object changes (the contents of an `approved-*` ConfigMap / Secret, the regex in `pipeline-image-allowlist` loosened) | Every criterion that compares only the **object name** (the workspace series in [§4.2.5](#s4-2-5), the ConfigMap shape in [§4.5.3](#s4-5-3)) | **Silent allow**: the name is still the approved value, the content has already been loosened | Manage "object rotation" (renaming) separately from "object content change": content must go under GitOps / RBAC control and review — **a policy can only lock "which object is bound"** |
 | A Kyverno upgrade | All policies (this document's assets already use rule-level `validate.failureAction`, dodging the top-level field's deprecation; legacy top-level policies carry the greatest risk) | Possible **silent allow** | See the warning block in [§3.5](#s3-5); after the upgrade do not just check `Ready` — re-run the minimal regression set per [§3.8](#s3-8). **Beyond the failure action, verify each of these semantics yourself** (not "some version definitely changed them" — "you do not know until you verify"): the failure direction of `context.apiCall`, JMESPath function behavior, whether `foreach` still iterates all three container kinds, subresource match syntax, PolicyException matching and deletion propagation, and the PolicyReport API version |
-| **A Tekton Pipelines upgrade** | All policies, above all those that "enumerate known fields" (see "two criterion shapes" below) | **Silent allow**: new fields / new override entry points / new resolver parameters are absent from the criteria and land on the allow side by default | Re-enumerate the field surface and check the criteria one by one: the `PipelineRun` / `TaskRun` spec, the overridable items of `spec.taskRunSpecs`, resolver parameters, the Pod's container-type fields, and any newly appeared run-like resources (the entry closure of [§4.5.4](#s4-5-4) enumerates by kind). **Enumeration method**: take `kubectl get -o yaml` of a real run's objects and diff against the pre-upgrade archive, looking only at the added fields. **Also re-verify the cancellation semantics separately**: the acceptable values of `spec.status`, the relation between `CancelledRunFinally` and finally, and which of "cancel vs. task failure" wins the terminal-state verdict — [§4.2.2](#s4-2-2) / [§4.2.3](#s4-2-3) / [§4.6](#s4-6) all ride on that state machine |
+| **A Tekton Pipelines upgrade** | All policies, above all those that "enumerate known fields" (see "two criterion shapes" below) | **Silent allow**: new fields / new override entry points / new resolver parameters are absent from the criteria and land on the allow side by default | Re-enumerate the field surface and check the criteria one by one: the `PipelineRun` / `TaskRun` spec, the overridable items of `spec.taskRunSpecs`, resolver parameters, the Pod's container-type fields, and any newly appeared run-like resources (the entry closure of [§4.5.4](#s4-5-4) enumerates by kind). **Enumeration method**: take `kubectl get -o yaml` of a real run's objects and diff against the pre-upgrade archive, looking only at the added fields. **Also re-verify the cancellation semantics separately**: the acceptable values of `spec.status`, the relation between `CancelledRunFinally` and finally, and which of "cancel vs. task failure" wins the terminal-state verdict — [§4.2.2](#s4-2-2) / [§4.2.3](#s4-2-3) / [§4.6](#s4-6) all ride on that state machine. **Two more closed enumerations must also be re-checked** (they are exactly what an upgrade most easily and quietly expands, and both are denylist-shaped — new entries land on the allow side by default): ① the value set of `skippedTasks[].reason` ([§4.1.5](#s4-1-5) gives where to re-fetch the values); ② `PipelineRun` / `TaskRun` / `CustomRun` — **the group-versions each actually serves** (the "API group-version prerequisite" of [§3.2](#s3-2) — a single `kubectl api-resources --api-group=tekton.dev` command does it; one version added or retired changes the `match`'s hit surface) |
 | **An ACP upgrade / platform module reconcile** | Policies that depend on platform configuration (the scoping label of [§4.5.3](#s4-5-3), the SA list of [§4.5.5](#s4-5-5), the hub endpoint of [§4.1.1](#s4-1-1), Kyverno's own configuration) | **Silent allow or silent false denial**, depending on which item got reset | A platform upgrade re-reconciles configuration from the module templates, and **your earlier manual changes may be reverted**: after the upgrade re-run the 7-item checklist of [§3.1](#s3-1) (especially items 6 and 7, `failurePolicy` and `resourceFilters`), and re-check the four configs `config-defaults` / `feature-flags` / `hubresolver-config` / the kyverno ConfigMap. **If you use PolicyException, also re-check the [§3.1.1](#s3-1-1) management-plane path itself** — the `ModuleInfo` locating conditions, the `valuesOverride` chart key, and the propagation chain of configuration to workload clusters are all platform implementation and may have changed after the upgrade: the commands still run yet find no object or the write does not take effect, and the rollback path fails the same way. **While platform configuration is being reset, a policy's `Ready=True` does not mean it is still in force** |
 | A PolicyException expires without being cleaned up | The exemption scope of [§5.3](#s5-3) | **Silent allow**: the old exemption keeps matching later runs of the same kind | Every exception must carry the approval ticket number / effective and expiry times / an owner; scan for expired objects periodically; after deletion, confirm with one violating run that denial is back (Kyverno has no native TTL) |
 | An SA on the identity list is deleted and recreated | Criteria comparing on `request.userInfo.username`, as in [§4.5.4](#s4-5-4) / [§4.2.1](#s4-2-1) | The name comparison still passes, **but the permissions are a different set** | An unchanged name is not identity equivalence: after recreation, re-check that SA's RoleBindings and Secrets, and re-verify both the allow and the deny side with `--as` probes |
@@ -1851,11 +2009,12 @@ Upgrades are dangerous at the root because criteria come in two shapes, and the 
 
 ### 3.7 Scale and failure budgets (run these numbers before production) {#s3-7}
 
-The preceding sections guarantee that the criteria are correct. This section is a different matter: **whether this policy set drags the platform down at real scale and under real failures, or fails in a different way under pressure**. For the five budgets below, this document can only give the mechanisms and the orders of magnitude — **the concrete numbers must be load-tested in your environment and written into the change request**.
+The preceding sections guarantee that the criteria are correct. This section is a different matter: **whether this policy set drags the platform down at real scale and under real failures, or fails in a different way under pressure**. For the six budgets below, this document can only give the mechanisms and the orders of magnitude — **the concrete numbers must be load-tested in your environment and written into the change request**.
 
 | What to budget | Mechanism facts | The budget / action you must set |
 |---|---|---|
-| **External calls on the admission path** | Two kinds of criteria wait for an external round trip inside admission: `context.imageRegistry` ([§4.5.2](#s4-5-2)) and `context.apiCall` (one each in [§4.2.1](#s4-2-1) / [§4.2.2](#s4-2-2) / [§4.6.1](#s4-6-1) — three in the whole document). **Both fail closed**: registry unreachable → request denied (measured at roughly 5 seconds; roughly 3 seconds when reachable, see limitation 4 in [§4.5.2](#s4-5-2)); apiCall cannot fetch its target → the rule errors out and the request is denied (the error message shape is in the [§4.2.1](#s4-2-1) warning) | Decide explicitly "which request paths may carry external calls"; narrow such rules' match down to **the Tasks that genuinely need them**; load-test p95 / p99 and the timeout ratio, and confirm it stays below the webhook timeout — **that ceiling applies to the whole request, not to each rule separately** (measured `timeoutSeconds=10` in this document's verification environment, see checklist item 6 in [§3.1](#s3-1); one 5-second registry round trip fits, two stacked on the same request may not). **Registry / API server jitter turns directly into pipeline creation failures** — have the matching alerts and playbooks ready |
+| **External calls on the admission path (synchronous validate)** | Two kinds of criteria wait for an external round trip inside admission: `context.imageRegistry` ([§4.5.2](#s4-5-2)) and `context.apiCall` (one each in [§4.2.1](#s4-2-1) / [§4.2.2](#s4-2-2) / [§4.6.1](#s4-6-1)). **Only the two on the synchronous validate path fail closed**: registry unreachable → request denied (roughly 5 seconds; roughly 3 seconds when reachable, see limitation 4 in [§4.5.2](#s4-5-2)); the [§4.2.1](#s4-2-1) apiCall cannot fetch its target → the rule errors out and the request is denied (the error message shape is in that section's warning). **The apiCalls of [§4.2.2](#s4-2-2) / [§4.6.1](#s4-6-1) do not belong in this row** — they hang off mutate-existing and fail in the opposite direction; see the next row | Decide explicitly "which request paths may carry external calls"; narrow such rules' match down to **the Tasks that genuinely need them**; load-test p95 / p99 and the timeout ratio, and confirm it stays below the webhook timeout — **that ceiling applies to the whole request, not to each rule separately** (default `timeoutSeconds=10`, see checklist item 6 in [§3.1](#s3-1); one 5-second registry round trip fits, two stacked on the same request may not). **Registry / API server jitter turns directly into pipeline creation failures** — have the matching alerts and playbooks ready |
+| **The asynchronous delivery chain (mutate-existing cancellation is fail-open)** | Of the document's four cancellation paths, three are mutate-existing ([§4.2.2](#s4-2-2) / [§4.6.1](#s4-6-1) / [§4.6.2](#s4-6-2)), and they sit **outside the admission verdict**: on a hit, the background-controller patches the target object asynchronously via an UpdateRequest. So when any link in that chain fails — the rule's `context.apiCall` cannot fetch its target, the UpdateRequest never gets created, the background-controller is down or backlogged, update RBAC on the target resource has been revoked — **the original request is allowed as usual and the cancellation patch silently vanishes**: the pipeline runs to the end, with no denial message anywhere in the cluster and no PolicyReport violation record (mutate types produce no violation records — the [§4.2.3](#s4-2-3) warning), only a few error lines in the background-controller log (the 404 note in [§4.6.1](#s4-6-1)). **criterion direction fail-closed ≠ delivery guarantee**: the criterion says "missing/illegal results must cancel just the same", but whether the cancel lands depends on the health of this background chain | **For a hard guarantee of zero races and zero silent failures, only the synchronous paths qualify**: the deny of [§4.2.1](#s4-2-1) or the admission mutate of [§4.2.3](#s4-2-3) (both give a synchronous verdict inside admission). If you stay on mutate-existing, you must monitor this chain as **a delivery system with an SLA**: ① background-controller liveness, restart count, and queue backlog; ② UpdateRequest creation volume and failure/stuck volume (`kubectl get updaterequests -n kyverno`); ③ the gap between policy hit counts and "target objects that really got `spec.status` / `cancel-reason` applied" — **a gap persistently non-zero means cancellations are being lost**; ④ before rollout and after every upgrade, run one controlled fault injection (point the apiCall at a nonexistent object, or temporarily stop the background-controller), confirm the alert fires, and write the result into the change request |
 | **How many rules a single request hits** | One CREATE may hit several policies at once (multiple policies are AND-composed, [§1.3](#s1-3)), each of which may hold several rules; the image allowlist of [§4.5.3](#s4-5-3) is three rules, each running `foreach` over the container lists | Set a ceiling per resource kind for "maximum rules hit / maximum external calls per request"; when exceeded, merge criteria or narrow the match — do not draw conclusions from the isolated load test of a single policy |
 | **Evaluation frequency of `*/status` policies** | One pipeline's status gets **written back many times** (observation points 3 / 6, [§2.1](#s2-1)); a status-reading policy **re-evaluates on every write-back**, and the request body carries the entire `status.pipelineSpec` (which can be large for a big template) | Keep expensive criteria (external calls, long list traversals) **in the gate task or the after-the-fact chain**, never in a `*/status` policy; before rollout, measure "single request body size × number of status updates" once |
 | **Background scans and PolicyReport volume** | The whole document has exactly one `background: true` policy ([§4.4.4](#s4-4-4)); it periodically re-evaluates **all** matching objects; reports are generated per evaluated object, are GC'd with the object, and have **no TTL / retention semantics** (the [§4.4.4](#s4-4-4) boundaries) | Estimate report object count and growth from PipelineRun volume; if you need a paper trail, set up **external archiving** (do not treat PolicyReport as a history store); alert on reports-controller backlog |
@@ -1867,7 +2026,7 @@ The preceding sections guarantee that the criteria are correct. This section is 
 
 [§3.6](#s3-6) tells you "what an upgrade affects"; this section answers "so which ones exactly do I run". **Without this list, in practice no regression happens** — because the most common failure shape after a policy upgrade is `Ready=True` with clean reports (the two criterion shapes of [§3.6](#s3-6)).
 
-Run in order; every step must include **both one probe that should be allowed and one that should be denied** (running only half of it cannot catch a direction error; the reasoning is the two-step self-check in [§4.0.3](#s4-0-3)):
+Run in order. **The requirement "one probe that should be allowed + one that should be denied" holds only for the admission-Enforce steps** — steps **2 / 3 / 7 / 8 / 10** must run both, and running only half cannot catch a direction error (the reasoning is the two-step self-check in [§4.0.3](#s4-0-3)). The other five kinds **inherently have no "allowed" side**, and each has its own pass criterion — do not force the pattern onto them: step **1** is a configuration diff (it submits no objects); steps **5 / 6** are Audit (check whether a `fail` **appears** in the PolicyReport — Audit blocks no requests, so every request gets "allowed"); step **4** verifies that "the response shape matches the one you chose" (a three-way pick, and deny vs. the cancellations are checked in different places), while step **9** verifies whether the cancellation **actually reached the object** (mutate-existing is asynchronous; the admission side does not deny); step **11** is the end-to-end compliance baseline (allow side only — what it proves is that nothing compliant got hurt).
 
 | # | What to run | Pass criterion (look at the behavior, not `Ready`) |
 |---|---|---|
@@ -1875,12 +2034,13 @@ Run in order; every step must include **both one probe that should be allowed an
 | 2 | The template allowlist of [§4.1.1](#s4-1-1) | The approved template is allowed; all three of an old version number, an unknown resolver, and a request-level `url` are denied |
 | 3 | The gate parameter contract of [§4.2](#s4-2) (in whichever response shape you actually chose) | Compliant parameters are allowed; all three of switching the gate off / an explicit empty value / **an override field the criterion has never seen** are blocked (the third is the key probe for the denylist shape) |
 | 4 | One real gate TaskRun | Non-compliant parameters terminate in **the one** response shape you chose, and the three shapes are checked in different places ([§6.2.3](#s6-2-3)): [§4.2.1](#s4-2-1) deny → parent run `CreateRunFailed`; [§4.2.2](#s4-2-2) cancel the parent run → parent run `Cancelled` + the `cancel-reason` annotation; [§4.2.3](#s4-2-3) cancel the gate TaskRun itself → **that TaskRun** `Cancelled` + `spec.statusMessage` (no `cancel-reason` appears on the parent run — do not judge the failure by it) |
-| 5 | One scan that **genuinely fails** (one for sonar and one for trivy) | The corresponding `fail` appears in the PolicyReport. **No `fail` is always judged as "the policy did not match", never as "the scan passed"** (the five meanings in [§4.4.4](#s4-4-4)) |
+| 5 | One scan that **genuinely fails** (one for sonar and one for trivy) | The corresponding `fail` appears in the PolicyReport. **No `fail` is always judged "acceptance not passed" — never "the scan passed", and it must not be directly classified as "the policy did not match" either** — a policy identity mismatch, a `resourceFilters` skip, a report not yet converged, an object already GC'd all yield the same empty result; work through the five meanings in [§4.4.4](#s4-4-4) one by one |
 | 6 | Have the gate skipped via `when` / an empty matrix | It shows up in `status.skippedTasks`, and the [§4.1.5](#s4-1-5) Audit records the violation |
 | 7 | The Pod image allowlist of [§4.5.3](#s4-5-3) | Approved registries are allowed; unapproved ones are denied on all three paths — **regular containers / init containers / the `ephemeralcontainers` subresource** — with the violating images listed in the message |
 | 8 | The release targets of [§4.5.5](#s4-5-5) | Approved namespaces / credentials are allowed; anything off the list is denied |
-| 9 | When PolicyException is enabled ([§5.3](#s5-3)) | Denied without an exception → allowed under a controlled exception → denied again after deletion (check all three states; cache revocation takes a moment) |
-| 10 | One complete business pipeline run to its terminal state (if none is handy, use `demo-run-pass` from [§3.3](#s3-3), the compliant fixture used throughout this document) | Check item by item rather than "it ran, good enough": the parent run's terminal state matches pre-upgrade; every child TaskRun in `status.childReferences` reaches its expected terminal state; finally executed; every Audit record that should be in the PolicyReport is there (pull them by run UID with the [§6.2.3](#s6-2-3) commands); and not a single `cancel-reason` or `statusMessage` appears unexpectedly |
+| 9 | When the cancellation policies of [§4.6](#s4-6) are installed: one run whose results miss the bar ([§4.6.1](#s4-6-1)) + one run with definition drift ([§4.6.2](#s4-6-2)) | The target run's `spec.status` gets written to `CancelledRunFinally` with the correct `cancel-reason` wording; **at the same time, confirm this asynchronous chain itself is intact** — `kubectl get updaterequests -n kyverno` shows no pile-up / failures, and the background-controller logs no errors. This chain is precisely what an upgrade breaks most quietly (RBAC aggregation rule changes, UpdateRequest API version changes), and when it breaks there is no denial message of any kind (the asynchronous delivery chain row of [§3.7](#s3-7)) |
+| 10 | When PolicyException is enabled ([§5.3](#s5-3)) | Denied without an exception → allowed under a controlled exception → denied again after deletion (check all three states; cache revocation takes a moment) |
+| 11 | One complete business pipeline run to its terminal state (if none is handy, use `demo-run-pass` from [§3.3](#s3-3), the compliant fixture used throughout this document) | Check item by item rather than "it ran, good enough": the parent run's terminal state matches pre-upgrade; every child TaskRun in `status.childReferences` reaches its expected terminal state; finally executed; every Audit record that should be in the PolicyReport is there (pull them by run UID with the [§6.2.3](#s6-2-3) commands); and not a single `cancel-reason` or `statusMessage` appears unexpectedly |
 
 **The special requirement for Task / template upgrades** (the kind of upgrade most likely to leave nothing but "looks fine"): result-reading policies must have their criteria changed **first** (identity, result name, property path — all three together, [§3.6](#s3-6)) before the production Task is switched; the change only counts as correct once step 5 has verified that "a failing sample produces a `fail`".
 
@@ -1891,13 +2051,15 @@ This chapter is organized by governance scenario, and every section follows a fi
 
 **Introduction** (What it governs / Why it is hard / How the policy is layered / What it cannot govern) → **Key criteria** (the few core lines of the policy, expanded inline) → **Complete policy assets** (collapsed, ready to copy) → **Verification probes and expected results** (collapsed) → **Cleanup**.
 
+**These policies do not use collapsing**: `trivy-gate-must-stay-on` in [§4.2.5](#s4-2-5) (the "read the minimal version first" transitional shape; the same section also carries the collapsed full version `official-template-gates-on`), `pipeline-run-defaults` in [§4.2.6](#s4-2-6), and `inventory-ungated-runs` in [§4.4.4](#s4-4-4) — those sections lay their complete YAML **directly in the body** (that one manifest is the whole point of the section). So when collecting every installable asset of this chapter in one pass, **search the whole text for `kind: ClusterPolicy` rather than harvesting only the collapsed blocks** — collapsed blocks alone would silently miss them, and the two demo policies of [§5.2](#s5-2) likewise live in the body.
+
 So that the same set of demo assets can be installed, verified, and cleaned up uniformly, this chapter uses `ClusterPolicy`, but every Enforce rule is scoped to the demo namespace `policy-poc`. **This is a demo choice, not a production permission recommendation for project administrators**: a project administrator should put the same rule logic into a `Policy` in their own namespace, set `metadata.namespace`, and remove the demo's cross-namespace scoping (such as `resources.namespaces` or `namespaceSelector`). Only the platform baseline, or cross-namespace policies centrally managed by the platform, use `ClusterPolicy`. The concrete conversion and the RBAC boundaries are in [§5](#s5).
 
-All admission-type policies in this chapter are verified with `kubectl create --dry-run=server -f probe.yaml` probes — full webhook evaluation, zero side effects ([§3.4](#s3-4)). Policies and probes are both executed on the **target cluster** (the one running Kyverno and Tekton); see the note at the start of [§3](#s3).
+**Most** admission-type policies in this chapter are verified with `kubectl create --dry-run=server -f probe.yaml` probes — full webhook evaluation, zero side effects ([§3.4](#s3-4)). **The two exceptions are [§4.2.1](#s4-2-1) and [§4.2.3](#s4-2-3)**: they judge the child TaskRuns the Tekton controller creates, and additionally look back along ownerReference at a parent run that is **already persisted** — a dry-run PipelineRun is neither persisted nor spawns children, so **the only way is to really run a pipeline** ([§3.4.1](#s3-4-1) explains this). Policies and probes are both executed on the **target cluster** (the one running Kyverno and Tekton); see the note at the start of [§3](#s3).
 
 ### 4.0 Before you start: which policies to install, in what order {#s4-0}
 
-This chapter contains **21 policy names** (22 `kind: ClusterPolicy` definition blocks — `pod-image-registry-allowlist` ships two interchangeable YAMLs). **Do not install them sequentially from start to finish.** Below is a "minimal usable set" and its installation order; take the rest as needed.
+This chapter's policies are listed in the overview table below (`pod-image-registry-allowlist` ships two interchangeable YAMLs, taking two adjacent rows of the table). **Do not install them sequentially from start to finish.** Below is a "minimal usable set" and its installation order; take the rest as needed.
 
 #### 4.0.1 The minimal usable set and its installation order {#s4-0-1}
 
@@ -1925,6 +2087,7 @@ This chapter contains **21 policy names** (22 `kind: ClusterPolicy` definition b
 - The after-the-fact introspection and "gate must-run" audits of [§4.1.4](#s4-1-4) / [§4.1.5](#s4-1-5) — defense in depth, Audit type;
 - [§4.2.4](#s4-2-4) protected-branch gates, [§4.5.1](#s4-5-1) artifact-transfer sources, [§4.5.5](#s4-5-5) release targets, [§4.5.2](#s4-5-2) source-image properties — **scenario profiles**, installed only when you actually use those templates / Tasks;
 - The **full profile** of [§4.2.5](#s4-2-5) — the minimal version only guarantees "the gate has not been switched off"; the full profile adds "configuration entrances and build inputs under control", carries many entries, and is tightly coupled to the template version; take pieces per the grouping table in [§4.2.5](#s4-2-5);
+- The string-shaped-result compatibility criterion of [§4.4.2](#s4-4-2) — a **compatibility layer**, serving only existing Tasks whose contract cannot be changed, with its support surface frozen (see that section);
 - The **cancellation-type** policies of [§4.2.2](#s4-2-2) / [§4.2.3](#s4-2-3) / [§4.6](#s4-6) — they need the extra mutate-existing RBAC ([§4.6](#s4-6) introduction), and they are response actions, not admission blocking;
 - The PolicyException of [§5.3](#s5-3) — requires first enabling two flags per [§3.1.1](#s3-1-1) and designating `<trusted-namespace>`.
 
@@ -1934,7 +2097,13 @@ This chapter contains **21 policy names** (22 `kind: ClusterPolicy` definition b
 2. **Allowlist and parameter-type policies must be installed as a pair; either alone is void**: most criteria outside `pipeline-template-allowlist` pin identity (template namespace / Pipeline / Task names) into preconditions, and in Kyverno **an identity mismatch is not a denial — it is a skip (allow)**. So with only the parameter policies installed and no allowlist, someone who wants around them never needs to touch the gate parameters — submit a run with a self-written `pipelineSpec` (or referencing an ungoverned template): the identity matches none of the parameter policies → everything skips → straight through, and the scanning steps need not even exist. The two layers each own half: the allowlist forces every run onto the governed-template road, and the parameter policies lock the gate switches along that road; allowlist only → templates cannot be bypassed but gate parameters can be switched off; parameter policies only → a back door held open for ungoverned templates.
 3. **Keep policies and template versions in sync — and distinguish the two mismatch directions, whose consequences are opposite**:
    - The template **changed its version number** while the policy still pins the old `refVersion`: the identity precondition no longer matches, and the rule simply **skips (allows)** — it **silently stops enforcing**. The only thing that catches this is constraint 2: `pipeline-template-allowlist` allows only approved versions, so the new version is blocked at the allowlist layer rather than discovered by the parameter policy itself.
-   - The template **changed, under the same identity, the very parameters this policy judges** (renamed, retyped, or default semantics changed, so the old criterion can no longer fetch the field or the shape no longer holds): the old criterion starts **rejecting all compliant requests** (fail-closed) — the symptom is that right after the upgrade every pipeline is stuck at admission, with the rejection messages coming from your own policy. **Merely adding parameters unrelated to this policy has no such consequence** — a sufficiently narrow criterion is an advantage here. Upgrade order and troubleshooting are in the upgrade-order warning of [§4.2.5](#s4-2-5).
+   - The template **changed, under the same identity, the very parameters this policy judges** — here there are two consequences with **opposite directions**; do not treat them as one thing:
+     - **A parameter renamed or removed** (the old field disappears entirely): the direction **depends on how that criterion treats "absence"**, both kinds exist within one and the same section, and you must check field by field —
+       - The criterion treats "absence" as "inherit the Task's trusted default" (the gate-**switch** kind, recognizable by that pair of `<switch>Present` variables: [§4.2.1](#s4-2-1) / [§4.2.4](#s4-2-4), and the switch part of [§4.2.5](#s4-2-5)) → the old criterion neither errors nor denies; it goes **silently fail-open**: the policy stays `Ready`, the reports stay clean, and nobody is watching the renamed switch anymore. **This is the hardest kind to discover** — only the upgrade regression set of [§3.8](#s3-8) can catch it proactively.
+       - The criterion demands "must exist and be non-empty" (`sonarURL`, `images` and their kind in [§4.2.5](#s4-2-5), and the `noVisibleSource` backstop in [§4.5.1](#s4-5-1)) → the moment the field disappears the denial condition is hit — **fail-closed**, and it blows up in your face right after the upgrade.
+     - **The parameter is still there but its shape changed** (retyped, or its value semantics changed, so the value the old criterion reads no longer satisfies the shape): in most cases the criterion starts **rejecting all compliant requests** (fail-closed) — the symptom is that right after the upgrade every pipeline is stuck at admission, with the rejection messages coming from your own policy. **But it is not a certainty** — where this document has hardened normalization against "a parameter passed as an array / object" ([§4.2.4](#s4-2-4) probe 34), a changed shape turns into a skip instead of a denial, which lands back on fail-open; that section's `sonarProperties` side is the exception — its canonical-shape gate rejects type regressions outright (probes 26-27).
+
+     **Merely adding parameters unrelated to this policy triggers neither consequence** — a sufficiently narrow criterion is an advantage here. **There is exactly one way to tell**: open the criterion and see where "cannot read the field / reads a strange value" lands — on deny, or on precondition-skip. Upgrade order and troubleshooting are in the upgrade-order warning of [§4.2.5](#s4-2-5).
 
 #### 4.0.2 Policy quick reference for this chapter (find the section by name) {#s4-0-2}
 
@@ -1951,7 +2120,7 @@ Of the 21, **11 need more than placeholder replacement**: 10 pin identity to the
 
 `pipeline-entry-lockdown` is a third case: it pins no demo objects, but **must enumerate every legitimate automation creator identity in your environment** — miss one and you have rejected all of that automation's pipelines.
 
-So the 11 rows marked 🔧 need either an identity rewrite or an identity-list completion; the 10 marked ✅ only need placeholder replacement per [§4.0.3](#s4-0-3) (the scope still needs changing — see the previous paragraph).
+So the rows marked 🔧 need either an identity rewrite or an identity-list completion; the ones marked ✅ only need placeholder replacement per [§4.0.3](#s4-0-3) (the scope still needs changing — see the previous paragraph). **These two things, plus the acceptance check after installing, together form the five-step conversion of [§4.0.7](#s4-0-7) — before copying any policy in this chapter to production, go through that section first.**
 
 | Policy name | Section | What it governs | Mode | min | Usable as copied? |
 |---|---|---|---|---|---|
@@ -1961,7 +2130,7 @@ So the 11 rows marked 🔧 need either an identity rewrite or an identity-list c
 | `gate-param-contract` | [§4.2.1](#s4-2-1) | The gate Task's effective parameters (TaskRun level); shipped as a **demo profile** — rewrite the identity when used for self-built templates | Enforce | ✅ | 🔧 demo identity: `gated-build` + `policy-demo-scanner` |
 | `gate-param-cancel-existing` | [§4.2.2](#s4-2-2) | Cancel the parent run instead of denying creation when parameters are non-compliant (so finally runs) | mutate-existing | | 🔧 demo identity: two demo templates + the demo Task |
 | `gate-param-mutate-to-cancel` | [§4.2.3](#s4-2-3) | Synchronously cancel the gate TaskRun itself when parameters are non-compliant | mutate | | 🔧 demo identity: `policy-demo-scanner` |
-| `sonar-branch-analysis-branch-contract` | [§4.2.4](#s4-2-4) | Analysis of protected branches (`main` / `release-*`) may not explicitly switch off the gate or change the scan source; PR / feature builds pass (real sonarqube-scanner profile; 2 Enforce rules + 1 optional Audit) | Enforce + Audit | | ✅ placeholders only |
+| `sonar-branch-analysis-branch-contract` | [§4.2.4](#s4-2-4) | Analysis of protected branches (`main` / `release-*`, including the default-branch shape where the branch parameter is absent) may not explicitly switch off the gate or change the scan source, and inputs must be in canonical shape (anything outside the contract is denied); PR / feature builds pass (real sonarqube-scanner profile; 3 Enforce rules + 1 optional Audit) | Enforce + Audit | | ✅ placeholders only |
 | `trivy-gate-must-stay-on` | [§4.2.5](#s4-2-5) minimal version | The official 0.3 templates' vulnerability gate cannot be explicitly switched off: four parameter bypasses (`skipTrivyScan`, `trivyExitCode` emptied / `"0"`, severity narrowed, `trivyExtraArgs` non-empty) + two `podTemplate.env` injection paths (per-task `taskRunSpecs`, per-run `taskRunTemplate`), PipelineRun level; **does not block arbitrary `when` / matrix skips**, and **does not restrict the element count of `images`** (the template builds and pushes every element yet scans only `images[0]`, so with multiple images the rest go unscanned — that criterion lives in the full profile) | Enforce | ✅ | ✅ placeholders only |
 | `official-template-gates-on` | [§4.2.5](#s4-2-5) full profile | The row above + allowlists for configuration entrances and build inputs (take pieces by group) | Enforce | | ✅ placeholders only |
 | `pipeline-run-defaults` | [§4.2.6](#s4-2-6) | Inject defaults (timeout, labels) | mutate | | ✅ placeholders only |
@@ -1991,7 +2160,11 @@ Rows marked ⚠️ are those whose **failure direction is unusual or whose conse
 
 The table below lists this class exhaustively, each entry with how to obtain the value and how to self-check. **Note that three rows are not in angle-bracket form** (the hub catalog name `catalog`, the Tekton controller identity, and the batch of `approved-*` object names): they are written into the policies as bare literals, so searching for angle brackets will not find them — yet they must be verified and replaced all the same (the `catalog` row also has 11 parameter-key occurrences that must **not** be replaced; see that row's note).
 
+⚠️ **Two placeholders may turn up nowhere when you search — that does not mean they need no filling in**: `<approved-registry-regex>` and `<tekton-infra-image-regex>` appear only in the **inline body shape** of [§4.5.3](#s4-5-3); if you picked that section's **ConfigMap shape**, the policy has only one placeholder left, `<tekton-managed-by-label-value>`, and the two regexes go instead into the `pipeline-image-allowlist` ConfigMap's `data.approvedRegistryRegex` and `data.tektonInfraRepoRegex` — **the values must still be generated and self-checked by the method in the two rows below**; only the landing site moves from the policy into the ConfigMap (the "three values" of [§4.0.1](#s4-0-1) stage 5 hold under both shapes). **Treating "not found in the policy" as "nothing to fill in" = an empty or overly wide allowlist, and it raises no error.**
+
 ⚠️ **The replacement action is "search the whole policy text for the placeholder and replace every occurrence", not "fix the one in front of you"**. This document's policy assets deliberately collapse each placeholder to **a single site** ([§4.5.3](#s4-5-3) pulls the regex into one `variable` that both the criterion and the message reference, precisely for this) — but the moment you extend the criteria yourself it is easy to copy out a second site, and **two inconsistent sites raise no error**; they just make the verdict and the message tell two different stories ([§4.5.3](#s4-5-3) records both directions). After replacing, search once more for `<` to confirm nothing slipped through — **except sample angle brackets inside policy YAML comments** (such as `<kind>` / `<name>` in the [§4.5.5](#s4-5-5) policy comments: they live in comments, take no part in evaluation, and are harmless to keep).
+
+**A placeholder missed in a command line shows completely different symptoms from one missed in YAML**: this document's commands carry `<...>` too (e.g. `--as=<probe-identity>`, `-n <your-pipeline-namespace>`), and the shell treats `<` and `>` as redirection operators — with the placeholder unreplaced the command **never executes at all**, reporting a single `No such file or directory` (`kubectl -n <your-ns> get pods` reports `your-ns: No such file or directory`). When you see that line, do not go inspect the cluster — it is telling you that you left a placeholder in. **The one exception**: when the placeholder name happens to coincide with a file in the current directory, the redirection succeeds and the command **executes silently** with its output written into that file — so while following this document's commands, keep no files named like the placeholders in your working directory.
 
 For **Enforce validate policies**, the post-install self-check is always two steps: first run a genuinely compliant request through `--dry-run=server` to confirm it is **allowed** (catches fail-closed), then deliberately break one field to confirm it is **denied** (catches fail-open). Doing only the second step will never find a missed replacement.
 
@@ -2016,67 +2189,222 @@ Two further policy classes skip the "confirm denied" step; their self-check targ
 | `<approved-git-repo>` | The approved git repository URL for pipeline definitions | Take the **verbatim string** of the `url` parameter the git resolver actually uses (including protocol and `.git`-suffix differences); compare exactly with `==`, no prefix matching | Dry-run a real PipelineRun and confirm allow; changing one character of the URL should be denied |
 | `<approved-registry>` | The approved artifact registry prefix ([§4.5.1](#s4-5-1)) | Registry host (port allowed) + project path prefix. This one is a `starts_with` **string** comparison, **not a regex** — do not fill in a regex fragment | A `srcImage` under the approved prefix is allowed; switching it to `docker.io/...` is denied |
 | `<approved-registry-regex>` | The approved business registry prefix, as a **regex fragment** ([§4.5.3](#s4-5-3)) | Take the host part of `<approved-registry>` and escape RE2 metacharacters character by character per the rules in [§4.5.3](#s4-5-3) (`.` → `[.]`, etc.) | Run the 9 self-check probes of [§4.5.3](#s4-5-3); the three "neighboring host / neighboring port / unescaped `.`" probes must be **denied** |
-| `<tekton-infra-image-regex>` | The **complete-repository** regex fragment for Tekton's five classes of infrastructure images ([§4.5.3](#s4-5-3)) | Command A in [§4.5.3](#s4-5-3) (controller startup arguments) yields the **complete candidate list**; command A2 replaces the address prefixes with the **platform's private registry address** (read `registryAddress` from the `global-info` ConfigMap in `kube-public`) — admission sees the addresses **after** platform image rewriting, and pre-rewrite forms do not belong in the allowlist; command B (sampling real Pods) is **cross-validation only**, never the list source (sampling only sees the classes that happened to run, and can come back empty). Strip tags / digests down to the repository, then escape character by character. **Even command A is only a starting point, not proof of a "complete list"**: the startup arguments do not include every auxiliary image (GC / results / affinity assistant / future versions). The authoritative source should additionally include an **installed-state inventory** — the operator's `TektonConfig` / `TektonPipeline` CRs plus the image fields of every Deployment in the `tekton-pipelines` namespace — take the union, and run it through the same A2 prefix replacement | All five image classes allowed; a same-host `…-evil` denied. **And you must first run a full cycle in Audit** (including one upgrade and one GC) confirming PolicyReport shows no infrastructure-image violations before switching to Enforce — one missed class keeps all of Tekton from starting |
+| `<tekton-infra-image-regex>` | The **complete-repository** regex fragment for Tekton's five classes of infrastructure images ([§4.5.3](#s4-5-3)) | Command A in [§4.5.3](#s4-5-3) (controller startup arguments) yields the **complete candidate list**; command A2 replaces the address prefixes with the **platform's private registry address** (read `registryAddress` from the `global-info` ConfigMap in `kube-public`) — admission sees the addresses **after** platform image rewriting, and pre-rewrite forms do not belong in the allowlist; command B (sampling real Pods) is **cross-validation only**, never the list source (sampling only sees the classes that happened to run, and can come back empty). Strip tags / digests down to the repository, then escape character by character. **Even command A is only a starting point, not proof of a "complete list"**: the startup arguments do not include every auxiliary image (GC / results / affinity assistant / future versions). So besides command B, use an **installed-state inventory** — the operator's `TektonConfig` / `TektonPipeline` CRs plus the image fields of every Deployment in the `tekton-pipelines` namespace — as a second line of cross-validation: whenever either line surfaces a repository beyond command A's output, first establish whether it is a new class; once confirmed, add it to the list and run it through the same A2 prefix replacement (the generation source is always the A list after A2 replacement, consistent with the wording in the [§4.5.3](#s4-5-3) body) | All five image classes allowed; a same-host `…-evil` denied. **And you must first run a full cycle in Audit** (including one upgrade and one GC) confirming PolicyReport shows no infrastructure-image violations before switching to Enforce — one missed class keeps all of Tekton from starting |
 | `<project-path>` | The project path segment pinned in relaxed shape B ([§4.5.3](#s4-5-3)) | Cut, from the same repository list above, the segment between the host and the image name | Re-verify shape B's comparison table row by row; note that shape **does not lock the host** and is weaker than shape A |
 | `<tekton-managed-by-label-value>` | The label value that scopes in Tekton Pods | Read `default-managed-by-label-value` from `tekton-pipelines/config-defaults`; only a **missing key** falls back to the default `tekton-pipelines` — a key present with an empty value is a deployment blocker and must be changed to a non-empty value first | Select a real Tekton Pod once with that label; it is only correct if the selection returns one |
 | `<platform-admin-identity>` | The platform administrator identities allowed to bypass entry closure ([§4.5.4](#s4-5-4)) | Write them as full `system:serviceaccount:<ns>:<sa>` strings or usernames, taken from your platform operations accounts, **enumerated one by one — no wildcards**. **You must also enumerate every legitimate automation creator in the environment**, and "complete" needs a method, not memory: ① **RBAC reverse lookup** — walk `RoleBinding` / `ClusterRoleBinding` for subjects bound to roles carrying `create` on `taskruns` / `pipelineruns` (filter `rules[].resources` in `kubectl get clusterrole,role -A -o json`, then look up the bindings); ② **the trigger and GitOps side** — the SAs used by EventListener / TriggerTemplate, the ArgoCD / Flux controller SAs, the platform's own scheduling component SAs; ③ **install one round in Audit first**, collect the real creators from PolicyReport and the API server audit logs, complete the list, then switch to Enforce. Do all three before Enforce | Creating a bare TaskRun with `--dry-run=server --as=<identity>` under that identity should be allowed; an ordinary business identity should be denied (**`--as` is mandatory** — see the identity-class self-check note above) |
 | `<approver-identity>` | The approver identity entitled to issue exemptions ([§5.3](#s5-3)) | Take the actual owner / service account of your exemption approval process, again as a full identity string | That identity can create PolicyExceptions in the trusted namespace; other identities are denied by RBAC |
 | `<business-identity>` | An ordinary business identity, used to verify the "no exemption-issuing power" side ([§5.3](#s5-3)) | Take a real business ServiceAccount, full identity string | `kubectl auth can-i create policyexceptions` for that identity should be `no`; creating a run in `policy-exempt-runs` should be denied at admission |
 | `<catalog>` | The catalog name of hub references (**signpost row**: **the angle-bracket form appears only in the probe skeletons and error samples of [§3.4](#s3-4)** — in the policy assets it is a bare literal, see the next row; this row stays in the table because you will most likely search for `<catalog>`) | Take it from the hub entries you actually reference: the value of the `catalog` parameter in a real run's `taskRef.params` / `pipelineRef.params` | Matches the real run's `catalog` parameter value verbatim |
-| The `catalog` literal (**22 effective-line occurrences across the installable YAML of 7 policies, of which the 11 value-side occurrences must be replaced** — the `refCatalog=='catalog'` comparison ×1 + `value: catalog` in preconditions ×10 ([§4.2.4](#s4-2-4) 1 in each of its three rules, [§4.2.5](#s4-2-5) 4 across its two policies, [§4.4.1](#s4-4-1) / [§4.5.1](#s4-5-1) / [§4.5.5](#s4-5-5) 1 each); the policy list: `pipeline-template-allowlist` / `sonar-branch-analysis-branch-contract` / `trivy-gate-must-stay-on` / `official-template-gates-on` / `vuln-summary-audit` / `artifact-source-allowlist` / `release-target-allowlist`. **The counting scope = effective lines of the installable YAML**, comments excluded; same-named literals in the "key criteria" excerpts and in the probes / fixtures get replaced likewise when you copy those blocks, but do not count toward this number) | The hub catalog name pinned into the policies' identity criteria — **not in angle-bracket form; searching for `<` will not find it**. **And this row is the one exception to the introduction's "search the whole text, replace every occurrence" discipline**: the other 11 occurrences, `[?name=='catalog']`, are the hub resolver's **parameter key** (fixed by the Tekton API, unrelated to what your catalog is called) and must **never** be replaced — replace those and `refCatalog` always evaluates to the empty string: allowlist types reject everything compliant, identity-preconditioned types all skip | Same method as the previous row. In this document's verification environment (the official catalog of ACP's built-in hub) the name is literally `catalog`, so with the built-in hub + official templates you usually need no change — **but verify it verbatim once before installing** | ⚠️ Pinned wrong, both directions are silent: for **identity-preconditioned types** (Audit / gate types, where catalog is a link in the identity chain) the rule skips — **silent allow**, not one record in PolicyReport; for **allowlist types** ([§4.1.1](#s4-1-1) hub channel, [§4.5.1](#s4-5-1)) **all compliant requests are rejected**. Self-check with one real run through the two-step dry-run at the top of this section (allow + break-and-deny) |
-| The Tekton controller identity literal (**7 policies**: the `match.subjects` of [§4.2.1](#s4-2-1) / [§4.2.2](#s4-2-2) / [§4.2.3](#s4-2-3) / [§4.6.1](#s4-6-1) / [§4.6.2](#s4-6-2) (`namespace: tekton-pipelines` + `name: tekton-pipelines-controller`), the full-string comparison `creator=='system:serviceaccount:tekton-pipelines:tekton-pipelines-controller'` in [§4.5.4](#s4-5-4), and the trusted-identity list of [§5.3](#s5-3) — which additionally carries `tekton-chains-controller`) | The identity pin behind every "created by the Tekton controller" precondition — **again not in angle-bracket form**. In environments where Tekton sits in a non-default namespace (the `TektonConfig.spec.targetNamespace` mentioned in [§4.1.2](#s4-1-2)) or the SA name differs, these identities **all fail to match** | Read the real thing, do not hand-assemble: use the two `kubectl get deploy … -o jsonpath` commands in the "identity verification" passage of [§5.3](#s5-3) to print the exact identity strings (the controller is a must-read; the Results watcher only when enabled); how to obtain `TEKTON_NS` is in [§3.1](#s3-1) | ⚠️ Pinned wrong = the identity precondition never holds → the rule **skips, silent allow**: the gate / cancellation policies are as good as not installed, and PolicyReport will not carry a single record. The self-check must include a denial probe with `--as=<that-identity>` (see the "identity-preconditioned" warning above) — probes under an ordinary identity are, for these rules, always a false pass |
+| The `catalog` literal (appears in the installable YAML of these policies: `pipeline-template-allowlist` / `sonar-branch-analysis-branch-contract` / `trivy-gate-must-stay-on` / `official-template-gates-on` / `vuln-summary-audit` / `artifact-source-allowlist` / `release-target-allowlist`. **The replacement scope = effective lines of the installable YAML**, comments excluded; same-named literals in the "key criteria" excerpts and in the probes / fixtures get replaced likewise when you copy those blocks) | The hub catalog name pinned into the policies' identity criteria — **not in angle-bracket form; searching for `<` will not find it**. **And this row is the one exception to the introduction's "search the whole text, replace every occurrence" discipline**: the occurrences written as `[?name=='catalog']` are the hub resolver's **parameter key** (fixed by the Tekton API, unrelated to what your catalog is called) and must **never** be replaced — replace those and `refCatalog` always evaluates to the empty string: allowlist types reject everything compliant, identity-preconditioned types all skip | Same method as the previous row. In this document's verification environment (the official catalog of ACP's built-in hub) the name is literally `catalog`, so with the built-in hub + official templates you usually need no change — **but verify it verbatim once before installing** | ⚠️ Pinned wrong, both directions are silent: for **identity-preconditioned types** (Audit / gate types, where catalog is a link in the identity chain) the rule skips — **silent allow**, not one record in PolicyReport; for **allowlist types** ([§4.1.1](#s4-1-1) hub channel, [§4.5.1](#s4-5-1)) **all compliant requests are rejected**. Self-check with one real run through the two-step dry-run at the top of this section (allow + break-and-deny) |
+| The Tekton controller identity literal (appears in these policies: the `match.subjects` of [§4.2.1](#s4-2-1) / [§4.2.2](#s4-2-2) / [§4.2.3](#s4-2-3) / [§4.6.1](#s4-6-1) / [§4.6.2](#s4-6-2) (`namespace: tekton-pipelines` + `name: tekton-pipelines-controller`), the full-string comparison `creator=='system:serviceaccount:tekton-pipelines:tekton-pipelines-controller'` in [§4.5.4](#s4-5-4), and the trusted-identity list of [§5.3](#s5-3) — which additionally carries `tekton-chains-controller`) | The identity pin behind every "created by the Tekton controller" precondition — **again not in angle-bracket form**. In environments where Tekton sits in a non-default namespace (the `TektonConfig.spec.targetNamespace` mentioned in [§4.1.2](#s4-1-2)) or the SA name differs, these identities **all fail to match** | Read the real thing, do not hand-assemble: use the two `kubectl get deploy … -o jsonpath` commands in the "identity verification" passage of [§5.3](#s5-3) to print the exact identity strings (the controller is a must-read; the Results watcher only when enabled); how to obtain `TEKTON_NS` is in [§3.1](#s3-1) | ⚠️ Pinned wrong = the identity precondition never holds → the rule **skips, silent allow**: the gate / cancellation policies are as good as not installed, and PolicyReport will not carry a single record. The self-check must include a denial probe with `--as=<that-identity>` (see the "identity-preconditioned" warning above) — probes under an ordinary identity are, for these rules, always a false pass |
 | `<approved-sonar-url>` | The approved Sonar server URL ([§4.2.5](#s4-2-5)) | Take the real `sonarURL` parameter value from your environment, as a **verbatim string** (including protocol, port, and trailing-slash differences), compared exactly with `!=` | ⚠️ **A missed replacement here shows the opposite of the rows above**: not "nothing gets blocked", but **all compliant requests rejected** — `sonarURL` will never equal the sample value. After installing, first run a genuinely compliant PipelineRun through `--dry-run=server` and confirm allow |
 | `<approved-maven-mirror-url>` | The approved Maven mirror repository URL ([§4.2.5](#s4-2-5), java template only) | Take the real `mavenMirrorURL` parameter value from your environment, verbatim string | ⚠️ Same direction as above, but **scoped to requests that explicitly pass a non-empty value**: the criterion is `mavenMirrorURLPresent && mavenMirrorURL != '' && != placeholder`, so not passing it / passing the empty string still allows (template default `""`). **Every compliant request that explicitly configures a mirror will be rejected** |
 | `<approved-maven-cert-path>` | The approved Maven certificate file name ([§4.2.5](#s4-2-5), java template only) | Take the real `mavenCertPath` parameter value from your environment (the sample is `ca.cert`) | ⚠️ Same as above, **scoped to requests that explicitly pass the parameter**: the criterion is `mavenCertPathPresent && != placeholder`; absence inherits the template default `ca.cert` and still allows |
 | `<approved-deploy-namespace-a>` / `<approved-deploy-namespace-b>` | The target namespaces deployment is allowed into ([§4.5.5](#s4-5-5)) | Enumerate every deployment target namespace you approve — the sample gives two; list however many you actually have inside `contains([...])` | ⚠️ Same direction, **scoped to requests with deployment enabled** (the criterion hangs under `deploymentEnabled`; requests not enabling deployment still allow): **every compliant request that actually releases will be rejected**. After installing, run a real deployment PipelineRun through `--dry-run=server` to confirm allow, then change the namespace to an off-list value to confirm deny |
 | `<approved-deploy-kubeconfig-secret>` | The Secret name allowed as the `kubeconfig` workspace source ([§4.5.5](#s4-5-5)) | Take the real deployment-credential Secret name from your environment. **The criterion is likewise a single-value `!=` and supports only one Secret**; to approve several, rewrite it into the `contains([...], kubeconfigSecret)` form — do not use wildcards | ⚠️ Same as above: **a missed replacement = every compliant request that explicitly binds a kubeconfig is rejected** (not binding a kubeconfig = deploying to the current cluster, which was allowed anyway and is unaffected) |
-| `<tekton-default-service-account>` | The SA name Tekton defaulting fills into a run-level `spec.taskRunTemplate.serviceAccountName` (the first entry of the approved list in [§4.5.5](#s4-5-5)) | Read `default-service-account` from `tekton-pipelines/config-defaults`; only a **missing key** falls back to Tekton's built-in default `default` — and most ACP clusters ship with the key missing (it appears only in the inert `_example` comment block), so **reading back an empty value is normal, not a broken command**. For a definitive answer in one step, read the **effective value** after defaulting (using the [§3.3](#s3-3) fixture run; `--dry-run=server` has no side effects; factory state prints `default`): `kubectl create --dry-run=server -n policy-poc -f demo-run-pass.yaml -o jsonpath='{.spec.taskRunTemplate.serviceAccountName}{"\n"}'` — it reads exactly the field the policy compares; whatever it prints is what you fill in. **This entry is not optional**: the defaulting webhook runs before Kyverno, so admission never sees the field absent — leaving it off the list amounts to refusing to approve "ordinary requests" | ⚠️ **Miss it = 100% of compliant deployment-enabled requests rejected** (lesson learned: the first version of the criterion listed only the site SA, and every compliant request was rejected). The self-check is that allow probe: one real release run must be allowed |
+| `<tekton-default-service-account>` | The SA name Tekton defaulting fills into a run-level `spec.taskRunTemplate.serviceAccountName` (the first entry of the approved list in [§4.5.5](#s4-5-5)) | Read `default-service-account` from `tekton-pipelines/config-defaults`; only a **missing key** falls back to Tekton's built-in default `default` — and most ACP clusters ship with the key missing (it appears only in the inert `_example` comment block), so **reading back an empty value is normal, not a broken command**. For a definitive answer in one step, read the **effective value** after defaulting (using the [§3.3](#s3-3) fixture run; `--dry-run=server` has no side effects; factory state prints `default`): `kubectl create --dry-run=server -n policy-poc -f demo-run-pass.yaml -o jsonpath='{.spec.taskRunTemplate.serviceAccountName}{"\n"}'` — it reads exactly the field the policy compares; whatever it prints is what you fill in. **This entry is not optional**: the defaulting webhook runs before Kyverno — leaving it off the list amounts to refusing to approve "ordinary requests". ⚠️ **If that effective-value command prints empty, it is telling you something else, and it must be dealt with**: when the `default-service-account` **key exists but its value is empty**, Tekton skips this fill-in (the mechanism: when Tekton reads this config it only checks whether the key **exists** — if present, the value is taken as-is, so an empty string overrides the built-in default `default`; and the fill-in happens only when the default value is non-empty, for PipelineRun and TaskRun alike), so admission **really does see the field absent**, and the `runWideSa != ''` criterion of [§4.5.5](#s4-5-5) skips wholesale — **this is a fail-open**. The right fix is to change the empty value in `config-defaults` to a real SA name (same reasoning as `<tekton-managed-by-label-value>`: an empty value is itself a deployment blocker); left unchanged, the rule is as good as absent | ⚠️ **Miss it = 100% of compliant deployment-enabled requests rejected**. The self-check is that allow probe: one real release run must be allowed. **Also run the effective-value command once and confirm the output is non-empty** — empty output = the fail-open in the previous column |
 | `<approved-deploy-service-account>` | The deployment ServiceAccount names you approve yourself (the remaining entries of the approved list in [§4.5.5](#s4-5-5)) | Enumerate the SAs your release pipelines actually use — the criterion is `contains([...], runWideSa)`; list however many you have. It must be maintained together with the RBAC you grant the deployment credentials: **add a new deployment SA → add it to this list in the same change**, or that pipeline gets rejected | ⚠️ Same direction, **scoped to requests with deployment enabled whose run-level SA is not the default from the previous row**; requests without deployment are unaffected. Self-check: confirm a release run using the real SA is allowed, then change the SA to an off-list name and confirm deny |
 | The batch of `approved-*` **object names** (12 in the full profile of [§4.2.5](#s4-2-5): `approved-sonar-credentials` / `approved-sonar-settings` / `approved-registry-config` / `approved-sonar-certificate` / `approved-trivy-config` / `approved-ca-bundle` / `approved-maven-settings` / `approved-maven-cert` / `approved-maven-server` / `approved-maven-local-repo` / `approved-maven-trust-store` / `approved-pip-conf`; the [§4.5](#s4-5).x sections use angle-bracket placeholders, which are not in this batch) | Approved Secret / ConfigMap names written directly into the policies as literals — **not in angle-bracket form, but they must be changed all the same** | Replace them with the objects genuinely approved in your environment. **"Which one is the approved one" needs an authoritative source** — do not guess by name inside the namespace: take the copy declared in the platform configuration repository / GitOps manifest, or give approved objects a uniform label (e.g. `policy.alauda.io/approved=true`) and list them with `kubectl get cm,secret -n <ns> -l policy.alauda.io/approved=true`, then confirm with the configuration's owner; list changes (new / rotated objects) must ride the same process as policy changes, or the policy will reject the object you just rotated in. **Note the criterion is a single-value `!=` comparison — each workspace allows exactly one approved object.** To allow several sources you must change the criterion itself to `count > `1` \|\| (count == `1` && !contains(['approved-a','approved-b'], name))` — merely listing several names here does nothing. (`count` here is **the number of bindings that workspace has in the request**, not the number of approved objects; Tekton guarantees a workspace name is not repeated, so it is normally 0 or 1, and the `count > 1` branch is defense in depth kept in the same shape as the other criteria.) | ⚠️ Same direction, **scoped to requests that explicitly bind the workspace**: the criterion shape is `count > 1 \|\| (count == 1 && name != approved-value)`, and **requests not binding this optional workspace still allow under the absence semantics**. Self-check the same way: first confirm a compliant request genuinely binding these objects is allowed, then swap in an unapproved object and confirm deny |
 | `<trusted-namespace>` | The trusted namespace — the only one Kyverno accepts PolicyExceptions from ([§3.1.1](#s3-1-1) / [§5.3](#s5-3)) | Designated by you and written into `--exceptionNamespace`; it should be a dedicated namespace **writable only by exemption approvers** — do not reuse a business or demo namespace | Item 5 of the [§3.1](#s3-1) checklist reads back `--exceptionNamespace=<that value>`; a PolicyException created in any other namespace should have no effect |
 
 None of the remaining angle brackets in the document belong to this class; do not look for them in the table above:
 
-- **Object names in commands and error samples** — `<policy>`, `<fixture>`, `<producer>`, `<gate>`, `<kind>`, `<name>`, `<seq>`, `<yyyymmdd>` and the like, whose meaning follows the example they sit in (e.g. `<policy>` in the [§4.4](#s4-4) troubleshooting commands is the policy you are inspecting, and `<yyyymmdd>-<seq>` in the PolicyException sample is merely a suggested naming convention); `<path-to-global-kubeconfig>` (the global cluster kubeconfig path) and `<cluster-name>` (the target cluster running Kyverno) in the [§3.1.1](#s3-1-1) commands, `<target-context>` (the target cluster's kubectl context name) at the start of [§3](#s3), and `<your-pipeline-namespace>` / `<one-real-run>` / `<terminal-taskrun>` / `<measurement-copy-name>` in the troubleshooting commands are in this class too; so is `<configured-hub-endpoint>` (the cluster's configured hub service address) — it appears only in an error-message sample and is written into no policy; to verify it, read `tekton-pipelines/hubresolver-config`, which should match what item 2 of the [§3.1](#s3-1) checklist reads;
+- **Object names in commands and error samples** — `<policy>`, `<fixture>`, `<producer>`, `<gate>`, `<kind>`, `<name>`, `<seq>`, `<yyyymmdd>` and the like, whose meaning follows the example they sit in (e.g. `<policy>` in the [§4.4](#s4-4) troubleshooting commands is the policy you are inspecting, and `<yyyymmdd>-<seq>` in the PolicyException sample is merely a suggested naming convention); `<path-to-global-kubeconfig>` (the global cluster kubeconfig path) and `<cluster-name>` (the target cluster running Kyverno) in the [§3.1.1](#s3-1-1) commands, `<target-context>` (the target cluster's kubectl context name) at the start of [§3](#s3), `<your-pipeline-namespace>` / `<one-real-run>` / `<terminal-taskrun>` / `<measurement-copy-name>` in the troubleshooting commands, and `<probe-identity>` in the [§3.4.1](#s3-4-1) probe recipe (the identity used to submit that probe) are in this class too; so is `<configured-hub-endpoint>` (the cluster's configured hub service address) — it appears only in an error-message sample and is written into no policy; to verify it, read `tekton-pipelines/hubresolver-config`, which should match what item 2 of the [§3.1](#s3-1) checklist reads;
 - **Placeholders that appear only in "relaxed variants"** — e.g. `<platform-default-env-name>` in [§3.6](#s3-6), or `<approved-scanner-service-account>` in the [§4.2.5](#s4-2-5) passage about extracting the `serviceAccountName` criterion into an approved list: they belong to optional shapes you need only when a certain condition appears in your environment, and are not part of this document's published policy assets, so they are not in the table; if you do adopt those shapes, the value-taking and self-check methods are written in those passages;
 - **Prose that uses angle brackets to mean "fill in your own value"** — e.g. `system:serviceaccount:<ns>:<sa>` and `<that value>` in the identity-format notes of the table above, or `spec.statusMessage: <reason>` in [§4.2.3](#s4-2-3).
 
 Getting these two classes wrong only makes a command find nothing, or changes message wording; it cannot make a policy silently stop enforcing — so they are not itemized in the table above.
 
-#### 4.0.4 How to clean up demo resources (self-created namespaces cascade; cluster-scoped objects by name) {#s4-0-4}
+#### 4.0.4 How to clean up demo resources (self-created namespaces cascade; cluster-scoped objects by UID) {#s4-0-4}
 
 Every section in this chapter ends with a "cleanup" passage. **The prerequisite discipline ([§3.3](#s3-3)): all namespaced demo objects are created only inside namespaces the walkthrough created itself — never operate on pre-existing namespaces.** Cleanup therefore reduces to two rules:
 
 1. **Namespaced objects are not deleted one by one**: the `PipelineRun` / `TaskRun` objects, the fixture `Task` / `Pipeline`, ConfigMaps, RBAC and the rest are all reclaimed together with their namespace — the namespaces are deleted in each section's cleanup passage or in the final cleanup of [§3.3](#s3-3), after checking the walkthrough-id label, and the cascade takes everything inside with it (controller-derived child TaskRuns / Pods need no separate deletion either; the owner cascade reclaims them). The cascade is exactly why the prerequisite must hold: **the namespace you delete must contain nothing of anyone else's** — so the creation loop stamps the walkthrough id only on namespaces it newly created, and the cleanup loop deletes only those whose label equals this run's id; the id must be unique per walkthrough ([§3.3](#s3-3) generates it) — a fixed value cannot tell "created this time" apart from "left over from a previous unfinished walkthrough".
-2. **Cluster-scoped objects (`ClusterPolicy`, the `ClusterRole` of [§4.6](#s4-6)) are not taken away by namespace deletion**; delete them by name, one by one. There is a check at each end: **before creating**, confirm no same-named object exists (the code block below — `apply` would silently overwrite a same-named policy somebody else is actively governing with); **before deleting**, `kubectl get` and eyeball that the `creationTimestamp` falls inside this walkthrough's window. The window risk of a same-named object being swapped mid-walkthrough is carried by that one look; the demo policy names in this chapter are names dedicated to this document and normally will not collide with anyone else's objects. **The batch delete commands each section's cleanup passage gives list "every name this section may have installed" — they are not copy-and-run**: if you only ran part of a section, or hit one of this chapter's mutually exclusive choices (the first three of [§4.2](#s4-2)), the name list will contain policies you never installed — and those names either do not exist (harmless) or **belong to someone else** (harmful). So batch deletion follows this rule too: first look at the `creationTimestamp` values `get` prints, remove from the `delete` command every name not inside your walkthrough window, then run it.
+2. **Cluster-scoped objects (`ClusterPolicy`, the `ClusterRole` of [§4.6](#s4-6)) are not taken away by namespace deletion**; they must be deleted one by one, by **the UID recorded at creation time**. `creationTimestamp` can only help a human judge — it cannot prove ownership, still less can it stop a same-named object from being swapped between the `get` and the `delete`. This document uses the local `cluster-scoped-ownership.tsv` as the ownership ledger: immediately after a successful create, append `resource<TAB>name<TAB>uid`; at cleanup, first re-read the live UID and allow deletion only when it matches word for word; read failures, missing ledger rows and same-named replacements are all skipped fail-safe. **The ledger is not optional evidence**: losing the variables of an old terminal does not matter, but if the ledger is lost, do not guess names or backfill deletions from timestamps — attribute the objects manually from the live UID plus the API server audit / change records, then handle them.
 
 ```bash
-# Cluster-scoped objects: `apply` would silently overwrite an existing same-named
-# policy -- somebody else's live governance rule. Check first, then create.
-# Three branches, not `get || create`: a get that failed for RBAC or network reasons
-# is NOT "the name is free", and falling through to create would skip the very check
-# this block exists for.
-POLICY_NAME='<policy-name>'
-# Reject the unreplaced placeholder BEFORE anything queries or creates with it: this block
-# ends in `kubectl create -f "$POLICY_NAME.yaml"`, so a literal <policy-name> would look for
-# a file of that name -- or match nothing and read as "the name is free".
-case "$POLICY_NAME" in '<'*'>') echo "fill in POLICY_NAME first"; POLICY_NAME='';; esac
-if [ -z "$POLICY_NAME" ]; then
-  echo "no policy name set -- nothing to check or create"
-elif ! out=$(kubectl get clusterpolicy "$POLICY_NAME" -o name --ignore-not-found 2>&1); then
-  echo "$POLICY_NAME: CHECK FAILED ($out) -- fix cluster access first; do NOT create blindly"
-elif [ -n "$out" ]; then
-  echo "$POLICY_NAME already exists -- stop and check with its owner; do NOT apply over it"
+# Run this once before creating ANY cluster-scoped walkthrough object. Keep the file
+# until the whole walkthrough has been cleaned up; a new terminal reuses the same file.
+OWNERSHIP_LEDGER=${OWNERSHIP_LEDGER:-cluster-scoped-ownership.tsv}
+OWNERSHIP_PENDING=${OWNERSHIP_PENDING:-cluster-scoped-ownership.pending.tsv}
+if touch "$OWNERSHIP_LEDGER"; then
+  OWNERSHIP_LEDGER_READY=yes
 else
-  kubectl create -f "$POLICY_NAME.yaml"
+  OWNERSHIP_LEDGER_READY=no
+  echo "cannot write $OWNERSHIP_LEDGER -- no create/delete helper will run"
 fi
 
-# ...and before deleting by name, one look at when it was created:
-kubectl get clusterpolicy "$POLICY_NAME" \
-  -o jsonpath='{.metadata.creationTimestamp} {.metadata.name}{"\n"}'
-# A creationTimestamp inside your walkthrough window is yours. Anything older is
-# not -- then STOP and ask its owner instead of deleting.
-kubectl delete clusterpolicy "$POLICY_NAME"
+reconcile_pending_cluster_create() {
+  [ -s "$OWNERSHIP_PENDING" ] || return 0
+  IFS=$'\t' read -r pending_resource pending_name pending_token < "$OWNERSHIP_PENDING"
+  case "$pending_resource" in clusterpolicy|clusterrole) :;;
+    *) echo "invalid pending ownership intent -- reconcile it manually"; return 1;; esac
+  if ! pending_live=$(kubectl get "$pending_resource" "$pending_name" \
+      -o json --ignore-not-found 2>&1); then
+    echo "$pending_resource/$pending_name: pending create read failed -- $pending_live"
+    return 1
+  fi
+  if [ -z "$pending_live" ]; then
+    rm -f "$OWNERSHIP_PENDING"
+    echo "$pending_resource/$pending_name: pending create never landed"
+    return 0
+  fi
+  if ! pending_live_token=$(printf '%s' "$pending_live" | jq -er \
+       '.metadata.annotations."policy.alauda.io/walkthrough-owner"') \
+     || [ "$pending_live_token" != "$pending_token" ]; then
+    echo "$pending_resource/$pending_name: live object does not carry the pending token"
+    echo "  It is not adopted or deleted. Reconcile ownership manually."
+    return 1
+  fi
+  pending_uid=$(printf '%s' "$pending_live" | jq -er '.metadata.uid') || return 1
+  pending_rows=$(awk -F '\t' -v r="$pending_resource" -v n="$pending_name" \
+    '$1==r && $2==n {print $3}' "$OWNERSHIP_LEDGER") || return 1
+  pending_count=$(printf '%s\n' "$pending_rows" | sed '/^$/d' | wc -l | tr -d ' ')
+  if [ "$pending_count" = 1 ] && [ "$pending_rows" = "$pending_uid" ]; then
+    rm -f "$OWNERSHIP_PENDING"
+    echo "$pending_resource/$pending_name: UID was already committed; pending intent cleared"
+    return 0
+  elif [ "$pending_count" != 0 ]; then
+    echo "$pending_resource/$pending_name: ledger conflicts with pending UID -- left pending"
+    return 1
+  fi
+  if ! printf '%s\t%s\t%s\n' "$pending_resource" "$pending_name" "$pending_uid" \
+      >> "$OWNERSHIP_LEDGER"; then
+    echo "could not commit recovered UID $pending_uid -- pending intent retained"
+    return 1
+  fi
+  rm -f "$OWNERSHIP_PENDING"
+  echo "$pending_resource/$pending_name: recovered create and recorded UID $pending_uid"
+}
+
+# Cluster-scoped objects: `apply` would silently overwrite an existing same-named
+# object. Always create through this helper: it lets the API server reject collisions
+# and records the returned UID. Paste these helpers into every fresh terminal used by
+# the walkthrough; the ledger file is the state that survives terminal changes.
+create_owned_cluster_object() {  # <manifest> <resource: clusterpolicy|clusterrole>
+  manifest=$1; resource=$2
+  [ "${OWNERSHIP_LEDGER_READY:-no}" = yes ] \
+    || { echo "ownership ledger is not writable -- nothing created"; return 1; }
+  reconcile_pending_cluster_create || return 1
+  [ ! -s "$OWNERSHIP_PENDING" ] \
+    || { echo "another create intent is pending -- nothing created"; return 1; }
+  case "$resource" in clusterpolicy|clusterrole) :;;
+    *) echo "$resource: unsupported resource -- nothing created"; return 1;; esac
+  # Check the ledger BEFORE the live create. Discovering a stale row afterwards would
+  # leave a new live object that this helper deliberately refuses to record twice.
+  if ! intended=$(kubectl create --dry-run=client -f "$manifest" -o json) \
+     || ! intended_name=$(printf '%s' "$intended" | jq -er '.metadata.name'); then
+    echo "$manifest: cannot derive metadata.name -- nothing created"; return 1
+  fi
+  if awk -F '\t' -v r="$resource" -v n="$intended_name" \
+      '$1==r && $2==n {found=1} END {exit !found}' "$OWNERSHIP_LEDGER"; then
+    echo "$resource/$intended_name: ledger already has this name -- reconcile it first"
+    return 1
+  fi
+  owner_token="${WALKTHROUGH_ID:-walkthrough}-$(date -u +%Y%m%dT%H%M%SZ)-$$"
+  intended=$(printf '%s' "$intended" | jq -c --arg t "$owner_token" \
+    '.metadata.annotations."policy.alauda.io/walkthrough-owner" = $t') || return 1
+  pending_tmp=$(mktemp "${OWNERSHIP_PENDING}.XXXXXX") || return 1
+  if ! printf '%s\t%s\t%s\n' "$resource" "$intended_name" "$owner_token" \
+      > "$pending_tmp" || ! mv "$pending_tmp" "$OWNERSHIP_PENDING"; then
+    rm -f "$pending_tmp"
+    echo "could not persist create intent -- nothing created"; return 1
+  fi
+  if ! created=$(printf '%s' "$intended" | kubectl create -f - -o json); then
+    echo "create did not return success; reconciling the persisted intent"
+    reconcile_pending_cluster_create
+    return 1
+  fi
+  if ! created_name=$(printf '%s' "$created" | jq -er '.metadata.name') \
+     || ! created_uid=$(printf '%s' "$created" | jq -er '.metadata.uid'); then
+    echo "created an object but could not parse its name/UID -- STOP and recover it"
+    return 1
+  fi
+  [ "$created_name" = "$intended_name" ] || {
+    echo "created name $created_name differs from dry-run name $intended_name -- STOP"
+    return 1
+  }
+  if ! printf '%s\t%s\t%s\n' "$resource" "$created_name" "$created_uid" \
+      >> "$OWNERSHIP_LEDGER"; then
+    echo "created $resource/$created_name but could not record UID $created_uid -- STOP"
+    echo "pending intent retained; the next helper call can recover it by token"
+    return 1
+  fi
+  rm -f "$OWNERSHIP_PENDING"
+  echo "$resource/$created_name: created and recorded UID $created_uid"
+}
+
+# Minimal example for one policy. The helper's `kubectl create` already performs the
+# collision check atomically, so no separate get/create race is needed.
+POLICY_NAME='<policy-name>'
+# Reject the unreplaced placeholder BEFORE the helper tries to open its manifest: a
+# literal <policy-name> would otherwise be treated as a shell redirection-looking filename.
+case "$POLICY_NAME" in '<'*'>') echo "fill in POLICY_NAME first"; POLICY_NAME='';; esac
+if [ -z "$POLICY_NAME" ]; then
+  echo "no policy name set -- nothing to create"
+else
+  create_owned_cluster_object "$POLICY_NAME.yaml" clusterpolicy
+fi
+
+# Cleanup helper: read/parse failures, missing ledger rows, duplicate ledger rows and
+# UID replacement all refuse deletion. DELETE is sent to the canonical API path with
+# a Kubernetes DeleteOptions UID precondition, closing the final read/delete race too.
+delete_owned_cluster_object() {  # <resource> <name>
+  resource=$1; name=$2
+  [ "${OWNERSHIP_LEDGER_READY:-no}" = yes ] \
+    || { echo "ownership ledger is not writable -- nothing deleted"; return 1; }
+  case "$resource" in
+    clusterpolicy) api_path="/apis/kyverno.io/v1/clusterpolicies/$name" ;;
+    clusterrole) api_path="/apis/rbac.authorization.k8s.io/v1/clusterroles/$name" ;;
+    *) echo "$resource/$name: unsupported resource -- left alone"; return 1 ;;
+  esac
+  if ! ledger_rows=$(awk -F '\t' -v r="$resource" -v n="$name" \
+      '$1==r && $2==n {print $3}' "$OWNERSHIP_LEDGER"); then
+    echo "$resource/$name: could not read ownership ledger -- left alone"; return 1
+  fi
+  if [ "$(printf '%s\n' "$ledger_rows" | sed '/^$/d' | wc -l | tr -d ' ')" != 1 ]; then
+    echo "$resource/$name: ownership ledger must contain exactly one UID -- left alone"; return 1
+  fi
+  expected_uid=$ledger_rows
+  if ! live=$(kubectl get "$resource" "$name" -o json 2>&1); then
+    case "$live" in
+      *NotFound*)
+        tmp_ledger=$(mktemp) || return 1
+        if awk -F '\t' -v r="$resource" -v n="$name" -v u="$expected_uid" \
+             '!($1==r && $2==n && $3==u)' "$OWNERSHIP_LEDGER" > "$tmp_ledger" \
+           && mv "$tmp_ledger" "$OWNERSHIP_LEDGER"; then
+          echo "$resource/$name: already absent; reconciled its ledger row"; return 0
+        fi
+        echo "$resource/$name: absent but ledger row could not be reconciled"; return 1 ;;
+      *) echo "$resource/$name: read failed -- left alone: $live"; return 1 ;;
+    esac
+  fi
+  if ! live_uid=$(printf '%s' "$live" | jq -er '.metadata.uid'); then
+    echo "$resource/$name: live UID could not be parsed -- left alone"; return 1
+  fi
+  if [ "$live_uid" != "$expected_uid" ]; then
+    echo "$resource/$name: UID changed ($live_uid != $expected_uid) -- replacement left alone"; return 1
+  fi
+  body=$(jq -cn --arg uid "$expected_uid" \
+    '{apiVersion:"v1",kind:"DeleteOptions",preconditions:{uid:$uid}}') || return 1
+  if printf '%s' "$body" | kubectl delete --raw "$api_path" -f - >/dev/null; then
+    echo "$resource/$name: delete accepted with UID precondition $expected_uid"
+    echo "  Re-run this helper after the object is absent to reconcile the ledger row."
+    return 0
+  else
+    echo "$resource/$name: UID-preconditioned delete failed -- left in ledger"
+    return 1
+  fi
+}
+
+# Each section passes only names it actually created. A successful first call sends
+# the preconditioned delete; run it once more after deletion is observed to remove the
+# matching ledger row. It never treats a read error as absence.
+if [ -n "$POLICY_NAME" ]; then
+  delete_owned_cluster_object clusterpolicy "$POLICY_NAME"
+fi
+# Keep the ledger itself until every row has been reconciled; it is recovery material.
 ```
 
 If you genuinely must run a demo alongside an existing policy, give your copy a distinct prefixed name (which is what this document's per-section probe scripts do); do not reuse the published name.
@@ -2113,13 +2441,35 @@ Also, `official-gated-build` in the [§4.1.1](#s4-1-1) approved list is merely a
 
 Elements ② and ③ do not conflict, because they speak of two different things: **what gets echoed is "the value in the request"** (the submitter wrote it in; they already know it), **what does not get echoed is "the approved set"** (which they do not know and should not be able to derive from an error). So "your `srcImage` is not among the approved sources" is right, and "the approved sources are A / B / C" is wrong. **Do not collapse the two into "the actual value must not be echoed either"** — that regresses to the useless message that only says "non-compliant".
 
-Three practical points (each stumbled over on this document's own policies):
+Three practical points (each has a live example among this chapter's policies):
 
 - **Multiple criteria under `deny.conditions.any` share one message**: the user cannot tell which one they tripped. Either split the criteria into separate rules (one message each), or **echo the actual values of a few key fields in the message** (most policies in this document choose the latter — e.g. [§4.2.1](#s4-2-1) prints the actual values of both gate parameters). The test is: **after reading the message, do you know which field to change?**
 - **`element.*` cannot be used in a `foreach` message** (Kyverno rejects it at policy creation); to call out the specific element you have to recompute it with a `context` variable — the writing pattern and its two traps are in the design notes of [§4.5.3](#s4-5-3).
 - **Cancellation (mutate-existing / admission mutate) has no rejection message**: the user only sees `Cancelled`. **The reason must be written into the object by you** (the `cancel-reason` annotation or `spec.statusMessage`) — otherwise afterwards you cannot even prove "a policy did this" ([§6.2.3](#s6-2-3)).
 
 One boundary in the other direction: **do not treat the message as an audit record**. It lives only in that one API response and the PipelineRun's condition; once the object is cleaned up it is gone ([§4.4.4](#s4-4-4)).
+
+#### 4.0.7 From demo assets to production assets (the five-step conversion and acceptance before copying) {#s4-0-7}
+
+What this chapter ships is **demo assets**: every scope is pinned to `policy-poc`, and for 11 of the 21 policies **changing the scope and the placeholders is not enough** (the ones marked 🔧 in the "usable as copied?" column of [§4.0.2](#s4-0-2) — 10 of them pin their identity criteria to the demo fixtures, and the remaining one, `pipeline-entry-lockdown`, requires you to complete the list of legitimate automation creators in your environment). **Copied verbatim into production they will not error out, but neither will they work as you expect**, and the two categories fail in opposite directions: the allowlist / contract types will **reject all** of your real pipelines (noisy, spotted at a glance), while the Audit / cancellation / identity-preconditioned types will **silently skip** (not one record in PolicyReport — looking exactly like "no violations"). The five steps below are the complete move from demo assets to production assets; **step 4 is the only one that can uncover silent failure, and must not be skipped**.
+
+1. **Swap the scope**: replace the `policy-poc` listed under `namespaces` in every policy with the range you actually govern. Pick one of the four shapes per [§5.1](#s5-1): **enumerating** namespaces one by one, a `namespaceSelector` selecting by Namespace labels, "platform-level `ClusterPolicy` + **negative `exclude`** carving out system namespaces", or simply **converting to a namespaced `Policy`** for project self-service (the second layer of [§5.2](#s5-2)). For "covered by default, newly created namespaces picked up automatically" you must use the negative-`exclude` shape — enumeration and label selection both naturally miss namespaces created later (the first row of [§3.6](#s3-6)).
+2. **Swap the identity criteria**: for the 11 policies marked 🔧 in [§4.0.2](#s4-0-2), replace the demo identities (`gated-build` / `policy-demo-scanner` / `tekton-templates` / the demo task aliases, etc.) with your real template names, Task names, and namespaces, one policy at a time; `pipeline-entry-lockdown` is a different kind — you must **enumerate every legitimate automation creator in the environment** (the inventory method is in that placeholder's row of [§4.0.3](#s4-0-3)).
+3. **Replace the placeholders**: work through [§4.0.3](#s4-0-3) one by one. **Do not just search for angle brackets**: the three rows that section calls out (the hub catalog name `catalog`, the Tekton controller identity, the batch of `approved-*` object names) are bare literals in the policies — searching for `<` will not find them; and conversely the `catalog` row also carries 11 **parameter-key** occurrences that must never be replaced.
+4. **Acceptance** (**mandatory**): run at least the two cells per policy — one **real violating input must produce the failure / audit / cancellation outcome expected for its category**, and one **real compliant input must not be falsely rejected**. Only the Enforce admission types manifest as "violating request denied, compliant request allowed"; the pass criteria for the Audit and cancellation types follow the table below, and the command skeletons are in [§3.4.1](#s3-4-1).
+5. **Gradual rollout**: per [§3.5](#s3-5), observe in `Audit` first and switch to `Enforce` only once false positives reach zero; once live, watch the change triggers per [§3.6](#s3-6), and run the minimal regression set per [§3.8](#s3-8) after every upgrade.
+
+**The criteria for step 4 (do not treat "no error" as a pass)**:
+
+| Policy category | What counts as a pass | What a false pass looks like |
+|---|---|---|
+| Allowlist / parameter-contract types (Enforce) | The violating request is denied, and **the policy name in the denial message is this very policy**; the compliant request is allowed | Being intercepted by a **different** policy also looks like "denied" ([§4.0.5](#s4-0-5)) — skip checking the policy name and you will score it as a pass |
+| Audit types | A `fail` entry for this policy **appears** in the PolicyReport | Identity criteria pinned wrong → the rule skips → the report is clean, indistinguishable from "no violations" |
+| Cancellation types (mutate-existing / admission mutate) | The target object genuinely shows a **cancellation-class** `spec.status` (`CancelledRunFinally` for the parent run, `TaskRunCancelled` for the gate TaskRun) and the `cancel-reason` ([§6.2.3](#s6-2-3)) — judged on the **value**, not on "non-empty" | The request being allowed through as usual is **normal** (cancellation types do not reject requests), so "the submission succeeded" says nothing about whether the policy took effect |
+| Identity-preconditioned rules (the three [§4.0.3](#s4-0-3) calls out: `gate-param-contract` / `pipeline-entry-lockdown` / the RBAC closure of [§5.3](#s5-3)) | Only submissions under **that identity** (`--as=<identity>`) count | Run the probe under an ordinary identity and the rule is never evaluated — an eternal false pass |
+
+**The cost is concentrated in step 2**; the other four steps are mechanical. If your templates match this document's profile (official java / python 0.3, sonarqube-scanner, trivy-scanner, skopeo-copy), the 10 policies marked ✅ in [§4.0.2](#s4-0-2) can skip step 2 — **steps 4 and 5 apply to every policy without exception**: acceptance and gradual rollout are not waived just because "only placeholders changed".
+
 ### 4.1 Template and definition constraints (the definition side of contract 1 "identity" / contract 7 "entry closure") {#s4-1}
 
 **The general contract**: PipelineRuns in workload namespaces may only reference governed pipeline definitions. "Governed" unfolds along the three tiers of strength in [§2.1](#s2-1):
@@ -2128,6 +2478,14 @@ One boundary in the other direction: **do not treat the message as an audit reco
 2. hub / git **immutable reference** (catalog entry + explicit version / commit SHA): identity is locked in-cluster, content trust comes from the catalog release process / repository governance — strong identity, content dependent on external governance;
 3. hub / git **mutable reference** (branch / tag / defaulted version): content changes take effect automatically as the remote moves — tracking template updates without touching cluster configuration, which is itself a common and legitimate usage; but Kyverno cannot lock content at this tier, and any strong constraint can only come from repository-side permission controls (protected branches / tags, tightened write permissions). Where the repository side lacks that layer of control, reject it.
 
+**One road this document does not take: structural validation at admission of the definition objects.** CREATE / UPDATE of the `Pipeline` / `Task` definitions themselves also pass through admission, and in theory part of contracts 3 / 5 / 6 could be judged statically there — whether the gate task carries a `when`, whether the release-class tasks `runAfter` (transitively) to the gate, whether a release-class task appears in `finally`. This document chooses not to publish such policies, for three reasons, written down here so those who need them can judge for themselves whether it is worth doing:
+
+- **It works only for in-cluster definitions**. Definitions referenced via hub / git never enter this cluster's admission at all, so the same criterion comes to nothing on the most common reference shapes — the reason the after-the-fact Audit of [§4.1.4](#s4-1-4) hangs on `status.pipelineSpec` is precisely that it is the **only** place where the resolution results of all three channels are visible at once.
+- **"Transitive dependency" is expensive in JMESPath**. `runAfter` gives only the direct predecessors; judging "is the release task dominated by the gate" requires computing the transitive closure. A single-level expansion is writable, but on templates with multi-level dependencies it reaches wrong conclusions — the classic case where **a criterion is more dangerous than no criterion** (a missed judgment is a silent allow; a wrong judgment rejects every normal template).
+- **The criteria must be configured template by template**: which task is the gate and which are release-class is template semantics, not an API field — like the identity contract of [§4.2.1](#s4-2-1), it has to be written per template.
+
+So this document explicitly leaves contracts 3 / 5 / 6 on the "template design responsibility + post-hoc Audit" side (the three rows of the [§2.3](#s2-3) table whose Guarantor reads `T + K post-hoc Audit`). **If your templates are all in-cluster definitions and manageably few**, adding an Enforce policy on the definition side for "the gate must not carry a `when`; no release-class task may appear in `finally`" is worth it: those two criteria only read `spec.tasks[].when` and `spec.finally[]`, no transitive closure involved, and the cost lands on the third bullet above (configuring the gate name and the release-class task names per template). What it blocks is **definitions entering the cluster** — it is **complementary to, not a replacement for** [§4.1.5](#s4-1-5) reading the runtime `status.skippedTasks`: remotely referenced templates can still only rely on the latter. Roll out per [§3.5](#s3-5): Audit first, then Enforce.
+
 #### 4.1.1 Template allowlist (three channels, fail-closed) {#s4-1-1}
 
 - **What it governs**: PipelineRuns in workload namespaces **may only reference governed pipeline definitions** — unknown templates are stopped at the "reference shape" layer.
@@ -2135,9 +2493,12 @@ One boundary in the other direction: **do not treat the message as an audit reco
 - **How the policy is layered**: ① each of the three channels computes one boolean (`clusterOK` / `hubOK` / `gitOK`), each locking the **complete** canonical identity → ② take the union of the three → ③ **union false ⇒ deny** — inline `pipelineSpec`, bare name references, unpinned versions, and any reference shape that appears in the future all land on the deny side by default.
 - **What it cannot govern**: it only knows "who is being referenced" — it cannot see **the content of the referenced definition** (at CREATE the definition is not yet resolved, [§2.1](#s2-1) observation point 2) — content drift is backstopped by the after-the-fact Audit in [§4.1.4](#s4-1-4); channel 1's strength additionally depends on write permissions to `tekton-templates` being closed off by RBAC ([§4.1.2](#s4-1-2)); for cases that genuinely need inlining, see the exception in [§4.1.3](#s4-1-3).
 
-**The key criterion** — each of the three channels locks the complete identity, and a false union is a denial:
+**The key criterion** — each of the three channels locks the complete identity, and a false union is a denial (**fragment, not a complete manifest you can `kubectl apply` as-is**; the full policy is in this section's details block):
 
 ```yaml
+        # EXCERPT -- key conditions only, NOT a standalone manifest; the
+        # indentation is kept from the full policy, so this block alone does
+        # not parse. Apply the complete YAML from the details block below.
         # channel 1: cluster resolver — FULL identity: kind + namespace + an approved name
         - name: clusterOK
           variable:
@@ -2155,10 +2516,12 @@ One boundary in the other direction: **do not treat the message as an audit reco
               && (length(p[?name=='type']) == `0`
               || (length(p[?name=='type']) == `1`
               && refType=='artifact'))
-        # channel 3: approved git repo + full commit SHA + EXACT path (a repo pins content only with url+sha+path)
+        # channel 3: approved git repo + full commit SHA + EXACT path (a repo pins
+        # content only with url+sha+path) + no other git param (gitExtraCount is
+        # declared in the full YAML: it counts params outside that triple)
         - name: gitOK
           variable:
-            jmesPath: "resolver=='git' && refUrl=='<approved-git-repo>' && regex_match('^[0-9a-f]{40}$', refRevision) && refPath=='pipeline/gated-build.yaml'"
+            jmesPath: "resolver=='git' && refUrl=='<approved-git-repo>' && regex_match('^[0-9a-f]{40}$', refRevision) && refPath=='pipeline/gated-build.yaml' && gitExtraCount == `0`"
         # ...(validate.message omitted; see the full YAML below)
         deny:
           conditions:
@@ -2172,7 +2535,7 @@ The field choices for the three channels are not casual picks — every missing 
 
 - **cluster** = `kind + namespace + name`. Checking namespace alone lets through any ungated Pipeline in that namespace.
 - **hub** = `governed type + no request-level url + kind + catalog + name + exact version`. Checking only the resource tuple still misses backend overrides and type switching (see the warning below).
-- **git** = `url + 40-char SHA + exact pathInRepo`. Checking only url + SHA lets through any other file in the same commit.
+- **git** = `url + 40-char SHA + exact pathInRepo`, **and not one parameter beyond those three is allowed**. Checking only url + SHA lets through any other file in the same commit; and `configKey` / `serverURL` swap out the git resolver's entire configuration profile (including which api-token Secret it uses), while `token` / `tokenKey` name credentials directly — with the reference pinned they cannot change which content gets fetched, but they have no legitimate reason to appear in a template reference.
 
 Two further structural design points:
 
@@ -2198,7 +2561,13 @@ requesting resource from Hub: Get "http://127.0.0.1:1/definitely-not-a-hub/api/v
 dial tcp 127.0.0.1:1: connect: connection refused
 ```
 
-`type` must be locked down for the same reason: switching to another type is switching to another set of endpoints and another set of governance assumptions.
+`type` must be locked down for the same reason: switching to another type is switching to another set of endpoints and another set of governance assumptions. **The `type` half of this criterion is directly verifiable in the upstream source**: the hub resolver's `Resolve` switches between the artifact / tekton endpoint sets by `type`, and the two also differ in URL path shape.
+
+**The `url` half is established upstream behavior, not a quirk of this environment**: the constant is defined as `ParamURL = "url"` in `pkg/resolution/resource/name.go`, and the hub resolver reads it in `pkg/remoteresolution/resolver/hub/` — the comment reads verbatim "a custom hub API endpoint to use **instead of the cluster-configured default**", and what it overrides is exactly `ARTIFACT_HUB_API` / `TEKTON_HUB_API`. **But it has a version floor**: the handling exists only in the new `remoteresolution` package — of the versions checkable on this machine, v0.55.0 / v1.6.1 / v1.6.2 do **not** have it, v1.11.1 / v1.12.0 / v1.12.1 **do** (the old `pkg/resolution/resolver/hub/` has it in no version — checking only there yields the wrong conclusion "upstream does not support this").
+
+**The behavior is a complete replacement**: the same set of hub parameters plus one extra `url`, and the resolver switches to hitting that address — on resolution failure it is also what the error echoes, not the cluster-configured `artifact-hub-api`.
+
+**So this criterion must stay**: what it blocks is a real bypass channel that is part of upstream's design. On builds below the version floor above, `url` is ignored — but **an extra unknown parameter in a reference is by itself evidence the reference has been tampered with**, and rejecting it costs nothing; the `type` half holds on every version.
 
 :::
 
@@ -2257,6 +2626,16 @@ spec:
         - name: refPath
           variable:
             jmesPath: "p[?name=='pathInRepo'].value | [0] || ''"
+        # Any git param beyond the pinned triple is refused. configKey and
+        # serverURL select a whole git-resolver profile -- including which
+        # api-token Secret the resolver uses -- and token / tokenKey name a
+        # credential outright. If your approved repo genuinely needs one of
+        # them, add that exact key to the exclusion list below, not a blanket
+        # allowance.
+        - name: gitExtraCount
+          variable:
+            jmesPath: "length(p[?name!='url' && name!='revision' && name!='pathInRepo'])"
+            default: 0
         # channel 1: cluster resolver — FULL identity: kind + namespace + an approved name
         - name: clusterOK
           variable:
@@ -2274,10 +2653,12 @@ spec:
               && (length(p[?name=='type']) == `0`
               || (length(p[?name=='type']) == `1`
               && refType=='artifact'))
-        # channel 3: approved git repo + full commit SHA + EXACT path (a repo pins content only with url+sha+path)
+        # channel 3: approved git repo + full commit SHA + EXACT path (a repo pins
+        # content only with url+sha+path) + no other git param (gitExtraCount is
+        # declared in the full YAML: it counts params outside that triple)
         - name: gitOK
           variable:
-            jmesPath: "resolver=='git' && refUrl=='<approved-git-repo>' && regex_match('^[0-9a-f]{40}$', refRevision) && refPath=='pipeline/gated-build.yaml'"
+            jmesPath: "resolver=='git' && refUrl=='<approved-git-repo>' && regex_match('^[0-9a-f]{40}$', refRevision) && refPath=='pipeline/gated-build.yaml' && gitExtraCount == `0`"
       validate:
         failureAction: Enforce
         message: >-
@@ -2286,7 +2667,9 @@ spec:
           hub resolver (type omitted under the governed artifact default, or
           type=artifact; no request-level url; kind=pipeline;
           catalog/java-image-build-scan-deploy pinned to version 0.3), or the
-          approved git repo pinned to a full commit SHA and exact path. Inline
+          approved git repo pinned to a full commit SHA and exact path, carrying
+          no other git param (configKey / serverURL / token select a resolver
+          profile or a credential and are never needed by a template ref). Inline
           pipelineSpec, plain name refs, unpinned or unknown identities are rejected.
         deny:
           conditions:
@@ -2298,7 +2681,7 @@ spec:
 
 :::
 
-:::details Verification probes (13, --dry-run=server)
+:::details Verification probes (15, --dry-run=server)
 
 | Probe | Expected |
 |---|---|
@@ -2315,6 +2698,8 @@ spec:
 | git: approved repo + SHA + **exact path** | Allow |
 | git: approved repo + SHA + **wrong path** | Deny |
 | git: approved repo + `revision: main` (not a SHA) | Deny |
+| git: approved repo + SHA + exact path, **with an extra `configKey`** | Deny |
+| git: approved repo + SHA + exact path, **with an extra `serverURL`** | Deny |
 
 :::
 
@@ -2429,9 +2814,12 @@ The `inlineOK` snippet below is therefore only a **structural example** of how t
 - **How the policy is layered**: ① use `preconditions` to scope the rule precisely to one template profile (derived from the parent `PipelineRun.spec.pipelineRef`, not from runtime labels) → ② evaluate only once `status.pipelineSpec` has appeared → ③ pull the gate task's complete `taskRef` out of the resolved result and assert its identity field by field → ④ on mismatch, record a PolicyReport violation.
 - **What it cannot govern**: it is **after the fact** — it cannot stop this run; nor can it detect "the gate is still there but skipped by `when` / an empty matrix" (that belongs to contract 3, handled by [§4.1.5](#s4-1-5)). **It reads `status.pipelineSpec`, so its evidential force stops at "who can write `pipelineruns/status`"** — an identity holding write access to that subresource can write in a "compliant-looking" `pipelineSpec` directly and have the drift audit deliver a compliant verdict (the same trust boundary as [§4.4.1](#s4-4-1)); past that point, this section retains only the ability to "observe what the request wrote" and is no longer evidence of gate enforcement.
 
-**The key criterion** — what is locked is the complete source, not the name; and **count first, then read**:
+**The key criterion** — what is locked is the complete source, not the name; and **count first, then read** (**fragment, not a complete manifest you can `kubectl apply` as-is**; the full policy is in this section's details block):
 
 ```yaml
+      # EXCERPT -- key conditions only, NOT a standalone manifest; the
+      # indentation is kept from the full policy, so this block alone does
+      # not parse. Apply the complete YAML from the details block below.
         - name: scanTaskCount
           variable:
             jmesPath: "length((request.object.status.pipelineSpec.tasks || `[]`)[?name=='scan'])"
@@ -2511,9 +2899,8 @@ spec:
             jmesPath: "contains(keys(request.object.status || `{}`), 'pipelineSpec')"
         # status.pipelineSpec keeps the complete taskRef. Lock every identity field;
         # comparing only `name` would accept a same-name Task from another source.
-        # status.pipelineSpec.tasks carries no x-kubernetes-list-type in the CRD,
-        # so two tasks named scan survive admission and [0] would only see the
-        # first. Count first, then read.
+        # Nothing in the CRD dedupes this list by name, so two tasks named scan
+        # survive admission and [0] would only see the first. Count, then read.
         - name: scanTaskCount
           variable:
             jmesPath: "length((request.object.status.pipelineSpec.tasks || `[]`)[?name=='scan'])"
@@ -2629,12 +3016,17 @@ The crux of the criterion is **distinguishing two classes of skips**; the values
 
 - **Config-driven "deliberate skips" = the gate was opted out — a violation**: `When Expressions evaluated to false` (when-skip) and `Matrix Parameters have an empty array` (empty-matrix skip).
   Their downstream behavior is not the same: after `when=false`, a release that depends on the gate only through `runAfter` **keeps executing**; an empty matrix instead makes release cascade-record `Parent Tasks were skipped` and create no TaskRun. **Whether or not downstream happens to be caught by the cascade, a gate skipped by configuration must leave an Audit record.**
-- **Cascade- / termination-driven "passive skips" = legitimate, not a violation**: `Parent Tasks were skipped` / `PipelineRun was stopping` / `PipelineRun was gracefully cancelled` / `PipelineRun was gracefully stopped` / `PipelineRun timeout has been reached` (plus the two Tasks / Finally timeout variants). These mean the pipeline was already ending in failure, cancellation, or timeout; the gate being skipped along with it is not a gate bypass.
+- **Cascade- / termination-driven "passive skips" = legitimate, not a violation**: `Parent Tasks were skipped` / `PipelineRun was stopping` / `PipelineRun was gracefully cancelled` / `PipelineRun was gracefully stopped` / `PipelineRun timeout has been reached` / `PipelineRun Tasks timeout has been reached` / `PipelineRun Finally timeout has been reached` (the three timeout variants, values listed verbatim and in full — if this tier is ever rewritten into an allowlist shape, the exact strings are required). These mean the pipeline was already ending in failure, cancellation, or timeout; the gate being skipped along with it is not a gate bypass.
 - `Results were missing` sits between the two — the gate's input result was never produced, which is mostly a contract 4 data-binding problem; fold it into the violation set as needed.
 
-**The key criterion** — only "deliberate skips" count as violations, and **count entries, do not take `[0]`**:
+The three tiers above together are the enum's complete set of values (there is also a `None` — the "not skipped" sentinel value, which never appears in `skippedTasks`). **But this is a denylist ([§3.6](#s3-6))**: when Tekton adds a new `SkippingReason`, it lands on the "not a violation" side by default — if the new reason happens to be config-driven too, a gate skipped by configuration no longer leaves an Audit record, and **nothing errors**. So re-check the value table after every Tekton upgrade: the enum is defined in the `SkippingReason` constant block of upstream `pkg/apis/pipeline/v1/pipelinerun_types.go`; once compared, sort each addition into one of the three tiers above, then adjust the criterion.
+
+**The key criterion** — only "deliberate skips" count as violations, and **count entries, do not take `[0]`** (**fragment, not a complete manifest you can `kubectl apply` as-is**; the full policy is in this section's details block):
 
 ```yaml
+        # EXCERPT -- key conditions only, NOT a standalone manifest; the
+        # indentation is kept from the full policy, so this block alone does
+        # not parse. Apply the complete YAML from the details block below.
         - name: gateSkipCount
           variable:
             jmesPath: "length((request.object.status.skippedTasks || `[]`)[?name=='scan'])"
@@ -2722,9 +3114,9 @@ spec:
         # the scanner's skip entry for THIS profile (scan is the fixture gate task —
         # per-profile, see warning above). Kyverno treats a nil context result as an
         # evaluation error, so provide an explicit empty object for the normal case.
-        # skippedTasks is x-kubernetes-list-type: atomic -- whole-list replace, NOT
-        # dedupe-by-key -- so two entries named scan survive admission. Decide on the
-        # counts, and keep gateSkip only for the message.
+        # Nothing in the CRD dedupes skippedTasks by name, so two entries named
+        # scan survive admission. Decide on the counts, and keep gateSkip only
+        # for the message.
         - name: gateSkipCount
           variable:
             jmesPath: "length((request.object.status.skippedTasks || `[]`)[?name=='scan'])"
@@ -2837,15 +3229,14 @@ Expected: command 1 gives `scan` + `When Expressions evaluated to false`; comman
 
 #### Cleanup (§4.1)
 
-Per the two rules of [§4.0.4](#s4-0-4): delete the three cluster-scoped policies by name (glance at their `creationTimestamp` before deleting); the runtime objects all live in self-created namespaces and are reclaimed with the namespace cascade — but `PipelineRun/doc-gate-skipped` is better deleted right now: when the next section is rerun under "each section standalone", `kubectl get policyreport` will show an extra `doc-gate-skipped` row belonging to the previous section, which is easily misread as the current section's verdict.
+Per the two rules of [§4.0.4](#s4-0-4): the three cluster-scoped policies are deleted under the UID-ledger guard; the runtime objects all live in self-created namespaces and are reclaimed with the namespace cascade — but `PipelineRun/doc-gate-skipped` is better deleted right now: when the next section is rerun under "each section standalone", `kubectl get policyreport` will show an extra `doc-gate-skipped` row belonging to the previous section, which is easily misread as the current section's verdict.
 
 ```bash
-# §4.0.4's look-before-delete: cluster-scoped, so one glance at when they were created.
-kubectl get clusterpolicy pipeline-template-allowlist \
-  pipeline-resolved-definition-audit pipeline-gate-must-execute-audit \
-  -o custom-columns='NAME:.metadata.name,CREATED:.metadata.creationTimestamp'
-kubectl delete clusterpolicy pipeline-template-allowlist \
-  pipeline-resolved-definition-audit pipeline-gate-must-execute-audit
+# The helper refuses missing/duplicate ledger rows, read errors and UID replacements.
+for pol in pipeline-template-allowlist pipeline-resolved-definition-audit \
+  pipeline-gate-must-execute-audit; do
+  delete_owned_cluster_object clusterpolicy "$pol"
+done
 # Its TaskRuns / Pods cascade via ownerReference, and the PolicyReport rows go with it.
 kubectl delete pipelinerun -n policy-poc doc-gate-skipped --ignore-not-found
 ```
@@ -2866,7 +3257,7 @@ kubectl delete pipelinerun -n policy-poc doc-gate-skipped --ignore-not-found
 
 :::warning Two disciplines — violate either one and the whole section can be bypassed
 
-**① Never trust a child TaskRun's `tekton.dev/pipeline` / `pipelineTask` / `pipelineRun` labels.** Tekton lets a PipelineRun override these controller labels via `spec.taskRunSpecs[].metadata.labels`, which means these "identities" can be forged by the caller. Identity must be derived from the controller `ownerReference` + the live parent run + `spec.taskRef`.
+**① Never trust a child TaskRun's `tekton.dev/pipeline` / `pipelineTask` / `pipelineRun` labels.** Tekton lets a PipelineRun override these controller labels via `spec.taskRunSpecs[].metadata.labels`, which means these "identities" can be forged by the caller. **The mechanism is "first writer wins, and the user writes first"**: when the controller synthesizes the child TaskRun's labels, it merges in `taskRunSpecs[].metadata.labels` first, then its own `tekton.dev/*` set — and the merge function **writes a key only when it does not exist yet** — a same-named key the user has already written is neither overwritten by the controller nor reported as an error. So this is not a defect you can count on being fixed; it is the established merge order. Identity must be derived from the controller `ownerReference` + the live parent run + `spec.taskRef`.
 
 **② Parameter absence must fail closed.** A parameter the pipeline did not bind **does not appear** in the TaskRun's `spec.params` (the Task definition's default takes effect). Only when `spec.taskRef` is already locked to an "exact Task version whose defaults are trusted" may the policy map absence to that trusted default; with identity unlocked or defaults unknown, absence is always a violation.
 
@@ -2881,9 +3272,12 @@ Also note: a gate skipped by `when` produces no TaskRun at all (contract 3), so 
 - **How the policy is layered**: ① first prove provenance — the creator must be the Tekton controller SA, carrying a controller ownerReference, and the **live** parent run is looked up by owner to check the UID; ② then lock identity — the parent run's `pipelineRef` must be exactly `tekton-templates/gated-build`, and the current `taskRef` must be exactly the trusted scanner; ③ only then judge the parameter values, treating **"absent" and "explicit empty string" separately** — only absence inherits the trusted Task's default `"true"`; an explicit `false` / empty string / `TRUE` / `1` all fail the bar.
 - **What it cannot cover**: deny means the gate TaskRun simply cannot be created; the parent run's terminal state is `CreateRunFailed` and **finally does not run**; if finally must still run, switch to [§4.2.2](#s4-2-2) (cancel the parent run) or [§4.2.3](#s4-2-3) (mutate the gate TaskRun itself into a cancelled state).
 
-**The key criterion** — establish the identity chain first, then judge values; keep "absent" apart from "explicit empty string" with a dedicated presence variable:
+**The key criterion** — establish the identity chain first, then judge values; keep "absent" apart from "explicit empty string" with a dedicated presence variable (**fragment, not a complete manifest you can `kubectl apply` as-is**; the full policy is in this section's details block):
 
 ```yaml
+      # EXCERPT -- key conditions only, NOT a standalone manifest; the
+      # indentation is kept from the full policy, so this block alone does
+      # not parse. Apply the complete YAML from the details block below.
         # Only an absent param inherits the trusted Task default "true";
         # an explicit empty string is NOT absence
         - name: scanQGPresent
@@ -2922,7 +3316,7 @@ Also note: a gate skipped by `when` produces no TaskRun at all (contract 3), so 
 
 This rule uses `apiCall` to look up the parent PipelineRun by ownerReference and check its UID. **A failed lookup (parent object missing, API server unreachable, insufficient permissions) does not degrade into a "skip" — the entire rule errors and the request is denied.** Submitting, as the Tekton controller SA, a TaskRun whose ownerReference points at a nonexistent parent run gives:
 
-```
+```text
 failed to evaluate preconditions: failed to substitute variables in condition value:
 failed to resolve parentRun.metadata.uid at path : failed to fetch data for APICall:
 failed to GET resource with raw url
@@ -3076,6 +3470,8 @@ spec:
 ```
 
 :::
+
+**How to verify**: this section ships no separate probe manifests — reuse the two fixtures of [§3.3](#s3-3) and, per the third kind in [§3.4](#s3-4), **actually run a pipeline** (a `--dry-run` probe will not do: the deny happens the moment the Tekton controller creates the child TaskRun, not the moment you submit the PipelineRun — reasoning in [§3.4.1](#s3-4-1)): rebuild `demo-run-gates-off` under a different `metadata.name`; before the policy is installed it sails through green (the bypass [§3.3](#s3-3) deliberately exposes), and with the policy installed the `scan` TaskRun must fail to be created, the parent run ending `CreateRunFailed` with finally not running. Rebuild `demo-run-pass` under a new name too, as the positive control — its three tasks must run to completion, unaffected. **Run both** — running only the negative one cannot prove the policy does no collateral damage.
 
 This example focuses on the most critical "switches must not be turned off". The scanner's gate **thresholds / rules** (`analyzeQualityGateRules`) can be covered the same way with one more rule validating a baseline (for example, it must contain a coverage rule with a threshold ≥ 50), written after the numeric fail-closed pattern of [§4.4.2](#s4-4-2) (bound the value to 0–100 with a regex first, and only `to_number` once boundedness is confirmed, steering clear of the overflow and coercion traps of [§6.1.7](#s6-1-7)). Also, parameter expansion covers more than `$(params.x)` — **upstream result references get resolved too**, so "a result value bound as a downstream parameter" can equally be validated by admission at the downstream TaskRun's CREATE.
 
@@ -3391,7 +3787,7 @@ Note this only proves the trigger wiring and the finally behavior are correct; *
 
 #### 4.2.3 Admission-mutate cancellation: the synchronous alternative to deny (cancelling the gate TaskRun itself) {#s4-2-3}
 
-- **What it governs**: still the same thing (the gate switches must not be turned off), via a third response form — **do not reject the gate TaskRun's creation; mutate it into "already cancelled" within the same admission pass**.
+- **What it governs**: uses **the same complete identity chain and the same set of criteria** as [§4.2.1](#s4-2-1) (parent Pipeline profile, live parent UID, current Task profile, and both gate switches — none of them optional), via a third response form — **do not reject the gate TaskRun's creation; mutate it into "already cancelled" within the same admission pass**.
 - **Why it is hard**: deny makes this DAG node **not exist at all** — the DAG never reaches done and finally is starved; [§4.2.2](#s4-2-2) lets finally run, but at the price of an asynchronous race and extra RBAC. Neither is ideal.
 - **How the policy is layered**: ① likewise lock the Tekton controller as the creator and the Task's resolver coordinates → ② on hitting a non-compliant switch, perform an admission `mutate` → ③ write `spec.status: TaskRunCancelled` and `spec.statusMessage: <reason>` onto that TaskRun.
 - **The only synchronous one among this document's cancellation paths** — the others ([§4.2.2](#s4-2-2) cancelling the parent run, [§4.6.1](#s4-6-1) results below the bar, [§4.6.2](#s4-6-2) definition drift) all act asynchronously after the event; the full table is in the [§4.6](#s4-6) introduction.
@@ -3453,6 +3849,7 @@ spec:
                 - CREATE
               namespaces:
                 - policy-poc
+                - policy-exempt-runs
             # Only TaskRuns materialized by the Tekton controller are in scope.
             # A bare TaskRun created by a user never reaches this rule -- closing that
             # entry point is §4.5.4's job, not this policy's.
@@ -3461,11 +3858,51 @@ spec:
                 name: tekton-pipelines-controller
                 namespace: tekton-pipelines
       context:
+        # Keep the same parent identity chain as §4.2.1. Pinning only the current
+        # Task would widen this response to every Pipeline that happens to reuse it,
+        # so it would no longer be an interchangeable response to the same profile.
+        - name: parentRef
+          variable:
+            jmesPath: "request.object.metadata.ownerReferences[?kind=='PipelineRun' && controller==`true`] | [0]"
+            default:
+              name: ""
+              uid: ""
+        - name: parentName
+          variable:
+            jmesPath: "parentRef.name || ''"
+            default: ""
+        - name: parentUID
+          variable:
+            jmesPath: "parentRef.uid || ''"
+            default: ""
+        - name: parentRun
+          apiCall:
+            urlPath: "/apis/tekton.dev/v1/namespaces/{{ request.namespace }}/pipelineruns/{{ parentName }}"
+        - name: parentPipelineResolver
+          variable:
+            jmesPath: "parentRun.spec.pipelineRef.resolver || ''"
+            default: ""
+        - name: parentPipelineKind
+          variable:
+            jmesPath: "(parentRun.spec.pipelineRef.params || `[]`)[?name=='kind'].value | [0] || ''"
+            default: ""
+        - name: parentPipelineName
+          variable:
+            jmesPath: "parentRun.spec.pipelineRef.name || ((parentRun.spec.pipelineRef.params || `[]`)[?name=='name'].value | [0]) || ''"
+            default: ""
+        - name: parentPipelineNamespace
+          variable:
+            jmesPath: "(parentRun.spec.pipelineRef.params || `[]`)[?name=='namespace'].value | [0] || ''"
+            default: ""
         # Identify the resolved Task by its resolver coordinates, never by child
         # labels: a PipelineRun can override those through taskRunSpecs.
         - name: taskResolver
           variable:
             jmesPath: "request.object.spec.taskRef.resolver || ''"
+            default: ""
+        - name: taskKind
+          variable:
+            jmesPath: "(request.object.spec.taskRef.params || `[]`)[?name=='kind'].value | [0] || ''"
             default: ""
         - name: taskName
           variable:
@@ -3504,9 +3941,27 @@ spec:
               (analyzeQGPresent && analyzeQG != 'true')
       preconditions:
         all:
+          - key: "{{ parentUID }}"
+            operator: Equals
+            value: "{{ parentRun.metadata.uid }}"
+          - key: "{{ parentPipelineResolver }}"
+            operator: Equals
+            value: cluster
+          - key: "{{ parentPipelineKind }}"
+            operator: Equals
+            value: pipeline
+          - key: "{{ parentPipelineName }}"
+            operator: Equals
+            value: gated-build
+          - key: "{{ parentPipelineNamespace }}"
+            operator: Equals
+            value: tekton-templates
           - key: "{{ taskResolver }}"
             operator: Equals
             value: cluster
+          - key: "{{ taskKind }}"
+            operator: Equals
+            value: task
           - key: "{{ taskName }}"
             operator: Equals
             value: policy-demo-scanner
@@ -3538,11 +3993,13 @@ spec:
 
 :::
 
-**Uninstall the [§4.2.1](#s4-2-1) policy before running this section's demo** (the full account of why the three response policies are a mutually exclusive choice sits in the warning before this chapter's cleanup passage; here it is pulled forward to the exact spot where you would trip): with `gate-param-contract` still installed, the same violating scan TaskRun is rejected by it first — mutate does run earlier in the admission chain and has already written `spec.status` to `TaskRunCancelled`, but the validate stage reads the params untouched and denies all the same — the run's terminal state is [§4.2.1](#s4-2-1)'s `CreateRunFailed`, and this section's cancellation shape is **entirely invisible**. Delete `gate-param-contract` per the look-before-delete of [§4.0.4](#s4-0-4) before going on; the [§4.2.2](#s4-2-2) policy does not conflict — its parent pin is `gated-build-with-prep`.
+**Uninstall the [§4.2.1](#s4-2-1) policy before running this section's demo** (the full account of why the three response policies are a mutually exclusive choice sits in the warning before this chapter's cleanup passage; here it is pulled forward to the exact spot where you would trip): with `gate-param-contract` still installed, the same violating scan TaskRun is rejected by it first — mutate does run earlier in the admission chain and has already written `spec.status` to `TaskRunCancelled`, but the validate stage reads the params untouched and denies all the same — the run's terminal state is [§4.2.1](#s4-2-1)'s `CreateRunFailed`, and this section's cancellation shape is **entirely invisible**. Delete `gate-param-contract` with the UID helper of [§4.0.4](#s4-0-4) before going on; the [§4.2.2](#s4-2-2) policy does not conflict — its parent pin is `gated-build-with-prep`.
+
+**What to run it with**: this section too ships no separate run manifest — reuse [§3.3](#s3-3)'s `demo-run-gates-off` again (both switches are `"false"`; rebuilding it under a different `metadata.name` is enough); the "verify the second switch separately" below means copying that fixture once more, keeping only `enableAnalyzeQualityGate` at `"false"` and writing `enableScanQualityGate` as `"true"`. The positive control is still `demo-run-pass`. Collect the evidence per **type 3** of [§3.4.1](#s3-4-1) — read `spec.status` and the annotation on the object itself (commands in [§6.2.3](#s6-2-3)), not the admission response.
 
 **Expected shape**: the non-compliant run (`enableScanQualityGate="false"`) — the `scan` TaskRun lands in the cluster with `spec.status=TaskRunCancelled` and `spec.statusMessage` preserved; its terminal condition is `False / TaskRunCancelled`, with the message `TaskRun "<name>" was cancelled. <statusMessage verbatim>`; `podName` is empty and the only Pod under the run belongs to finally (the gate container never started); `release` is skipped with `PipelineRun was stopping`; the finally `notify` reaches `Succeeded` normally; the parent run ends `False / Cancelled`, with a message like `Tasks Completed: 2 (Failed: 0, Cancelled 1), Skipped: 1`. In the compliant run all three tasks run to completion with no skips — no collateral damage from the policy. **Verify the second switch separately** — a run that sets only `enableAnalyzeQualityGate` to `"false"` while keeping the other at `"true"` is cancelled just the same (parent run `False / Cancelled`, gate TaskRun `spec.status=TaskRunCancelled`, and the `statusMessage` prints the actual values of both switches); if you only ever verify the first switch, the claim "this section judges the same thing as [§4.2.1](#s4-2-1) / [§4.2.2](#s4-2-2)" has never been verified.
 
-**The trade-offs across the three response forms**:
+**The trade-offs across the three response forms**: the table below compares the mechanical differences once the three responses are mapped onto **the same trusted parent Pipeline + gate Task profile**. This document's [§4.2.2](#s4-2-2) demo fixture uses a separate parent Pipeline name, `gated-build-with-prep`, in order to showcase finally; when choosing for production you must point all three policies' parent / child profiles at the same set of real identities — do not treat the three demo YAMLs as interchangeable assets as-is.
 
 | Dimension | deny ([§4.2.1](#s4-2-1)) | mutate-existing cancels the parent run ([§4.2.2](#s4-2-2)) | Admission-mutate cancels the gate TaskRun ([§4.2.3](#s4-2-3)) |
 |---|---|---|---|
@@ -3558,43 +4015,66 @@ spec:
 
 #### 4.2.4 Protected-branch gate contract (real profile: sonarqube-scanner) {#s4-2-4}
 
-- **What it governs**: **builds after a merge into a protected branch must keep their code scanning under a strict gate** — branch analysis of `main` / `release-*` must not have its gate switches explicitly turned off, nor its scan source swapped. **PR / feature-branch builds carry no branch admission constraint**: the PR-stage gate is best-effort (this section's rule ③, optional to install); the hard guarantee lives post-merge.
-- **Why it is hard**: the admission layer has **no trusted "PR target branch" signal** — the platform has no independent targetBranch field; everything rides on PipelineRun parameters. And in PR analysis mode the `sonar.branch.name` parameter is itself **inert** (the Task removes it when it detects a non-empty `sonar.pullrequest.key`). Asserting unconditionally on a parameter that simply does not take effect in some scenarios inevitably blocks those scenarios wholesale — so the criterion must be **conditional**: it applies only to runs whose branch analysis really does target a protected branch. The decision point stays at the TaskRun layer (parameters are written into the scanner TaskRun as expanded values — zero template modification), and identity still locks onto the real taskRef (child labels can be forged via `taskRunSpecs`).
-- **How the policy is layered**: ① `hub-source-integrity` — for **every** TaskRun of `catalog/sonarqube-scanner/0.7`, verify the Hub source has not been swapped out (reject a request-level `url`, reject multiple `type`s, an explicit `type` may only be `artifact`); **scenario-neutral**, Enforce → ② `protected-branch-gates-strict` — entered only when the **effective branch** matches `^(main|release-.*)$` (the effective branch is computed in the Task's own resolution order: a non-empty `sonar.pullrequest.key` ⇒ no branch analysis happens and the rule is not entered; otherwise take `sonarBranchName` when non-empty, and when it is absent take the `sonar.branch.name=` value injected via `sonarProperties`): either gate switch **explicitly passed and ≠ `"true"` denies** (absence = inherits the Task's trusted default `"true"`, allowed), Enforce; a PR / feature build's `sonarBranchName` parameter is the source branch / revision, the precondition misses, and the whole rule skips → ③ `pr-target-protected-gates-audit` (optional to install) — when the caller declares a **non-empty `sonar.pullrequest.key`** (real PR analysis; on plain push events the platform also injects the whole `sonar.pullrequest.*` group with an **empty key**, which does not enter this rule) and `sonar.pullrequest.base=` points at a protected branch, require for PRs too that the gate switches are not explicitly turned off, Audit. **Omitting it / passing it wrong simply skips — the direction is naturally fail-open** — the explicit trade-off accepted once you concede that "the PR target branch can only come from user-supplied parameters and is untrustworthy".
-- **What it cannot govern**: ⓐ "a protected-branch build must **actually run** the scan" — when `sonarURL` is empty the scanner task is skipped wholesale by the template's `when`, no TaskRun is ever produced, and admission sees nothing (PipelineRun-level criterion in [§4.2.5](#s4-2-5), skip auditing in [§4.1.5](#s4-1-5)); ⓑ the trustworthiness of the PR gate — `sonar.pullrequest.base` is a user-controllable parameter; rule ③ can only be best-effort; ⓒ "a merge into a protected branch necessarily triggers a build" belongs to the platform's trigger configuration and is this section's **trust root** (governed at the same level as [§5.0](#s5-0)).
+- **What it governs**: **builds after a merge into a protected branch must keep their code scanning under a strict gate** — branch analysis of `main` / `release-*` must not have its gate switches explicitly turned off, nor its scan source swapped. **PR / feature-branch builds carry no branch admission constraint**: the PR-stage gate is best-effort (this section's rule ④, optional to install); post-merge, rule ③ provides the strict constraint at the **request-parameter layer**, which rises to an end-to-end guarantee only when content governance of the repository, `sonar-settings`, and `sonar-credentials` holds as well (see the trust-boundary warning below). **Input must be in normative form** — out-of-contract shapes (comment lines, leading whitespace, governed keys routed through `sonarProperties`, and so on) are rejected rather than interpreted; see rule ②.
+- **Why it is hard**: the admission layer has **no trusted "PR target branch" signal** — the platform has no independent targetBranch field; everything rides on PipelineRun parameters. And in PR analysis mode the branch parameter is itself **inert** (the Task removes `sonar.branch.name` when it detects a non-empty `sonar.pullrequest.key`). Asserting unconditionally on a parameter that simply does not take effect in some scenarios inevitably blocks those scenarios wholesale — so the gate criterion must be **conditional**: it applies only to runs whose branch analysis targets a protected branch (or, with the parameter absent, the default branch). The other hard part is the freedom of an array parameter like `sonarProperties`: comment lines, leading whitespace, duplicate declarations, a line break tucked inside one element… every shape gets its own interpretation inside the Task, and modelling them one by one is a road that never converges (the lesson is in the first warning below). This section's answer is to **narrow the input surface first with a normative-form gate**; every other criterion holds only for the normative form. The decision point stays at the TaskRun layer (parameters are written into the scanner TaskRun as expanded values — zero template modification), and identity still locks onto the real taskRef (child labels can be forged via `taskRunSpecs`).
+- **How the policy is layered**: ① `hub-source-integrity` — for **every** TaskRun of `catalog/sonarqube-scanner/0.7`, verify the Hub source has not been swapped out (reject a request-level `url`, reject multiple `type`s, an explicit `type` may only be `artifact`); **scenario-neutral**, Enforce → ② `sonar-props-normative-form` — the **normative-form gate**, likewise scenario-neutral, Enforce: every `sonarProperties` element must be exactly one canonical `key=value` (key starting with a letter, no leading whitespace, no `#`, no line break); governed keys (`sonar.branch.name` / `sonar.host.url` / `sonar.projectKey` / credential-class keys / `sonar.qualitygate.*`) must not travel through `sonarProperties` and may only use their dedicated parameters; `sonar.pullrequest.key` / `.base` are allowed (on push events the platform injects the whole group with an empty key, and the official template has no dedicated parameter for them), but at most one of each, with no whitespace in the value. **Out-of-contract shapes are rejected outright, never interpreted** — this is where the section lands after converging from "replicating the Task's parsing semantics" to "narrowing the supported surface" (see the first warning below) → ③ `protected-branch-gates-strict` — the effective branch is read from the `sonarBranchName` parameter alone (rule ② has already rejected every other entrance **within the request parameters**): the rule is entered only when the value matches `^(main|release-.*)$` **or is absent / blank** (the scanner then analyses the project's default branch — exactly the protected object; SonarQube Community Edition does not support branch analysis and can only omit this parameter, so this treatment brings it under governance instead of false-rejecting it), and the request parameters carry no non-empty PR key claim; either gate switch **explicitly passed and ≠ `"true"` denies** (absence = inherits the Task's trusted default `"true"`, allowed), Enforce; PR / feature builds skip already at the precondition → ④ `pr-target-protected-gates-audit` (optional to install) — when a **non-empty `sonar.pullrequest.key`** is declared (real PR analysis; the empty-key push-injection shape does not enter) and `sonar.pullrequest.base=` points at a protected branch, require for PRs too that the gate switches are not explicitly turned off, Audit. **Omitting it / passing it wrong simply skips — the direction is naturally fail-open** — the explicit trade-off accepted once you concede that "the PR target branch can only come from user-supplied parameters and is untrustworthy".
+- **What it cannot govern**: ⓐ "a protected-branch build must **actually run** the scan" — when `sonarURL` is empty the scanner task is skipped wholesale by the template's `when`, no TaskRun is ever produced, and admission sees nothing (PipelineRun-level criterion in [§4.2.5](#s4-2-5), skip auditing in [§4.1.5](#s4-1-5)); ⓑ the trustworthiness of the PR gate — `sonar.pullrequest.base` is a user-controllable parameter; rule ④ can only be best-effort; ⓒ "a merge into a protected branch necessarily triggers a build" belongs to the platform's trigger configuration and is this section's **trust root** (governed at the same level as [§5.0](#s5-0)); ⓓ **property files in the repository / workspace / credentials** — admission cannot see the contents of `sonar-project.properties`, `sonar-settings`, or `sonar-credentials`: the branch-value side is already closed (with the parameter non-empty the Task overrides the file value with the parameter; with it absent the criterion treats the run as in the protected scope directly — nothing written in the files can change the admission verdict); the remaining path is one of these content sources injecting a **non-empty `sonar.pullrequest.key`** and flipping the Task into PR mode — see the trust-boundary warning below.
 
-**Template wiring facts (the basis for the criterion anchors, taken from the catalog source: the `apply_branch_name_property` function in `task/sonarqube-scanner/0.7/sonarqube-scanner.yaml`, and the sonar parameter pass-through block of `pipeline/java-image-build-scan-deploy/0.3` — both live in your environment's catalog repository and can be checked line by line)**: the official 0.3 template hard-wires `sonarBranchName` to **`$(params.gitRevision)`** — whichever revision is built is what gets passed; the caller cannot specify the analysis target independently. The two gate switches `enableScanQualityGate` / `enableAnalyzeQualityGate` are **not passed through** (the template passes only the four parameters `sonarHostURL` / `sonarProjectKey` / `sonarBranchName` / `sonarProperties`), so they stay at the Task-side default `"true"`. Rule ② is therefore **defense in depth** for runs of the official template: absent switches always pass; what it really blocks are self-built / retrofitted shapes that bypass the template wiring and explicitly turn a switch off. And "is this a protected-branch build" is anchored on the value of `sonarBranchName`.
+**Template wiring facts (the basis for the criterion anchors, taken from the catalog source: the `apply_branch_name_property` function in `task/sonarqube-scanner/0.7/sonarqube-scanner.yaml`, and the sonar parameter pass-through block of `pipeline/java-image-build-scan-deploy/0.3` — both live in your environment's catalog repository and can be checked line by line)**: the official 0.3 template hard-wires `sonarBranchName` to **`$(params.gitRevision)`** — whichever revision is built is what gets passed; the caller cannot specify the analysis target independently. The two gate switches `enableScanQualityGate` / `enableAnalyzeQualityGate` are **not passed through** (the template passes only the four parameters `sonarHostURL` / `sonarProjectKey` / `sonarBranchName` / `sonarProperties`), so they stay at the Task-side default `"true"`. Rule ③ is therefore **defense in depth** for runs of the official template: absent switches always pass; what it really blocks are self-built / retrofitted shapes that bypass the template wiring and explicitly turn a switch off. And "is this a protected-branch build" is anchored on the value of `sonarBranchName`.
 
-**Parameter mapping of the platform trigger chain (the premise behind rule ②'s anchor)**:
+**Parameter mapping of the platform trigger chain (the premise behind rule ③'s anchor)**:
 
-- **Post-merge trigger (push)**: the revision-class parameter is a **branch name** (e.g. `release-4.10`), not a commit SHA — the commit SHA travels in the separate `git-commit` parameter, and `pull-request-number` is an empty placeholder. → Rule ②'s "branch-name anchor" **holds** on the platform's PaC trigger chain (runs carrying `pipelinesascode.tekton.dev/*` labels).
-- **PR trigger**: the revision is the **source branch name**, accompanied by `target-branch` (the target branch) and a non-empty `pull-request-number`. → The source branch name does not match the protected regex → rule ② skips and the PR build is not blocked — exactly the designed behavior.
-- **The one premise that must hold when switching environments / trigger bindings**: the revision-class parameter maps to a branch name, not a SHA; if some environment's binding maps it to a SHA, rule ②'s anchor stops working — fix the trigger binding or change the anchor. **This is the only trust premise in this section that cannot be verified from the policy itself; how to check**: take one real platform-triggered run and see whether the revision-class parameter's value is a branch name or 40 hex characters (`kubectl -n <ns> get pipelinerun <run> -o jsonpath='{.spec.params}'`), or read the variable mapping in the trigger binding directly (PaC uses `{{revision}}` / `{{source_branch}}` / `{{target_branch}}` in `.tekton/*.yaml`).
-- **An upgrade opportunity along the way**: PR events already carry `target-branch` at the trigger layer (closer to the event source than `sonar.pullrequest.base`, injected by the trigger rather than typed in by a user). The official template currently does not pass it through to the scanner; the day the template does pass target-branch through, rule ③ should switch its anchor to it and can be evaluated for promotion to Enforce — the trust root remains "runs created by the platform trigger chain"; a hand-crafted run can still forge that parameter, and that layer is backstopped by the [§4.5.4](#s4-5-4) entry closure.
+- **Post-merge trigger (push)**: the revision-class parameter is a **branch name** (e.g. `release-4.10`), not a commit SHA — the commit SHA travels in the separate `git-commit` parameter, and `pull-request-number` is an empty placeholder. → Rule ③'s "branch-name anchor" **holds** on the platform's PaC trigger chain (runs carrying `pipelinesascode.tekton.dev/*` labels).
+- **PR trigger**: the revision is the **source branch name**, accompanied by `target-branch` (the target branch) and a non-empty `pull-request-number`. → The source branch name does not match the protected regex → rule ③ skips and the PR build is not blocked — exactly the designed behavior.
+- **The one premise that must hold when switching environments / trigger bindings**: the revision-class parameter maps to a branch name, not a SHA; if some environment's binding maps it to a SHA, rule ③'s anchor stops working — fix the trigger binding or change the anchor. **This is the only trust premise in this section that cannot be verified from the policy itself; how to check**: take one real platform-triggered run and see whether the revision-class parameter's value is a branch name or 40 hex characters (`kubectl -n <ns> get pipelinerun <run> -o jsonpath='{.spec.params}'`), or read the variable mapping in the trigger binding directly (PaC uses `{{revision}}` / `{{source_branch}}` / `{{target_branch}}` in `.tekton/*.yaml`).
+- **An upgrade opportunity along the way**: PR events already carry `target-branch` at the trigger layer (closer to the event source than `sonar.pullrequest.base`, injected by the trigger rather than typed in by a user). The official template currently does not pass it through to the scanner; the day the template does pass target-branch through, rule ④ should switch its anchor to it and can be evaluated for promotion to Enforce — the trust root remains "runs created by the platform trigger chain"; a hand-crafted run can still forge that parameter, and that layer is backstopped by the [§4.5.4](#s4-5-4) entry closure.
 
-**The key criterion** (rule ②) — first scope in "this is an analysis of a protected branch" by the branch value, then deny "gates explicitly turned off"; PR / feature builds skip already at the precondition:
+**The key criterion** (rule ② the normative-form gate + rule ③ the gates) — first reject out-of-contract shapes wholesale, then scope in "an analysis of a protected branch (or of the default branch)" by the branch parameter, and finally deny "gates explicitly turned off"; PR / feature builds skip already at rule ③'s precondition (**fragment, not a complete manifest you can `kubectl apply` as-is**; the full policy is in this section's details block):
 
 ```yaml
-        # Absence stays out of gateWeakened on purpose: an absent switch inherits
-        # the trusted Task default "true" (the official template does not pass
-        # these params through at all). Only an EXPLICIT non-true value denies.
-        - name: gateWeakened
+      # EXCERPT -- key conditions only, NOT a standalone manifest; the
+      # indentation is kept from the full policy, so this block alone does
+      # not parse. Apply the complete YAML from the details block below.
+        # Rule 2 (normative-form gate): pin the INPUT SHAPE instead of
+        # modelling how the Task would parse arbitrary shapes. Anything
+        # outside this form is rejected, not interpreted. The branch param is
+        # a SEPARATE entrance -- it is written into the properties file
+        # verbatim, so a line break in it smuggles a second sonar.branch.name
+        # line; ban CR/LF there too.
+        - name: branchParamBad
+          variable:
+            jmesPath: "regex_match('^[^\\r\\n]*$', branchParam) == `false`"
+        - name: propsNonCanonical
+          variable:
+            jmesPath: "length(sonarPropsItems[?regex_match('^[A-Za-z][A-Za-z0-9._-]*=[^\\r\\n]*$', @) == `false`]) > `0`"
+        - name: propsGovernedKey
           variable:
             jmesPath: >-
-              (scanQGPresent && scanQG != 'true') ||
-              (analyzeQGPresent && analyzeQG != 'true')
+              length(sonarPropsItems[?starts_with(@, 'sonar.branch.name=')
+                || starts_with(@, 'sonar.host.url=')
+                || starts_with(@, 'sonar.projectKey=')
+                || starts_with(@, 'sonar.login=')
+                || starts_with(@, 'sonar.token=')
+                || starts_with(@, 'sonar.password=')
+                || starts_with(@, 'sonar.qualitygate.')]) > `0`
+        - name: prClaimBad
+          variable:
+            jmesPath: "prKeyClaimCount > `1` || prBaseClaimCount > `1` || prClaimWhitespace"
+      # ...(deny when any of the four is true)
+        # Rule 3 (the request-parameter guarantee), judged on the NARROWED input only: the
+        # branch anchor is the sonarBranchName param -- rule 2 has made it the
+        # only entrance -- and "claims PR analysis" is one equality test.
+        - name: prKeyNonEmpty
+          variable:
+            jmesPath: "prKeyClaim != '' && prKeyClaim != 'sonar.pullrequest.key='"
       preconditions:
         all:
           # ...(identity preconditions omitted: resolver=hub / kind=task / catalog / name / version=0.7)
-          # Scope gate: ONLY analyses targeting a protected branch enter this rule.
-          # A PR / feature build carries its source ref (or nothing) here -> the
-          # regex fails -> the rule SKIPS and the run is allowed. This is the
-          # inverse of a branch allowlist: non-protected branches are out of
-          # scope, not violations.
-          # Two alternatives: the param value is bare, while a sonarProperties claim
-          # still carries its 'sonar.branch.name=' prefix. Anchored either way so
-          # 'main-x' or a smuggled 'sonar.branch.name=main;y=z' cannot pose as protected.
-          - key: "{{ regex_match('^(main|release-.*)$', branch) || regex_match('^sonar[.]branch[.]name=(main|release-.*)$', branch) }}"
+          # Scope gate: only branch-mode analyses of a protected branch enter.
+          # An ABSENT / blank sonarBranchName is IN scope: the scanner then
+          # analyses the project's DEFAULT branch -- the protected mainline.
+          # A PR / feature build fails one of the two tests and SKIPS.
+          - key: "{{ (regex_match('^(main|release-.*)$', branchParam) || regex_match('^[[:space:]]*$', branchParam)) && !prKeyNonEmpty }}"
             operator: Equals
             value: true
       validate:
@@ -3606,13 +4086,44 @@ spec:
                 value: true
 ```
 
-**In this section the semantics of "absent" is skip, not deny** — the opposite of allowlists like [§4.1.1](#s4-1-1) / [§4.5.1](#s4-5-1): when `sonarBranchName` is absent or does not match the protected regex, rule ② simply skips (in PR mode the parameter is inert anyway — see the warning below); when a gate switch is absent, it inherits the trusted default and passes. The only unconditionally fail-closed piece is rule ① (a swapped hub source is denied in every scenario).
+**In this section the semantics of "absent" splits three ways** — `sonarBranchName` absent or blank: **falls into rule ③'s protected scope** (with no branch value the scanner analyses the project's default branch — exactly the protected object; SonarQube Community Edition does not support branch analysis and can only omit this parameter, so this treatment brings it under governance instead of false-rejecting or exempting it); a gate switch absent: inherits the Task's trusted default `"true"` and passes (the official template does not pass these two parameters through anyway); `sonarBranchName` non-empty but not matching the protected regex: rule ③ **skips** and allows — PR / feature builds carry no branch admission constraint. The genuinely unconditional fail-closed pieces are rule ① (a swapped hub source) and rule ② (normative form), which deny in every scenario.
 
-:::warning Why it must not be written as "the branch must be in the protected set" (this section's history lesson)
+:::warning Why the Task's parsing semantics are not replicated: that road never converges — narrowing the input surface does
 
-An early version of this section was written exactly that way: any `sonarBranchName` not matching `^(main|release-.*)$` was denied. Under the official template that is **wholesale collateral damage**: the template hard-wires the parameter to `$(params.gitRevision)`, so **feature-branch builds and PR-triggered builds were all rejected at admission** — a PR could never pass CI and therefore could never merge. Meanwhile the thing it wanted to prevent — "pointing the analysis at some other branch to game the results" — is already closed under the official-template profile (the parameter cannot be specified independently + [§4.1.1](#s4-1-1) locks the template + [§4.2.5](#s4-2-5) forbids `sonarProperties` overrides).
+`sonarProperties` is an **array** parameter that the Task merges element by element into `sonar-project.properties` (`writePropertiesBatch` → `replaceValues`, a later value overriding an earlier one for the same key), and the file is then consumed by **two waves of code**: the few `^[#]*\s*<key>=` greps in the middle (which decide PR vs. branch mode and which lines get deleted), and the `java.util.Properties` that in the end actually decides "which branch gets scanned" (`#` lines are comments, leading whitespace is dropped, `tr -d ' '` deletes spaces but not tabs…). This section once iterated its criteria down the "transcribe the consumer's semantics" road — every round fixed one batch of bypasses / false rejections, and every round exposed the next: comment cover, a leading form feed, a tab-valued PR key, one element with an embedded line break becoming two property lines. The root cause is not that some regex was insufficiently strict; it is that **the promise itself cannot be closed**: the property sources the Task merges include, beyond the request, files in the repository and the workspace (see the trust-boundary warning), of which admission only ever sees a part — and every notch of added precision couples the criterion one notch deeper to the Task's private implementation, so a Task upgrade means a mismatch.
 
-Remember the semantic boundary along with it: `sonarBranchName` is the target of **branch analysis**, **not the target of PR analysis**. When the final configuration carries a non-empty `sonar.pullrequest.key` (PR analysis mode), the Task **removes** `sonar.branch.name` — asserting unconditionally on such a **scenario-inert parameter** is the textbook failure shape of "a criterion that holds in only one scenario, Enforced onto all scenarios". The target branch of PR analysis lives in `sonar.pullrequest.base`, which is a user-controllable parameter — rule ③ handles it with the best-effort semantics of "validate only when a **non-empty** `sonar.pullrequest.key` (real PR analysis) is declared and the target is protected"; **with rule ③ not installed, the PR stage simply has no gate** — both shapes are accepted design (the hard guarantee is carried post-merge by rule ②).
+So this section switched to **narrowing the supported surface**: rule ② allows only the normative form — `sonarBranchName` free of line breaks, every `sonarProperties` element exactly one canonical `key=value`, governed keys on their dedicated parameters, PR claims unique with whitespace-free values — and **everything else is rejected, not interpreted**. The criteria collapse accordingly — the effective branch is simply the `sonarBranchName` parameter (absent means the default branch), and "PR analysis or not" is simply whether that single key claim is non-empty; questions like "the last entry wins" or "does a comment count as a claim" **cannot even arise on input that has been allowed through**.
+
+**The costs, stated plainly** (all in the fail-closed direction, and the denial message hands out the fix directly):
+
+| Rejected shape | Recommended shape |
+|---|---|
+| `sonar.branch.name=` / `sonar.host.url=` / `sonar.projectKey=` / credential-class keys / `sonar.qualitygate.*` written inside `sonarProperties` | Use the dedicated parameters `sonarBranchName` / `sonarHostURL` / `sonarProjectKey`, etc. — denied even when the injected value would be overridden by the parameter, so the criterion no longer has to answer "which entrance takes effect" |
+| Comment lines (`#…`), leading whitespace, a line break inside one element | One array element is exactly one `key=value`; keep comments out of the parameter |
+| A line break (`\n` / `\r`) inside the `sonarBranchName` parameter value — sed splits it into two lines when writing the file, and the second line can pose as `sonar.branch.name=<protected-branch>` | Branch names contain no line breaks anyway; just drop it |
+| Duplicate declarations of `sonar.pullrequest.key` / `.base`, or values containing whitespace | Write exactly one of each, with no whitespace in the value (the platform-injected empty-key group is normative form and passes as usual) |
+
+An absent `sonarBranchName` is **not on the rejected list** — it falls into rule ③'s protected scope and is handled as the default branch (the Community Edition scenario stays compliant as usual; see the "absent" passage above); the cost is that the combination "parameter absent + a repository property file pointing the analysis at a feature branch + gates explicitly turned off" gets false-rejected — still the fail-closed direction, recorded as [§2.5](#s2-5) entry 19.
+
+**This lesson is worth more than the regexes themselves**: a criterion either replicates the parsing semantics of the **final consumer**, or **makes the replication unnecessary**. Replication is only maintainable once the input surface has been narrowed to where the consumer has no room left to play; the more freedom the input has, the more the replication resembles a shadow implementation of somebody else's parser — one line changed on either side and the two fork, and the fork raises no error. Ask "can this shape be banned" before asking "how do I model this shape".
+
+**Nor is this sonar-specific**: Tekton's validation webhook only guarantees that the **parameter names** in `spec.params` are unique ([§4.2.5](#s4-2-5)); it does not reach **the elements inside a single array parameter**. For any Task that consumes an array parameter as a "configuration list", the criterion should first fix a normative form for the elements and reject anything outside the contract, rather than assuming the first (or last) entry is the effective value.
+
+:::
+
+:::warning Why it must not be written as "the branch must be in the protected set"
+
+The most intuitive way to write it is an unconditional assertion: deny any `sonarBranchName` not matching `^(main|release-.*)$`. Under the official template that is **wholesale collateral damage**: the template hard-wires the parameter to `$(params.gitRevision)`, so **feature-branch builds and PR-triggered builds are all rejected at admission** — a PR can never pass CI and therefore can never merge. Meanwhile the thing it wants to prevent — "pointing the analysis at some other branch to game the results" — is already closed under the official-template profile (the parameter cannot be specified independently + [§4.1.1](#s4-1-1) locks the template + this section's rule ② / [§4.2.5](#s4-2-5) forbid `sonarProperties` overrides).
+
+Remember the semantic boundary along with it: `sonarBranchName` is the target of **branch analysis**, **not the target of PR analysis**. When the final configuration carries a non-empty `sonar.pullrequest.key` (PR analysis mode), the Task **removes** `sonar.branch.name` — asserting unconditionally on such a **scenario-inert parameter** is the textbook failure shape of "a criterion that holds in only one scenario, Enforced onto all scenarios". The target branch of PR analysis lives in `sonar.pullrequest.base`, which is a user-controllable parameter — rule ④ handles it with the best-effort semantics of "validate only when a **non-empty** `sonar.pullrequest.key` (real PR analysis) is declared and the target is protected"; **with rule ④ not installed, the PR stage simply has no gate** — both shapes are accepted design; post-merge, rule ③ provides the strict constraint at the request-parameter layer, and the end-to-end guarantee additionally requires the content-governance premises listed below to hold.
+
+:::
+
+:::warning Trust boundary: the property sources still hold one path admission cannot see
+
+The sources the Task merges properties from go beyond the request. In the actual order of `sonarqube-scanner` 0.7 (the `src_props_file` / `ws_props_file` passage in `sonarqube-scanner.yaml`): the scanned repository's own `sonar-project.properties` → the same-named file in the `sonar-settings` workspace → ordinary Task parameters and `sonarProperties` → the connector properties of `sonar-credentials` → finally `apply_branch_name_property` picks branch vs. PR mode. **Admission sees only the parameter step.** This section's 37 probes are all parameter shapes as well: they prove the request-parameter contract, not that the file / connector contents inject no same-named properties.
+
+On the branch-value side the criterion is already immune to the file sources: with the parameter non-empty, `apply_branch_name_property` **overrides** the `sonar.branch.name` merged from the files with the parameter; with the parameter absent, rule ③ treats the run as in the protected scope directly — no branch value written in any file can change the admission verdict, and the worst case is a false rejection in the fail-closed direction ([§2.5](#s2-5) entry 19). That leaves **one** path admission cannot plug: content in the repository, `sonar-settings`, or `sonar-credentials` injecting a **non-empty `sonar.pullrequest.key`** flips the Task into PR mode (`sonar.branch.name` gets deleted), and what was a "protected-branch analysis" silently becomes a PR analysis — the gate switches were never touched, yet the analysis of the protected branch never happened. That is a content-governance boundary, not something a Kyverno parameter criterion can close: repository content is backstopped by the repository governance and code review of [§2.1](#s2-1); `sonar-settings` / `sonar-credentials` must be reviewed objects, immutably referenced and content-controlled, and their drift belongs to contract 1 of [§2.3](#s2-3). **Production acceptance must add a content-side check**: confirm that none of these three sources carries a non-empty `sonar.pullrequest.key`, and re-check whenever they change; only once that holds does rule ③ rise from a "request-parameter guarantee" to the post-merge guarantee this document claims. This residual path is recorded as [§2.5](#s2-5) entry 18.
 
 :::
 
@@ -3620,7 +4131,7 @@ Remember the semantic boundary along with it: `sonarBranchName` is the target of
 
 The generic shape this section demonstrates is "**conditionalize the criterion to the scenario, instead of Enforcing unconditionally**". Before transplanting it onto another parameter / another Task, first confirm that the "scenario-selector field" you picked **really does determine the final semantics** — three questions, none of them skippable:
 
-1. **Is it the only entry point?** One semantic often has several configuration entries. This section stepped on exactly that: `sonarBranchName` looks like the sole source of the analysis target, yet injecting a single `sonar.branch.name=` line inside `sonarProperties` also sets it — **when the parameter is absent, the injected value is the effective value**. So rule ②'s scope criterion must compute the effective value in the Task's real resolution order; reading only the parameter "whose name looks right" leaves a bypass open.
+1. **Is it the only entry point?** One semantic often has several configuration entries. This section's `sonarBranchName` is the historical counter-example: it looks like the sole source of the analysis target, yet `sonarProperties` in the request can also inject a `sonar.branch.name=`; further out sit the property files admission cannot see. **Narrow when you can instead of modelling**: the current rule ② outright forbids the surplus request-side entrances and rule ③ reads only the single parameter entrance that was kept; the file / connector sources admission cannot see are listed explicitly as content-governance premises, rather than the parser being replicated any further inside Kyverno. **The same entrance appearing more than once counts as multiple entrances too** — when same-key entries repeat inside an array parameter, the effective one is whichever survives the consumer's merge, and a criterion that takes `[0]` hands the choice of "which entry wins" right back to the requester.
 2. **Will some scenario make the consumer ignore it?** This section's `sonar.branch.name` is deleted by the Task in PR mode (an inert parameter) — asserting on it unconditionally is wholesale collateral damage (see the previous warning).
 3. **Is the value your criterion computes the same value the Task actually uses?** There is exactly one way to decide: **read the consumer's source code** (this section read the merge order of `apply_branch_name_property`); inferring from parameter names and documentation prose is not enough.
 
@@ -3628,16 +4139,17 @@ Only after all three pass can you talk about "conditionalizing". Missing questio
 
 :::
 
-**What must change together when you extend / upgrade** (each of the three rules carries its own copy of the criteria; the consequence of missing one is always a **silent skip** — the policy is still there, the reports stay clean, and nothing is actually locked):
+**What must change together when you extend / upgrade** (each of the four rules carries its own copy of the criteria; the consequence of missing one is always a **silent skip** — the policy is still there, the reports stay clean, and nothing is actually locked):
 
 | The change you are making | Locations that must move in step | Consequence of missing one |
 |---|---|---|
-| Scanner version bump (0.7 → 0.8) | **The `taskVersion` precondition in each of the three rules** (one place per rule, 3 in total); at the same time re-verify against the new version that the PR-mode semantics and parameter names still hold | All three rules stop matching on identity → everything silently skips; source integrity and the gate guarantee vanish together |
-| Adding / removing protected-branch patterns (e.g. adding `hotfix-*`) | **All three regex literals must change at the same time**: in rule ②'s precondition the bare form `^(main|release-.*)$` and the prefixed form `^sonar[.]branch[.]name=(main|release-.*)$` (OR-joined on the same line — open it and you see both), plus rule ③'s `prBaseProtected` regex `^sonar[.]pullrequest[.]base=(main|release-.*)$` — this section deliberately keeps three copies rather than extracting a shared variable, because they anchor different fields (the branch value / the injected branch token / the PR base token) | Changing only one or two → the rest still evaluate against the old branch set; the parameter-form and injected-form (or PR-side) verdicts silently diverge, and nothing errors |
-| Adding a third gate switch | The `<switch>Present` / `<switch>` variable pair plus the `gateWeakened` expression in rules ② and ③ (one place per rule, 2 in total), and the echo in both `message`s | The new switch can be turned off at will; the criterion cannot see it |
-| Changing the hub catalog name | The `taskCatalog` precondition in all three rules + the placeholder substitution table in [§4.0.3](#s4-0-3) (whose row also notes that **the parameter key `[?name=='catalog']` must not be substituted**) | Same as the version bump: everything silently skips |
+| Scanner version bump (0.7 → 0.8) | **The `taskVersion` precondition in each of the four rules** (one place per rule, 4 in total); at the same time re-verify four contract facts against the new version: the gate switches' parameter names and defaults; the "non-empty `sonar.pullrequest.key` ⇒ switch to PR mode" behavior; whether the governed-key list in the normative-form gate still lines up with the new version's parameter surface; and whether `apply_branch_name_property` still writes `sonarBranchName` into the properties file verbatim (which decides whether line breaks inside the parameter still need banning) | All four rules stop matching on identity → everything silently skips; source integrity, the normative gate, and the gate guarantee vanish together |
+| Adding / removing protected-branch patterns (e.g. adding `hotfix-*`) | **Both regex literals must change at the same time**: `^(main|release-.*)$` in rule ③'s precondition, and rule ④'s `prBaseProtected` regex `^sonar[.]pullrequest[.]base=(main|release-.*)$` — two copies are kept rather than extracting a shared variable, because they anchor different fields (the branch parameter / the PR base claim) | Changing only one → the other still evaluates against the old branch set; the branch-side and PR-side verdicts silently diverge, and nothing errors |
+| Adding a third gate switch | The `<switch>Present` / `<switch>` variable pair plus the `gateWeakened` expression in rules ③ and ④ (one place per rule, 2 in total), and the echo in both `message`s | The new switch can be turned off at will; the criterion cannot see it |
+| Loosening / tightening the normative form (e.g. letting some governed key move into `sonarProperties`) | Rule ②'s `propsGovernedKey` list and its `message`; if the key participates in scenario selection, the value-reading variables of rules ③ / ④ must follow | Missing the list → the key keeps being rejected (a wholesale fail-closed false rejection); or the key is dropped from the list without the consequences being evaluated → a silent opening |
+| Changing the hub catalog name | The `taskCatalog` precondition in all four rules + the placeholder substitution table in [§4.0.3](#s4-0-3) (whose row also notes that **the parameter key `[?name=='catalog']` must not be substituted**) | Same as the version bump: everything silently skips |
 
-:::details Full policy YAML: sonar-branch-analysis-branch-contract (three rules)
+:::details Full policy YAML: sonar-branch-analysis-branch-contract (four rules)
 
 ```yaml
 apiVersion: kyverno.io/v1
@@ -3728,12 +4240,15 @@ spec:
               - key: "{{ hubSourceBad }}"
                 operator: Equals
                 value: true
-    # Rule 2 -- the hard guarantee: an analysis TARGETING a protected branch
-    # (the post-merge build; the official template wires sonarBranchName to
-    # $(params.gitRevision)) must not have its quality-gate switches explicitly
-    # disabled. PR / feature builds carry a non-protected value (or none) here
-    # and SKIP -- out of scope, not violations.
-    - name: protected-branch-gates-strict
+    # Rule 2 -- the NORMATIVE-FORM gate, scenario-neutral like rule 1: it does
+    # not judge which branch is analysed, it pins the INPUT SHAPE every other
+    # judgment relies on. Anything outside the supported form is rejected
+    # outright instead of being interpreted -- the earlier approach of
+    # mirroring the Task's own parsing (last-entry-wins, '#' comments, leading
+    # whitespace, tr -d ' ') could never converge, because admission cannot see
+    # the repository- and workspace-sourced property files that join the same
+    # merge. Narrowing the accepted input makes that mirroring unnecessary.
+    - name: sonar-props-normative-form
       match:
         any:
           - resources:
@@ -3765,42 +4280,175 @@ spec:
             jmesPath: "(request.object.spec.taskRef.params || `[]`)[?name=='version'].value | [0] || ''"
             default: ""
         # to_array + [0] normalizes an array-typed param to its first element,
-        # and the outer to_string JSON-encodes an object-typed ParamValue (Tekton
-        # params are a string|array|object union) -- so regex_match below always
-        # receives a string. A hand-crafted TaskRun passing an array or object
-        # would otherwise make the precondition ERROR (= fail-closed deny with a
-        # cryptic message) instead of skipping; an encoded object can never match
-        # the protected-branch regex, so the weird-typed run just skips.
+        # and to_string JSON-encodes an object-typed ParamValue, so the checks
+        # below always receive strings and never make the rule ERROR out.
         - name: branchParam
           variable:
             jmesPath: "to_string(to_array((request.object.spec.params || `[]`)[?name=='sonarBranchName'].value | [0] || '') | [0] || '')"
             default: ""
-        # sonarProperties can carry its own sonar.branch.name= line, and the Task
-        # merges it BEFORE applying sonarBranchName. apply_branch_name_property then
-        # overwrites that line only when sonarBranchName is NON-EMPTY -- so an ABSENT
-        # sonarBranchName leaves the injected value as the analysed branch. Mirror the
-        # Task's resolution order here, or the scope gate reads '' and skips while the
-        # scan actually targets a protected branch.
         - name: sonarPropsItems
           variable:
             jmesPath: "to_array((request.object.spec.params || `[]`)[?name=='sonarProperties'].value | [0] || `[]`)[].to_string(@)"
             default: []
-        - name: branchFromProps
+        # The branch param is written into the properties file verbatim by
+        # apply_branch_name_property -> replaceValues (sed). A value carrying a
+        # line break therefore becomes TWO property lines, and a second
+        # 'sonar.branch.name=main' line makes java.util.Properties analyse main
+        # while the scope gate (which reads the raw param) sees a non-protected
+        # first line and skips. Ban CR/LF in the param -- a branch name never
+        # contains one, so this is zero-cost and closes the smuggling that the
+        # sonarProperties grammar alone did not (the param is a separate
+        # entrance).
+        - name: branchParamBad
           variable:
-            jmesPath: "sonarPropsItems[?starts_with(@, 'sonar.branch.name=')] | [0] || ''"
+            jmesPath: "regex_match('^[^\\r\\n]*$', branchParam) == `false`"
+        # Canonical entry form: one 'key=value' per array item -- key starts
+        # with a letter, no leading whitespace, no '#', no embedded line break.
+        # Everything the Task's merge chain could reinterpret (comment lines,
+        # indented keys, one item becoming two property lines) fails this
+        # grammar and is rejected, not modelled.
+        - name: propsNonCanonical
+          variable:
+            jmesPath: "length(sonarPropsItems[?regex_match('^[A-Za-z][A-Za-z0-9._-]*=[^\\r\\n]*$', @) == `false`]) > `0`"
+        # Governed keys have dedicated, judgeable entrances (params) or are
+        # pinned elsewhere -- they must not travel inside sonarProperties at
+        # all. With the grammar above enforced, a plain prefix match is
+        # sufficient: no evasive spelling of these keys can reach this check.
+        # sonar.qualitygate.* is normalised last by the Task today, but is
+        # listed anyway so a future reordering cannot silently open it.
+        - name: propsGovernedKey
+          variable:
+            jmesPath: >-
+              length(sonarPropsItems[?starts_with(@, 'sonar.branch.name=')
+                || starts_with(@, 'sonar.host.url=')
+                || starts_with(@, 'sonar.projectKey=')
+                || starts_with(@, 'sonar.login=')
+                || starts_with(@, 'sonar.token=')
+                || starts_with(@, 'sonar.password=')
+                || starts_with(@, 'sonar.qualitygate.')]) > `0`
+        # PR claims stay allowed (the platform injects the group on push events
+        # and the official template has no dedicated params for them), but only
+        # in unambiguous form: at most one claim per key, and no whitespace in
+        # the key / base values -- so "empty vs non-empty" needs no tr -d ' '
+        # emulation downstream.
+        - name: prKeyClaimCount
+          variable:
+            jmesPath: "length(sonarPropsItems[?starts_with(@, 'sonar.pullrequest.key=')])"
+            default: 0
+        - name: prBaseClaimCount
+          variable:
+            jmesPath: "length(sonarPropsItems[?starts_with(@, 'sonar.pullrequest.base=')])"
+            default: 0
+        - name: prClaimWhitespace
+          variable:
+            jmesPath: "length(sonarPropsItems[?regex_match('^sonar[.]pullrequest[.](key|base)=[^\\r\\n]*[[:space:]]', @)]) > `0`"
+        - name: prClaimBad
+          variable:
+            jmesPath: "prKeyClaimCount > `1` || prBaseClaimCount > `1` || prClaimWhitespace"
+      preconditions:
+        all:
+          - key: "{{ taskResolver }}"
+            operator: Equals
+            value: hub
+          - key: "{{ taskKind }}"
+            operator: Equals
+            value: task
+          - key: "{{ taskCatalog }}"
+            operator: Equals
+            value: catalog
+          - key: "{{ taskName }}"
+            operator: Equals
+            value: sonarqube-scanner
+          - key: "{{ taskVersion }}"
+            operator: Equals
+            value: "0.7"
+      validate:
+        failureAction: Enforce
+        message: >-
+          sonarqube-scanner inputs must use the supported form:
+          sonarBranchName must not contain a line break (bad={{ branchParamBad }});
+          every sonarProperties item must be a single 'key=value' line with no
+          leading whitespace, '#' or line break (non-canonical present={{ propsNonCanonical }});
+          governed keys (sonar.branch.name / sonar.host.url / sonar.projectKey /
+          sonar.login / sonar.token / sonar.password / sonar.qualitygate.*) must
+          use their dedicated params instead of sonarProperties
+          (present={{ propsGovernedKey }}); sonar.pullrequest.key / .base may be
+          declared at most once each and without whitespace in the value
+          (key claims={{ prKeyClaimCount }}, base claims={{ prBaseClaimCount }}).
+          Requests outside this form are rejected instead of interpreted.
+        deny:
+          conditions:
+            any:
+              - key: "{{ branchParamBad }}"
+                operator: Equals
+                value: true
+              - key: "{{ propsNonCanonical }}"
+                operator: Equals
+                value: true
+              - key: "{{ propsGovernedKey }}"
+                operator: Equals
+                value: true
+              - key: "{{ prClaimBad }}"
+                operator: Equals
+                value: true
+    # Rule 3 -- the request-parameter guarantee, judged on the narrowed input only: an
+    # analysis whose branch anchor (the sonarBranchName param -- rule 2 makes
+    # it the only entrance) targets a protected branch must not have its
+    # quality-gate switches explicitly disabled. PR / feature builds carry a
+    # non-protected value here and SKIP -- out of scope, not violations.
+    # SOUNDNESS PREMISE: rule 2 (same policy, Enforce) has already rejected
+    # every non-canonical shape, so a plain prefix match and a plain equality
+    # test are exact here -- do not install this rule without rule 2.
+    - name: protected-branch-gates-strict
+      match:
+        any:
+          - resources:
+              kinds:
+                - tekton.dev/v1/TaskRun
+              operations:
+                - CREATE
+              namespaces:
+                - policy-poc
+      context:
+        - name: taskResolver
+          variable:
+            jmesPath: "request.object.spec.taskRef.resolver || ''"
             default: ""
-        # A non-empty PR key makes the Task DELETE sonar.branch.name (PR analysis, no
-        # branch analysis happens), so this rule is out of scope -- the PR stage is
-        # rule 3's business.
+        - name: taskKind
+          variable:
+            jmesPath: "(request.object.spec.taskRef.params || `[]`)[?name=='kind'].value | [0] || ''"
+            default: ""
+        - name: taskCatalog
+          variable:
+            jmesPath: "(request.object.spec.taskRef.params || `[]`)[?name=='catalog'].value | [0] || ''"
+            default: ""
+        - name: taskName
+          variable:
+            jmesPath: "(request.object.spec.taskRef.params || `[]`)[?name=='name'].value | [0] || ''"
+            default: ""
+        - name: taskVersion
+          variable:
+            jmesPath: "(request.object.spec.taskRef.params || `[]`)[?name=='version'].value | [0] || ''"
+            default: ""
+        - name: branchParam
+          variable:
+            jmesPath: "to_string(to_array((request.object.spec.params || `[]`)[?name=='sonarBranchName'].value | [0] || '') | [0] || '')"
+            default: ""
+        - name: sonarPropsItems
+          variable:
+            jmesPath: "to_array((request.object.spec.params || `[]`)[?name=='sonarProperties'].value | [0] || `[]`)[].to_string(@)"
+            default: []
+        # A non-empty PR key claim flips the Task into PR analysis (it deletes
+        # sonar.branch.name; the branch param is inert there) -- the PR stage
+        # is rule 4's business. Canonical form is guaranteed by rule 2, so
+        # "non-empty" is one equality test against the bare token.
+        - name: prKeyClaim
+          variable:
+            jmesPath: "sonarPropsItems[?starts_with(@, 'sonar.pullrequest.key=')] | [0] || ''"
+            default: ""
         - name: prKeyNonEmpty
           variable:
-            jmesPath: "length(sonarPropsItems[?starts_with(@, 'sonar.pullrequest.key=') && @ != 'sonar.pullrequest.key=']) > `0`"
-        # Effective analysed branch, in the Task's own resolution order. branchFromProps
-        # keeps its 'sonar.branch.name=' prefix, which the scope regex accounts for.
-        - name: branch
-          variable:
-            jmesPath: "prKeyNonEmpty && 'PR-MODE-NO-BRANCH-ANALYSIS' || (branchParam != '' && branchParam || branchFromProps)"
-            default: ""
+            jmesPath: "prKeyClaim != '' && prKeyClaim != 'sonar.pullrequest.key='"
         # Presence is tracked separately from the value: only an absent param
         # inherits the trusted Task default "true"; an explicit empty string or
         # any other non-true value is a weakened gate (same pattern as §4.2.1).
@@ -3840,18 +4488,23 @@ spec:
           - key: "{{ taskVersion }}"
             operator: Equals
             value: "0.7"
-          # Scope gate: only protected-branch analyses enter this rule.
-          # Two alternatives: the param value is bare, while a sonarProperties claim
-          # still carries its 'sonar.branch.name=' prefix. Anchored either way so
-          # 'main-x' or a smuggled 'sonar.branch.name=main;y=z' cannot pose as protected.
-          - key: "{{ regex_match('^(main|release-.*)$', branch) || regex_match('^sonar[.]branch[.]name=(main|release-.*)$', branch) }}"
+          # Scope gate: only branch-mode analyses of a protected branch enter.
+          # An ABSENT / blank sonarBranchName is IN scope: with no branch value
+          # from anywhere (rule 2 bans the sonarProperties entrance), the
+          # scanner analyses the project's DEFAULT branch -- which is exactly
+          # the protected mainline (this also keeps Community Edition callers,
+          # which cannot pass a branch at all, governed instead of exempted).
+          # A PR / feature build fails one of the two tests and SKIPS -- the
+          # inverse of a branch allowlist: out of scope, not violations.
+          - key: "{{ (regex_match('^(main|release-.*)$', branchParam) || regex_match('^[[:space:]]*$', branchParam)) && !prKeyNonEmpty }}"
             operator: Equals
             value: true
       validate:
         failureAction: Enforce
         message: >-
-          analysis of protected branch '{{ branch }}' must keep the quality gates
-          on: enableScanQualityGate='{{ scanQG }}',
+          analysis of protected branch '{{ branchParam }}' (an empty value
+          means the default branch) must keep the quality gates on:
+          enableScanQualityGate='{{ scanQG }}',
           enableAnalyzeQualityGate='{{ analyzeQG }}' (an absent switch inherits
           the trusted default "true"; an explicit non-true value is rejected).
         deny:
@@ -3860,15 +4513,16 @@ spec:
               - key: "{{ gateWeakened }}"
                 operator: Equals
                 value: true
-    # Rule 3 (OPTIONAL, best-effort BY DESIGN) -- when the caller claims REAL
-    # PR analysis (a NON-EMPTY sonar.pullrequest.key; the platform injects the
+    # Rule 4 (OPTIONAL, best-effort BY DESIGN) -- when the caller claims REAL
+    # PR analysis (a non-empty sonar.pullrequest.key; the platform injects the
     # group with an empty key on plain push events, which must not enter) and
-    # names a protected target via sonar.pullrequest.base=... in the
-    # sonarProperties param, hold the same gate strictness. The claims are
-    # user-supplied and absent by default: omission or a non-protected value
-    # simply skips. That fail-open direction is the accepted trade-off for the
-    # PR stage (the hard guarantee lives in rule 2, post-merge), which is also
-    # why this rule audits instead of enforcing.
+    # names a protected target via sonar.pullrequest.base=..., hold the same
+    # gate strictness. The claims are user-supplied and absent by default:
+    # omission or a non-protected value simply skips. That fail-open direction
+    # is the accepted trade-off for the PR stage (the strict post-merge parameter
+    # check lives in rule 3), which is also why this rule audits instead of
+    # enforcing. Ambiguous / malformed claims are already REJECTED by rule 2,
+    # so this rule only ever sees at most one canonical claim per key.
     - name: pr-target-protected-gates-audit
       match:
         any:
@@ -3900,48 +4554,23 @@ spec:
           variable:
             jmesPath: "(request.object.spec.taskRef.params || `[]`)[?name=='version'].value | [0] || ''"
             default: ""
-        # sonarProperties is an ARRAY param: [?name==...].value yields a list of
-        # values, | [0] takes the first value which IS the array of items.
-        # to_array keeps the rule from erroring out when a hand-crafted TaskRun
-        # passes the param as a plain string (array -> unchanged, string ->
-        # one-element array, absent -> []), and the per-element to_string(@)
-        # projection JSON-encodes object-typed values so every starts_with
-        # below always receives strings (an object param would otherwise make
-        # the rule error; encoded objects match no sonar.pullrequest.* prefix,
-        # so such a run simply skips).
         - name: sonarPropsItems
           variable:
             jmesPath: "to_array((request.object.spec.params || `[]`)[?name=='sonarProperties'].value | [0] || `[]`)[].to_string(@)"
             default: []
-        # PR mode is claimed by a NON-EMPTY sonar.pullrequest.key. The platform
-        # injects the whole sonar.pullrequest.* group with an EMPTY key on plain
-        # push events -- a bare 'sonar.pullrequest.key=' must NOT drag a push
-        # build into this rule.
-        - name: prKeyTokens
+        - name: prKeyClaim
           variable:
-            jmesPath: "sonarPropsItems[?starts_with(@, 'sonar.pullrequest.key=')]"
-            default: []
-        - name: prKeyCount
-          variable:
-            jmesPath: "length(prKeyTokens)"
-            default: 0
+            jmesPath: "sonarPropsItems[?starts_with(@, 'sonar.pullrequest.key=')] | [0] || ''"
+            default: ""
         - name: prKeyNonEmpty
           variable:
-            jmesPath: "length(sonarPropsItems[?starts_with(@, 'sonar.pullrequest.key=') && @ != 'sonar.pullrequest.key=']) > `0`"
-        - name: prBaseTokens
-          variable:
-            jmesPath: "sonarPropsItems[?starts_with(@, 'sonar.pullrequest.base=')]"
-            default: []
-        - name: prBaseCount
-          variable:
-            jmesPath: "length(prBaseTokens)"
-            default: 0
+            jmesPath: "prKeyClaim != '' && prKeyClaim != 'sonar.pullrequest.key='"
         - name: prBaseClaim
           variable:
-            jmesPath: "prBaseTokens | [0] || ''"
+            jmesPath: "sonarPropsItems[?starts_with(@, 'sonar.pullrequest.base=')] | [0] || ''"
             default: ""
-        # Match the WHOLE token so 'sonar.pullrequest.base=main;x=y' or an
-        # embedded second assignment cannot pose as a protected claim.
+        # Match the WHOLE token so 'sonar.pullrequest.base=main;x=y' cannot
+        # pose as a protected claim (rule 2 already keeps the token canonical).
         - name: prBaseProtected
           variable:
             jmesPath: "regex_match('^sonar[.]pullrequest[.]base=(main|release-.*)$', prBaseClaim)"
@@ -3988,67 +4617,69 @@ spec:
           - key: "{{ prKeyNonEmpty }}"
             operator: Equals
             value: true
-          - key: "{{ prBaseCount }}"
+          - key: "{{ prBaseClaim }}"
             operator: NotEquals
-            value: 0
+            value: ""
       validate:
         failureAction: Audit
-        # Echo both claim counts: the three deny conditions (duplicated base,
-        # duplicated key, protected base with weakened gates) otherwise render
-        # the SAME report entry and cannot be told apart in a PolicyReport.
         message: >-
           PR analysis (non-empty sonar.pullrequest.key) claims target
-          '{{ prBaseClaim }}' -- base claims={{ prBaseCount }},
-          key claims={{ prKeyCount }} (each must be exactly 1), and a protected
-          target must keep the quality gates on
-          (enableScanQualityGate='{{ scanQG }}',
+          '{{ prBaseClaim }}' -- a protected target must keep the quality
+          gates on (enableScanQualityGate='{{ scanQG }}',
           enableAnalyzeQualityGate='{{ analyzeQG }}').
         deny:
           conditions:
             any:
-              # More than one base or key claim: ambiguous / smuggled -- flag it.
-              - key: "{{ prBaseCount }}"
-                operator: NotEquals
-                value: 1
-              - key: "{{ prKeyCount }}"
-                operator: NotEquals
-                value: 1
-              # Exactly one claim each, protected target, gate explicitly weakened.
-              - key: "{{ prBaseCount == `1` && prBaseProtected && gateWeakened }}"
+              - key: "{{ prBaseProtected && gateWeakened }}"
                 operator: Equals
                 value: true
 ```
 
 :::
 
-:::details Verification probes (22 of them; every real trigger scenario has an allow case)
+:::details Verification probes (37 of them; every real trigger scenario has an allow case)
 
-How to run: for 1-9, 14-16, and 18-22 use `kubectl create --dry-run=server` (the Enforce verdict is visible synchronously); 10-13 and 17 are observation items of Audit rules — **really create** them, then reconcile `fail` / `pass` / `skip` in the PolicyReport (the `skip` in #12 corresponds to "the push-injection shape with an empty key is not mis-recorded as a PR fail"); clean up the probe objects per [§4.0.4](#s4-0-4) when done. After deployment, re-run this table per skeleton B of [§3.5](#s3-5) to re-verify.
+How to run: for 1-4 and 7-37 use `kubectl create --dry-run=server` (the Enforce verdict is visible synchronously); 5 and 6 are observation items of Audit rules — **really create** them, then reconcile `fail` / `pass` in the PolicyReport; clean up the probe objects per [§4.0.4](#s4-0-4) when done. After deployment, re-run this table per the rollout flow of [§3.5](#s3-5), using skeleton B of [§3.4.1](#s3-4-1), to re-verify.
 
-| # | Scenario / construction | Expected |
+| Probe # | Scenario / construction | Expected |
 |---|---|---|
-| 1 | Protected branch, official-template shape: `sonarBranchName: main`, gate switch **absent** | Allow (absence = trusted default) |
+| 1 | Protected branch, official-template shape: `sonarBranchName: main` + `sonarProperties` containing only legitimate entries (e.g. `sonar.java.binaries=target/classes`), gate switches **absent** | Allow (absent switches = trusted default) |
 | 2 | Protected branch, explicitly compliant: `sonarBranchName: release-1.2` + `enableScanQualityGate: "true"` | Allow |
-| 3 | Protected branch, gate explicitly off: `sonarBranchName: main` + `enableScanQualityGate: "false"` | **Deny** (`protected-branch-gates-strict`) |
-| 4 | Protected branch, explicit empty string: `sonarBranchName: main` + `enableAnalyzeQualityGate: ""` | **Deny** (an explicit empty string ≠ absence) |
-| 5 | **feature build, gate off**: `sonarBranchName: feature-x` + `enableScanQualityGate: "false"` | **Allow** (rule ② skips — the scenario's allow case, proving PR / feature builds are not blocked wholesale) |
-| 6 | **Common PR shape**: `sonarBranchName` absent + `enableScanQualityGate: "false"` | Allow (rule ② skips; rule ③ not triggered) |
-| 7 | hub source swapped (request-level `url`) + `sonarBranchName: feature-x` | **Deny** (`hub-source-integrity` — scenario-independent; a feature branch is denied just the same) |
-| 8 | Approved quadruple + explicit `type: tekton` + `main` | **Deny** (`hub-source-integrity`) |
-| 9 | A single explicit `type: artifact` + `main`, switch absent | Allow |
-| 10 | PR best-effort positive case: `sonarProperties` contains `sonar.pullrequest.key=1770` + `sonar.pullrequest.base=main` + `enableScanQualityGate: "false"` (**in 10-13, `sonarBranchName` is always absent or a feature value** — that is what the PR shape looks like anyway; with a protected-branch value the request would first be Enforce-denied by rule ②, and the Audit expectation could never be observed) | PolicyReport **fail** (`pr-target-protected-gates-audit`; Audit does not block) |
-| 11 | PR best-effort negative case: `key=1770` + `base=feature-y` + gate off | No fail (not a protected target; the accepted fail-open) |
-| 12 | **push-injection shape**: `sonarProperties` contains `sonar.pullrequest.key=` (**empty key**) + `base=main` + gate off | No fail (rule ③ requires a non-empty key as a precondition — ordinary push builds are not mis-recorded as PR fails) |
-| 13 | Duplicate declarations: `key=1770` ×1 + `base=main` ×2 (or `key=` stacked with another non-empty key) | PolicyReport **fail** (ambiguous / smuggled declaration, malformed) |
-| 14 | Forged identical pipeline / pipelineTask labels, but the real Task identity is not `catalog/sonarqube-scanner/0.7` | All three rules skip; no false positives |
-| 15 | Regression case: `sonarBranchName` passed as an **array** (`[feature-a, feature-b]`) + gate off | Allow (`to_array` normalization takes the first element, which does not match the protected regex → rule ② skips; **no rule error is produced**) |
-| 16 | Regression case: `sonarBranchName` passed as an **object** (an object-typed ParamValue) + gate off | Allow (`to_string` encodes the object as a JSON string, which does not match the protected regex → rule ② skips; **no rule error is produced** — without this hardening it is a fail-closed false denial) |
-| 17 | Regression case: `sonarProperties` passed as an **object** | PolicyReport **skip** (after per-element `to_string(@)` no `sonar.pullrequest.*` prefix matches → rule ③'s precondition does not hold; **no error entry is produced**) |
-| 18 | **Injected branch anchor**: `sonarBranchName` **absent** + `sonarProperties` contains `sonar.branch.name=main` + gate off | **Deny** (`protected-branch-gates-strict` — when the parameter is absent the Task keeps the injected value, and the scoping criterion follows it) |
-| 19 | Parameter overriding the injected value: `sonarBranchName: feature-x` + `sonarProperties` contains `sonar.branch.name=main` + gate off | Allow (the Task overrides the injected value with the parameter; what actually gets analyzed is feature-x — **no false positive**) |
-| 20 | No false positive in PR mode: `sonarBranchName: main` + `sonar.pullrequest.key=1770` + gate off | Allow (a non-empty key ⇒ the Task deletes `sonar.branch.name` and does no branch analysis at all; the PR stage belongs to rule ③) |
-| 21 | Smuggled suffix: `sonarProperties` contains `sonar.branch.name=main;sonar.foo=bar` + gate off | Allow (whole-token anchoring; a concatenated value does not impersonate a protected branch) |
-| 22 | Protected branch injected but **without weakening the gate**: `sonarProperties` contains `sonar.branch.name=release-1.2`, switch absent | Allow (the scoping criterion only decides whether the request enters this rule; once in, only explicit weakening is denied — it has not become a branch allowlist) |
+| 3 | **feature build, gate off**: `sonarBranchName: feature-x` + `enableScanQualityGate: "false"` | **Allow** (rule ③ skips — the scenario's allow case, proving PR / feature builds are not blocked wholesale) |
+| 4 | **push-injection shape**: `sonarBranchName: main` + `sonarProperties` containing the whole `sonar.pullrequest.*` group (**empty key**), switches absent | Allow (the whole-group injection with an empty key is canonical form; branch mode is judged as usual and the gates are not weakened) |
+| 5 | PR best-effort positive case: `sonarBranchName: feature-x` + `sonar.pullrequest.key=1770` + `sonar.pullrequest.base=main` + `enableScanQualityGate: "false"` | Allow + PolicyReport **fail** (`pr-target-protected-gates-audit`; Audit does not block) |
+| 6 | PR best-effort negative case: `key=1770` + `base=feature-y` + gate off | Allow, no fail (not a protected target; the accepted fail-open) |
+| 7 | Legitimate settings: `sonarBranchName: feature-x` + `sonarProperties` containing only `sonar.exclusions=**/vendor/**` + gate off | Allow |
+| 8 | **A legitimate property whose value contains a governed key**: `sonar.exclusions=**/sonar.branch.name=main/**` + feature build, gate off | Allow (the prefix is anchored at the start of the entry; a substring inside a value is not a claim) |
+| 9 | No false positive in PR mode: `sonarBranchName: main` + `sonar.pullrequest.key=1770` + gate off | Allow (a non-empty key ⇒ the Task does no branch analysis, rule ③ skips; the PR stage belongs to rule ④, which does not trigger without a base claim) |
+| 10 | Space in a non-governed key's value: `sonar.projectName=My App`, switches absent | Allow (canonical form only constrains the key shape and the governed keys; it does not ban spaces inside values) |
+| 11 | **Community Edition shape**: `sonarBranchName` absent + `sonarProperties` containing only legitimate entries, switches **absent** | Allow (an absent branch enters the protected scope as the default branch, but the gates are not weakened — compliant Community Edition usage is not falsely rejected) |
+| 12 | Injected branch key: `sonarBranchName: feature-x` + `sonarProperties` contains `sonar.branch.name=main` + gate off | **Deny** (`sonar-props-normative-form` — governed keys must not travel through `sonarProperties`; denied even though the parameter would override it) |
+| 13 | Injected branch key, gates fully on: `sonarBranchName: main` + `sonar.branch.name=release-1.2`, switches absent | **Deny** (the normative-form gate is scenario-independent: denied even without weakening the gates) |
+| 14 | Smuggled suffix: `sonar.branch.name=main;sonar.foo=bar` + gate off | **Deny** (governed-key prefix hit) |
+| 15 | Comment line: `sonarProperties` containing only `#sonar.branch.name=main` + feature build, gate off | **Deny** (a leading `#` is not canonical `key=value` — do not write comments into the param) |
+| 16 | Leading whitespace: ` sonar.branch.name=main` (one leading space; same for Tab) + gate off | **Deny** (non-canonical form — precisely the bypass hole the loose prefix match used to leave open; the whole class is denied) |
+| 17 | Leading form feed `\f` + gate off | **Deny** (same as above) |
+| 18 | Leading vertical tab `\v` + gate off | **Deny** (same as above; the contract does not interpret what the consumer would or would not accept — see entry 19 of [§2.5](#s2-5)) |
+| 19 | Two exclusion lines run together in one element with an embedded line break + feature build, gate off | **Deny** (one element must be exactly one `key=value` line — split it into two array elements to be allowed) |
+| 20 | Line-break smuggling: `sonar.exclusions=x` + line break + `sonar.branch.name=main` + gate off | **Deny** (non-canonical form + governed key, a double hit) |
+| 21 | **Duplicate PR key**: one `sonar.pullrequest.key=1770` and one `sonar.pullrequest.key=` + gate off | **Deny** (ambiguous claims — duplication is denied outright; "the last one wins" is no longer modelled) |
+| 22 | **Whitespace-valued PR key**: `sonar.pullrequest.key= ` (one space after the equals sign) + gate off | **Deny** (whitespace is banned in key / base values — the `tr -d ' '` emptiness semantics are no longer modelled) |
+| 23 | **Tab-valued PR key**: `sonar.pullrequest.key=` followed by one Tab + gate off | **Deny** (same as above) |
+| 24 | **Duplicate injected branch**: one `sonar.branch.name=feature-x` and one `sonar.branch.name=main` + gate off | **Deny** (governed-key hit; with duplicate claims, even "which one wins" no longer needs answering) |
+| 25 | **endpoint injection**: `sonarProperties` contains `sonar.host.url=http://evil.example` | **Deny** (governed key — the endpoint is pinned at the TaskRun level too, not only at [§4.2.5](#s4-2-5)'s PipelineRun level) |
+| 26 | Type regression: `sonarProperties` passed as an **object** | **Deny** (after JSON encoding it does not match the canonical `key=value` form — an out-of-contract shape, no longer "skip and allow") |
+| 27 | Type regression: `sonarProperties` passed as a **bare string** `sonar.branch.name=main` | **Deny** (normalized to a single element and judged against the canonical form: governed-key hit) |
+| 28 | **Absent branch + gate off**: `sonarBranchName` absent + `enableScanQualityGate: "false"` | **Deny** (`protected-branch-gates-strict` — absence = default-branch analysis, which falls inside the protected scope; exactly the gap where the old criterion silently skipped) |
+| 29 | **Blank branch + gate off**: `sonarBranchName: ""` + `enableScanQualityGate: "false"` | **Deny** (same as above; a blank value counts as absent) |
+| 30 | Protected branch, gate explicitly off: `sonarBranchName: main` + `enableScanQualityGate: "false"` | **Deny** (`protected-branch-gates-strict`) |
+| 31 | Protected branch, explicit empty-string switch: `sonarBranchName: main` + `enableAnalyzeQualityGate: ""` | **Deny** (an explicit empty string ≠ absence) |
+| 32 | hub source swapped (request-level `url`) + `sonarBranchName: feature-x` | **Deny** (`hub-source-integrity` — scenario-independent; a feature branch is denied just the same) |
+| 33 | Forged identical labels, but the real Task identity is not `catalog/sonarqube-scanner/0.7` | All four rules skip; no false positives |
+| 34 | Regression case: `sonarBranchName` passed as an **array** (`[feature-a, feature-b]`) + gate off | Allow (normalization takes the first element, which is non-empty and does not match the protected regex → rule ③ skips; **no rule error is produced** — type errors are backstopped by Tekton's own parameter validation) |
+| 35 | **Line-break smuggling via the param**: `sonarBranchName` valued `feature-x` + line break + `sonar.branch.name=main` + gate off | **Deny** (`sonar-props-normative-form` — when `replaceValues` writes the file via sed, the value splits into two lines and Java takes the last one, `main`; the criterion bans line breaks in `sonarBranchName`, closing this entrance parallel to `sonarProperties`) |
+| 36 | **Carriage-return smuggling via the param**: same as above but with `\r` instead of `\n` | **Deny** (`\r` is likewise a line terminator for Java properties; banned along with it) |
+| 37 | Negative control: a legitimate branch name carrying a slash / dot (`release-1.2/hotfix`) + gates on | Allow (only line breaks are banned; normal branch names are unaffected — no false positives) |
 
 :::
 
@@ -4083,7 +4714,7 @@ The full profile of this section is split into **three rules**, because the only
 | `java-build-inputs-must-stay-approved` | java 0.3 only | 5 maven parameters + 5 maven workspaces |
 | `python-build-inputs-must-stay-approved` | python 0.3 only | 5 `preBuild*` / `pythonImage` parameters + the `pip-conf` workspace |
 
-The gate surface can share one rule because the two templates have **identical parameter names and types for everything the gate criteria touch** — on the trivy side (`skipTrivyScan` / `trivyExitCode` / `trivySeverity` / `trivyExtraArgs`) even the defaults are identical field by field; on the sonar side the parameter names are the same (**but the default of `sonarProperties` differs**: java carries one extra entry, `sonar.java.binaries=target/classes`; the criteria in this section only require "not overridden by the request side" and never compare against defaults, so this does not matter). The differences are concentrated in the language-specific build inputs (java's maven group ↔ python's `preBuild*` group, workspaces 16 ↔ 12).
+The gate surface can share one rule because the two templates have **identical parameter names and types for everything the gate criteria touch** — on the trivy side (`skipTrivyScan` / `trivyExitCode` / `trivySeverity` / `trivyExtraArgs`) even the defaults are identical field by field; on the sonar side the parameter names are the same (**but the default of `sonarProperties` differs**: java carries one extra entry, `sonar.java.binaries=target/classes`; the criteria in this section only require "not overridden by the request side" and never compare against defaults, so this does not matter). The differences are concentrated in the language-specific build inputs (java's maven group ↔ python's `preBuild*` group, workspaces 16 ↔ 12). Adoption is tiered the same way: the minimal `trivy-gate-must-stay-on` belongs to the minimal hard guarantees, while this table's full profiles are **optional environment profiles** — installed selectively by template and environment (the minimal-set list in [§4.0.2](#s4-0-2)); not every deployment has to copy them.
 
 **The two templates share 11 same-named workspaces; this section governs only 6 of them.** The remaining 5 — `source`, `git-basic-auth`, `git-ssh-directory`, `git-ssl-ca-directory`, `kubeconfig` — **are not in the criteria of these three rules**; they are the responsibility of the Git / source policies and of the release-target policy in [§4.5.5](#s4-5-5) respectively (the per-workspace division of labor is in the workspace responsibility table below). Copying this section's rules does not mean all 11 are locked.
 
@@ -4105,7 +4736,7 @@ The naive approach — "deny only `sonarURL==''`, deny only `skipTrivyScan=='tru
 
 The full profile therefore forbids the PipelineRun from explicitly overriding `sonarProjectKey`, **forbids any `sonarProperties` entry that overrides governed configuration** (see the next paragraph), requires `tlsVerify` to use the trusted default or be exactly `true` and `images` to be non-empty and shell-safe, and restricts the optional Sonar / Maven / registry / pip workspaces to reviewed objects.
 
-**`sonarProperties` is judged on content, not on presence** (the same lesson as [§4.2.4](#s4-2-4)): the parameter is the **only channel** for passing legitimate analysis settings (exclusion dirs, coverage report paths, and so on), and on the trigger path the platform additionally injects the whole `sonar.pullrequest.*` group through it — **"deny on presence" would block that entire class of normal requests**. Per scanner 0.7's merge order (task params → `sonarProjectKey` → **`sonarProperties`** → credentials → branch name → quality-gate normalization), only three classes of governed keys can genuinely be overridden here: the analysis endpoint `sonar.host.url`, the project identity `sonar.projectKey`, and `sonar.branch.name` when `sonarBranchName` is absent; the credential keys (`sonar.login` / `sonar.token` / `sonar.password`) are overwritten by the later credentials step and `sonar.qualitygate.*` by the final normalization — neither can currently be overridden, but the criterion lists them anyway, **so that a future reordering of the merge cannot silently open a hole**.
+**`sonarProperties` is judged on content, not on presence** (a criterion shape shared with [§4.2.4](#s4-2-4)): the parameter is the **only channel** for passing legitimate analysis settings (exclusion dirs, coverage report paths, and so on), and on the trigger path the platform additionally injects the whole `sonar.pullrequest.*` group through it — **"deny on presence" would block that entire class of normal requests**. Per scanner 0.7's merge order (task params → `sonarProjectKey` → **`sonarProperties`** → credentials → branch name → quality-gate normalization), only three classes of governed keys can genuinely be overridden here: the analysis endpoint `sonar.host.url`, the project identity `sonar.projectKey`, and `sonar.branch.name` when `sonarBranchName` is absent; the credential keys (`sonar.login` / `sonar.token` / `sonar.password`) are overwritten by the later credentials step and `sonar.qualitygate.*` by the final normalization — neither can currently be overridden, but the criterion lists them anyway, **so that a future reordering of the merge cannot silently open a hole**. **The shape of each item is judged as well** (the same normative gate as rule ② of [§4.2.4](#s4-2-4)): prefix matching on the governed keys is reliable only when an item is canonical `key=value` — a spelling with leading whitespace evades the prefix comparison yet is still written verbatim into the properties file by the Task and takes effect on the Java side, so non-canonical items (leading whitespace, `#` comments, a newline embedded in one item) are denied across the board.
 
 **The object names in the examples must be replaced with the Secrets / ConfigMaps actually approved in your environment** (the `approved-*` batch), **and the three values `<approved-sonar-url>` / `<approved-maven-mirror-url>` / `<approved-maven-cert-path>` must also be replaced with your own** — they are not object names, they are the easiest to miss, and the consequence of missing them is that **compliant requests get denied**: the `sonarURL` criterion is an unconditional comparison (**every** request would be denied), while the two maven criteria carry an "only judged when explicitly passed" precondition (only requests that explicitly configure a mirror / cert are denied). Per-item scopes are in the placeholder table in [§4.0.3](#s4-0-3). On a template upgrade, re-review every field and the merge order.
 
@@ -4147,7 +4778,7 @@ The criteria in this section use `[?name=='x'] | [0]` everywhere — parameters,
 
 So `spec`-side uniqueness is guaranteed by Tekton and the policy need not count again (this section's `trivyConfigCount > 1` and the like are merely defense in depth kept in the same shape as the other workspace criteria, not a necessity).
 
-**⚠️ This guarantee covers `spec` only and must never be extrapolated to `status`.** `status.results`, `status.conditions`, `status.skippedTasks`, and `status.pipelineSpec.tasks` are all written by controllers, and the CRD carries no uniqueness constraint on any of them (`conditions` and `pipelineSpec.tasks` are bare arrays; `results` and `skippedTasks` are `x-kubernetes-list-type: atomic` — that means "replace as a whole", not "dedupe by key"): **at admission time a same-named entry can appear twice, which is enough to bypass a policy that copies the `[0]` pattern**. So every policy that reads `status` must explicitly require "exactly one entry for the target result / condition", and the terminal-state guard likewise counts entries instead of taking `[0]` — construction, A/B evidence, and the fix are in the warning "never take `[0]` when reading status" in [§4.4.1](#s4-4-1).
+**⚠️ This guarantee covers `spec` only and must never be extrapolated to `status`.** `status.results`, `status.conditions`, `status.skippedTasks`, and `status.pipelineSpec.tasks` are all written by controllers, and **the CRD carries no dedupe-by-name constraint on any of them**: **at admission time a same-named entry can appear twice, which is enough to bypass a policy that copies the `[0]` pattern**. So every policy that reads `status` must explicitly require "exactly one entry for the target result / condition", and the terminal-state guard likewise counts entries instead of taking `[0]` — construction, A/B evidence, and the fix are in the warning "never take `[0]` when reading status" in [§4.4.1](#s4-4-1).
 
 **And this rule must be counted all the way down, not just at the outermost layer.** `status.pipelineSpec.tasks[].taskRef.params` is a **params list nested inside status**: even after the outer layer has counted "exactly one task named `scan`", if the inner `kind` / `name` / `namespace` still copy `[0]`, one decoy parameter inserted in front lets the identity criterion read a "clean" value. The `scanRefParamsUnique` in [§4.1.4](#s4-1-4) and [§4.6.2](#s4-6-2) is exactly that layer's counting guard; **for every layer you drill into status yourself, ask once per layer: "does this list have a uniqueness guarantee?"**
 
@@ -4400,7 +5031,7 @@ The policy above governs exactly one thing, the vulnerability gate. The full pro
 | Criterion group | Contains | What deleting it loses |
 |---|---|---|
 | **Trivy gate** | `trivySkipped` / `trivyGateOff` / `trivySeverityBad` / `trivyExtraArgsBad` / `gateOverrideCount` / `runWideEnvCount` | Exactly the **six** criteria of the minimal version — **none of the six can go**: without `trivySkipped`, a single `skipTrivyScan: "true"` idles the other three; without `gateOverrideCount` or `runWideEnvCount`, one `podTemplate.env` (attached per task or per run) changes scan behavior while all parameters stay green |
-| **Sonar gate** | `sonarBad` / `sonarPropertiesBad` / `sonarProjectKeyBad` | The code scan can be skipped wholesale via an empty `sonarURL`, or hollowed out by a `sonarProperties` entry overriding a governed key (endpoint / project identity / branch anchor) |
+| **Sonar gate** | `sonarBad` / `sonarPropertiesBad` / `sonarProjectKeyBad` | The code scan can be skipped wholesale via an empty `sonarURL`, or hollowed out by a `sonarProperties` entry overriding a governed key (endpoint / project identity / branch anchor); non-canonical items (leading whitespace / `#` / an embedded newline) are denied across the board — only then is prefix matching reliable |
 | **Hub source identity** | `hubSourceBad` | A request can bring its own `url` and pull a same-named template from outside; the allowlist becomes decoration |
 | **Scan target and transport** | `imagesBad` / `tlsVerifyBad` / `trivySkipped` | Several images can be pushed with only the first scanned; `--insecure` can be enabled; the trivy task can be skipped entirely |
 | **Build inputs** | `mavenExecutionInputsBad` etc. / `pythonBuildInputsBad` | What executes during the build is decided by the requester (change goals, swap the build image, inject a pre-build script) |
@@ -4408,9 +5039,12 @@ The policy above governs exactly one thing, the vulnerability gate. The full pro
 
 **The group most likely to need per-environment tailoring is the last one** — the object names in the allowlist must be replaced with your own approved Secrets / ConfigMaps, and for workspaces that do not exist in your environment, simply delete the corresponding criterion.
 
-**The key criteria** — each group computes its own boolean, and `deny.conditions.any` denies on any hit:
+**The key criteria** — each group computes its own boolean, and `deny.conditions.any` denies on any hit (**fragment, not a complete manifest you can `kubectl apply` as-is**; the full policy is in this section's details block):
 
 ```yaml
+      # EXCERPT -- key conditions only, NOT a standalone manifest; the
+      # indentation is kept from the full policy, so this block alone does
+      # not parse. Apply the complete YAML from the details block below.
         # (1) Source identity: request-level url / multiple type params / a non-artifact type
         - name: hubSourceBad
           variable:
@@ -4592,14 +5226,25 @@ spec:
         # BEFORE the quality-gate normalisation, so exactly three governed keys can be
         # overridden here; sonar.qualitygate.* cannot (normalised last) but is listed
         # anyway so a future reordering cannot silently open it.
+        # Canonical form FIRST (same normative gate as the TaskRun layer,
+        # section 4.2.4 rule 2): a prefix match alone is evadable -- a leading
+        # blank in ' sonar.branch.name=x' misses every starts_with below, yet
+        # the Task writes the line into the properties file verbatim and
+        # java.util.Properties drops the leading blank, so the governed key
+        # still takes effect. Rejecting non-canonical items closes that whole
+        # class before the prefix list runs.
         - name: sonarPropsItems
           variable:
             jmesPath: "to_array((request.object.spec.params || `[]`)[?name=='sonarProperties'].value | [0] || `[]`)[].to_string(@)"
             default: []
+        - name: sonarPropsNonCanonical
+          variable:
+            jmesPath: "length(sonarPropsItems[?regex_match('^[A-Za-z][A-Za-z0-9._-]*=[^\\r\\n]*$', @) == `false`]) > `0`"
         - name: sonarPropertiesBad
           variable:
             jmesPath: >-
-              length(sonarPropsItems[?starts_with(@, 'sonar.host.url=')
+              sonarPropsNonCanonical
+              || length(sonarPropsItems[?starts_with(@, 'sonar.host.url=')
                 || starts_with(@, 'sonar.projectKey=')
                 || starts_with(@, 'sonar.branch.name=')
                 || starts_with(@, 'sonar.login=')
@@ -4756,7 +5401,8 @@ spec:
         failureAction: Enforce
         message: >-
           the official template must keep its quality gates enabled: an approved
-          Sonar endpoint, no sonarProperties entry overriding a governed key
+          Sonar endpoint, every sonarProperties item a canonical single-line
+          'key=value', no entry overriding a governed key
           (sonar.host.url / sonar.projectKey / sonar.branch.name / credentials
           / sonar.qualitygate.*), no sonarProjectKey override, skipTrivyScan
           exactly "false", the Trivy gate kept out of report-only mode
@@ -5142,7 +5788,8 @@ Build one PipelineRun per row and submit it with `kubectl create --dry-run=serve
 | Blank / unapproved Sonar endpoint; an explicit `sonarProjectKey` override | Deny |
 | `sonarProperties` containing an entry that overrides a governed key (any hit among `sonar.host.url=` / `sonar.projectKey=` / `sonar.branch.name=` / the credential keys / the `sonar.qualitygate.` prefix) | Deny |
 | `sonarProperties` containing only legitimate analysis settings (e.g. `sonar.exclusions=**/vendor/**`) or the platform-injected `sonar.pullrequest.*` group | Allow |
-| `sonarProperties` passed as an **object** (type regression) | Allow — after per-element `to_string(@)` no governed-key prefix matches; no policy error is produced |
+| `sonarProperties` containing a non-canonical item (leading whitespace / a `#` comment / a newline embedded in one item) | Deny (the canonical-form gate — the leading-whitespace spelling used to slip past pure prefix matching) |
+| `sonarProperties` passed as an **object** (type regression) | Deny — the JSON encoding does not match the canonical `key=value` shape (the same verdict as probe 26 of [§4.2.4](#s4-2-4)); no policy error is produced |
 | An illegal `skipTrivyScan` | Deny |
 | `trivyExitCode` explicitly set to `"0"` or an empty string (report-only, i.e. gate off) | Deny |
 | `trivyExitCode` set to another non-zero code (e.g. `"2"`) | Allow — per the contract it still fails the run |
@@ -5236,21 +5883,16 @@ Clean up per the two rules in [§4.0.4](#s4-0-4):
 
 :::
 
-Delete the seven cluster-scoped policies by name (**mind the mutual-exclusion note above** — verifying section by section means installing and deleting one at a time, so by this point only the ones you still have installed will remain).
+Delete the seven cluster-scoped policies by recorded UID via the ownership ledger (**mind the mutual-exclusion note above** — verifying section by section means installing and deleting one at a time, so by this point only the ones you still have installed will remain).
 
-⚠️ **The first `get` below is not a formality — its output decides which names go into the second `delete`** ([§4.0.4](#s4-0-4)'s look-before-delete): delete only **the ones you installed in this walkthrough** — any policy whose `creationTimestamp` falls outside your walkthrough window is someone else's governance rule; **remove it** from the `delete` name list before running. Be extra careful if you only ran one section of this chapter: the other six names are quite possibly not yours at all, and copying the whole `delete` verbatim on a shared cluster deletes policies that are in effect.
+⚠️ The list below may only contain policies **actually created in this walkthrough and recorded in the UID ownership ledger**. Do not add names you never created; if a same-named object has been replaced, the helper skips it on the UID mismatch — do not fall back to a manual name-only delete just to "get everything clean".
 
 ```bash
-# §4.0.4's look-before-delete: cluster-scoped, so one glance at when they were created.
-kubectl get clusterpolicy gate-param-contract gate-param-cancel-existing \
+for pol in gate-param-contract gate-param-cancel-existing \
   gate-param-mutate-to-cancel sonar-branch-analysis-branch-contract \
-  trivy-gate-must-stay-on official-template-gates-on pipeline-run-defaults \
-  --ignore-not-found \
-  -o custom-columns='NAME:.metadata.name,CREATED:.metadata.creationTimestamp'
-kubectl delete clusterpolicy gate-param-contract gate-param-cancel-existing \
-  gate-param-mutate-to-cancel sonar-branch-analysis-branch-contract \
-  trivy-gate-must-stay-on official-template-gates-on pipeline-run-defaults \
-  --ignore-not-found
+  trivy-gate-must-stay-on official-template-gates-on pipeline-run-defaults; do
+  delete_owned_cluster_object clusterpolicy "$pol"
+done
 # The two runtime fixtures: their PolicyReport rows would otherwise read as this
 # section's verdicts on a later section's re-run (§4.0.5).
 kubectl delete pipelinerun -n policy-poc gate-cancel-invalid gate-cancel-compliant \
@@ -5268,7 +5910,7 @@ The template design checklist (the [§2.3](#s2-3) contracts as they land on temp
 - **Data binding / gate cohesion** (contract 4): a self-gating scanner (such as `sonarqube-scanner`, or the [§3.3](#s3-3) fixture) keeps "read the data under test + judge it against the rules + fail itself when below the bar" cohesive inside a **single task** — the gate switches `enableScanQualityGate` / `enableAnalyzeQualityGate` plus the rules `analyzeQualityGateRules` are its contract. If your gate is a **standalone gate task** (consuming upstream results), wire the effective value into the gate explicitly with `$(tasks.<producer>.results.<name>)` instead;
 - **DAG dominance** (contract 5): every release / push / promotion task `runAfter` the gate task (self-gating scanner or standalone gate; directly or transitively). The gate can only stop its successors — **whatever the tasks before or parallel to the gate have already executed will not be rolled back**. All side effects must be ordered after the gate; this is a template design responsibility that admission cannot remedy after the fact;
 - **Must-run** (contract 3): leave the gate no skip path. A self-gating scanner's opt-out surface is "set the switch to `false`" (welded shut by [§4.2.1](#s4-2-1)) and "hang a `when` / an empty matrix on `scan` to skip it" (backstopped by the [§4.1.5](#s4-1-5) `skippedTasks` Audit); reference-style templates additionally have the "parameter-triggered wholesale skip" anti-pattern (e.g. `sonarURL` defaulting to empty + `when: sonarURL notin ["", " "]` ⇒ omit the parameter and the whole scan stage is skipped) — the fix follows the same idea: weld the parameter shut on the policy side, tighten the default on the template side, and add a drift Audit on top;
-- **finally safety** (contract 6): finally executes on failure, or on cancellation via `CancelledRunFinally`; a plain `Cancelled` does not guarantee that finally tasks not yet started will be scheduled. Do not put any gate-protected side effect in finally.
+- **finally safety** (contract 6): finally executes on failure, or on cancellation via `CancelledRunFinally`; a plain `Cancelled` does not guarantee that finally tasks not yet started will be scheduled. Do not put any gate-protected side effect in finally. (`spec.status` has a third value that also runs finally, `StoppedRunFinally`, whose semantics is to **let the tasks already running finish on their own** before stopping; every cancellation path in this document uses `CancelledRunFinally` — when a gate is non-compliant the whole point is to cut off in-flight steps immediately, and waiting for them to finish is the opposite of what the cancellation is for. Switch to that value only in scenarios that want "let the current step wind down, then stop". Separately, `spec.status` has a **fourth** legal value, `PipelineRunPending`, which has nothing to do with stopping / cancelling — its semantics is "do not start yet" — so deciding "this run was cancelled" must look at the **value**, never at "non-empty"; see [§6.2.3](#s6-2-3).)
 
 **Baseline shape**: run the [§3.3](#s3-3) self-gating fixture with `coverage: "30"` (rule `coverage>=80`, `enableAnalyzeQualityGate=true`) —
 
@@ -5277,7 +5919,7 @@ The template design checklist (the [§2.3](#s2-3) contracts as they land on temp
 - `skippedTasks: [{name: release, reason: PipelineRun was stopping}]` — the release was physically never created;
 - the finally `notify` executes successfully as usual.
 
-This is the baseline shape of "a self-gating scanner dominating the release": the gate and the data under test are cohesive in the single `scan` task, and `release` transitively `runAfter`s it. The native gating capability of the platform catalog Tasks works the same way — with `sonarqube-scanner` (0.7), a miss on `enableScanQualityGate` / `enableAnalyzeQualityGate` means the task fails itself. **Mind the governance layer of these two switches**: neither official 0.3 template **exposes them as Pipeline parameters** — the Task-side default `"true"` takes effect — so a PipelineRun-level policy like [§4.2.5](#s4-2-5)'s **can neither see them nor pin them**; pinning is only possible at the TaskRun layer ([§4.2.1](#s4-2-1) / [§4.2.4](#s4-2-4)) — and note that the `spec.params` of a controller-created TaskRun likewise contains only the parameters the Pipeline explicitly passed, so a switch that is not passed through shows up at admission as **absent** (the Task default fills it in only at runtime), and the TaskRun-level criterion is therefore written as "deny only when explicitly passed and ≠ `true`; allow absence" (the shape of rule ② in [§4.2.4](#s4-2-4)). The day the template exposes them, the PipelineRun layer must gain the corresponding criteria; `trivy-scanner` (0.6) fails on above-threshold vulnerabilities via its exit code — the official templates control it through the `trivyExitCode` parameter, **whose default is `"1"`, i.e. the gate is on by default**; what the policy has to prevent is it being explicitly switched off to `"0"` or empty (see [§4.2.5](#s4-2-5)).
+This is the baseline shape of "a self-gating scanner dominating the release": the gate and the data under test are cohesive in the single `scan` task, and `release` transitively `runAfter`s it. The native gating capability of the platform catalog Tasks works the same way — with `sonarqube-scanner` (0.7), a miss on `enableScanQualityGate` / `enableAnalyzeQualityGate` means the task fails itself. **Mind the governance layer of these two switches**: neither official 0.3 template **exposes them as Pipeline parameters** — the Task-side default `"true"` takes effect — so a PipelineRun-level policy like [§4.2.5](#s4-2-5)'s **can neither see them nor pin them**; pinning is only possible at the TaskRun layer ([§4.2.1](#s4-2-1) / [§4.2.4](#s4-2-4)) — and note that the `spec.params` of a controller-created TaskRun likewise contains only the parameters the Pipeline explicitly passed, so a switch that is not passed through shows up at admission as **absent** (the Task default fills it in only at runtime), and the TaskRun-level criterion is therefore written as "deny only when explicitly passed and ≠ `true`; allow absence" (the shape of rule ③ in [§4.2.4](#s4-2-4)). The day the template exposes them, the PipelineRun layer must gain the corresponding criteria; `trivy-scanner` (0.6) fails on above-threshold vulnerabilities via its exit code — the official templates control it through the `trivyExitCode` parameter, **whose default is `"1"`, i.e. the gate is on by default**; what the policy has to prevent is it being explicitly switched off to `"0"` or empty (see [§4.2.5](#s4-2-5)).
 
 :::info The two official templates differ in DAG shape: which stages are ordered after the gate
 
@@ -5332,9 +5974,12 @@ The two most commonly consumed scanning Tasks in the catalog both publish object
 
 The object result `code-scan-results` declared by `sonarqube-scanner` (0.7) carries four properties — `result` / `reportURL` / `taskID` / `projectID` — of which `result` is the scan verdict, with the real value range `Succeeded` (pass) / `Failed` / `Skipped` / `Canceled`.
 
-**The key criterion** — terminal-state guard plus exact string verdict; neither can be dropped:
+**The key criterion** — terminal-state guard plus exact string verdict; neither can be dropped (**fragment, not a complete manifest you can `kubectl apply` as-is**; the full policy is in this section's details block):
 
 ```yaml
+      # EXCERPT -- key conditions only, NOT a standalone manifest; the
+      # indentation is kept from the full policy, so this block alone does
+      # not parse. Apply the complete YAML from the details block below.
         # Terminal test as a JMESPath boolean (a comparison returns a real boolean).
         # Do NOT hand the strings "True"/"False" to a Kyverno operator -- operator
         # coercion swallows those (§6.1.7). Count the terminal conditions instead of
@@ -5559,9 +6204,12 @@ The four `status` values have a clear division of labor — do not conflate them
 
 :::
 
-**The key criterion** — status guard first, regex guard in the middle, `to_number` last:
+**The key criterion** — status guard first, regex guard in the middle, `to_number` last (**fragment, not a complete manifest you can `kubectl apply` as-is**; the full policy is in this section's details block):
 
 ```yaml
+      # EXCERPT -- key conditions only, NOT a standalone manifest; the
+      # indentation is kept from the full policy, so this block alone does
+      # not parse. Apply the complete YAML from the details block below.
         # Terminal guard first, same shape as the sonar excerpt above: counted, not
         # [0]-indexed, so a decoy Unknown condition cannot disarm it (see the
         # warning after this policy)
@@ -5820,13 +6468,13 @@ spec:
 
 :::warning Never take [0] when reading status: one forged same-named entry disarms the whole rule
 
-**Both `status.conditions` and `status.results` are written by controllers, and Kubernetes puts no uniqueness constraint on either.** In the `taskruns.tekton.dev` schema, `status.conditions` is a bare `type: array`, and `status.results` is `x-kubernetes-list-type: atomic` — `atomic` means "the whole list is replaced as a unit", **not** "deduplicated by key". Neither carries `x-kubernetes-list-type: map`. So a same-named entry can perfectly well appear twice: the echo of `kubectl patch --subresource=status --dry-run=server` shows both entries, and the API server accepts them as-is (a later controller reconcile will normalize them, but **at the admission moment** what is seen is the two entries — and admission is exactly when the policy evaluates).
+**Both `status.conditions` and `status.results` are written by controllers, and Kubernetes puts no dedupe-by-name constraint on either** (nowhere in the `taskruns.tekton.dev` schema does anything make the API server guarantee these two lists are unique by key). So a same-named entry can perfectly well appear twice: the echo of `kubectl patch --subresource=status --dry-run=server` shows both entries, and the API server accepts them as-is (a later controller reconcile will normalize them, but **at the admission moment** what is seen is the two entries — and admission is exactly when the policy evaluates).
 
 This is the counterpart of [§4.2.5](#s4-2-5)'s "`[0]` on `spec.params` is safe": same-named duplicates in `spec.params`, `pipelineRef.params`, and `spec.workspaces` are all rejected by **Tekton's own validation webhook** (the verbatim error is in [§4.2.5](#s4-2-5)); the status side has no equivalent guarantee. **"Verified on `spec`" must never be extrapolated to "safe on `status` too".**
 
 So if the terminal criterion is written as `[?type=='Succeeded'].status | [0]`, inserting one fake condition with `status: Unknown` **ahead of** the real one makes `isTerminal` `false` — the precondition is unmet → **the whole rule skips**, and the `succeededConditionCount != 1` guard further down never gets a chance to run. That is fail-open.
 
-Take a terminal TaskRun that would be denied, replay its status verbatim as the control group, then add just one decoy — everything else untouched — as the experiment group. The three policies behave as follows:
+**The A/B table below is a one-off record of the hardening investigation (a historical comparison), not steps a current deployment needs to rerun** — a current deployment only needs to verify the hardened criterion (which is exactly what this section's Cookbook steps test). The construction at the time: take a terminal TaskRun that would be denied, replay its status verbatim as the control group, then add just one decoy — everything else untouched — as the experiment group. The three policies behave as follows:
 
 | Policy under attack | Decoy construction | Control | Experiment (old form) | Experiment (hardened) |
 |---|---|---|---|---|
@@ -5844,7 +6492,12 @@ length((request.object.status.conditions || `[]`)[?type=='Succeeded' && (status=
 
 This way `[Unknown, True]` still judges as terminal and proceeds into `deny`, where `succeededConditionCount != 1` then judges the duplicated condition itself as a violation. **Residual boundary**: with both entries `Unknown` it still skips — that genuinely is not terminal yet, and it will be caught once it settles; an attacker who can pin the status at `Unknown` long-term already holds status write access, and that is RBAC's boundary, not this policy's (see the earlier warning in this subsection, "What this policy trusts is 'whatever the controller wrote into status'").
 
-**Reading results needs the same guard.** Every policy in this document that reads `status.results` requires "exactly one entry for the target result": the `summaryResultCount` of the trivy shape and the `verdictResultCount` of the sonar shape in [§4.4.1](#s4-4-1), the `summaryResultCount` of [§4.4.2](#s4-4-2), plus each one's `succeededConditionCount` — all wired into `deny.conditions.any`. **Declaring the variable without wiring it in equals not adding it** — and this guard is precisely the kind most easily left unwired, because with it missing every normal sample still passes.
+**Reading results needs the same guard.** This document has four policies that read `status.results`, and **every one of them requires "exactly one entry for the target result"** — but where the guard is wired in differs by policy type:
+
+- The three Audits (the `summaryResultCount` of the trivy shape and the `verdictResultCount` of the sonar shape in [§4.4.1](#s4-4-1), and the `summaryResultCount` of [§4.4.2](#s4-4-2)), together with each one's `succeededConditionCount`, are wired into `deny.conditions.any` — any count other than 1 records a fail;
+- The one cancellation policy (the `coverageResultCount` of [§4.6.1](#s4-6-1)) has no `deny` block; its guard is wired into the intermediate variable `coverageViolates`, so **a count ambiguity directly triggers the cancellation**.
+
+The direction is fail-closed either way; only the landing point differs. **Declaring the variable without wiring it in equals not adding it** — and this guard is precisely the kind most easily left unwired, because with it missing every normal sample still passes.
 
 **The same fix must be applied to every policy that uses `isTerminal` as a precondition** — [§4.4.1](#s4-4-1) (both shapes), [§4.4.2](#s4-4-2), and [§4.6.1](#s4-6-1) in this document have all been switched to the counting form.
 
@@ -5875,7 +6528,7 @@ kubectl get clusterpolicy vuln-summary-audit -o json \
 # `create`, not `apply` (§4.0.4): a same-named policy already on the cluster is somebody
 # else's Enforce rule on */status, and overwriting it is exactly the accident this
 # section warns about -- an AlreadyExists here means STOP, not retry.
-kubectl create -f "$MEASUREMENT_POLICY_NAME.json"
+create_owned_cluster_object "$MEASUREMENT_POLICY_NAME.json" clusterpolicy
 # It is not installed until it is Ready -- an unready policy simply does not evaluate,
 # and step 3 would then be "not denied" for a reason that has nothing to do with the rule.
 kubectl wait --for=condition=Ready "clusterpolicy/$MEASUREMENT_POLICY_NAME" --timeout=60s
@@ -5892,19 +6545,18 @@ kubectl -n policy-poc patch taskrun "$TERMINAL_TASKRUN"   --subresource=status -
 jq '.status.conditions = ([.status.conditions[0] | .status="Unknown" | .reason="Running"] + .status.conditions)'   normal.json > dup.json
 kubectl -n policy-poc patch taskrun "$TERMINAL_TASKRUN"   --subresource=status --type=merge --patch-file dup.json --dry-run=server
 
-# 5. Delete the measurement copy when done and remove the label. The §4.0.4 pre-delete check:
-#    the name is this document's dedicated probe name; just confirm its creationTimestamp falls after step 1 above.
-kubectl get clusterpolicy "$MEASUREMENT_POLICY_NAME" \
-  -o jsonpath='{.metadata.creationTimestamp} {.metadata.name}{"\n"}'
-kubectl delete clusterpolicy "$MEASUREMENT_POLICY_NAME"
+# 5. Delete the measurement copy when done, by the UID recorded at creation, and remove the label.
+delete_owned_cluster_object clusterpolicy "$MEASUREMENT_POLICY_NAME"
 kubectl -n policy-poc label taskrun "$TERMINAL_TASKRUN" probe-
 ```
 
-| Step | Old form (`[0]`) expectation | New form (counting) expectation | Where to look first on a mismatch |
-|---|---|---|---|
-| 3 control | Denied (deny fires) | Denied | Not denied = this TaskRun's `critical` is not `>0`, or the policy did not match: start with `kubectl get clusterpolicy "$MEASUREMENT_POLICY_NAME" -o yaml` and check the `match` namespace / selector and the five hub-identity items |
-| 4 experiment | **Allowed** (reproduces the fail-open) | Denied | If it is still allowed under the new form: first `kubectl get clusterpolicy "$MEASUREMENT_POLICY_NAME" -o jsonpath='{.spec.rules[0].context[?(@.name=="isTerminal")]}'` to confirm the line in effect really is the counting one (it only counts as installed once step 1's `kubectl wait` passed); then confirm the decoy entry really sits **in front** (placed behind, it is ineffective against the `[0]` form to begin with and constitutes no control) |
-| 5 wrap-up | — | — | Forgetting to delete the measurement copy = an Enforce rule left on `*/status`, which will wedge objects carrying that label: confirm with `kubectl get clusterpolicy` that it is gone |
+**These steps test the (hardened) criterion this document now ships** — step 1 derives the copy from **the live policy**, which is already the counting form, so the "Experiment (old form)" column in the table above will **not** reproduce from these steps. To see that fail-open with your own eyes, you would have to hand-craft an extra copy with `isTerminal` reverted to `[?type=='Succeeded'].status | [0]`; if all you want is to confirm "it blocks now", run the table below as-is.
+
+| Step | Expectation (the counting form as shipped) | Where to look first on a mismatch |
+|---|---|---|
+| 3 control | Denied (deny fires) | Not denied = this TaskRun's `critical` is not `>0`, or the policy did not match: start with `kubectl get clusterpolicy "$MEASUREMENT_POLICY_NAME" -o yaml` and check the `match` namespace / selector and the five hub-identity items |
+| 4 experiment | Denied (the decoy is itself the violation) | If it is allowed: first `kubectl get clusterpolicy "$MEASUREMENT_POLICY_NAME" -o jsonpath='{.spec.rules[0].context[?(@.name=="isTerminal")]}'` to confirm the line in effect really is the counting one (it only counts as installed once step 1's `kubectl wait` passed); then confirm the decoy entry really sits **in front** (placed behind, it is ineffective against the `[0]` form to begin with and constitutes no control) |
+| 5 wrap-up | — | Forgetting to delete the measurement copy = an Enforce rule left on `*/status`, which will wedge objects carrying that label: confirm with `kubectl get clusterpolicy` that it is gone |
 
 The hardening does not change the verdicts on normal shapes: run the seven standard shapes of the next details block through the same "verbatim replay + `--dry-run=server`", and the counting form and the `[0]` form give identical conclusions (allow / allow / deny / deny / deny / allow (skip) / deny). In other words, it **only** closes off the forged-condition path.
 
@@ -5930,7 +6582,7 @@ The details block below, "The two minimal YAMLs for reproduction", gives the com
 # 1. Install the policy (Audit; blocks no request)
 # `create`, not `apply` (§4.0.4): a same-named ClusterPolicy is somebody else's
 # governance rule, and an AlreadyExists here means STOP, not overwrite.
-kubectl create -f vuln-summary-audit.yaml
+create_owned_cluster_object vuln-summary-audit.yaml clusterpolicy
 
 # 2. Every probe except "clean image" needs no vulnerability DB: scanType=fs + scanners=[secret]
 #    on a source ConfigMap holding fake keys finishes in seconds. Per probe, change only these params:
@@ -6040,6 +6692,8 @@ Why keep this section at all, then? Two practical reasons: ① Tasks and Task ve
 
 **If you are designing a new Task, go straight to object results — do not copy this section.**
 
+**Compatibility surface frozen**: the support surface of this section's criteria ends here — it serves only the existing aggregate-string contract and will not grow new parsing criteria for new fields, new formats, or new callers; when a new judging capability is needed, go through object results ([§4.4.1](#s4-4-1)) instead of stacking another layer of regex onto this section.
+
 :::
 
 - **What it governs**: a Task that only publishes string results — when the count it reports exceeds the threshold, that must be put on record; this example judges `critical > 0`.
@@ -6047,9 +6701,12 @@ Why keep this section at all, then? Two practical reasons: ① Tasks and Task ve
 - **How the policy is layered**: ① lock terminal state + Task identity → ② cut the `critical=` token out of the aggregate string and require **exactly one** → ③ **regex-match the whole token** (`^critical=[0-9]{1,9}$`, not just the value cut out of it) → ④ only after boundedness is confirmed, `to_number` and compare against the threshold. Every case where the value cannot be read, or more than one is read out, is treated as a violation.
 - **What it cannot govern**: a string is not a stable contract — field order, separators, and newly added fields can all make the parsing **silently mismatch**, and a mismatch typically shows up as **falsely scored as passing**. So this is a transitional shape only. Moreover, an aggregate string usually carries **no** "overall scan status" dimension (the `status` in [§4.4.1](#s4-4-1) is precisely what fills that in), so this section's criteria can only cover "the count cannot be read" — not "the report was never produced but the count was written as 0".
 
-**The key criterion** — the regex guard comes first, `to_number` second, and `-` and absence both fail closed:
+**The key criterion** — the regex guard comes first, `to_number` second, and `-` and absence both fail closed (**fragment, not a complete manifest you can `kubectl apply` as-is**; the full policy is in this section's details block):
 
 ```yaml
+      # EXCERPT -- key conditions only, NOT a standalone manifest; the
+      # indentation is kept from the full policy, so this block alone does
+      # not parse. Apply the complete YAML from the details block below.
         # Terminal guard, counted not [0]-indexed (§4.4.1): only terminal TaskRuns
         # are judged, so the counts below never fire on an in-flight status write
         - name: isTerminal
@@ -6555,7 +7212,7 @@ kubectl wait -n policy-poc pipelinerun/doc-inventory-ungated \
 # `create`, not `apply`: on a shared cluster an AlreadyExists error here is the answer
 # you want -- somebody else already owns that policy name, so stop and pick your own
 # rather than overwriting theirs (§4.0.4).
-kubectl create -f inventory-ungated-runs.yaml
+create_owned_cluster_object inventory-ungated-runs.yaml clusterpolicy
 kubectl wait --for=condition=Ready clusterpolicy/inventory-ungated-runs --timeout=60s
 
 # Read the two verdicts (background scan is periodic -- repeat until both rows appear).
@@ -6620,7 +7277,7 @@ At the same time, be clear about its **boundaries**, or you will end up treating
 
 Reports are GC'd with their objects, and **a request rejected by Enforce has no object at all** — so the evidence is scattered across four places with four different lifecycles: **the PipelineRun / gate TaskRun terminal states and `status.results`** (proving "it ran, and what it concluded"), **PolicyReport** (proving "how the policy judged it"), **Events** (proving a cancellation / denial happened), and **the admission denial message** (which exists only at the caller and in Kyverno's logs). Long-term retention means collecting all four **while the objects are still alive**, keyed together by the PipelineRun UID (object names repeat; UIDs do not).
 
-This document does not prescribe retention periods for these objects in your environment — **but you do not have to guess**: run the command below once and you get the timestamp of **the oldest `PipelineRun` still present**. ⚠️ **That is the horizon of one of the four evidence classes, not of the whole evidence chain**: as just noted, the four have different lifecycles — `PolicyReport` is GC'd with its object (for already-deleted runs it can only be nearer), and Events and admission denial messages each have their own retention policies (measured on this document's verification environment: the oldest `PipelineRun` and the oldest Event were 43 days apart, in the direction opposite to intuition). To answer "can that release still be looked up", **query each of the four classes once** and take the most recent horizon among them. (Run on the cluster that runs Tekton.)
+This document does not prescribe retention periods for these objects in your environment — **but you do not have to guess**: run the command below once and you get the timestamp of **the oldest `PipelineRun` still present**. ⚠️ **That is the horizon of one of the four evidence classes, not of the whole evidence chain**: as just noted, the four have different lifecycles — `PolicyReport` is GC'd with its object (for already-deleted runs it can only be nearer), and Events and admission denial messages each have their own retention policies (the two can be far apart: a case has been seen where the oldest `PipelineRun` and the oldest Event were 43 days apart, in the direction opposite to intuition). To answer "can that release still be looked up", **query each of the four classes once** and take the most recent horizon among them. (Run on the cluster that runs Tekton.)
 
 ```bash
 # The oldest row is the horizon of THIS evidence class only. PolicyReport, Event and
@@ -6635,15 +7292,13 @@ kubectl get pipelinerun -A --sort-by=.metadata.creationTimestamp \
 
 #### Cleanup (§4.4)
 
-Clean up per the two rules in [§4.0.4](#s4-0-4). Delete the four cluster-scoped policies by name; if you built the anti-demo policy **yourself** following the description in [§4.4.3](#s4-4-3) (this document deliberately ships no installable YAML for it), delete it too under whatever name you actually used — and **first confirm that no TaskRun is wedged at `Running` because of it**:
+Clean up per the two rules in [§4.0.4](#s4-0-4). Delete the four cluster-scoped policies by recorded UID via the ownership ledger; if you built the anti-demo policy **yourself** following the description in [§4.4.3](#s4-4-3) (this document deliberately ships no installable YAML for it), it too must have been written into the same ledger at creation time — then delete it under whatever name you actually used, and **first confirm that no TaskRun is wedged at `Running` because of it**:
 
 ```bash
-# §4.0.4's look-before-delete: cluster-scoped, so one glance at when they were created.
-kubectl get clusterpolicy scan-verdict-audit vuln-summary-audit \
-  vuln-threshold-audit inventory-ungated-runs --ignore-not-found \
-  -o custom-columns='NAME:.metadata.name,CREATED:.metadata.creationTimestamp'
-kubectl delete clusterpolicy scan-verdict-audit vuln-summary-audit \
-  vuln-threshold-audit inventory-ungated-runs --ignore-not-found
+for pol in scan-verdict-audit vuln-summary-audit vuln-threshold-audit \
+  inventory-ungated-runs; do
+  delete_owned_cluster_object clusterpolicy "$pol"
+done
 ```
 
 The namespaced objects (the 14 TaskRuns from the table above, the real `trivy-scanner` 0.6 TaskRun with its source-code fixture ConfigMap, the two inventory PipelineRuns, and the two emitter fixture Tasks from [§4.4.2](#s4-4-2)) all live in self-created namespaces and are reclaimed by cascading deletion; if you are continuing with the later sections, delete the run-type objects by name first — otherwise their PolicyReport rows will surface in the next section's `kubectl get policyreport` ([§4.0.5](#s4-0-5)):
@@ -6890,6 +7545,12 @@ spec:
 
 **The file-mode trade-off**: the `SRC DST` list inside the `copy-mappings` workspace cannot be inspected at admission, so this policy **denies that mode outright**. If a team genuinely needs file mode, the correct answer is to move the governance of the list content **upstream** (govern the upstream task / artifact that produces the workspace), not to expect this admission policy to backstop it.
 
+**It judges "what appears in the request", not "what the Task ends up consuming"** — a deliberately conservative superset; know the cost before installing. `skopeo-copy` has its own input priority: when `imageMappings` is non-empty it is used and `srcImage` / `dstImages` and the `copy-mappings` workspace are **ignored**; only without it does simple mode apply; only without that is file mode read. This policy **does not reproduce that priority** — an unapproved source appearing in any of the modes is denied.
+
+- **Why not reproduce it**: the moment the criterion follows the Task's internal priority, the policy would **silently** allow when the Task's next version reshuffles that priority — exactly the shape question 3 of [§4.2.4](#s4-2-4)'s three questions is there to prevent. Better to over-deny than to silently under-deny.
+- **The cost (two known false rejections)**: ① a compliant `imageMappings` plus one leftover out-of-scope `srcImage` that was never cleaned up; ② a compliant simple mode plus a casually bound `copy-mappings` workspace — upstream has a formal use case for that combination, and at runtime simple mode wins and the workspace is never read. Both are denied by this policy.
+- **What to do when denied**: first check whether the request **carries source parameters or workspace bindings it does not use** — delete them and it passes. Do not loosen the criterion to allow the one entry that "will not be read anyway" — admission cannot see the Task's runtime choices, and nobody vouches for that "anyway".
+
 #### 4.5.2 Source image property validation (`context.imageRegistry` reads the image config) {#s4-5-2}
 
 - **What it governs**: not just "which image the parameter names", but **the image's own properties** — for example "the base image being promoted must carry the `build=tekton` label", "it must declare `org.opencontainers.image.source`".
@@ -7081,12 +7742,12 @@ Six design points you must understand:
 
 - **Scope to Tekton Pods, but never hardcode the label value.** Read the full JSON of `tekton-pipelines/config-defaults` and **distinguish a missing key from an explicitly empty value**: only when `default-managed-by-label-value` is **absent** does Tekton's default `tekton-pipelines` apply; a key that exists with an empty value does **not** take the default branch — the controller will write an empty label value, which is a deployment blocker: it must be changed to a non-empty value first, and the policy rendering must not fall back on its own. Substitute the exact, non-empty resolved value into every `<tekton-managed-by-label-value>` in the policy, and lock the label against deletion and modification on plain Pod UPDATE — otherwise a custom value silently mismatches every rule, or an attacker can first remove the label and then dodge the `ephemeralcontainers` subresource. Changes to that ConfigMap must be RBAC-controlled and released **atomically** with a policy re-render.
 - **The placeholders are regex fragments, not raw hostnames.** At substitution time, escape RE2 metacharacters character by character; for the legal shapes of registries / repositories, at minimum apply `.` → `[.]`, `[` → `[[]`, `]` → `[]]`, so `[2001:db8::1]:5000` renders as `[[]2001:db8::1[]]:5000`. This backslash-free form also sidesteps the escaping problems of YAML double quotes; stuffing a hostname containing `.` or IPv6 brackets straight into `regex_match` either widens the match or breaks the expression.
-- **The allowlist must include the current configuration of the five Tekton infrastructure image repository classes.** How to obtain the values is in the next subsection — **the two readings are combined**; using only one of them goes wrong either way.
-- **The message must name the offending image**, and **the regex may be declared only once**. The first half is for users (seeing only `PodCreationFailed`, with a dozen containers in one Pod, you cannot tell which one to fix); the second half is for maintainers. Three real constraints dictate the current shape: ① **`element.*` cannot appear in `validate.message`** — Kyverno rejects the policy at creation time (`variable 'element.name' present outside of foreach at path /validate/message`), and `foreach` entries have no `deny.message` field either — so the only option is to recompute a `badImages` list in `context` with the same regex; ② that recomputation must **not copy the regex** — put the regex into a `variable` and reference it everywhere, and the placeholder remains in exactly **one place** (an early draft repeated the same regex 5 times; missing one spot during substitution raises no error, it just makes the message report images that do not match the ones actually denied); ③ referencing that variable inside `jmesPath` must be written as the **quoted `'{{ allowedImageRe }}'`** — written as the bare identifier `regex_match(allowedImageRe, image)`, JMESPath looks it up as a **field of the resource**, gets null, and the whole message renders as an empty string (the judgment stays correct, but the user gets no information at all). Two more traps: the `|` in `[a, b][] | [?...]` is required (**without it the filter silently returns `[]`** and the message becomes "offending images: []" — more misleading than saying nothing); and pick out only the non-compliant images — **do not print the whole allowlist into the message** (that leaks the approved list to pipeline users, [§4.0.6](#s4-0-6)).
+- **The allowlist must include the current configuration of the five Tekton infrastructure image repository classes.** How to obtain the values is in the next subsection — **the two readings are combined**; using only one of them goes wrong either way. ⚠️ **The upstream controller actually declares six image flags** — the sixth is `-shell-image-win` (the PowerShell image that script mode uses on **Windows nodes**; upstream still defaults it to a public MCR image). The five classes and the value-taking commands in this section **deliberately exclude it**: a Linux-only cluster never instantiates it, and pulling it into the allowlist would widen the allowlist for nothing. **Sites whose clusters run Windows TaskRuns must add it as well**, otherwise those Pods are rejected — and that rejection is **loud** (`PodCreationFailed`, allowlist shape, see [§3.6](#s3-6)), not a silent allow.
+- **The message must name the offending image**, and **within each rule the regex may be declared only once**. The first half is for users (seeing only `PodCreationFailed`, with a dozen containers in one Pod, you cannot tell which one to fix); the second half is for maintainers. Three real constraints dictate the current shape: ① **`element.*` cannot appear in `validate.message`** — Kyverno rejects the policy at creation time (`variable 'element.name' present outside of foreach at path /validate/message`), and `foreach` entries have no `deny.message` field either — so the only option is to recompute a `badImages` list in `context` with the same regex; ② that recomputation must **not copy the regex** — put the regex into a `variable` and reference it everywhere within that rule. The two image-judging rules carry different contracts: the CREATE / UPDATE rule's `allowedImageRe` contains both `<approved-registry-regex>` and `<tekton-infra-image-regex>`; the `ephemeralcontainers` rule's `approvedRegistryRe` contains only `<approved-registry-regex>`, deliberately not allowing the infrastructure repositories. So the approved-registry placeholder appears in two places that must stay identical, and the infra-repository placeholder in exactly one (context variables are not shared across rules); ③ referencing that variable inside `jmesPath` must be written as the **quoted `'{{ allowedImageRe }}'`** — written as the bare identifier `regex_match(allowedImageRe, image)`, JMESPath looks it up as a **field of the resource**, gets null, and the whole message renders as an empty string (the judgment stays correct, but the user gets no information at all). Two more traps: the `|` in `[a, b][] | [?...]` is required (**without it the filter silently returns `[]`** and the message becomes "offending images: []" — more misleading than saying nothing); and pick out only the non-compliant images — **do not print the whole allowlist into the message** (that leaks the approved list to pipeline users, [§4.0.6](#s4-0-6)).
 
 :::warning Two directions a broken regex can take (opposite directions — learn to recognize both)
 
-The regex now lives in a single place, but it can still be written wrong (a missed escape, unbalanced parentheses). The two failure modes present completely differently; sort out which one you have before troubleshooting:
+Within each image-judging rule the regex is now declared only once; but the policy as a whole has two rules that judge images, so `<approved-registry-regex>` still appears in two places and must be kept identical. The regex can also still be written wrong (a missed escape, unbalanced parentheses). The two failure modes present completely differently; sort out which one you have before troubleshooting:
 
 - **The regex used by the `deny` criterion is invalid** (unbalanced parentheses, say) → **every request is denied**, compliant Pods included. **Fail-closed, and loud** — the first pipeline after switching to Enforce fails; you cannot miss it.
 - **Only the `badImages` (message-side) computation is wrong** (invalid regex, or out of sync with the criterion) → **the judgment is entirely correct, but the message lists compliant images too**. For a Pod with a compliant sidecar plus a violating main container, both images appear in the message. **Fail-safe but quiet** — nobody suspects a policy that correctly blocks violating images, so users follow the message and go fix the image that was compliant all along.
@@ -7095,7 +7756,7 @@ So after substituting `<approved-registry-regex>`, **run both the positive and t
 
 :::
 - **What is asserted is the raw string `element.image` from the request, not Kyverno's parsed `images.*`.** The two are not the same thing: an image without a registry (`nginx:1`) is **kept as-is** in `element.image`, so it matches no `<registry>/...` prefix and is **denied** (fail-closed — the direction you want); whereas the `registry` Kyverno puts into the `images` context is its **normalized** value (`nginx:1` gets completed to `registry=docker.io`). Switching to `images.*` swaps the criterion's root of trust from "what the request says" to "how Kyverno normalizes" — an extra layer of configurable behavior out of thin air. **Keep asserting the raw field.**
-- **`foreach` iterates the three container lists explicitly** (`containers` / `initContainers` / `ephemeralContainers`), asserting each image — clearer than `pattern`, and it can name the violating image in the message. A plain Pod UPDATE can modify the image of `containers` / `initContainers`, so the first rule must **match both CREATE and UPDATE**; `ephemeralContainers`, by contrast, are injected **after Pod CREATE** through the `pods/ephemeralcontainers` subresource UPDATE and require the separate `v1/Pod/ephemeralcontainers` rule.
+- **`foreach` iterates the three container lists explicitly** (`containers` / `initContainers` / `ephemeralContainers`), asserting each image — clearer than `pattern`, and it can name the violating image in the message. A plain Pod UPDATE can modify the image of `containers` / `initContainers`, so the first rule must **match both CREATE and UPDATE**; `ephemeralContainers`, by contrast, are injected **after Pod CREATE** through the `pods/ephemeralcontainers` subresource UPDATE and require the separate `v1/Pod/ephemeralcontainers` rule. **A side note on the two spellings of `kinds` in this policy**: the first rule writes `Pod` while the latter two write `v1/Pod` and `v1/Pod/ephemeralcontainers` — **the two match surfaces are exactly identical**: Pod belongs to the core group, which has only the single group version `v1`, so with or without the prefix, only that one kind of request can be hit. This is not the same situation as the Tekton resources in the [§3.2](#s3-2) "API group-version prerequisite": under `tekton.dev`, `v1` and `v1beta1` **coexist**, so there the group-version prefix is mandatory — omitting it or getting it wrong genuinely changes the match surface.
 
 :::details Full policy YAML: pod-image-registry-allowlist (three rules)
 
@@ -7264,6 +7925,14 @@ else
   if ! controller=$(kubectl -n "$TEKTON_NS" get deploy tekton-pipelines-controller -o json 2>&1); then
     echo "cannot read the controller Deployment ($controller) -- stop here"
   else
+    # The controller declares SIX image flags upstream, not five: the sixth is
+    # -shell-image-win (the PowerShell image used only by script mode on Windows
+    # nodes). The pattern below ends in -image$, so -shell-image-win is excluded
+    # ON PURPOSE -- a Linux-only cluster never instantiates it, and pulling it into
+    # the allowlist would widen the allowlist for nothing. If this cluster runs
+    # Windows TaskRuns, drop the trailing $ (or add shell-image-win explicitly) and
+    # allow that repository too, otherwise those Pods are rejected. That rejection
+    # is loud (PodCreationFailed), not silent -- allowlist shape, see §3.6.
     infra=$(printf '%s' "$controller" \
       | jq -r '.spec.template.spec.containers[0].args as $a
                | range(0; $a|length) as $i
@@ -7333,7 +8002,7 @@ fi
 - **Copying A verbatim (skipping the prefix rewrite)**: ACP's image rewriting changes the registry host. The controller arguments may say `registry.example.com/pipelines/...`, while what admission actually sees is `192.0.2.10:11443/pipelines/...`. Generate the regex straight from the start-up arguments → **every Tekton Pod is denied on the spot**, and compliant pipelines cannot start either — this is why A2 is mandatory.
 - **Treating B as the inventory**: any single sample only sees the classes this batch of runs happened to instantiate. The five infrastructure image classes are not all used on every run — a sample easily contains only two or three of them (`nop` is injected only when a step was skipped, and routinely never shows up); **if no TaskRun Pod has ever run, the sample is simply empty** (the guard in the code block says so outright). Build the values from Pods alone, and the day one of the unsampled classes is actually needed it gets wrongly blocked. B has exactly one correct use: **validating A2's rewrite result** — a repository that appears in B but not in A2's output means the rewrite rule is wrong, or a sixth image class exists; find out before continuing.
 
-The correct procedure: **A's inventory, after A2's prefix rewrite, is the sole source**; B cross-checks. Strip the tag / digest, keep only the repository, then escape character by character.
+The correct procedure: **A's inventory, after A2's prefix rewrite, is the generation source**, backstopped by two cross-check paths — B (sampling real Pods) and the installed-state objects (the operator's `TektonConfig` / `TektonPipeline` CRs and the Deployment images in the `tekton-pipelines` namespace, the same reading as the [§4.0.3](#s4-0-3) placeholder table); if either path surfaces a repository outside A, find out whether it is a new class before widening the inventory. Strip the tag / digest, keep only the repository, then escape character by character.
 
 :::
 
@@ -7356,7 +8025,7 @@ print("|".join(esc(r) for r in repos))
 EOF
 ```
 
-The generated result (for this example) — substitute it at `<tekton-infra-image-regex>` in the policy (now a single spot: the `allowedImageRe` `variable`):
+The generated result (for this example) — substitute it at `<tekton-infra-image-regex>` in the policy (**one place**: only in the `allowedImageRe` of the CREATE / UPDATE rule; the `ephemeralcontainers` rule deliberately allows only the business `<approved-registry-regex>` and does not treat Tekton infrastructure repositories as a source of ephemeral debug containers):
 
 ```text
 192[.]0[.]2[.]10:11443/pipelines/tektoncd-pipeline-entrypoint|192[.]0[.]2[.]10:11443/pipelines/tektoncd-pipeline-nop|192[.]0[.]2[.]10:11443/pipelines/tektoncd-pipeline-shell-image|192[.]0[.]2[.]10:11443/pipelines/tektoncd-pipeline-sidecarlogresults|192[.]0[.]2[.]10:11443/pipelines/tektoncd-pipeline-workingdirinit
@@ -7412,7 +8081,8 @@ data:
   # Business registries allowed to provide step images (escaped RE2 alternation).
   approvedRegistryRegex: "<approved-registry-regex>"
   # Tekton infrastructure image repositories, WITHOUT tag or digest.
-  # Generated from the live cluster: controller args UNION images seen on real Tekton pods.
+  # Generated from controller args after the platform registry-prefix rewrite;
+  # real Tekton Pods and installed controller manifests are cross-checks, not union sources.
   tektonInfraRepoRegex: "<tekton-infra-image-regex>"
 ```
 
@@ -7670,9 +8340,12 @@ Image **signature / attestation** verification (verifyImages) likewise acts at t
 - **How the policy is layered**: ① the hard guarantee is anchored in **`request.userInfo`** — filled in by the API server from the authenticated request and unforgeable by clients; "the creator == the Tekton controller SA" is an unforgeable proof of origin; ② `ownerReferences` is then used as an **additional AND condition for defense in depth** — **added only on the controller-SA path** (the legitimate path carries it anyway, at zero cost; and even a successful forgery is still caught by the userInfo check); ③ the platform-administrator identity is an **independent OR branch** that **does not require an owner ref** — it is this entrance's break-glass clause: whoever is on that list can bypass this section's closure.
 - **What it cannot govern**: what it closes is **only the bare Tekton Run path** — it does not mean "no workload may ever run outside the pipeline": anyone with the API permissions can still create Pods / Jobs / Deployments directly, or use the deployment credentials somewhere else. **"The pipeline cannot be bypassed" is the joint product of RBAC plus this policy**: RBAC narrows business identities' direct permissions on workload APIs and deployment credentials; this policy only fills in the bare-Run piece.
 
-**Key criterion** — on the **Tekton controller path**, userInfo is the anchor and the owner ref an additional AND; **the platform-administrator identity is a separate OR branch that does not require an owner ref** (the break-glass clause: whoever is on this list is exactly who can bypass the entry closure):
+**Key criterion** — on the **Tekton controller path**, userInfo is the anchor and the owner ref an additional AND; **the platform-administrator identity is a separate OR branch that does not require an owner ref** (the break-glass clause: whoever is on this list is exactly who can bypass the entry closure) (**fragment, not a complete manifest you can `kubectl apply` as-is**; the full policy is in this section's details block):
 
 ```yaml
+      # EXCERPT -- key conditions only, NOT a standalone manifest; the
+      # indentation is kept from the full policy, so this block alone does
+      # not parse. Apply the complete YAML from the details block below.
         - name: allowed
           variable:
             jmesPath: "(creator=='system:serviceaccount:tekton-pipelines:tekton-pipelines-controller' && hasControllerOwner) || contains(['<platform-admin-identity>'], creator)"
@@ -7710,6 +8383,9 @@ spec:
       match:
         any:
           - resources:
+              # CustomRun is v1beta1 on purpose: Tekton defines and registers that
+              # type only in v1beta1, so tekton.dev/v1/CustomRun matches nothing --
+              # "aligning" it with the TaskRun line above silently disables the rule.
               kinds:
                 - tekton.dev/v1/TaskRun
                 - tekton.dev/v1beta1/CustomRun
@@ -7774,10 +8450,12 @@ This policy and RBAC are complementary: RBAC decides "who has API permission —
 
 - **What it governs**: **the release's target parameters and credential source may only be the approved ones** — constrain the deployment-stage target parameters (namespace / workload / images, etc.) and the source of the `kubeconfig` in the two official 0.3 templates. Both templates' `deploy-or-upgrade` is the same hub `kubectl` 0.1 with the same parameter surface, so **a single rule must pin both template identities at once**; pin only one, and releases through the other template are completely ungoverned.
 - **Why it is hard**: ① **the judgment point must be at PipelineRun CREATE — it cannot be pushed down to the TaskRun layer**: `deploy-or-upgrade` in the template is only a node alias; after resolution the real Task is hub `catalog/kubectl/0.1`, and its TaskRun receives only `args` and an **already-rendered `script`** — there is no `workloadNamespace` parameter to read at all; ② this version splices the target parameters **into the shell `script` by plain text substitution, unquoted**, so "just check that the namespace is on the allowlist" leaves a **command injection** open; ③ looking only at `.secret.secretName` on the `kubeconfig` workspace can be bypassed — with a PVC / CSI / configMap binding that field is empty, a naive policy simply allows it, and an attacker can plant an arbitrary kubeconfig.
-- **How the policy is layered**: ① the hub source identity is validated **whether or not deployment is enabled**; ② mirror the image template's `when` — `workloadName` empty or a single space means deployment is not enabled, so target checks are skipped; ③ when deployment is enabled, `workloadNamespace` must **explicitly** hit the allowlist — **absence is denied as well**. That is deliberate: the template's semantics for absence is "use the namespace the run lives in", which hands "where does this release go" to the run's location to decide implicitly — an auditor looking at the request cannot see the target. **If your site deploys same-namespace by design**, the fix is not to delete this criterion but to normalize absence before comparing against the list (treat `targetNs == '' && contains([...], request.namespace)` as compliant), and to add a probe row for "namespace absent + current namespace on the list → allow"; ④ restrict every input that gets spliced into the shell to a **conservative grammar** (DNS-1123 label, canonical workload Kind, shell-safe image references, relative directories, integer-second timeout); ④' `workloadContainers` — although handed to the kubectl Task as an **args array** (`--containers <name>…`), quoted at every use site, and **not an injection surface** — is still validated as container-name syntax; the reason is not injection but that **only a real name takes effect**, see the "which container got updated" boundary note below; ⑤ a kubeconfig workspace that is **"bound but not a Secret" is fail-closed across the board**; ⑥ **deny any `taskRunSpecs` override on the deploy task beyond the scheduling keys** (same judgment as [§4.2.5](#s4-2-5): `nodeSelector` / `tolerations` / `affinity` / `imagePullSecrets` / `priorityClassName` allowed; any other key, and any `serviceAccountName`, denied) — `podTemplate.env` is injected into the step containers, and the kubectl Task **only `export`s `KUBECONFIG` itself when the kubeconfig workspace is bound**, so a compliant "deploy to the current cluster" request needs just one injected `KUBECONFIG` to redirect the entire release elsewhere, taking the namespace allowlist down with it; ⑦ **the two run-level entrances are handled separately** — `spec.taskRunTemplate` has exactly two fields (verified with `kubectl explain`): `podTemplate` and `serviceAccountName`. The former's `env` is fully equivalent to ⑥ (it applies to every TaskRun of this run, the deploy step included) — **denied outright**; the latter decides **under whose identity** the deploy step executes `kubectl apply` — with no kubeconfig bound, that is exactly what it uses, and pointing it at a wider-privileged SA bypasses the sentence "the constraint rests on the deploy credential's RBAC" — so it is governed by an **approved list** rather than denied outright: a run-level SA is **normal configuration**, and blanket denial would falsely reject plenty of legitimate requests. **The list must include the SA that Tekton defaulting fills in** (the first placeholder in the criterion, `<tekton-default-service-account>`) — this is established mechanism, not inference: Tekton's defaulting webhook runs before Kyverno, so admission **never sees `taskRunTemplate` absent**; it arrives already carrying the defaulting-filled SA (taken from `config-defaults`' `default-service-account`, **falling back to Tekton's built-in default when that key is missing** — this document's environment is exactly the missing case, effective value `default`) and `default-pod-template` (in this document's environment, `securityContext.fsGroup=65532`). The first version of this criterion listed only the site-approved SAs, and **every compliant request in the probes was denied** — precisely because that defaulted name was missing.
+- **How the policy is layered**: ① the hub source identity is validated **whether or not deployment is enabled**; ② mirror the image template's `when` — `workloadName` empty or a single space means deployment is not enabled, so target checks are skipped; ③ when deployment is enabled, `workloadNamespace` must **explicitly** hit the allowlist — **absence is denied as well**. That is deliberate: the template's semantics for absence is "use the namespace the run lives in", which hands "where does this release go" to the run's location to decide implicitly — an auditor looking at the request cannot see the target. **If your site deploys same-namespace by design**, the fix is not to delete this criterion but to normalize absence before comparing against the list (treat `targetNs == '' && contains([...], request.namespace)` as compliant), and to add a probe row for "namespace absent + current namespace on the list → allow"; ④ restrict every input that gets spliced into the shell to a **conservative grammar** (DNS-1123 label, canonical workload Kind, shell-safe image references, relative directories, integer-second timeout); ④' `workloadContainers` — although handed to the kubectl Task as an **args array** (`--containers <name>…`), quoted at every use site, and **not an injection surface** — is still validated as container-name syntax; the reason is not injection but that **only a real name takes effect**, see the "which container got updated" boundary note below; ⑤ a kubeconfig workspace that is **"bound but not a Secret" is fail-closed across the board**; ⑥ **deny any `taskRunSpecs` override on the deploy task beyond the scheduling keys** (same judgment as [§4.2.5](#s4-2-5): `nodeSelector` / `tolerations` / `affinity` / `imagePullSecrets` / `priorityClassName` allowed; any other key, and any `serviceAccountName`, denied) — `podTemplate.env` is injected into the step containers, and the kubectl Task **only `export`s `KUBECONFIG` itself when the kubeconfig workspace is bound**, so a compliant "deploy to the current cluster" request needs just one injected `KUBECONFIG` to redirect the entire release elsewhere, taking the namespace allowlist down with it; ⑦ **the two run-level entrances are handled separately** — `spec.taskRunTemplate` has exactly two fields (verified with `kubectl explain`): `podTemplate` and `serviceAccountName`. The former's `env` is fully equivalent to ⑥ (it applies to every TaskRun of this run, the deploy step included) — **denied outright**; the latter decides **under whose identity** the deploy step executes `kubectl apply` — with no kubeconfig bound, that is exactly what it uses, and pointing it at a wider-privileged SA bypasses the sentence "the constraint rests on the deploy credential's RBAC" — so it is governed by an **approved list** rather than denied outright: a run-level SA is **normal configuration**, and blanket denial would falsely reject plenty of legitimate requests. **The list must include the SA that Tekton defaulting fills in** (the first placeholder in the criterion, `<tekton-default-service-account>`) — this is established mechanism, not inference: Tekton's defaulting webhook runs before Kyverno, so **under normal conditions** admission does not see `taskRunTemplate` absent (the sole exception, and the fail-open it causes, is in that placeholder's row of [§4.0.3](#s4-0-3)); it arrives already carrying the defaulting-filled SA (taken from `config-defaults`' `default-service-account`, **falling back to Tekton's built-in default when that key is missing** — this document's environment is exactly the missing case, effective value `default`) and `default-pod-template` (in this document's environment, `securityContext.fsGroup=65532`). **Leave that defaulted SA off the list and every single compliant request is denied** — the allow probe exposes it immediately; see the same-named entry in the [§4.0.3](#s4-0-3) placeholder table.
 - **What it cannot govern**: it constrains **the target parameters and credential source written in the request** — it neither guarantees that the manifest content touches only that namespace (see the boundary note below) nor that the released artifact itself is trustworthy (that belongs to [§4.5.1](#s4-5-1) / [§4.5.3](#s4-5-3) and supply-chain attestation); and its strength depends on the template version — this profile is written against 0.3's real substitution behavior (this part of the data flow is identical in 0.2 and 0.3: `deploy-or-upgrade` is still `kubectl` 0.1, and the target parameters are still spliced into `script` as unquoted text), so **a template upgrade requires re-reviewing every field and the merge order**.
 
 **General contract**: `workloadName`, `workloadKind`, `workloadNamespace`, `images`, `workloadManifestsDir`, `workloadRolloutTimeout`, and the `kubeconfig` workspace all belong to the **PipelineRun** contract. Written against TaskRun CREATE, the rule cannot read the target namespace and never takes effect against the real shape.
+
+**Governing only this one workspace binding is deliberate**: this section judges the `kubeconfig` workspace because it directly decides "which cluster this release lands on" — bind it wrong and the target allowlist is void. **All other workspaces (source code, caches, artifacts, credentials of every kind) are left ungoverned throughout this document**: their risk is "who can mount which Secret / PVC into the pipeline", and that is a namespace-level RBAC and Secret-governance problem, not a pipeline-policy problem — an identity that can create runs in this namespace can usually read those Secrets anyway, and blocking at admission just draws the boundary in the wrong place. For sites that do want to tighten this on the policy side, the criterion shape is the same as this section's (locate the target binding by `workspaces[].name`, then judge whether `secret.secretName` is on the approved list) — but **first confirm the RBAC layer has been narrowed**, otherwise all you have blocked is the one usage called "mounting".
 
 :::warning Why these parameters deserve a second check at admission (isn't "the pipeline will fail on its own" enough?)
 
@@ -7993,16 +8671,29 @@ spec:
         - name: runWideSaBad
           variable:
             # Measured, not assumed: Tekton's defaulting webhook runs before
-            # Kyverno, so admission never sees this field absent -- it arrives
-            # holding config-defaults' default-service-account. The allowlist
-            # must therefore carry that defaulted name as well, otherwise every
+            # Kyverno, so admission normally sees this field already holding
+            # config-defaults' default-service-account. The allowlist must
+            # therefore carry that defaulted name as well, otherwise every
             # ordinary release run is rejected.
+            # The one case where it DOES arrive absent: default-service-account
+            # present but set to an empty string -- Tekton then skips the fill,
+            # and the `!= ''` below makes this rule skip too (fail-open). §4.0.3
+            # tells you to probe the effective value; empty output means fix the
+            # ConfigMap rather than trust this rule.
             jmesPath: "runWideSa != '' && !contains(['<tekton-default-service-account>','<approved-deploy-service-account>'], runWideSa)"
         - name: deployOverrideBad
           variable:
             # Same key-level judgment as the gate policies: scheduling keys stay
-            # allowed, everything else on the deploy task (env, volumes,
-            # dnsConfig, ...) and any per-task serviceAccountName is denied.
+            # allowed, every OTHER podTemplate key (env, volumes, dnsConfig, ...)
+            # and any per-task serviceAccountName is denied.
+            # Scope, stated exactly: PipelineTaskRunSpec carries eight fields, and
+            # this expression inspects two of them (serviceAccountName, podTemplate).
+            # The rest -- stepSpecs, sidecarSpecs, computeResources, timeout,
+            # metadata -- are left alone on purpose: they carry only resource
+            # limits, a deadline, or labels, none of which can move the deployment
+            # to another namespace or cluster. Labels in particular are already
+            # treated as untrusted everywhere in this document, so denying them
+            # here would buy nothing.
             jmesPath: >-
               length((request.object.spec.taskRunSpecs || `[]`)[?pipelineTaskName=='deploy-or-upgrade'
               && (serviceAccountName
@@ -8050,15 +8741,19 @@ spec:
       validate:
         failureAction: Enforce
         message: >-
-          release Pipeline source or deployment target not approved: the Hub
-          source must be governed; when deployment is enabled, namespace and
-          kubeconfig source must be allowlisted, workloadContainers must hold
-          real container names, the deploy task may carry only scheduling keys in
-          a per-task podTemplate and no serviceAccountName override, the
-          run-wide podTemplate must carry no env and the run-wide
-          ServiceAccount must be allowlisted, and every Pipeline parameter
-          substituted into the kubectl shell script must match this production
-          profile's safe grammar.
+          release Pipeline source or deployment target not approved:
+          source={{ pipelineResolver }}/{{ pipelineKind }}/{{ pipelineCatalog }}/{{ pipelineName }}/{{ pipelineVersion }},
+          hubSourceBad={{ hubSourceBad }}, deploymentEnabled={{ deploymentEnabled }},
+          workloadName='{{ workloadName }}', workloadKind='{{ workloadKind }}',
+          targetNamespace='{{ targetNs }}', deployProfileBad={{ deployProfileBad }},
+          deployOverrideBad={{ deployOverrideBad }}, runWideEnvCount={{ runWideEnvCount }},
+          runWideSaBad={{ runWideSaBad }}, namespaceBad={{ nsBad }},
+          workloadNameBad={{ workloadNameBad }}, workloadKindBad={{ workloadKindBad }},
+          workloadContainersBad={{ workloadContainersBad }}, imagesBad={{ imagesBad }},
+          manifestsDirBad={{ manifestsDirBad }}, rolloutTimeoutBad={{ rolloutTimeoutBad }},
+          kubeconfigSecretBad={{ secretBad }}, kubeconfigNonSecret={{ kubeconfigNonSecret }}.
+          Correct the fields whose non-sensitive diagnostic flag is true; approved
+          namespace, ServiceAccount and Secret allowlists are intentionally not disclosed.
         deny:
           conditions:
             any:
@@ -8082,7 +8777,7 @@ The table below packs **21 rows = 37 probes**: probes of the same shape are merg
 |---|---|
 | Deployment enabled + approved namespace A (no kubeconfig, explicit `timeout=1` second); plus the same profile with a sole explicit `type=artifact` | Allowed |
 | The approved quadruple plus a request-level `url`, or an explicit `type=tekton` | Denied |
-| Deployment not enabled (`workloadName` absent or equal to a single space) | Target checks skipped; but the same request is still denied if it carries a request-level `url` or `type=tekton` |
+| The two shapes of deployment not enabled: `workloadName` absent / equal to a single space; then take either one and run it twice more, once with a request-level `url` and once with `type=tekton` | The first two skip target checks; the latter two are still denied (the source criterion does not look at "whether deployment is enabled") |
 | Deployment enabled but namespace absent | Denied |
 | namespace = `kube-system` (or any namespace not on the allowlist) | Denied |
 | Approved namespace B + approved Secret | Allowed |
@@ -8130,17 +8825,13 @@ Moreover, both the target-namespace and the shell-safe parameter constraints dep
 
 #### Cleanup (§4.5)
 
-Per the two rules of [§4.0.4](#s4-0-4), delete the five cluster-scoped policies by name:
+Per the two rules of [§4.0.4](#s4-0-4), delete the five cluster-scoped policies by recorded UID via the ownership ledger:
 
 ```bash
-# §4.0.4's look-before-delete: cluster-scoped, so one glance at when they were created.
-kubectl get clusterpolicy artifact-source-allowlist \
-  promotion-source-image-labels pod-image-registry-allowlist \
-  pipeline-entry-lockdown release-target-allowlist --ignore-not-found \
-  -o custom-columns='NAME:.metadata.name,CREATED:.metadata.creationTimestamp'
-kubectl delete clusterpolicy artifact-source-allowlist \
-  promotion-source-image-labels pod-image-registry-allowlist \
-  pipeline-entry-lockdown release-target-allowlist --ignore-not-found
+for pol in artifact-source-allowlist promotion-source-image-labels \
+  pod-image-registry-allowlist pipeline-entry-lockdown release-target-allowlist; do
+  delete_owned_cluster_object clusterpolicy "$pol"
+done
 ```
 
 Namespaced objects are reclaimed with the cascade delete of the self-created namespace: the `pipeline-image-allowlist` ConfigMap (**it exists only if you adopted the ConfigMap variant of [§4.5.3](#s4-5-3)**), and the PipelineRuns / standalone TaskRuns this section ran plus their derived objects. If you are going on to later sections, delete the run-type objects by name first, to avoid PolicyReport interference ([§4.0.5](#s4-0-5)).
@@ -8157,9 +8848,9 @@ This section presents **two trigger conditions**: **[§4.6.1](#s4-6-1) results b
 | [§4.2.3](#s4-2-3) | At gate TaskRun **admission**: gate switch / threshold parameters non-compliant | **The gate TaskRun itself** | Admission `mutate` writes `spec.status: TaskRunCancelled` + `statusMessage` — **synchronous, race-free, no extra RBAC needed** | The TaskRun's `spec.statusMessage` and terminal condition — **the full reason lives here** (step 1) |
 | [§4.2.2](#s4-2-2) | Same moment, same criterion (gate parameters non-compliant) | **The parent PipelineRun** | mutate-existing patch `spec.status: CancelledRunFinally` — asynchronous, needs the background controller's update RBAC | The parent run's `cancel-reason` annotation (step 2) |
 | [§4.6.2](#s4-6-2) | When the PipelineRun writes status: in the resolved definition the trusted gate has been **removed, or the whole Task identity swapped out** (definition drift — the same name in a different namespace also counts) | **The run itself** (self-targeting, no cross-run lookup) | Same patch as above, `CancelledRunFinally` | The parent run's `cancel-reason` annotation, its text stating the drift (step 3) |
-| [§4.6.1](#s4-6-1) | When a TaskRun reaches its terminal state: a result out of bounds (coverage / vulnerability count, etc.); **a missing or malformed result hits the same way** (fail-closed) | **The parent PipelineRun** (a five-link identity chain against misidentifying the parent run) | Same patch as above, `CancelledRunFinally` | The parent run's `cancel-reason` annotation, naming the triggering TaskRun and the out-of-bounds value (step 4) |
+| [§4.6.1](#s4-6-1) | When a TaskRun reaches its terminal state: a result out of bounds (coverage / vulnerability count, etc.); **a missing or malformed result hits the same way** (fail-closed refers to the criterion's direction; whether the cancellation actually lands depends on the background chain — see point ④ below this table) | **The parent PipelineRun** (a five-link identity chain against misidentifying the parent run) | Same patch as above, `CancelledRunFinally` | The parent run's `cancel-reason` annotation, naming the triggering TaskRun and the out-of-bounds value (step 4) |
 
-Three points are the easiest to overlook during selection: **① the first two rows are two of the three response shapes for the same criterion** (the third is [§4.2.1](#s4-2-1)'s direct deny, at the cost of finally not running; the three-way trade-off is in [§4.2.3](#s4-2-3)); **② only [§4.2.3](#s4-2-3) is synchronous** — the other three act only after the event, and side effects that already happened are not rolled back; **③ the terminal state is not necessarily `Cancelled`** — in [§4.6.1](#s4-6-1), when the result was never written out at all, Tekton's failure verdict outranks the cancellation and the terminal state is `Failed`; the evidence of the cancellation lives only in `spec.status` and the annotation (see the end of [§4.6.1](#s4-6-1)).
+Four points are the easiest to overlook during selection: **① the first two rows are two of the three response shapes for the same criterion** (the third is [§4.2.1](#s4-2-1)'s direct deny, at the cost of finally not running; the three-way trade-off is in [§4.2.3](#s4-2-3)); **② only [§4.2.3](#s4-2-3) is synchronous** — the other three act only after the event, and side effects that already happened are not rolled back; **③ the terminal state is not necessarily `Cancelled`** — in [§4.6.1](#s4-6-1), when the result was never written out at all, Tekton's failure verdict outranks the cancellation and the terminal state is `Failed`; the evidence of the cancellation lives only in `spec.status` and the annotation (see the end of [§4.6.1](#s4-6-1)); **④ what the last three rows deliver is "initiating the cancellation", not "the cancellation is guaranteed to happen"** — once the criterion hits, the patch is dispatched asynchronously by the background controller through an UpdateRequest, and that delivery has no synchronous feedback whatsoever: the `context.apiCall` failing to fetch its target, the UpdateRequest never getting created, the controller unavailable or backlogged, the update RBAC on the target resource revoked — in every one of these cases the original request is allowed as usual and the patch simply never appears, and it **produces no denial message and no PolicyReport violation record** (mutate-class rules record no violations to begin with, [§4.2.3](#s4-2-3)); all that is left at the scene is the background controller's log. So these three rows give "best-effort delivery", and only the [§4.2.3](#s4-2-3) row gives "takes effect on the spot, inside admission"; **where you need "detected means it definitely stops", choose a synchronous path** ([§4.2.1](#s4-2-1) deny or [§4.2.3](#s4-2-3) admission mutate); if you keep using these three, complete the monitoring and fault injection per the "asynchronous delivery chain" row of [§3.7](#s3-7).
 
 **Shared prerequisite** (missing it, the policies either fail to install or never take effect): the background controller needs update RBAC on the target `pipelineruns`, and **Kyverno validates that RBAC at policy-creation time — if it is missing, creation of the policy is rejected outright**, with an error like this:
 
@@ -8202,7 +8893,7 @@ Save it as `kyverno-background-update-pipelineruns.yaml`, then **grant first, co
 # `create`, not `apply` (§4.0.4): this ClusterRole is cluster-scoped, and a
 # same-named one already on the cluster is somebody else's grant -- an
 # AlreadyExists here means STOP, not overwrite.
-kubectl create -f kyverno-background-update-pipelineruns.yaml
+create_owned_cluster_object kyverno-background-update-pipelineruns.yaml clusterrole
 
 # Aggregation is asynchronous: this must print `yes` BEFORE you install either policy.
 # It is the same check as §3.1's item 3; repeat it for a few seconds if it says no.
@@ -8595,7 +9286,7 @@ spec:
 
 :::
 
-:::details Verification checklist (five violation shapes + three no-false-positive controls)
+:::details Verification checklist (six violation shapes + three no-false-positive controls)
 
 **Violation shapes** (verify each one independently; every one must trigger a fail-closed cancellation at terminal status): `coverage-lines=30` (out of bounds), `not-a-number` (the malformed guard), `101` (the numeric-range guard), an explicit empty string, and reaching the terminal state without writing `coverage-lines` at all. The last two respectively prove that an "explicit empty value" and an "absent result" are not silently skipped as if they were an early status write.
 
@@ -8700,9 +9391,8 @@ spec:
             # here is only a defensive malformed/synthetic-status boundary.
             jmesPath: "contains(keys(request.object.status || `{}`), 'pipelineSpec')"
         # Same full resolved identity as §4.1.4; name-only comparison is fail-open.
-        # status.pipelineSpec.tasks carries no x-kubernetes-list-type in the CRD,
-        # so two tasks named scan survive admission and [0] would only see the
-        # first. Count first, then read.
+        # Nothing in the CRD dedupes this list by name, so two tasks named scan
+        # survive admission and [0] would only see the first. Count, then read.
         - name: scanTaskCount
           variable:
             jmesPath: "length((request.object.status.pipelineSpec.tasks || `[]`)[?name=='scan'])"
@@ -8776,7 +9466,12 @@ spec:
           - key: "{{ scanIdentityValid }}"
             operator: Equals
             value: false
-          # idempotency: skip once a cancel is already in flight
+          # Idempotency: skip once spec.status is already set. Deliberately tests
+          # for EMPTY rather than for the cancel values -- the field's other legal
+          # value, PipelineRunPending, means "not started yet", and a run that has
+          # not started has nothing to cancel. Either way the direction is skip
+          # (fail-open); a pending run gets re-evaluated on the status update that
+          # follows once it actually starts.
           - key: "{{ request.object.spec.status || '' }}"
             operator: Equals
             value: ""
@@ -8855,70 +9550,15 @@ spec:
 
 #### Cleanup (§4.6)
 
-Per the two rules of [§4.0.4](#s4-0-4), cluster-scoped objects are deleted by name — besides its two policies, this section also has a `ClusterRole`, and deleting the namespace does not take that away either:
+Per the two rules of [§4.0.4](#s4-0-4), cluster-scoped objects are deleted by recorded UID via the ownership ledger — besides its two policies, this section also has a `ClusterRole`, and deleting the namespace does not take that away either:
 
 ```bash
-# §4.0.4's look-before-delete, as a BRANCH: these are cluster-scoped objects and the whole
-# block gets pasted in one go, so a `get` printed above an unconditional `delete` is read only
-# AFTER the delete has run. Set the window you started this walkthrough in (any ISO prefix).
-WALKTHROUGH_WINDOW='<your-walkthrough-date-prefix>'
-# Filled in ONCE for the whole block, and read through one helper so both silent failure
-# modes are refused in one place. UNREPLACED: every comparison fails, so every object is
-# reported as somebody else's -- safe, but false. EMPTY: a bare anchored pattern matches
-# EVERYTHING, so the window would authorise deleting other people's objects.
-#
-# Three details that each looked like a nicety and are not:
-#   * the prefix is compared as a LITERAL, not as a regex. `grep "^$WINDOW"` would treat
-#     the window as a pattern, and an ISO timestamp with fractional seconds contains `.`,
-#     which matches any character -- a window can then cover more than the reader meant.
-#   * the name is prefixed. A block a reader pastes into their own shell must not silently
-#     replace a function they already have called `mine`; the block also removes it at the
-#     end, so nothing survives the paste.
-#   * the return value distinguishes "not yours" from "you have not filled the window in",
-#     because only the second one means the whole block should stop.
-walkthrough_owns() {  # <creationTimestamp> -- 0 = yours, 1 = somebody else's, 2 = unusable window
-  case "$WALKTHROUGH_WINDOW" in
-    '<'*'>'|'') echo "fill in WALKTHROUGH_WINDOW first -- nothing will be deleted" >&2; return 2;;
-  esac
-  [ "$(printf '%s' "$1" | cut -c1-${#WALKTHROUGH_WINDOW})" = "$WALKTHROUGH_WINDOW" ]
-}
-window_ok=yes
 for pol in cancel-on-failed-verdict cancel-run-without-gate; do
-  [ "$window_ok" = yes ] || continue
-  created=$(kubectl get clusterpolicy "$pol" --ignore-not-found \
-    -o jsonpath='{.metadata.creationTimestamp}' 2>&1)
-  if [ -z "$created" ]; then
-    echo "$pol: absent -- nothing to delete"
-  elif walkthrough_owns "$created"; rc=$?; [ "$rc" != 0 ]; then
-    # rc=2 means the window itself is unusable, which is not a statement about THIS
-    # object: stop the whole block rather than repeat the same complaint per object.
-    [ "$rc" = 2 ] && window_ok=no
-    echo "$pol was created $created, which is not inside your window ($WALKTHROUGH_WINDOW) --"
-    echo "  it is somebody else's. Skipping it; ask its owner before deleting anything."
-  else
-    kubectl delete clusterpolicy "$pol" --ignore-not-found
-  fi
+  delete_owned_cluster_object clusterpolicy "$pol"
 done
 # The §4.2.2 alternative (namespaced Role / RoleBinding) belongs to §4.2's namespace and
 # cascades with it -- do not delete twice.
-#
-# Same look-before-delete BRANCH for the ClusterRole, reusing the window and the helper set
-# above -- re-assigning WALKTHROUGH_WINDOW here would silently reset it to the placeholder
-# for anyone who filled in only the first occurrence, and this branch would then refuse to
-# delete an object that IS theirs.
-CR_CREATED=$(kubectl get clusterrole kyverno-background-update-pipelineruns \
-  --ignore-not-found -o jsonpath='{.metadata.creationTimestamp}' 2>&1)
-if [ -z "$CR_CREATED" ]; then
-  echo "kyverno-background-update-pipelineruns: absent -- nothing to delete"
-elif [ "$window_ok" != yes ] || ! walkthrough_owns "$CR_CREATED"; then
-  echo "kyverno-background-update-pipelineruns was created $CR_CREATED, OUTSIDE your window"
-  echo "($WALKTHROUGH_WINDOW) -- it is somebody else's. STOP and ask its owner; do NOT delete."
-else
-  kubectl delete clusterrole kyverno-background-update-pipelineruns --ignore-not-found
-fi
-# Leave the reader's shell as it was found.
-unset -f walkthrough_owns
-unset window_ok
+delete_owned_cluster_object clusterrole kyverno-background-update-pipelineruns
 ```
 
 The namespaced objects (the four demo PipelineRuns, plus `Pipeline/coverage-cancel-demo` and `Task/policy-demo-coverage-emitter` in `tekton-templates`) are reclaimed by the cascade of the self-created namespaces; if you are going on to the later sections, delete the four runs by name first to keep PolicyReport interference out of the way ([§4.0.5](#s4-0-5)):
@@ -8943,7 +9583,7 @@ The foundation of scope governance is that the people who can modify the policy 
 - **PolicyException** (**being able to create / modify exemption objects = being able to allow things through**) — that is, write access to the namespace pointed at by `--exceptionNamespace` in [§5.3](#s5-3);
 - **the namespaces' scoping labels** (such as `cpaas.io/project`) — **being able to change the label = being able to move a run into or out of a given tier of constraints**. The first choice is to close off via RBAC who can modify `Namespace`; where finer per-identity control is genuinely needed, Kyverno can also validate UPDATEs of `Namespace` to lock changes to these labels (a userInfo / creator allowlist, written the same way as [§4.5.4](#s4-5-4)).
 - **Kyverno's own runtime configuration** (the `kyverno` ConfigMap in the `kyverno` namespace) — **it sits earlier in the chain than any policy, and it is quieter**. Its `resourceFilters` take effect before any policy is even consulted: a filtered request is not denied, lands in no PolicyReport, and leaves no log line (see checklist item 7 in [§3.1](#s3-1)). Adding a filter entry that covers some namespace or `PipelineRun` amounts to **opening an exemption slot for the entire chapter's policies — with no TTL, no trace, and none of the [§5.3](#s5-3) approval flow** — so write access to this ConfigMap must be ranked with `ClusterPolicy` and brought under change auditing.
-- **Kyverno's webhook objects and the configuration they are generated from** — the `ValidatingWebhookConfiguration` is maintained by Kyverno itself ([§3.1](#s3-1) checklist item 6), but **an identity that can flip its `failurePolicy` to `Ignore`, shrink its match surface, or simply delete it has effectively acquired demolition rights over every admission guarantee in this chapter**: the template allowlist ([§4.1.1](#s4-1-1)), the gate parameter contracts ([§4.2.1](#s4-2-1)), bare-Run entry closure ([§4.5.4](#s4-5-4)), and the Pod-level image allowlist ([§4.5.3](#s4-5-3)) all fall into a policy vacuum at once, while on the surface the cluster reads "the policies are all still there, all still Ready". So do not protect `ClusterPolicy` alone — **Kyverno's deployment entry point (the `ModuleInfo` of [§3.1.1](#s3-1-1)), its ConfigMap, and its webhook objects are three links on the same trust chain, and must be controlled together.**
+- **Kyverno's webhook objects and the configuration they are generated from** — the `ValidatingWebhookConfiguration` is maintained by Kyverno itself ([§3.1](#s3-1) checklist item 6), but **an identity that can flip its `failurePolicy` to `Ignore`, shrink its match surface, or simply delete it has effectively acquired demolition rights over every admission guarantee in this document**: the template allowlist ([§4.1.1](#s4-1-1)), the gate parameter contracts ([§4.2.1](#s4-2-1)), bare-Run entry closure ([§4.5.4](#s4-5-4)), and the Pod-level image allowlist ([§4.5.3](#s4-5-3)) all fall into a policy vacuum at once, while on the surface the cluster reads "the policies are all still there, all still Ready". So do not protect `ClusterPolicy` alone — **Kyverno's deployment entry point (the `ModuleInfo` of [§3.1.1](#s3-1-1)), its ConfigMap, and its webhook objects are three links on the same trust chain, and must be controlled together.**
 
 **This section gives permission boundaries, not change history**: the items above guarantee "who can change what **now**", but what an audit usually asks is "what policies, exemptions, and Kyverno configuration were **actually in effect at the time of a given release**" — and that question **cannot be answered from the cluster**: what you query is always the current object, which cannot rule out a brief loosening, replacement, and revert in between. To be able to answer it, two anchor points must be fixed at deployment time: ① **all policies and exemptions go through GitOps** (the version history is the change history — already required by [§3.6](#s3-6); name PolicyExceptions with the approval date / ticket number, [§5.3](#s5-3)); ② **the Kubernetes API server's audit log** — the only source that can prove "this object was created / modified / deleted within a time window", but **whether it is enabled and how long it is retained depend on your environment** — confirm that before writing it into your audit criteria.
 
@@ -9093,8 +9733,8 @@ kubectl get namespace proj-a proj-b rogue-ns \
 # project-alpha-tightening.yaml. `create`, not `apply` (§4.0.4): a same-named
 # ClusterPolicy is somebody else's governance rule, and overwriting it is a
 # cluster-wide change -- an AlreadyExists here means STOP, not retry.
-kubectl create -f pipeline-baseline.yaml
-kubectl create -f project-alpha-tightening.yaml
+create_owned_cluster_object pipeline-baseline.yaml clusterpolicy
+create_owned_cluster_object project-alpha-tightening.yaml clusterpolicy
 
 # A policy that is not Ready does not evaluate, so an unready one would make every
 # probe cell below read "Allowed" for a reason that has nothing to do with scoping.
@@ -9134,11 +9774,9 @@ Clean up per the two rules in [§4.0.4](#s4-0-4). **The six probe cells left no 
 Delete the two cluster-scoped policies first (both are Enforce — miss one and it keeps adjudicating everyone's admission requests, so read the output and do not let a failure scroll past silently):
 
 ```bash
-# §4.0.4's look-before-delete for cluster-scoped objects: one glance at when they
-# were created, then delete by name.
-kubectl get clusterpolicy pipeline-baseline project-alpha-tightening \
-  -o custom-columns='NAME:.metadata.name,CREATED:.metadata.creationTimestamp'
-kubectl delete clusterpolicy pipeline-baseline project-alpha-tightening
+for pol in pipeline-baseline project-alpha-tightening; do
+  delete_owned_cluster_object clusterpolicy "$pol"
+done
 ```
 
 Delete the three namespaces by the marker the creation loop stamped on them — **the pre-existing ones carry no marker, and this loop cannot touch them**:
@@ -9179,7 +9817,9 @@ done
 - **What it governs**: when a pipeline genuinely needs to bypass a particular gate for a while (an emergency release, coverage to be back-filled later), use a **controlled exemption** — do not write "allow on sight of some label" into the policy.
 - **Why it is hard**: **the exemption's match key must not be anything business-controllable.** A PipelineRun's name, its labels, and `spec.taskRunSpecs[].metadata.labels` are all business input; Tekton moreover lets same-named values in `taskRunSpecs` override and propagate onto the child TaskRun's labels. Using these fields as the approval credential = self-service bypass.
 - **How the policy is layered**: ① use a **dedicated execution namespace** as the exemption boundary — the PolicyException matches only TaskRuns inside that namespace → ② lock down **every run entry point** of that namespace with Enforce policies: who may create / update PipelineRuns, who may create TaskRuns, and **who may create CustomRuns** (leave out any one of the three entry classes and you have left a door open for self-service bypass — same reasoning as [§4.5.4](#s4-5-4)) → ③ the PolicyException is precise to "a single rule of a single policy"; every other rule keeps blocking as usual.
-- **What it cannot govern**: PolicyException natively has **no TTL** — "temporary" must be enforced by an external process or an expiring CleanupPolicy; do not treat it as a permanent bypass.
+- **What it cannot govern**: PolicyException natively has **no TTL** — once the object is created it stays in force forever; nothing mechanical stands behind the word "temporary". **Expiry cleanup is yours to implement**, and each of the three places to put it carries a cost: ① hang an expiry task in the approval workflow (the most direct, but it leans on process discipline); ② use Kyverno's cleanup capability to delete the object at its expiry time (needs no human watching, but it means installing and verifying one more cleanup policy — **this document neither ships nor has verified that asset**); ③ hard-code the expiry date into the name and labels (the `<yyyymmdd>-<seq>` naming suggested in this section's issuing commands exists precisely for this), then let a periodic review surface the expired items (the lightest, but it only detects — it does not clean up). Choosing none of the three = the exemption is permanent; the "A PolicyException expires without being cleaned up" row of [§3.6](#s3-6) is describing exactly this situation.
+
+**Tiered usage**: the four bullets above are the security model — if you install exemptions at all, they must hold as a whole; the issuing commands later in this section, plus the full verification of propagation latency, revocation, and cleanup, belong to the **operational evidence layer** — run those on first enablement and at periodic audits; day-to-day issuance needs only the issuing command plus cleanup at expiry. If you do not need exemptions, do not enable the platform switch ([§3.1.1](#s3-1-1)) — the whole section can stay uninstalled as a unit.
 
 :::warning RBAC is additive — "no explicit RoleBinding" does not mean denied
 
@@ -9349,6 +9989,8 @@ spec:
     # CustomRun is a second, equivalent run entry point (§4.5.4). Leaving it out
     # here would let any identity that kept CustomRun create through cumulative
     # baseline RBAC walk into the trusted namespace without approver admission.
+    # v1beta1 is the only group version Tekton registers for this type -- see the
+    # note in §4.5.4; do not "align" it with the v1 kinds used elsewhere.
     - name: only-tekton-controller-creates-exempt-customruns
       match:
         any:
@@ -9401,7 +10043,7 @@ The first command prints exactly the full identity to put on the allowlist (of t
 
 :::
 
-The six steps of this section write a few **local state files** between them (`gate-snapshot.txt`, `step3-verdict.txt`, `step4-verdict.txt`, `step6-delete.txt`, `exemption-id.txt`) — they record how far the verification has got and what the verdicts were, so you can pick up in a different terminal; **delete last round's files before you start** (`rm -f` is enough), so that a previous round's verdict is never read as this round's own.
+The six steps of this section write a few **local state files** between them (`gate-snapshot.txt`, `step3-verdict.txt`, `step4-verdict.txt`, `step6-delete.txt`, `step6-revocation.txt`, `exemption-id.txt`, `exemption-uid.txt`, `exemption-intent.txt`, `cleanup-exception-gone.txt`) — they record how far the verification has got and what the verdicts were, so you can pick up in a different terminal; **delete all of last round's files before you start** (`rm -f` is enough), so that a previous round's verdict or a stale `yes` is never read as this round's own.
 
 **Install this entrance-lock policy only after the identities check out** — it is the object under test in step ② of this section. Without it, the business identity's PipelineRun create will **simply succeed**, and as the warning at the top of [§5.3](#s5-3) already said, ACP baseline RBAC usually allows that create anyway — so the success cannot be explained as "RBAC is misconfigured", and you would be off debugging a problem that does not exist:
 
@@ -9411,7 +10053,7 @@ The six steps of this section write a few **local state files** between them (`g
 # `create`, not `apply` (§4.0.4). An AlreadyExists means the policy is somebody
 # else's object: find out whose before going on, and do NOT let this section's
 # cleanup delete it.
-kubectl create -f exempt-namespace-approver-only.yaml
+create_owned_cluster_object exempt-namespace-approver-only.yaml clusterpolicy
 kubectl wait --for=condition=Ready clusterpolicy/exempt-namespace-approver-only --timeout=60s
 ```
 
@@ -9423,7 +10065,7 @@ kubectl wait --for=condition=Ready clusterpolicy/exempt-namespace-approver-only 
 # Save the §4.2.1 YAML as gate-param-contract.yaml first. `create`, not `apply`:
 # an AlreadyExists just means it is still installed from §4.2 -- that is fine, it is
 # this document's own demo policy either way.
-kubectl create -f gate-param-contract.yaml
+create_owned_cluster_object gate-param-contract.yaml clusterpolicy
 
 # Two things must hold, and neither is visible from "the policy exists":
 kubectl get clusterpolicy gate-param-contract -o jsonpath='{range .spec.rules[*]}{.name}{" ns="}{.match.any[0].resources.namespaces}{"\n"}{end}'
@@ -9438,7 +10080,7 @@ Keep this policy **until the very end of this section**: the final ⑤ re-check 
 
 :::
 
-The PolicyException matches only TaskRuns in the dedicated execution namespace — no reliance on run names or labels any more:
+The PolicyException matches only TaskRuns in the dedicated execution namespace — no reliance on run names or labels any more. **`kinds` is written with the group version, `tekton.dev/v1/TaskRun`, matching the exempted policy's (`gate-param-contract`) own match verbatim** — the principle for exemption objects is: as narrow as possible. The bare form `TaskRun` without the group version would work too, but it is wider: in an environment that still serves `v1beta1`, that form covers `v1beta1` TaskRuns as well. Today the two forms have the same **practical effect** (an exemption can only act on requests the policy would have hit anyway, and that policy looks at `v1` only); the difference lies in the future: if that policy is ever loosened to also match `v1beta1`, the wide-form exemption **loosens along with it automatically**, and nothing warns you. Switching to the group/version-qualified form is a tightening — re-verify with the [§3.4](#s3-4) positive/negative probes before rolling it out:
 
 ```yaml
 apiVersion: kyverno.io/v2
@@ -9450,6 +10092,10 @@ metadata:
   # makes the audit trail self-describing.
   name: approved-exemption-001
   namespace: policy-exceptions   # Must equal the trusted --exceptionNamespace.
+  annotations:
+    # Replaced with a high-entropy token before create; cleanup uses it to recover
+    # interrupted creates without adopting somebody else's same-named object.
+    policy.alauda.io/walkthrough-owner: approved-exemption-owner-token
 spec:
   exceptions:
     # ruleNames must exactly match spec.rules[].name in the target policy.
@@ -9459,8 +10105,11 @@ spec:
   match:
     any:
       - resources:
+          # Group/version-qualified, matching the exempted policy's own match exactly.
+          # The bare `TaskRun` also works and would additionally cover v1beta1 --
+          # which is wider than the policy being exempted, so it is not used here.
           kinds:
-            - TaskRun
+            - tekton.dev/v1/TaskRun
           namespaces:
             - policy-exempt-runs
 ```
@@ -9484,9 +10133,15 @@ kubectl get policyexception -n policy-exceptions "$EXC_NAME" -o name --ignore-no
 # the create below reads a generated file, not a second copy of the name. Editing
 # only EXC_NAME and forgetting the YAML would otherwise create one name and clean up
 # another -- and the leftover is a permanent bypass (see this section's cleanup).
-sed "s/^  name: approved-exemption-001\$/  name: $EXC_NAME/" \
+# Add a high-entropy ownership token before either create path. The pending intent
+# records name+token, so recovery never adopts a concurrent same-named exception.
+EXC_OWNER_TOKEN=$(od -An -N24 -tx1 /dev/urandom | tr -d ' \n')
+sed -e "s/^  name: approved-exemption-001\$/  name: $EXC_NAME/" \
+  -e "s/approved-exemption-owner-token/$EXC_OWNER_TOKEN/" \
   approved-exemption.yaml > approved-exemption.generated.yaml
 grep '^  name:' approved-exemption.generated.yaml   # must print your EXC_NAME
+grep 'walkthrough-owner:' approved-exemption.generated.yaml \
+  | grep -F "$EXC_OWNER_TOKEN" >/dev/null || { echo "owner token was not rendered"; false; }
 
 # STOP HERE -- do NOT create it yet. Step ③ of the walkthrough below has to show that
 # a violating run fails WITHOUT an exception; creating it now would destroy that
@@ -9719,19 +10374,23 @@ echo "PREREQS_OK=$PREREQS_OK"
 
 ```bash
 # On the branch where this does NOT fail you have just created a live exemption --
-# a bypass nobody approved. Capture its name from the response and persist it into
-# exemption-id.txt IMMEDIATELY: the cleanup's step ① reads that file, so the stray
-# object stays deletable even if you close this shell before acting on the message.
+# a bypass nobody approved. Persist the intended unique name BEFORE the request, so
+# even a committed request with a lost response remains discoverable by cleanup.
+printf '%s\t%s\n' "$EXC_NAME" "$EXC_OWNER_TOKEN" > exemption-intent.txt
 step1_out=$(kubectl create -f approved-exemption.generated.yaml \
-  --as="${BUSINESS_IDENTITY:?fill it in the RBAC prep block}" \
-  -o jsonpath='{.metadata.name}' 2>&1)
+  --as="${BUSINESS_IDENTITY:?fill it in the RBAC prep block}" -o json 2>&1)
 step1_rc=$?
 if [ "$step1_rc" -eq 0 ]; then
-  printf '%s\n' "$step1_out" > exemption-id.txt
+  step1_name=$(printf '%s' "$step1_out" | jq -er '.metadata.name') \
+    && step1_uid=$(printf '%s' "$step1_out" | jq -er '.metadata.uid') \
+    || { echo "① FAILED and the live exception identity could not be recorded -- STOP"; return 1; }
+  printf '%s\n' "$step1_name" > exemption-id.txt
+  printf '%s\n' "$step1_uid" > exemption-uid.txt
+  rm -f exemption-intent.txt
   echo "① FAILED: the business identity CREATED an exemption -- a live bypass nobody"
   echo "approved. Its name is recorded in exemption-id.txt. Delete it NOW and fix RBAC"
   echo "before going on:"
-  echo "  kubectl delete policyexception -n policy-exceptions \"$step1_out\""
+  echo "  run the UID-preconditioned cleanup at the end of this section"
 else
   # "It was refused" only counts if the refusal was a permission decision.
   # An unreachable API, a malformed manifest and an unknown resource type all fail
@@ -9746,6 +10405,7 @@ else
       echo "request never got as far as testing what the business identity may do:"
       echo "$step1_out" ;;
     *[Ff]orbidden*policyexception*|*policyexception*[Ff]orbidden*)
+      rm -f exemption-intent.txt
       echo "① confirmed: refused by RBAC --"; echo "$step1_out" ;;
     *[Ff]orbidden*)
       echo "① NOT CONFIRMED: a permission error that does not name policyexceptions --"
@@ -9850,11 +10510,18 @@ if [ "$PREREQS_OK" != yes ] || [ "$BASELINE_OK" != yes ]; then
   echo "It would also have to be cleaned up. Fix those first."
   EXC_CREATED=
 else
-  EXC_CREATED=$(kubectl create -f approved-exemption.generated.yaml \
-    --as="${APPROVER_IDENTITY:?fill it in the RBAC prep block}" \
-    -o jsonpath='{.metadata.name}{"\n"}')
+  # Persist intent BEFORE create. The unique name lets cleanup recover the UID after
+  # an interrupted/lost response instead of concluding "no record means gone".
+  printf '%s\t%s\n' "$EXC_NAME" "$EXC_OWNER_TOKEN" > exemption-intent.txt
+  EXC_OBJECT=$(kubectl create -f approved-exemption.generated.yaml \
+    --as="${APPROVER_IDENTITY:?fill it in the RBAC prep block}" -o json)
+  EXC_CREATED=$(printf '%s' "$EXC_OBJECT" | jq -er '.metadata.name') \
+    && EXC_UID=$(printf '%s' "$EXC_OBJECT" | jq -er '.metadata.uid') \
+    || { echo "exception was created but name/UID could not be recorded -- STOP"; EXC_CREATED=; }
 fi
 [ -n "$EXC_CREATED" ] && printf '%s\n' "$EXC_CREATED" > exemption-id.txt
+[ -n "${EXC_UID:-}" ] && printf '%s\n' "$EXC_UID" > exemption-uid.txt
+[ -n "${EXC_UID:-}" ] && rm -f exemption-intent.txt
 echo "created ${EXC_CREATED:-<none>}"
 # Expect the name. An empty result means the create failed -- and ④ below guards on
 # EXC_CREATED rather than trusting you to have read this comment, because ④ can only
@@ -10023,9 +10690,13 @@ EXEMPTION_LIVE=${EXEMPTION_LIVE:-$(cat step4-verdict.txt 2>/dev/null)}
 if [ -z "${EXC_CREATED:-}" ] && [ -s exemption-id.txt ]; then
   read -r EXC_CREATED < exemption-id.txt
 fi
+if [ -z "${EXC_UID:-}" ] && [ -s exemption-uid.txt ]; then
+  read -r EXC_UID < exemption-uid.txt
+fi
 
 EXC_DELETED=no
 EXC_DELETE_CAUSAL=no
+REVOCATION_LIVE=no
 if [ "${EXEMPTION_LIVE:-no}" != yes ]; then
   echo "SKIPPED: ④ was not confirmed, so there is no established 'exemption works'"
   echo "baseline for ⑥ to observe going away. Deleting the exception here would just"
@@ -10036,26 +10707,42 @@ elif [ -z "${EXC_CREATED:-}" ]; then
 else
   # Look first: "already gone" and "deleted by you just now" support different claims
   # about propagation, and the probe below needs to know which one it is observing.
-  # By name is safe here: exemption-id.txt is written only by this walkthrough's own
-  # create, and the name's collision-freedom was checked before ④.
+  # Read and compare the recorded UID before sending a UID-preconditioned DELETE. The
+  # API server enforces the same UID atomically, so a same-named replacement survives.
   if ! exc_seen=$(kubectl get policyexception -n policy-exceptions "$EXC_CREATED" \
-        -o name --ignore-not-found 2>&1); then
+        -o json --ignore-not-found 2>&1); then
     # A failed READ is not an absent object: denied permission and an API blip print
     # nothing on stdout too, and only the exit code tells them apart.
-    echo "could not read the exception: $exc_seen"
-    echo "STOP: an unreadable object is not a deleted one -- fix your access first."
+    case "$exc_seen" in
+      *NotFound*)
+        EXC_DELETED=yes
+        echo "the exception was already gone -- current state can be probed, but"
+        echo "  this is not evidence that YOUR deletion propagated" ;;
+      *)
+        echo "could not read the exception: $exc_seen"
+        echo "STOP: an unreadable object is not a deleted one -- fix your access first." ;;
+    esac
   elif [ -z "$exc_seen" ]; then
     EXC_DELETED=yes
-    # Deliberately NOT causal: something else removed it, at an unknown time. The
-    # probe can still show "no exemption, run rejected", but that is a statement
-    # about the current state, not evidence that a deletion propagated.
-    echo "the exception was already gone -- the probe below can still run, but it"
-    echo "  will not be evidence that YOUR deletion propagated."
-  elif kubectl delete policyexception -n policy-exceptions "$EXC_CREATED"; then
+    echo "the exception was already gone -- current state can be probed, but"
+    echo "  this is not evidence that YOUR deletion propagated"
+  elif [ -z "${EXC_UID:-}" ]; then
+    echo "no recorded UID (exemption-uid.txt missing) -- refusing name-only deletion"
+  elif ! exc_seen_uid=$(printf '%s' "$exc_seen" | jq -er '.metadata.uid'); then
+    echo "could not parse the live exception UID -- refusing deletion"
+  elif [ "$exc_seen_uid" != "$EXC_UID" ]; then
+    echo "same-named exception was replaced ($exc_seen_uid != $EXC_UID) -- left alone"
+  else
+    exc_path="/apis/kyverno.io/v2/namespaces/policy-exceptions/policyexceptions/$EXC_CREATED"
+    exc_delete_body=$(jq -cn --arg uid "$EXC_UID" \
+      '{apiVersion:"v1",kind:"DeleteOptions",preconditions:{uid:$uid}}')
+    if printf '%s' "$exc_delete_body" \
+        | kubectl delete --raw "$exc_path" -f - >/dev/null; then
     EXC_DELETED=yes; EXC_DELETE_CAUSAL=yes
     echo "exception deleted -- go on to the probe below"
-  else
-    echo "The delete request itself failed. STOP: re-run this block."
+    else
+      echo "The UID-preconditioned delete request failed. STOP: re-run this block."
+    fi
   fi
 fi
 # Same reason as ③ and ④: the probe below is a separate block, and a reader who takes
@@ -10068,6 +10755,7 @@ The guard is the `EXC_DELETED` variable, not the `STOP` message — a comment sa
 
 ```bash
 # Revocation propagates on the same terms as the grant did, so probe it the same way.
+REVOCATION_LIVE=no
 if [ -z "${EXC_DELETED:-}" ] && [ -s step6-delete.txt ]; then
   read -r EXC_DELETED EXC_DELETE_CAUSAL < step6-delete.txt
 fi
@@ -10076,7 +10764,6 @@ if [ "${EXC_DELETED:-no}" != yes ]; then
   echo "Every attempt below would legitimately succeed and you would read that as"
   echo "'revocation has not propagated yet' -- the exact misreading this gate prevents."
 else
-  REVOCATION_LIVE=no
   for i in 1 2 3 4 5; do
     if ! create_run policy-exempt-runs "step6-attempt-$i" "$APPROVER_IDENTITY"; then
       echo "attempt $i: the create was rejected -- that is not the revocation this step"
@@ -10132,6 +10819,12 @@ else
     echo "did not prove what it claimed."
   }
 fi
+if [ "${REVOCATION_LIVE:-no}" = yes ] && [ -n "${EXC_UID:-}" ]; then
+  printf '%s\t%s\t%s\n' "${WALKTHROUGH_ID:-<unset>}" "$EXC_UID" yes \
+    > step6-revocation.txt
+else
+  rm -f step6-revocation.txt
+fi
 ```
 
 **After a normal run of ⑥ the exception is already gone**; if the delete failed or the loop was skipped, it is still there — which is why the cleanup below is "confirm first, then decide whether to delete", not an unconditional catch-up delete. Whichever step you got to, the runs the six steps created are still sitting in the two namespaces — the cleanup's namespace deletion reclaims them by cascade.
@@ -10150,7 +10843,7 @@ If any of the six steps fails, or you decide to stop, **run this part to the end
 
 :::
 
-**① First confirm the exemption is gone**. On the normal path step ⑥ already deleted it; and when `policy-exceptions` is the platform's pre-existing trusted namespace, step ④ below (deleting the namespaces) never reaches it — so confirm separately here, and delete if it is still there:
+**① First confirm the exemption is gone**. On the normal path step ⑥ already deleted it; and when `policy-exceptions` is the platform's pre-existing trusted namespace, step ④ below (deleting the namespaces) never reaches it — so confirm separately here, and delete if it is still there. The outcome here is a **hard gate** for the steps that follow: continue only when "the ownership ledger records no exception from this round" or "the object is confirmed absent"; on a read / delete failure, keep the approver RBAC, the entrance lock, and the gate policy installed — never dismantle the safety boundary while a live bypass may still exist.
 
 ```bash
 # The name comes from exemption-id.txt, written only by this walkthrough's own
@@ -10158,16 +10851,75 @@ If any of the six steps fails, or you decide to stop, **run this part to the end
 # stray (its branch persists the name for exactly this moment). Its collision-freedom
 # was checked before either create, so deleting by the file's content can only ever
 # hit your own object. Nothing here deletes by a guessed name.
+EXCEPTION_GONE=no
 [ -z "${EXC_CREATED:-}" ] && [ -s exemption-id.txt ] && read -r EXC_CREATED < exemption-id.txt
+if [ -z "${EXC_CREATED:-}" ] && [ -s exemption-intent.txt ]; then
+  IFS=$'\t' read -r EXC_CREATED EXC_OWNER_TOKEN < exemption-intent.txt
+fi
+[ -z "${EXC_UID:-}" ] && [ -s exemption-uid.txt ] && read -r EXC_UID < exemption-uid.txt
 if [ -z "${EXC_CREATED:-}" ]; then
-  echo "no record of an exception created by this walkthrough (exemption-id.txt missing"
-  echo "or empty) -- nothing to delete here. Still read the listing below."
+  echo "no committed name or pending create intent -- ownership is unproven"
+  echo "EXCEPTION_GONE stays no; inspect the trusted namespace before dismantling anything"
 else
-  kubectl delete policyexception -n policy-exceptions "$EXC_CREATED" --ignore-not-found
+  # A pending intent may be the only surviving record after create succeeded but its
+  # response was lost. Recover the UID only from that exact unique name.
+  if [ -z "${EXC_UID:-}" ]; then
+    pending_exc=$(kubectl get policyexception -n policy-exceptions "$EXC_CREATED" \
+      -o json --ignore-not-found 2>&1)
+    pending_exc_rc=$?
+    if [ "$pending_exc_rc" -eq 0 ] && [ -n "$pending_exc" ] \
+       && pending_owner=$(printf '%s' "$pending_exc" | jq -er \
+            '.metadata.annotations."policy.alauda.io/walkthrough-owner"') \
+       && [ -n "${EXC_OWNER_TOKEN:-}" ] \
+       && [ "$pending_owner" = "$EXC_OWNER_TOKEN" ] \
+       && EXC_UID=$(printf '%s' "$pending_exc" | jq -er '.metadata.uid'); then
+      printf '%s\n' "$EXC_CREATED" > exemption-id.txt
+      printf '%s\n' "$EXC_UID" > exemption-uid.txt
+      rm -f exemption-intent.txt
+      echo "$EXC_CREATED: recovered UID $EXC_UID from pending create intent"
+    elif [ "$pending_exc_rc" -eq 0 ] && [ -z "$pending_exc" ]; then
+      EXCEPTION_GONE=yes
+      rm -f exemption-intent.txt
+    else
+      echo "$EXC_CREATED: pending intent read/parse failed (rc=$pending_exc_rc) -- safety boundary stays"
+    fi
+  fi
+  if [ -z "${EXC_UID:-}" ]; then
+    [ "$EXCEPTION_GONE" = yes ] \
+      || echo "$EXC_CREATED has no recorded UID -- refusing name-only deletion"
+  elif ! exc_live=$(kubectl get policyexception -n policy-exceptions "$EXC_CREATED" \
+      -o json 2>&1); then
+    case "$exc_live" in
+      *NotFound*) EXCEPTION_GONE=yes ;;
+      *) echo "could not read $EXC_CREATED -- safety boundary stays installed: $exc_live" ;;
+    esac
+  elif ! exc_live_uid=$(printf '%s' "$exc_live" | jq -er '.metadata.uid'); then
+    echo "could not parse $EXC_CREATED UID -- safety boundary stays installed"
+  elif [ "$exc_live_uid" != "$EXC_UID" ]; then
+    echo "$EXC_CREATED was replaced ($exc_live_uid != $EXC_UID) -- left alone"
+  else
+    exc_path="/apis/kyverno.io/v2/namespaces/policy-exceptions/policyexceptions/$EXC_CREATED"
+    exc_delete_body=$(jq -cn --arg uid "$EXC_UID" \
+      '{apiVersion:"v1",kind:"DeleteOptions",preconditions:{uid:$uid}}')
+    if ! printf '%s' "$exc_delete_body" \
+        | kubectl delete --raw "$exc_path" -f - >/dev/null; then
+      echo "UID-preconditioned delete failed -- safety boundary stays installed"
+    elif ! exc_live=$(kubectl get policyexception -n policy-exceptions "$EXC_CREATED" \
+        -o name --ignore-not-found 2>&1); then
+      echo "delete returned success but absence could not be confirmed: $exc_live"
+    elif [ -z "$exc_live" ]; then
+      EXCEPTION_GONE=yes
+    else
+      echo "$EXC_CREATED still exists -- safety boundary stays installed"
+    fi
+  fi
 fi
 # Then LOOK: anything still listed is somebody's real approval -- leave it alone.
 kubectl get policyexception -n policy-exceptions
 # Expect no demo exception of yours in the output.
+printf '%s\n' "$EXCEPTION_GONE" > cleanup-exception-gone.txt
+echo "EXCEPTION_GONE=$EXCEPTION_GONE"
+# Anything except yes: STOP. Do not run steps ②-⑤.
 ```
 
 **② Revoke the approval grant** (the names carry the walkthrough id and belong to this run alone, so deleting by name is fine; RoleBinding first — revoke the grant before deleting the Role it points at):
@@ -10176,10 +10928,23 @@ kubectl get policyexception -n policy-exceptions
 # The name is derived, not random: the generation block built it from the walkthrough
 # id, so a fresh shell that re-exported the id can rebuild it here without re-running
 # that block.
-if [ -z "${APPROVER_RBAC_NAME:-}" ] && [ -n "${WALKTHROUGH_ID:-}" ]; then
+EXCEPTION_GONE=$(cat cleanup-exception-gone.txt 2>/dev/null)
+REVOCATION_LIVE=no
+if IFS=$'\t' read -r verdict_walkthrough verdict_uid verdict_value \
+    < step6-revocation.txt 2>/dev/null \
+   && [ "$verdict_walkthrough" = "${WALKTHROUGH_ID:-<unset>}" ] \
+   && [ "$verdict_uid" = "${EXC_UID:-}" ] \
+   && [ "$verdict_value" = yes ]; then
+  REVOCATION_LIVE=yes
+fi
+if [ "${EXCEPTION_GONE:-no}" != yes ] || [ "${REVOCATION_LIVE:-no}" != yes ]; then
+  echo "exception absence or revocation propagation is unproven -- keeping approver RBAC and every policy installed"
+elif [ -z "${APPROVER_RBAC_NAME:-}" ] && [ -n "${WALKTHROUGH_ID:-}" ]; then
   APPROVER_RBAC_NAME=policy-exception-approver-$WALKTHROUGH_ID
 fi
-if [ -z "${APPROVER_RBAC_NAME:-}" ]; then
+if [ "${EXCEPTION_GONE:-no}" != yes ] || [ "${REVOCATION_LIVE:-no}" != yes ]; then
+  : # The message above is the fail-safe outcome.
+elif [ -z "${APPROVER_RBAC_NAME:-}" ]; then
   echo "APPROVER_RBAC_NAME is unset and so is WALKTHROUGH_ID -- re-export the id §3.3"
   echo "printed, or find the name with:"
   echo "  kubectl get role -n policy-exceptions | grep policy-exception-approver-"
@@ -10187,24 +10952,46 @@ else
   kubectl delete rolebinding -n policy-exceptions "$APPROVER_RBAC_NAME" --ignore-not-found
   kubectl delete role -n policy-exceptions "$APPROVER_RBAC_NAME" --ignore-not-found
 fi
-# Prove the grant is gone rather than assume it: this must go back to `no`.
-kubectl auth can-i create policyexceptions.kyverno.io -n policy-exceptions \
-  --as="${APPROVER_IDENTITY:?set it again -- the cleanup may run in a fresh shell}"
+if [ "${EXCEPTION_GONE:-no}" = yes ] && [ "${REVOCATION_LIVE:-no}" = yes ]; then
+  # Prove the grant is gone rather than assume it: this must go back to `no`.
+  kubectl auth can-i create policyexceptions.kyverno.io -n policy-exceptions \
+    --as="${APPROVER_IDENTITY:?set it again -- the cleanup may run in a fresh shell}"
+fi
 ```
 
 **③ Only after the exemption and the grant are both confirmed gone, delete the entrance-lock policy** — the other way round opens a window in which the entrance lock is already gone while the exemption still exists:
 
 ```bash
-# §4.0.4's look-before-delete for cluster-scoped objects: a creationTimestamp inside
-# your walkthrough window is yours; anything older is somebody else's -- STOP and ask.
-kubectl get clusterpolicy exempt-namespace-approver-only \
-  -o jsonpath='{.metadata.creationTimestamp} {.metadata.name}{"\n"}'
-kubectl delete clusterpolicy exempt-namespace-approver-only
+EXCEPTION_GONE=$(cat cleanup-exception-gone.txt 2>/dev/null)
+# Recompute freshness exactly as step ② did; never trust a shell variable from an old run.
+REVOCATION_LIVE=no
+if IFS=$'\t' read -r verdict_walkthrough verdict_uid verdict_value \
+    < step6-revocation.txt 2>/dev/null \
+   && [ "$verdict_walkthrough" = "${WALKTHROUGH_ID:-<unset>}" ] \
+   && [ "$verdict_uid" = "${EXC_UID:-}" ] && [ "$verdict_value" = yes ]; then
+  REVOCATION_LIVE=yes
+fi
+if [ "${EXCEPTION_GONE:-no}" != yes ] || [ "${REVOCATION_LIVE:-no}" != yes ]; then
+  echo "exception absence or revocation propagation is unproven -- entry lock stays installed"
+else
+  delete_owned_cluster_object clusterpolicy exempt-namespace-approver-only
+fi
 ```
 
 **④ Delete the two namespaces**. Of the runs the six steps created, everything — including the failed attempts of ④ / ⑥ — is reclaimed by the cascade, except the step-⑤ run left in `policy-poc`; `policy-exceptions` carries the walkthrough label only when **this round created it** — one pre-created by the platform is never touched by this loop:
 
 ```bash
+EXCEPTION_GONE=$(cat cleanup-exception-gone.txt 2>/dev/null)
+REVOCATION_LIVE=no
+if IFS=$'\t' read -r verdict_walkthrough verdict_uid verdict_value \
+    < step6-revocation.txt 2>/dev/null \
+   && [ "$verdict_walkthrough" = "${WALKTHROUGH_ID:-<unset>}" ] \
+   && [ "$verdict_uid" = "${EXC_UID:-}" ] && [ "$verdict_value" = yes ]; then
+  REVOCATION_LIVE=yes
+fi
+if [ "${EXCEPTION_GONE:-no}" != yes ] || [ "${REVOCATION_LIVE:-no}" != yes ]; then
+  echo "exception absence or revocation propagation is unproven -- both namespaces stay"
+else
 for ns in policy-exempt-runs policy-exceptions; do
   if ! json=$(kubectl get namespace "$ns" -o json 2>&1); then
     case "$json" in
@@ -10233,6 +11020,7 @@ for ns in policy-exempt-runs policy-exceptions; do
     echo "$ns: label '${marker:-<none>}' is not this run's id '${WALKTHROUGH_ID:-<unset>}' -- left alone"
   fi
 done
+fi
 ```
 
 The step-⑤ run left in `policy-poc` belongs to the shared namespace of [§3.3](#s3-3) and is reclaimed with its final cleanup; to re-verify right away, delete it first: `kubectl delete pipelinerun -n policy-poc step5-normal-ns --ignore-not-found`.
@@ -10240,15 +11028,22 @@ The step-⑤ run left in `policy-poc` belongs to the shared namespace of [§3.3]
 **⑤ Re-check, then delete `gate-param-contract` last**. First run row ⑤ of the six-step table above once more — the violating run in the normal namespace must still end `CreateRunFailed`; the re-check is meaningful precisely because this policy is still installed — delete it first and all you have left is a run bound to "succeed", which proves nothing. Once the re-check passes:
 
 ```bash
-# Installed by §4.2 or by this section's own create -- either way it is this
-# document's demo policy. Same look-before-delete: a creationTimestamp you cannot
-# place inside your own walkthrough means STOP and ask.
-kubectl get clusterpolicy gate-param-contract \
-  -o jsonpath='{.metadata.creationTimestamp} {.metadata.name}{"\n"}'
-kubectl delete clusterpolicy gate-param-contract
+EXCEPTION_GONE=$(cat cleanup-exception-gone.txt 2>/dev/null)
+REVOCATION_LIVE=no
+if IFS=$'\t' read -r verdict_walkthrough verdict_uid verdict_value \
+    < step6-revocation.txt 2>/dev/null \
+   && [ "$verdict_walkthrough" = "${WALKTHROUGH_ID:-<unset>}" ] \
+   && [ "$verdict_uid" = "${EXC_UID:-}" ] && [ "$verdict_value" = yes ]; then
+  REVOCATION_LIVE=yes
+fi
+if [ "${EXCEPTION_GONE:-no}" != yes ] || [ "${REVOCATION_LIVE:-no}" != yes ]; then
+  echo "exception absence is unproven -- gate-param-contract stays installed"
+else
+  delete_owned_cluster_object clusterpolicy gate-param-contract
+fi
 ```
 
-The local state files left behind (`gate-snapshot.txt`, `step3-verdict.txt`, `step4-verdict.txt`, `step6-delete.txt`, `exemption-id.txt`, `*.err`) are untouched by the cluster cleanup — keeping them as evidence is your call; just delete them before the next walkthrough round starts (the reminder is at the top of this section).
+The local state files left behind (`gate-snapshot.txt`, `step3-verdict.txt`, `step4-verdict.txt`, `step6-delete.txt`, `step6-revocation.txt`, `exemption-id.txt`, `exemption-uid.txt`, `exemption-intent.txt`, `cleanup-exception-gone.txt`, `*.err`) are untouched by the cluster cleanup — keeping them as evidence is your call; just delete them before the next walkthrough round starts (the reminder is at the top of this section).
 
 
 ## 6. FAQ and Troubleshooting {#s6}
@@ -10282,6 +11077,11 @@ kubectl get ns "$TARGET_NAMESPACE" --show-labels
 kubectl get policyreport -n "$TARGET_NAMESPACE"
 ```
 
+**If all four steps above pass and the policy still is not in force, two causes remain — and their symptoms are exactly identical to "the policy is not installed"**:
+
+1. **The rule's identity precondition does not hit → the rule skips (the most common one in this document)**. A good share of the [§4](#s4) policies pin identity to the demo fixtures (the ones marked 🔧 in [§4.0.2](#s4-0-2)); copy them into production without swapping the identity and the rule skips every single time, leaving not one entry in the PolicyReport — **indistinguishable from "the policy is not installed"**. How to check: take the fields that rule reads in its `preconditions` / `context` and compare them one by one against a real request object (`kubectl get pipelinerun <name> -o yaml`, field by field), or re-run the probes with `--as=<the identity the rule requires>` per the warning in [§4.0.3](#s4-0-3). **Do not run the probes under an ordinary identity and conclude "the policy is not in force"** — the rules preconditioned on identity always yield a false pass under the wrong identity.
+2. **The request is skipped wholesale by `resourceFilters` before any policy is consulted** ([§3.1](#s3-1) checklist item 7): no denial, no PolicyReport entry, no log line — a **completely silent** channel. How to check: `kubectl get cm -n kyverno kyverno -o jsonpath='{.data.resourceFilters}'` (the same command as [§3.1](#s3-1) checklist item 7), and confirm no entry covers the pipeline's namespace or `PipelineRun` / `TaskRun` / `Pod`.
+
 #### 6.1.3 Pinpointing a wrongful block {#s6-1-3}
 
 Reproduce the blocked request with `--dry-run=server`, read the policy name / rule name in the deny message, then go back to that rule's preconditions and the values its context variables took. For JMESPath variables, observe the mutate result with `kubectl create --dry-run=server -o yaml`, or run the fixtures offline with the kyverno CLI ([§6.1.6](#s6-1-6)).
@@ -10302,14 +11102,21 @@ Warning  UpdateFailed  taskrun/<name>  Failed to update status for "<name>": adm
 
 - A background inventory requires the controller to be able to read the corresponding **main resource**; but a status Audit with `background: false` is aggregated through the admission report chain and does not require the reports-controller to get/list/watch `*/status` directly. If you see a permission warning, do the SubjectAccessReview correctly — the base resource plus `--subresource=status` — and judge by whether the real PolicyReport converges; the warning by itself is not sufficient evidence that "the feature is missing RBAC". Status policies must be `background: false`; there is no background-rescan backstop for status.
 - PolicyReport aggregation lags; for a run that just finished, wait a moment before querying.
+- **If it is still empty after the wait, stop waiting**: `*/status` policies evaluate only at admission moments, and `background: false` means there is no background compensation. **Losing one mid-flight evaluation does not matter** (every later status UPDATE re-evaluates, and a `skip` recorded while running flips to `pass` / `fail` once the terminal state lands); but if **the terminal-state one** is lost, there is no next one — the entry stays at `skip` **permanently** and never converges on its own (low-frequency; the mechanism and the reading boundaries are in the "PolicyReport is best-effort, not a complete ledger" warning in [§4.4.1](#s4-4-1)). That also settles how the reports may be used: a `fail` always means a problem, but **"no fail" cannot serve as proof of compliance** — a conclusion like "everything compliant" requires going back to the TaskRuns / PipelineRuns themselves, or the hard in-pipeline gate ([§4.3](#s4-3)).
 
 #### 6.1.6 Offline testing with the kyverno CLI, and its limits {#s6-1-6}
 
 **This section requires the `kyverno` command line installed locally** (the tool verification in [§3.1](#s3-1) prints whether it is present) — it is a different thing from the Kyverno running in the cluster; having it installed in the cluster does not mean the command exists on your machine. If you don't have it, skip this section; no other step on the walkthrough path depends on it.
 
 ```bash
+# This section does not otherwise produce these two files -- dump them first, or the
+# command below fails with "stat ./fixture.yaml: no such file or directory".
 POLICY_FILE=./policy.yaml
 FIXTURE_FILE=./fixture.yaml
+kubectl get clusterpolicy '<policy-name>' -o yaml > "$POLICY_FILE"
+# Any already-expanded TaskRun works as the fixture; an existing run is the easiest
+# source because its params are the values admission actually saw.
+kubectl -n policy-poc get taskrun '<taskrun-name>' -o yaml > "$FIXTURE_FILE"
 kyverno apply "$POLICY_FILE" --resource "$FIXTURE_FILE"
 ```
 
@@ -10338,9 +11145,9 @@ Good for verifying JMESPath / preconditions / deny logic (especially useful on a
 
   **But "the parentheses are right" does not mean "reading the value this way is safe".** `[0]` takes only the first item of the filtered result, so it is usable only when **the list being read carries a uniqueness guarantee**:
 
-  - `spec.params` / `pipelineRef.params` / `spec.workspaces` — **`[0]` is fine**: Tekton's validation webhook itself rejects duplicate names (the exact error text is in [§4.2.5](#s4-2-5)).
-  - `status.results` / `status.conditions` / `status.skippedTasks` / `status.pipelineSpec.tasks` — **never use `[0]`**: these lists are written by controllers, and the CRD imposes no uniqueness constraint whatsoever (`conditions` and `pipelineSpec.tasks` are bare arrays; `results` and `skippedTasks` are `x-kubernetes-list-type: atomic` — which means "replace as a whole", **not** "dedupe by key"), so at admission a duplicate-named entry can appear twice. **Inserting a `Succeeded=Unknown` in front of the real condition, a clean same-named result in front of the real result, a same-named skip with a legitimate reason in front of the real skip record, or a compliant same-named task in front of the hollowed-out gate task — any of these bypasses a policy that copy-pastes `[0]`** (construction, A/B evidence, and the fix in [§4.4.1](#s4-4-1), [§4.1.4](#s4-1-4), [§4.1.5](#s4-1-5)).
-  - **The tell for the criterion**: check `x-kubernetes-list-type` — only `map` gets per-key uniqueness guaranteed by the API server; `atomic` and a bare array that omits the field have **no** uniqueness guarantee. Before writing a new policy that reads `status`, run `kubectl get crd <name> -o yaml` first and check which kind the list you are about to read belongs to.
+  - `spec.params` / `pipelineRef.params` / `taskRef.params` / `spec.workspaces` — **`[0]` is fine**: Tekton's validation webhook itself rejects duplicate names (the exact error text is in [§4.2.5](#s4-2-5); upstream this is `ValidateParameters` → `validateNoDuplicateNames`, a resolver's `params` go through the same validation, and workspaces have a separate explicit duplicate check). **But this guarantee is borrowed**: it is provided by **Tekton's** validating webhook, not by an API-server schema constraint — when that webhook is unavailable and its `failurePolicy` is `Ignore`, a request carrying duplicates can get in, while Kyverno on its side still reads only `[0]`. For criteria that demand a hard guarantee (identity-class ones especially), folding "the count equals 1" into the criterion is still the sounder shape — rule ① of [§4.2.4](#s4-2-4) is written exactly that way.
+  - `status.results` / `status.conditions` / `status.skippedTasks` / `status.pipelineSpec.tasks` — **never use `[0]`**: these lists are written by controllers, and **the CRD carries no dedupe-by-name constraint of any kind**, so at admission a duplicate-named entry can appear twice. **Inserting a `Succeeded=Unknown` in front of the real condition, a clean same-named result in front of the real result, a same-named skip with a legitimate reason in front of the real skip record, or a compliant same-named task in front of the hollowed-out gate task — any of these bypasses a policy that copy-pastes `[0]`** (construction, A/B evidence, and the fix in [§4.4.1](#s4-4-1), [§4.1.4](#s4-1-4), [§4.1.5](#s4-1-5)).
+  - **How to judge when writing a new list-reading policy**: default to **counting entries**, always. `[0]` is permissible only when the API server itself guarantees the list is unique per key — the check is `kubectl get crd <name> -o yaml`: see whether the list you are about to read carries a per-key uniqueness constraint (on Tekton's `status` side, not a single one does). **Do not take markers in the upstream Go source as your basis**: a source-code marker does not necessarily make it into the CRD; go by what the CRD actually contains.
   - **How to wire the count in depends on whether `deny.conditions` uses `any` or `all`**: under `any` the count can be added as an independent condition; **under `all` it absolutely must not be** — adding another `all` condition **loosens** the criterion; the count must be folded into the boolean variable itself (this document's [§4.1.4](#s4-1-4) / [§4.6.2](#s4-6-2) use `all`, with the count folded into `scanIdentityValid`).
 
   So do not write the terminal-state criterion as `contains(['True','False'], (…)[?type=='Succeeded'].status | [0] || 'Unknown')`; count entries instead: `length((…)[?type=='Succeeded' && (status=='True' || status=='False')]) > \`0\``; and when reading a result, likewise pair it with a guard that "the target result may only appear once".
@@ -10378,8 +11185,9 @@ The admission error reported by `kubectl` / the UI directly contains: `<policy n
 | `pipelineRef` / `resolver` / `catalog` / `version` / `pathInRepo` | The template reference shape ([§4.1.1](#s4-1-1)) — note that the `url` parameter is itself forbidden; do not add one |
 | `enableScanQualityGate` / `enableAnalyzeQualityGate` / `skipTrivyScan` / `trivyExtraArgs` / threshold-type parameters | Gate switches and thresholds ([§4.2.1](#s4-2-1) / [§4.2.5](#s4-2-5)); restore the template defaults |
 | `request-level 'url' present` / `'type' param count` / `'type' value` | **Not a branch problem**: the scan Task's reference source was tampered with. Each of the three counts in the message maps to one spot in `taskRef.params` — delete the request-level `url`, collapse the duplicated `type` down to one, and `type` may only be `artifact` or simply absent ([§4.2.4](#s4-2-4) rule ①) |
-| `protected branch '...'` | This run's **effective analysis branch** is a protected branch and a gate switch was explicitly altered — restore the switch to `"true"` or drop the explicit override ([§4.2.4](#s4-2-4) rule ②). **Note the value in the message may carry a `sonar.branch.name=` prefix**: that means the branch came not from the `sonarBranchName` parameter but from that injected line inside `sonarProperties` — and that line is what you need to fix |
-| `base claims=N` / `key claims=M` (in the PolicyReport) | The PR analysis declarations are off ([§4.2.4](#s4-2-4) rule ③; Audit does not block the request): either count not equal to 1 means `sonar.pullrequest.base` / `.key` is duplicated or smuggled in; when both are 1, look at the gate-switch value in the same message |
+| `protected branch '...'` | This run falls in the protected scope (the branch parameter is a protected branch, or is **absent / blank** — in that case it is treated as the default branch, and the branch in the message shows empty) and a gate switch was explicitly altered — restore the switch to `"true"` or drop the explicit override ([§4.2.4](#s4-2-4) rule ③). The branch value comes from the `sonarBranchName` parameter only: `sonar.branch.name` is no longer allowed inside `sonarProperties` (that is rule ②'s rejection — see the next row) |
+| `must use the supported form` | The input is not in the canonical shape ([§4.2.4](#s4-2-4) rule ②): each boolean / count in the message maps to one spot — a non-canonical `sonarProperties` entry (leading whitespace / `#` / a newline), a governed key smuggled through `sonarProperties`, or a PR declaration that is duplicated or whose value contains whitespace. Fix it to the recommended form per the message and the mapping table in the first warning of [§4.2.4](#s4-2-4) |
+| `PR analysis ... claims target '...'` (in the PolicyReport) | The PR analysis declared a protected target and a gate switch was explicitly turned off ([§4.2.4](#s4-2-4) rule ④; Audit does not block the request) — restoring the switch is enough; duplicated declarations / values containing whitespace do not show up here — they are already rejected at admission by rule ② |
 | `srcImage` / `mappings` / registry prefixes | Artifact source ([§4.5.1](#s4-5-1)) or run image ([§4.5.3](#s4-5-3)) — the message lists **the specific image** |
 | namespace / Secret / ServiceAccount names | Release target ([§4.5.5](#s4-5-5)); these allowlists are platform-maintained — ask the platform for the currently approved values |
 | `ownerReference` / controller identity | You are hand-creating a bare `TaskRun` / `CustomRun` ([§4.5.4](#s4-5-4)) — submit a PipelineRun instead |
@@ -10390,7 +11198,7 @@ The admission error reported by `kubectl` / the UI directly contains: `<policy n
 
 #### 6.2.3 Why was my pipeline auto-cancelled {#s6-2-3}
 
-If the run turned `Cancelled` and it was not your doing, some policy chose "cancel" rather than "deny". **A terminal state other than `Cancelled` can still be a policy cancellation**: when the gate task itself fails first, Tekton's failure verdict outranks the cancellation — the run's terminal state is `Failed`, yet `spec.status` has already been written to `CancelledRunFinally` (see [§4.6.1](#s4-6-1)) — so when you see `Failed` with a non-empty `spec.status`, work through the same table below. **Note that `spec.status` only proves "a cancellation was requested", not who requested it** (a manual cancel writes the very same field): calling it a policy cancellation requires the markers in the table below; if no marker can be found, it can only be recorded as origin unknown. **Four paths in this document produce `Cancelled`, and each stores its evidence in a different place** — check in the order below; the first hit is the cause (for how the four differ mechanically — when it is detected, what gets touched, synchronous or asynchronous — see the summary table in the [§4.6](#s4-6) introduction):
+If the run turned `Cancelled` and it was not your doing, some policy chose "cancel" rather than "deny". **A terminal state other than `Cancelled` can still be a policy cancellation**: when the gate task itself fails first, Tekton's failure verdict outranks the cancellation — the run's terminal state is `Failed`, yet `spec.status` has already been written to `CancelledRunFinally` (see [§4.6.1](#s4-6-1)) — so when you see `Failed` with a cancellation-class value in `spec.status`, work through the same table below. **First separate "non-empty" from "cancelled" — they are not the same thing**: Tekton validates `PipelineRun.spec.status` to accept only four non-empty values, of which three carry cancel/stop semantics (`Cancelled` / `CancelledRunFinally` / `StoppedRunFinally`); the fourth, **`PipelineRunPending`, has nothing to do with cancellation** — it means "do not start yet" and is the normal way to create a run in a suspended state (`TaskRun.spec.status` works the same way; its two legal values are `TaskRunCancelled` and `TaskRunPending`). So judging "it was cancelled" goes by the **value**, never by "non-empty". **Note that even a cancellation-class value only proves "a cancellation was requested", not who requested it** (a manual cancel writes the very same field): calling it a policy cancellation requires the markers in the table below; if no marker can be found, it can only be recorded as origin unknown. **Four paths in this document produce `Cancelled`, but the evidence lives in only two places**: path 1 leaves it on that gate TaskRun itself; paths 2 / 3 / 4 all write the same `cancel-reason` annotation on the parent PipelineRun, told apart by the **text**. Check in the order below; the first hit is the cause (for how the four differ mechanically — when it is detected, what gets touched, synchronous or asynchronous — see the summary table in the [§4.6](#s4-6) introduction):
 
 | Check order | Origin | Trigger | Where to find the evidence |
 |---|---|---|---|
@@ -10401,33 +11209,76 @@ If the run turned `Cancelled` and it was not your doing, some policy chose "canc
 
 Troubleshoot in exactly that order: **first look for a TaskRun carrying a `statusMessage`** (if one exists, it is shape 1), **then read the text of the parent run's `cancel-reason` annotation** (shapes 2 / 3 / 4 all write this annotation; the text tells them apart: gate parameters / definition drift / result out of bounds).
 
-⚠️ **All of this presumes the policy actually wrote the markers**: `cancel-reason` is something the policy **writes into the object itself** when cancelling — not a field Tekton provides. If, when copying the policies, you dropped that `metadata.annotations` block (all four cancellation policies in this document carry it), then afterwards **nothing can distinguish "policy cancellation" from "someone cancelled it by hand"** — the `Cancelled` terminal state is exactly identical in both cases. All you can do then is **infer** from "some result is clearly out of bounds" — and inference is not evidence; in an audit context it can only be recorded as "cause unknown" ([§4.0.6](#s4-0-6), [§4.4.4](#s4-4-4)).
+⚠️ **All of this presumes the policy actually wrote the markers**: `cancel-reason` is something the policy **writes into the object itself** when cancelling — not a field Tekton provides (all four cancellation policies in this document carry that `metadata.annotations` block). The consequence of dropping it when copying the policies **splits in two by path**:
+
+- **Shapes 2 / 3 / 4 (the parent run carries this one marker only)**: drop it and **nothing can distinguish "policy cancellation" from "someone cancelled it by hand"** — the `Cancelled` terminal state is exactly identical in both cases. All you can do then is **infer** from "some result is clearly out of bounds" — and inference is not evidence; in an audit context it can only be recorded as "cause unknown" ([§4.0.6](#s4-0-6), [§4.4.4](#s4-4-4)).
+- **Shape 1 ([§4.2.3](#s4-2-3)) has a second marker**: the same patch also writes `spec.statusMessage`, whose text begins with `Cancelled by policy <policy-name>:` and is spliced verbatim into the TaskRun's failure condition. So this path **stays judgeable even with the annotation lost**; conversely, keeping only the annotation and deleting the `statusMessage` means the person who got blocked sees no reason in `tkn` / the console — **delete neither**.
+
+⚠️ **Watch for the reverse as well: it should have been cancelled, but was not**. Shapes 2 / 3 / 4 are all mutate-existing — the cancellation is delivered asynchronously in the background; when a result is plainly out of bounds yet the pipeline runs to completion with neither `spec.status` nor `cancel-reason` on the parent run, the cause is usually not a missed criterion but a broken delivery chain (`context.apiCall` cannot reach the target, the UpdateRequest never got created, the background-controller is down or backlogged, the update RBAC on the target was revoked). This failure **produces no denial message and no PolicyReport violation record**: look at the background-controller logs and `kubectl get updaterequests -n kyverno` first, and suspect the criterion itself only last (mechanism and monitoring items in the "asynchronous delivery chain" row of [§3.7](#s3-7)).
 
 The commands below pull the evidence:
 
 ```bash
 PIPELINERUN=cancel-low-coverage-demo
 NAMESPACE=policy-poc
-run_uid=$(kubectl get pipelinerun "$PIPELINERUN" -n "$NAMESPACE" \
-  -o jsonpath='{.metadata.uid}')
-kubectl get events -n "$NAMESPACE" \
-  --field-selector involvedObject.uid="$run_uid"
+if ! run_json=$(kubectl get pipelinerun "$PIPELINERUN" -n "$NAMESPACE" -o json); then
+  echo "OBJECT-GONE / READ-FAILED: cannot read PipelineRun $NAMESPACE/$PIPELINERUN; stop evidence collection" >&2
+  false
+fi
+run_uid=$(printf '%s' "$run_json" | jq -r '.metadata.uid // empty')
+if [ -z "$run_uid" ]; then
+  echo "READ-FAILED: PipelineRun response has no UID; stop evidence collection" >&2
+  false
+fi
+if ! kubectl get events -n "$NAMESPACE" \
+  --field-selector involvedObject.uid="$run_uid"; then
+  echo "READ-FAILED: events for PipelineRun UID $run_uid are unavailable" >&2
+  false
+fi
+if ! reports_json=$(kubectl get policyreport -n "$NAMESPACE" -o json); then
+  echo "READ-FAILED: PolicyReports in $NAMESPACE are unavailable; do not interpret an empty result as no violation" >&2
+  false
+fi
+# Print any PipelineRun-scoped result first. Zero rows are explicit: cancellation-only
+# policies do not emit a report unless the companion Audit policy is installed.
+run_rows=$(printf '%s' "$reports_json" | jq -r --arg uid "$run_uid" --arg run "$PIPELINERUN" '
+  .items[]
+  | select(.scope.kind == "PipelineRun" and .scope.uid == $uid)
+  | .results[]
+  | [$run, .policy, .rule, .result, .message]
+  | @tsv')
+if [ -n "$run_rows" ]; then
+  printf '%s\n' "$run_rows"
+else
+  echo "NO-MATCHING-AUDIT-RESULT: PipelineRun $PIPELINERUN ($run_uid)"
+fi
 # First find which child TaskRuns have a fail/warn/error summary, then expand the
 # matching policy/rule/message.
-kubectl get pipelinerun "$PIPELINERUN" -n "$NAMESPACE" \
-  -o jsonpath='{range .status.childReferences[?(@.kind=="TaskRun")]}{.name}{"\n"}{end}' | \
+child_taskruns=$(printf '%s' "$run_json" | jq -r '
+  .status.childReferences[]? | select(.kind == "TaskRun") | .name')
 while IFS= read -r taskrun; do
-  taskrun_uid=$(kubectl get taskrun "$taskrun" -n "$NAMESPACE" \
-    -o jsonpath='{.metadata.uid}')
-  kubectl get policyreport -n "$NAMESPACE" -o json | jq -r \
+  [ -n "$taskrun" ] || continue
+  if ! taskrun_uid=$(kubectl get taskrun "$taskrun" -n "$NAMESPACE" \
+    -o jsonpath='{.metadata.uid}'); then
+    echo "OBJECT-GONE / READ-FAILED: TaskRun $NAMESPACE/$taskrun; its evidence cannot be classified" >&2
+    continue
+  fi
+  task_rows=$(printf '%s' "$reports_json" | jq -r \
     --arg taskrun "$taskrun" --arg taskrun_uid "$taskrun_uid" '
     .items[]
     | select(.scope.kind == "TaskRun" and .scope.uid == $taskrun_uid)
     | .results[]
     | select(.result == "fail" or .result == "warn" or .result == "error")
     | [$taskrun, .policy, .rule, .result, .message]
-    | @tsv'
-done
+    | @tsv')
+  if [ -n "$task_rows" ]; then
+    printf '%s\n' "$task_rows"
+  else
+    echo "NO-MATCHING-AUDIT-RESULT: TaskRun $taskrun ($taskrun_uid)"
+  fi
+done <<EOF
+$child_taskruns
+EOF
 ```
 
 > ⚠️ **Traceability prerequisite**: the [§4.6](#s4-6) cancellation is a pure mutate-existing rule — it **produces no** "below the bar" PolicyReport record of its own. So to make "why was it cancelled" traceable, you must **also deploy the corresponding [§4.4](#s4-4) Audit policy** (recording the result verdict that triggered the cancellation into the PolicyReport), or have the cancellation write a controlled annotation / event onto the parent run recording the triggering policy and evidence. Install only the cancellation rule without the Audit, and the PolicyReport holds no cancellation cause to be found.
@@ -10448,7 +11299,8 @@ Legend: ✅ capability equivalent; 🟡 an equivalent implementation exists, but
 | Template must carry a designated marker / must contain a certain class of task | Change permission on in-cluster definitions closed off via RBAC ([§4.1.2](#s4-1-2)) + the [§4.1.4](#s4-1-4) `status.pipelineSpec` Audit | 🟡 In-cluster definitions rely on RBAC to lock write permission; remote references get only after-the-fact Audit depth + reliance on external template governance |
 | Template must come from a designated git source | [§4.1.1](#s4-1-1) git-channel allowlist (pinned commit SHA) | 🟡 Only a pinned SHA locks content; content constraints on branch/tag must be filled in by repository permission controls |
 | Quality gate (coverage / vulnerability threshold) — miss the bar, fail the run | [§2.3](#s2-3) gate task `exit 1` ([§4.3](#s4-3)) + the [§4.2](#s4-2) parameter contract guaranteeing the gate was not switched off | 🟡 Both schemes decide only after the scan results exist; what changes is **who decides and what the failure looks like** — the legacy engine evaluated result snapshots in the platform controller and cancelled the underlying run **immediately** (an explicit platform ruling), whereas here it is an in-DAG gate-task failure / DAG-skip, and the failure shape is a task failure (use [§4.3](#s4-3) to tell it from an ordinary one) |
-| No coverage regression + restricted to target branches | [§4.3](#s4-3) absolute coverage floor + [§4.2.4](#s4-2-4) protected-branch gate contract (TaskRun level) | 🟡 Only the absolute coverage threshold is implemented today; **no-regression against a baseline (coverage delta) is not yet implemented**. The gate on protected-branch analysis can be nailed down (`sonarBranchName` anchored), but the **PR-stage gate is best-effort only** (`sonar.pullrequest.base` is a user-supplied parameter — fail-open, Audit; see [§4.2.4](#s4-2-4) rule ③ and "parameter mapping of the platform trigger chain") |
+| Coverage **no-regression** (delta against a baseline) | **No equivalent implementation**: this document only does an absolute coverage floor ([§4.3](#s4-3)); delta needs "the previous baseline" — an input the admission side cannot see | 🔴 See [§7.3](#s7-3) |
+| Restricting the analysis target branch | [§4.2.4](#s4-2-4) protected-branch gate contract (TaskRun level) | 🟡 The gate on protected-branch analysis can be nailed down (`sonarBranchName` anchored), but the **PR-stage gate is best-effort only** (`sonar.pullrequest.base` is a user-supplied parameter — fail-open, Audit; see [§4.2.4](#s4-2-4) rule ④ and "parameter mapping of the platform trigger chain") |
 | Gate switches must not be turned off by business teams | [§4.2.1](#s4-2-1) main path (effective values at the TaskRun level) + [§4.2.5](#s4-2-5) auxiliary path (early blocking at the PipelineRun level) | 🟡 The validation site costs template authors zero changes; but the recognition contract (which task alias, which parameter name) must be configured per template version |
 | Artifact source allowlist | [§4.5.1](#s4-5-1) copy-task parameter allowlist | 🟡 Covers the parameter entry of the designated copy task; only unbypassable when combined with the [§4.5.4](#s4-5-4) entry closure |
 | Run-image registry / integrity constraints | [§4.5.3](#s4-5-3) Pod-level image allowlist + verifyImages (companion document) | ✅ The Pod level is the reliable blocking point for the images that actually run (the legacy scheme usually could not reach this layer) |
@@ -10456,7 +11308,7 @@ Legend: ✅ capability equivalent; 🟡 an equivalent implementation exists, but
 | Per-project / per-namespace differentiated constraints | [§1.3](#s1-3) / [§5.2](#s5-2) two-tier governance (negative-exclude baseline + positive per-project tightening) | ✅ And it adds the negative-coverage semantics of "an unclassified namespace necessarily falls under the baseline" |
 | Turning report-style checks into numeric gates (e.g. lint counts) | The [§2.4](#s2-4) extension model: a custom task emits declarative results + [§4.3](#s4-3)/[§4.4](#s4-4) | 🟡 The check task needs a data contract added (result retrofit) |
 | Artifact attributes (label / env / tag) | [§4.5.2](#s4-5-2) `context.imageRegistry` reads `Labels` / `Env` from the source image's config; the tag lives in the image reference string, judged by the [§4.5.1](#s4-5-1) parameter allowlist | 🟡 Can only read images that **already exist at admission time** (validates the source, not the target artifact this very run is about to produce); and it puts external network calls on the admission path (the four limits in [§4.5.2](#s4-5-2)) |
-| Rule expressions (the legacy scheme evaluated event snapshots) | Kyverno `match` + `preconditions` + JMESPath, evaluated on the **admission request object**; run-result criteria move to reading `*/status` ([§4.4](#s4-4)) | 🟡 The visible fields changed: you only see fields genuinely present in the request — an unbound parameter **does not appear** in the request, and an explicit empty string ≠ absence (handling principle: "parameter absence must fail closed" in [§4.2.1](#s4-2-1)); derived fields from the event snapshot have no counterpart; cross-object information must be looked up live with `context.apiCall` ([§4.2.1](#s4-2-1)) |
+| Rule expressions (the legacy scheme evaluated event snapshots) | Kyverno `match` + `preconditions` + JMESPath, evaluated on the **admission request object**; run-result criteria move to reading `*/status` ([§4.4](#s4-4)) | 🟡 The visible fields changed: you only see fields genuinely present in the request — an unbound parameter **does not appear** in the request, and an explicit empty string ≠ absence (handling principle: "parameter absence must fail closed" in [§4.2.1](#s4-2-1) — with a trusted-default exception only when the exact Task version is locked); derived fields from the event snapshot have no counterpart; cross-object information must be looked up live with `context.apiCall` ([§4.2.1](#s4-2-1)) |
 | Evaluation records and visualization | PolicyReport ([§4.4](#s4-4)) | 🟡 Recording capability is equivalent; but **reports are GC'd along with the evaluated object, carry no TTL / retention semantics, and Enforce-denied requests leave no report at all** (the [§4.4.4](#s4-4-4) boundary) — long-term retention requires external collection, and **more than reports must be collected**: proving "this release went through the gate" needs four kinds archived together — PipelineRun / gate TaskRun terminal states and results, PolicyReports, Events, and admission denial messages (threaded by run UID; the warning in [§4.4.4](#s4-4-4)). User-facing visualization needs product-side wiring |
 | Distributing policies to multiple clusters | **No corresponding mechanism**: `ClusterPolicy` / `Policy` are both **per-cluster objects** and must be installed cluster by cluster (GitOps or platform-module distribution) | 🔴 A new cluster starts with zero policies, and this "policy vacuum" is invisible from the old clusters — see the new-cluster row in [§3.6](#s3-6) |
 | Orchestration-time "applicable-policy preview" | **No equivalent**: `--dry-run=server` only answers "will this one request be denied"; it does not list "which policies would hit" | 🔴 Pipeline users still see the denial message only at run creation; orchestration-time hints must be wired separately on the product side |
@@ -10477,7 +11329,8 @@ The following capabilities come naturally with the native resource model plus Ky
 
 - **Staged evaluation (🔴)**: if the legacy scheme had "gate orchestration advancing phase by phase", v4 has no first-class abstraction for it. Mitigation: decompose the phases across the three moments — definition / parameters at admission ([§4.1](#s4-1)/[§4.2](#s4-2)), the quality gate in the pipeline's gate task ([§4.3](#s4-3)), result verification and response after the fact ([§4.4](#s4-4)/[§4.6](#s4-6)); and use the [§2.3](#s2-3) contracts to guarantee the three layers combined cannot be bypassed.
 - **Quality-gate semantics change (🟡)**: the deciding party moves from the platform controller into the DAG. The legacy engine likewise judged only after the scan results existed (rule evaluation over result snapshots), but the verdict happened **outside the pipeline**, and a violation made the controller cancel the underlying run **immediately** — an explicit platform ruling; here the verdict is an in-DAG gate-task failure, or an after-the-fact cancellation ([§4.6](#s4-6), Kyverno mutate-existing, **asynchronous, seconds-level**), and the failure shape is a task failure — use [§4.3](#s4-3) to tell it from an ordinary one. Side effects of earlier or parallel tasks that already started are not rolled back under either scheme ([§2.3](#s2-3) contract 5). Mitigation: in template design, order every side effect after the gate (DAG dominance), and layer on [§4.6](#s4-6) early cancellation when necessary.
-- **Multi-cluster distribution (🔴)**: in the legacy scheme a platform sync component pushed the rules down to each workload cluster; v4 has no such layer — a Kyverno policy object exists only in the cluster it lives in. Mitigation: treat the policies as **cluster baseline configuration** under GitOps / platform-module management; add a step to the new-cluster onboarding flow — "install the minimal set + run the positive/negative probes" (the new-cluster row in [§3.6](#s3-6)) — and periodically compare the `kubectl get clusterpolicy` inventories across clusters, so no cluster quietly falls behind.
+- **Multi-cluster distribution (🔴)**: in the legacy scheme a platform sync component pushed the rules down to each workload cluster; v4 has no such layer — a Kyverno policy object exists only in the cluster it lives in. Mitigation: treat the policies as **cluster baseline configuration** under GitOps / platform-module management; add a step to the new-cluster onboarding flow — "install the minimal set and run the acceptance to completion per [§4.0.7](#s4-0-7)" (the new-cluster row in [§3.6](#s3-6)) — and periodically compare the policy state across clusters, so no cluster quietly falls behind. **The comparison must not stop at policy names**: the same name may be `Enforce` on cluster A while still sitting at `Audit` on cluster B, or the scope may list one namespace fewer — both present as "the inventories match but the guarantees do not", so what gets compared is three things: **the name + each rule's `validate.failureAction` + the scope**.
+- **Coverage no-regression / delta against a baseline (🔴)**: the admission side cannot obtain "the previous baseline coverage" — it is not in the request object and it is not any Tekton field; Kyverno sees only the value this run reports. Mitigation: **move the delta verdict wholesale into the gate task** (it fetches the baseline itself from Sonar or another external system, compares, and `exit 1`s below the bar — the [§2.4](#s2-4) extension model is exactly this shape); the Kyverno side carries only "this task is definitely there and its gate parameters were not switched off" (contract 3 + [§4.2](#s4-2)). **Do not expect to fetch the baseline at admission with `context.apiCall`**: that hangs every single run creation on the external system's availability and has to fit inside the webhook's single-request timeout budget ([§3.7](#s3-7)) — the cost and the risk are both a bad trade.
 - **Orchestration-time applicable-policy preview (🔴)**: the legacy scheme could list "which policies would hit" before the pipeline ever ran; v4 has no equivalent API. Mitigation: make the "how to read the message when blocked" of [§6.2](#s6-2) the first entry point for pipeline users; where up-front hints are needed, have the product side build front-end hints against **known template profiles** — do not expect Kyverno to produce an applicability list.
 - **Remote template content assurance (🟡)**: under hub / git references, Kyverno can only lock identity; trust in the content comes from external governance. Mitigation: prefer the in-cluster template namespace ([§4.1.2](#s4-1-2): change permission closed off via RBAC); for remote references, always pin immutable versions + rely on catalog / repository release governance + the [§4.1.4](#s4-1-4) drift Audit.
 
@@ -10494,12 +11347,17 @@ The thing you want to constrain
 ├─ Gate skipped / opted out (when/matrix) ……… PipelineRun/status `skippedTasks` Audit (§4.1.5)
 ├─ Quality-result visibility / inventory ………… TaskRun/status Audit + PolicyReport (§4.4)
 ├─ Artifact sources ………………………………… copy-task parameter allowlist (§4.5.1)
+├─ The artifact's own attributes (label / provenance declarations) … read the source image's config at admission (§4.5.2) — can only read a source image that **already exists**, and puts external network calls on the admission path; read that section's four limits first
 ├─ The images that actually run ……………………… Pod CREATE + plain UPDATE + `Pod/ephemeralcontainers` UPDATE allowlist / signatures (§4.5.3 + companion document)
 ├─ Closing the bare Tekton Run entrances ……… TaskRun/CustomRun entry closure (§4.5.4) + RBAC convergence on Pod/Job/Deployment and deployment credentials
 ├─ Release targets …………………………………… deployment parameters on official PipelineRun CREATE + kubeconfig workspace allowlist (§4.5.5)
 ├─ Cancel a running run on substandard results … TaskRun/status → mutate-existing cancellation (§4.6, supplementary measure)
+├─ Gate parameters non-compliant, but finally must still run … cancel instead of deny: cancel the parent run (§4.2.2) or synchronously cancel the gate TaskRun (§4.2.3)
+│                                     — the same criterion as "gate switches / thresholds" above in three response shapes; pick **only one**, per the §4.2.3 comparison table
 └─ Per-project differentiation ………………………… platform-managed: ClusterPolicy + selector; project self-service: namespaced Policy (§5.2)
 ```
+
+Three more mechanisms are not in the tree, because they "allow" rather than "block": **uniform default injection** (timeouts / labels, mutate, [§4.2.6](#s4-2-6)), **inline exceptions** ([§4.1.3](#s4-1-3) — opening one restricted channel on top of the [§4.1.1](#s4-1-1) allowlist, and an either-or with the cluster-wide blanket ban of [§4.1.2](#s4-1-2)), and **controlled allowance** (temporary PolicyException exemption, [§5.3](#s5-3)).
 
 To close in one sentence: **hard gates are failures manufactured by the gate task inside the pipeline; Kyverno's value is making sure that gate "is definitely there, its parameters cannot be switched off, sources and targets stay within policy, and the bare Tekton Run entrances are sealed" — plus providing audit and controlled cancellation.** Two boundaries must be stated together: ① "the pipeline cannot be bypassed" is **Kyverno + RBAC combined** — Kyverno seals bare Tekton Runs, RBAC converges direct permissions on Pod/Job/Deployment and the deployment credentials; neither alone suffices; ② what Kyverno guarantees is "the gate is there and its parameters are not off"; **whether it truly dominates the release depends on the trusted template's DAG** (for example, in the official java 0.3 template `deploy-or-upgrade` is ordered after `trivy-scanner` but not after `sonarqube-scanner`; the two templates' shapes are contrasted in [§4.3](#s4-3)). Never block `*/status` with Enforce (wedge); result-type constraints are always Audit or cancellation.
 
