@@ -7,7 +7,6 @@ kind:
 ProductsVersion:
   - 4.3.x
 ---
-
 # Pipeline Policy Constraints with Tekton and Kyverno
 
 :::info Applicable versions
@@ -488,10 +487,14 @@ kubectl get deploy -n kyverno kyverno-admission-controller \
 #    Only the first one present is the ACP default -- configure the second per §3.1.1
 
 # 6. Webhook failure policy (fail-open or fail-closed while Kyverno is unavailable)
-#    and the per-request timeout every rule -- including its external calls (§3.7) -- must fit inside
-echo "== 6) webhook failurePolicy / timeout (planning input, no pass-fail) =="
+#    and the per-request timeout every rule -- including its external calls (§3.7) -- must fit inside.
+#    Read BOTH layers: the per-policy intent declared in spec.webhookConfiguration,
+#    then the generated webhook groups (-fail / -ignore) it must land in
+echo "== 6) webhook failurePolicy / timeout (declared intent vs generated grouping) =="
+kubectl get clusterpolicy -o \
+  custom-columns='NAME:.metadata.name,FAILURE_POLICY:.spec.webhookConfiguration.failurePolicy,TIMEOUT:.spec.webhookConfiguration.timeoutSeconds'
 kubectl get validatingwebhookconfiguration -o \
-  custom-columns='NAME:.metadata.name,POLICY:.webhooks[*].failurePolicy,TIMEOUT:.webhooks[*].timeoutSeconds' \
+  custom-columns='NAME:.metadata.name,WEBHOOK:.webhooks[*].name,POLICY:.webhooks[*].failurePolicy,TIMEOUT:.webhooks[*].timeoutSeconds' \
   | grep kyverno
 
 # 7. Which resources Kyverno ignores outright, BEFORE any policy is consulted
@@ -505,12 +508,12 @@ kubectl get cm -n kyverno kyverno -o jsonpath='{.data.resourceFilters}' | tr ' '
 
 | Check | Expected | If not as expected |
 |---|---|---|
-| 1 Controllers ready | All four controllers Ready | First check the plugin's installation status (Marketplace → Cluster Plugins) and the Pod events to locate the failure; size the replica count per the HA plan in [§6.1.8](#s6-1-8), and make that change through the [§3.1.1](#s3-1-1) `ModuleInfo.spec.valuesOverride` entry point too — **do not edit the Deployment directly** (the platform reconcile reverts it) |
+| 1 Controllers ready | All four controllers Ready | First check the plugin's installation status (Marketplace → Cluster Plugins) and the Pod events to locate the failure; size the replica count per the HA plan in [§6.1.8](#s6-1-8), and make that change through the [§3.1.1](#s3-1-1) `ModuleInfo.spec.valuesOverride` entry point too — the corresponding chart-values keys are `admissionController.replicas` / `backgroundController.replicas` / `cleanupController.replicas` / `reportsController.replicas` (all four can be checked directly in the values of the deployed `AppRelease`; before writing, confirm the actual key names of that chart in your environment the same way as in [§3.1.1](#s3-1-1)) — **do not edit the Deployment directly** (the platform reconcile reverts it) |
 | 2 Resolver switches and hub endpoint | The resolvers you actually use are `true`; Hub's `default-type` is `artifact`; `artifact-hub-api` points at the in-cluster Artifact Hub (Shim) service; **all five coordinates of the 2b smoke test return 200** | These two ConfigMaps are managed by the Tekton operator and direct edits get reverted — change `TektonConfig.spec.pipeline` instead: set `enable-cluster-resolver` / `enable-hub-resolver` / `enable-git-resolver` to `true` as needed; the Hub endpoint and the output type both live in **the same place**, `TektonConfig.spec.pipeline.hub-resolver-config` (a single string map whose keys match the ConfigMap: `artifact-hub-api` / `default-type` / `default-artifact-hub-task-catalog` / `default-artifact-hub-pipeline-catalog`), which the operator reconciles into `tekton-pipelines/hubresolver-config`. **Do not go through `spec.hub`** — that section configures the Tekton Hub component itself, not the hub resolver. If you would rather not touch platform configuration, have every Hub reference carry an explicit `type=artifact` ([§4.5.1](#s4-5-1)). **404s in the 2b smoke test**: first check whether `artifact-hub-api` is the in-cluster Shim address (pointed at the public hub, every hub reference in this document fails as `CouldntGetPipeline` / `CouldntGetTask` while the three switches above stay green), then check whether the catalog and package names in the coordinates match what your environment actually publishes; if the endpoint points at the public Artifact Hub, treat it as an environment configuration problem — have a platform administrator point it back at the in-cluster Shim before continuing. **UNREACHABLE in the smoke test**: the probe Pod has no network / DNS path to that address; fix connectivity before talking about policy |
 | 3 mutate-existing RBAC | Returns `yes` if you use the [§4.6](#s4-6) cancellation capability | On `no`, grant the aggregated ClusterRole given in the [§4.6](#s4-6) preamble (the `rbac.kyverno.io/aggregate-to-background-controller: "true"` label in its labels aggregates it into the background controller's permissions). **If you want to use a namespaced Role instead, you must also change `mutate.targets[].namespace` from `{{ request.namespace }}` to a namespace literal** — otherwise Kyverno's creation-time authorization check cannot resolve that variable, recognizes only cluster-level permissions, and the policy still fails to install (see the [§4.6](#s4-6) preamble). **If you do not install the [§4.6](#s4-6) cancellation policies, this permission is not needed** |
 | 4 reports-controller reads status | All six `yes` (optional, not required) | A `no` **usually needs no action** (rationale in the third interpretation below). Only when some other feature genuinely needs the reports-controller to read status directly, add one more least-privilege ClusterRole the same aggregated way as item 3, with the aggregation label swapped to `rbac.kyverno.io/aggregate-to-reports-controller: "true"` |
 | 5 PolicyException switches | Both `--enablePolicyException=true` and `--exceptionNamespace=<trusted-namespace>` present | Seeing only the former is ACP's default state — per [§3.1.1](#s3-1-1), write the `enabled` / `namespace` of `features.policyExceptions` into the kyverno `ModuleInfo`'s `spec.valuesOverride["ait/chart-kyverno"]` (**`ModuleInfo` exists only on the global management cluster**, see the warning in [§3.1.1](#s3-1-1)); **do not patch the Deployment args**. [§3.1.1](#s3-1-1) provides copy-pasteable atomic patch and rollback commands. **If you do not plan to use PolicyException exemptions ([§5.3](#s5-3)), you need not configure this** |
-| 6 Webhook failure policy and timeout | **No fixed expected value** — it is planning input, not a pass/fail criterion. ⚠️ **The reading is timing-sensitive**: `kyverno-resource-validating-webhook-cfg` (the one that actually governs `PipelineRun` / `TaskRun` / `Pod`) is **generated dynamically by Kyverno from the installed policies** — with none of this document's policies installed its `webhooks` is empty and this line prints `<none>`. The `Fail/10` lines you can read at that point all belong to the webhooks of Kyverno's **own CRs** (policy / exception / cleanup / ttl). To get the actual values for pipeline resources, **come back and read this line after installing any [§4](#s4) policy** | Record the actual values and build your playbook around them: `Fail` requires guaranteed controller replicas and HA ([§6.1.8](#s6-1-8)); `Ignore` means accepting a policy vacuum while Kyverno is unavailable. `timeoutSeconds` is the **total budget for a single request** (the default under the applicable versions is `failurePolicy=Fail` / `timeoutSeconds=10`); the external calls in [§3.7](#s3-7) must fit inside that number. If you genuinely need to adjust it, go through the [§3.1.1](#s3-1-1) entry point as well — **do not edit the `ValidatingWebhookConfiguration` directly**: it is an object Kyverno itself maintains (it carries `webhook.kyverno.io/managed-by=kyverno`) |
+| 6 Webhook failure policy and timeout | **Read the intent declared in the policy body first, then check the generated result**: the policy-level entry point is each policy's own `spec.webhookConfiguration.failurePolicy` / `.timeoutSeconds` (shared by all rules within one policy; allowed values `Ignore` / `Fail`, defaulting to `Fail`; timeout defaults to `10` with a 1–30 range — per the 1.15 CRD; the old top-level `spec.failurePolicy` / `spec.webhookTimeoutSeconds` are deprecated, and declaring old and new together is rejected at install time). All policy assets in this document declare it explicitly (tiering rationale in [§3.7](#s3-7)). The check reads two layers: `kubectl get clusterpolicy -o custom-columns='NAME:.metadata.name,FAILURE_POLICY:.spec.webhookConfiguration.failurePolicy,TIMEOUT:.spec.webhookConfiguration.timeoutSeconds'` for the declared intent, then the generated webhooks, which **take effect grouped by value** (`validate.kyverno.svc-fail` / `validate.kyverno.svc-ignore`, each carrying its own `failurePolicy` / `timeoutSeconds`). ⚠️ **Reading the generated side is timing-sensitive**: `kyverno-resource-validating-webhook-cfg` (the one that actually governs `PipelineRun` / `TaskRun` / `Pod`) is **generated dynamically by Kyverno from the installed policies** — with none of this document's policies installed its `webhooks` is empty; the `Fail/10` lines you can read at that point all belong to the webhooks of Kyverno's **own CRs** (policy / exception / cleanup / ttl). **Come back and read the generated side after installing any [§4](#s4) policy** | If declaration and grouping disagree, or a policy needs a different tier: **change that policy body's `spec.webhookConfiguration` and manage it with GitOps** — this is the only entry point that can express the per-policy tiering of [§3.7](#s3-7) ("hard gates `Fail`, bookkeeping Audit may `Ignore`"). For this setting the [§3.1.1](#s3-1-1) `ModuleInfo` entry point serves **platform-wide overrides only** (e.g. `features.forceFailurePolicyIgnore.enabled` forces every policy to `Ignore`, defeating every declared `Fail`) — **it cannot express per-policy tiers; do not use it in place of the declaration in the policy body**. `timeoutSeconds` is the **total budget for a single request**; the external calls in [§3.7](#s3-7) must fit inside that number. Still **do not edit the `ValidatingWebhookConfiguration` directly** — it is an object Kyverno itself maintains (it carries `webhook.kyverno.io/managed-by=kyverno`), and a manual edit is overwritten when the per-policy grouping is recomputed |
 | 7 Resources Kyverno ignores outright | The filter list has **no** entry covering a namespace where pipelines run, and none covering `PipelineRun` / `TaskRun` / `Pod` | The `resourceFilters` in the `kyverno` ConfigMap take effect **before any policy**: a matched request is neither denied, nor recorded in a PolicyReport, nor logged — a **completely silent** exemption channel. The factory value generally excludes four namespaces (**take the value the command above actually read as authoritative**) — `kyverno` / `kube-system` / `kube-public` / `kube-node-lease`: the same violating Pod is denied in `policy-poc` yet sails straight through in `kube-system`. Therefore ① do not run pipelines in an excluded namespace; ② know that a policy written with `namespaces: ["*"]` carries this hole by construction; ③ write permission on this configuration must be controlled at the same level as `ClusterPolicy` ([§5.0](#s5-0)) |
 
 Three of the interpretations above are easy to get wrong:
@@ -1970,7 +1973,7 @@ The criteria of this document's policies lean heavily on three kinds of **extern
 | Triggering action | Affected criteria | Consequence | What the change must include |
 |---|---|---|---|
 | Adding a workload namespace, or migrating pipelines to a new namespace | The `namespaces:` enumeration of **every** policy in [§4](#s4) (demo value `policy-poc`) | **Silent allow**: the new namespace matches no rule | First add the new namespace to every scope (or switch to namespaced `Policy` per [§5](#s5); for "covered by default" switch to a platform-level ClusterPolicy with a negative `exclude` for system namespaces, instead of enumerating one by one), run the positive/negative probes against the new namespace, and only **then** let the business move in |
-| **Adding a workload cluster**, or migrating pipelines to another cluster | **Every policy in the whole document** ([§4](#s4) and [§5](#s5) alike) — `ClusterPolicy` / `Policy` are in-cluster objects and **do not sync across clusters** | **Silent allow**: the new cluster has not a single policy, while the old cluster's reports look perfectly fine — completely invisible from the old cluster | Write "install the minimal set ([§4.0.1](#s4-0-1)) + run the positive/negative probes" into the cluster onboarding process; distribute the policy inventory via GitOps / a platform module rather than installing by hand; periodically diff the `kubectl get clusterpolicy` inventories across clusters (listed as a lossy item in [§7.3](#s7-3)) |
+| **Adding a workload cluster**, or migrating pipelines to another cluster | **Every policy in the whole document** ([§4](#s4) and [§5](#s5) alike) — `ClusterPolicy` / `Policy` are in-cluster objects and **do not sync across clusters** | **Silent allow**: the new cluster has not a single policy, while the old cluster's reports look perfectly fine — completely invisible from the old cluster | Cluster onboarding follows the five-step conversion and acceptance of [§4.0.7](#s4-0-7) (positive/negative probes included) — do not reduce it to "install the minimal set"; distribute the policy inventory via GitOps / a platform module rather than installing by hand; periodically compare a cross-cluster baseline — **the baseline = every `ClusterPolicy` plus the `Policy` objects in each governed project namespace** (the project-autonomy objects of [§5](#s5) never appear in a `kubectl get clusterpolicy` listing), **compared on at least name + each rule's `validate.failureAction` + `match`/`exclude` (including the namespaceSelector)** — comparing names alone reports "baselines identical" even when the same policy is Audit on one cluster and Enforce on the other (the same yardstick as [§7.3](#s7-3)); the most robust shape is a structured diff of every cluster against the GitOps desired state |
 | A template version bump (e.g. 0.3 → 0.4) | Every policy pinning `refVersion` | **Silent allow** (identity mismatch = skip) | See ordering constraint 3 in [§4.0.1](#s4-0-1); the only layer that can stop "a new version sneaking in" is `pipeline-template-allowlist` |
 | **A Task version bump** (decoupled from the template; happens on its own) | The result-reading policies of [§4.4](#s4-4).x, and the Task-identity criteria inside the full profiles | **Silent allow** (the old-version identity no longer matches → the PolicyReport looks "clean"); changing the version but not the result paths turns into **false positives** | Change all three places together: the Task identity version, the result **name**, and the property **path**. After the change, confirm with **one genuinely failing scan** that a fail appears in the PolicyReport — this is the positive control for an Audit policy: **if no fail shows up, first suspect the identity did not match, not "no violations"** |
 | Changing `default-service-account` in `config-defaults` | The run-level SA approval list of [§4.5.5](#s4-5-5) | **Both directions occur, depending on what you change it to**: to **another non-empty value** → **silent false denial** (every compliant request with deployment enabled is denied); to an **empty value** → Tekton stops filling the field, the criterion's `!= ''` precondition no longer holds and the whole rule skips ⇒ **silent allow** (fail-open; see that placeholder's row in [§4.0.3](#s4-0-3)) | Update the list in the same change, and run the three probe cells (new default SA / site-approved SA / off-list SA); **plus one extra cell**: read the effective value once with the [§3.3](#s3-3) fixture and confirm it is **not empty** — an empty value must first be set back to a real SA name before the list is even worth discussing |
@@ -2014,12 +2017,12 @@ The preceding sections guarantee that the criteria are correct. This section is 
 
 | What to budget | Mechanism facts | The budget / action you must set |
 |---|---|---|
-| **External calls on the admission path (synchronous validate)** | Two kinds of criteria wait for an external round trip inside admission: `context.imageRegistry` ([§4.5.2](#s4-5-2)) and `context.apiCall` (one each in [§4.2.1](#s4-2-1) / [§4.2.2](#s4-2-2) / [§4.6.1](#s4-6-1)). **Only the two on the synchronous validate path fail closed**: registry unreachable → request denied (roughly 5 seconds; roughly 3 seconds when reachable, see limitation 4 in [§4.5.2](#s4-5-2)); the [§4.2.1](#s4-2-1) apiCall cannot fetch its target → the rule errors out and the request is denied (the error message shape is in that section's warning). **The apiCalls of [§4.2.2](#s4-2-2) / [§4.6.1](#s4-6-1) do not belong in this row** — they hang off mutate-existing and fail in the opposite direction; see the next row | Decide explicitly "which request paths may carry external calls"; narrow such rules' match down to **the Tasks that genuinely need them**; load-test p95 / p99 and the timeout ratio, and confirm it stays below the webhook timeout — **that ceiling applies to the whole request, not to each rule separately** (default `timeoutSeconds=10`, see checklist item 6 in [§3.1](#s3-1); one 5-second registry round trip fits, two stacked on the same request may not). **Registry / API server jitter turns directly into pipeline creation failures** — have the matching alerts and playbooks ready |
-| **The asynchronous delivery chain (mutate-existing cancellation is fail-open)** | Of the document's four cancellation paths, three are mutate-existing ([§4.2.2](#s4-2-2) / [§4.6.1](#s4-6-1) / [§4.6.2](#s4-6-2)), and they sit **outside the admission verdict**: on a hit, the background-controller patches the target object asynchronously via an UpdateRequest. So when any link in that chain fails — the rule's `context.apiCall` cannot fetch its target, the UpdateRequest never gets created, the background-controller is down or backlogged, update RBAC on the target resource has been revoked — **the original request is allowed as usual and the cancellation patch silently vanishes**: the pipeline runs to the end, with no denial message anywhere in the cluster and no PolicyReport violation record (mutate types produce no violation records — the [§4.2.3](#s4-2-3) warning), only a few error lines in the background-controller log (the 404 note in [§4.6.1](#s4-6-1)). **criterion direction fail-closed ≠ delivery guarantee**: the criterion says "missing/illegal results must cancel just the same", but whether the cancel lands depends on the health of this background chain | **For a hard guarantee of zero races and zero silent failures, only the synchronous paths qualify**: the deny of [§4.2.1](#s4-2-1) or the admission mutate of [§4.2.3](#s4-2-3) (both give a synchronous verdict inside admission). If you stay on mutate-existing, you must monitor this chain as **a delivery system with an SLA**: ① background-controller liveness, restart count, and queue backlog; ② UpdateRequest creation volume and failure/stuck volume (`kubectl get updaterequests -n kyverno`); ③ the gap between policy hit counts and "target objects that really got `spec.status` / `cancel-reason` applied" — **a gap persistently non-zero means cancellations are being lost**; ④ before rollout and after every upgrade, run one controlled fault injection (point the apiCall at a nonexistent object, or temporarily stop the background-controller), confirm the alert fires, and write the result into the change request |
+| **External calls on the admission path (synchronous validate)** | Two kinds of criteria wait for an external round trip inside admission: `context.imageRegistry` ([§4.5.2](#s4-5-2)) and `context.apiCall` (one each in [§4.2.1](#s4-2-1) / [§4.2.2](#s4-2-2) / [§4.6.1](#s4-6-1)). **Only the two on the synchronous validate path fail closed**: registry unreachable → request denied (roughly 5 seconds; roughly 3 seconds when reachable, see limitation 4 in [§4.5.2](#s4-5-2)); the [§4.2.1](#s4-2-1) apiCall cannot fetch its target → the rule errors out and the request is denied (the error message shape is in that section's warning). **"Error means deny" presupposes that the policy's effective `failurePolicy` is `Fail`** (this document's assets declare it explicitly — see "The `failurePolicy` trade-off" row below); with it switched to `Ignore`, or with the platform-level `forceFailurePolicyIgnore` in effect, the same error turns into an allow. **The apiCalls of [§4.2.2](#s4-2-2) / [§4.6.1](#s4-6-1) do not belong in this row** — they hang off mutate-existing and fail in the opposite direction; see the next row | Decide explicitly "which request paths may carry external calls"; narrow such rules' match down to **the Tasks that genuinely need them**; load-test p95 / p99 and the timeout ratio, and confirm it stays below the webhook timeout — **that ceiling applies to the whole request, not to each rule separately** (default `timeoutSeconds=10`, see checklist item 6 in [§3.1](#s3-1); one 5-second registry round trip fits, two stacked on the same request may not). **Registry / API server jitter turns directly into pipeline creation failures** — have the matching alerts and playbooks ready |
+| **The asynchronous delivery chain (mutate-existing cancellation is fail-open)** | Of the document's four cancellation paths, three are mutate-existing ([§4.2.2](#s4-2-2) / [§4.6.1](#s4-6-1) / [§4.6.2](#s4-6-2)), and they sit **outside the admission verdict**: on a hit, the background-controller patches the target object asynchronously via an UpdateRequest. So when any link in that chain fails — the rule's `context.apiCall` cannot fetch its target, the UpdateRequest never gets created, the background-controller is down or backlogged, update RBAC on the target resource has been revoked — **the original request is allowed as usual and the cancellation patch silently vanishes**: the pipeline runs to the end, with no denial message anywhere in the cluster and no PolicyReport violation record (mutate types produce no violation records — the [§4.2.3](#s4-2-3) warning), only a few error lines in the background-controller log (the 404 note in [§4.6.1](#s4-6-1)). **criterion direction fail-closed ≠ delivery guarantee**: the criterion says "missing/illegal results must cancel just the same", but whether the cancel lands depends on the health of this background chain | **For a hard guarantee of zero races and zero silent failures, only the synchronous paths qualify**: the deny of [§4.2.1](#s4-2-1) or the admission mutate of [§4.2.3](#s4-2-3) (both give a synchronous verdict inside admission). If you stay on mutate-existing, you must monitor this chain as **a delivery system with an SLA**. The usable data sources are ①–③ below (all checkable on the applicable version; **an after-the-fact one-shot `kubectl get updaterequests` is not one of them** — a failed UpdateRequest is deleted after a few retries, an after-the-fact query is invariably empty, and empty output proves nothing about chain health): ① background-controller liveness, restart count, and queue backlog; ② **metrics (persistent counters — this is where "the gap between hits and landings" comes from)**: on the background-controller's metrics port (`kyverno-background-controller-metrics:8000`), `kyverno_policy_results_total{rule_type="mutate",rule_execution_cause="background_scan"}`, labelled by `policy_name` / `rule_name`, records every delivery attempt as `rule_result="pass"` (the patch landed) or `rule_result="error"` (delivery failed), and survives UpdateRequest deletion (being a counter it resets on controller restart — feed it into a scraping system before alerting on it); for cancellation policies **the alert condition is simply a non-zero increase of `rule_result="error"` for that policy**; ③ **logs (a deterministic signature)**: on delivery failure the background-controller emits one ERR-level line, `failed to mutate existing resource, rule <rule-name>, ...` (when the apiCall cannot fetch its target the error string contains `failed to fetch data for APICall`), with structured `policy=` / `resource=` fields — directly usable for log alerting; note that this failure path **produces no Kubernetes event** (the target object was never resolved; Kyverno's log says so verbatim: `cannot generate events for empty target resource`), so do not build the alert on events; ④ before rollout and after every upgrade, run one controlled fault injection: **start `kubectl get updaterequests -n kyverno -w` before triggering** (the UpdateRequest lifecycle is visible only to a pre-started watch — the failure side shows `Pending → Failed` retries and then disappears, the healthy side shows `Pending → Completed`); on shared / production clusters use **a dedicated test policy + a test namespace + a harmless apiCall pointing at an object known not to exist** (touching no real policy and no business object), confirm the alerts of ② and ③ actually fire, and write the result into the change request; "temporarily stopping the background-controller" is a cluster-level outage (it simultaneously interrupts every other mutate-existing / generate delivery on that cluster) — reserve it for a dedicated acceptance cluster or a maintenance window, record the replica count before, and verify Ready plus backlog drain afterwards |
 | **How many rules a single request hits** | One CREATE may hit several policies at once (multiple policies are AND-composed, [§1.3](#s1-3)), each of which may hold several rules; the image allowlist of [§4.5.3](#s4-5-3) is three rules, each running `foreach` over the container lists | Set a ceiling per resource kind for "maximum rules hit / maximum external calls per request"; when exceeded, merge criteria or narrow the match — do not draw conclusions from the isolated load test of a single policy |
 | **Evaluation frequency of `*/status` policies** | One pipeline's status gets **written back many times** (observation points 3 / 6, [§2.1](#s2-1)); a status-reading policy **re-evaluates on every write-back**, and the request body carries the entire `status.pipelineSpec` (which can be large for a big template) | Keep expensive criteria (external calls, long list traversals) **in the gate task or the after-the-fact chain**, never in a `*/status` policy; before rollout, measure "single request body size × number of status updates" once |
 | **Background scans and PolicyReport volume** | The whole document has exactly one `background: true` policy ([§4.4.4](#s4-4-4)); it periodically re-evaluates **all** matching objects; reports are generated per evaluated object, are GC'd with the object, and have **no TTL / retention semantics** (the [§4.4.4](#s4-4-4) boundaries) | Estimate report object count and growth from PipelineRun volume; if you need a paper trail, set up **external archiving** (do not treat PolicyReport as a history store); alert on reports-controller backlog |
-| **The `failurePolicy` trade-off** | Checklist item 6 of [§3.1](#s3-1) only has you **record the actual value**; [§6.1.8](#s6-1-8) explains the consequences of both (`Fail` = requests denied while Kyverno is unavailable; `Ignore` = a policy vacuum exists) | Tier by policy risk: **the platform baseline and the Pod-level image allowlist lean toward `Fail`**, provided the four controllers are HA across nodes and stay available through rolling upgrades; bookkeeping-only Audit policies can accept `Ignore`. For every cluster, write down "which tier was chosen + why + minimum replica count + what happens during a Kyverno maintenance window", and rehearse one failure scenario |
+| **The `failurePolicy` trade-off** | **The tiering lands in each policy's own `spec.webhookConfiguration.failurePolicy`** (shared by all rules within one policy; defaults to `Fail` when unset; checklist item 6 of [§3.1](#s3-1) gives the two-layer reading — declared intent, then generated grouping) — Kyverno groups policies with different values into different webhook groups (`validate.kyverno.svc-fail` / `-ignore`), each taking effect independently. [§6.1.8](#s6-1-8) explains the consequences of both (`Fail` = requests denied while Kyverno is unavailable; `Ignore` = a policy vacuum exists). All policy assets in this document declare `Fail` explicitly | Tier by policy risk, written into the policy body and managed with GitOps: **the platform baseline and the Pod-level image allowlist stay on `Fail`**, provided the four controllers are HA across nodes and stay available through rolling upgrades; bookkeeping-only Audit policies may switch to `Ignore` per policy — the cost is that this bookkeeping goes missing while Kyverno is unavailable, so write down the accepted vacuum boundary before switching. **Two things not to conflate**: ① on a mutate-existing cancellation policy this field only decides whether the **triggering request** is blocked while the Kyverno webhook is unavailable — `Fail` does not close the fail-open of the asynchronous delivery itself (the row above); ② once the platform-level `features.forceFailurePolicyIgnore.enabled` is on, every policy takes effect as `Ignore` and every declared `Fail` is defeated — that is a platform-wide override switch, not a tiering tool. For every cluster, write down "which tier was chosen + why + minimum replica count + what happens during a Kyverno maintenance window", and rehearse one failure scenario |
 
 **The one-line criterion**: any criterion that "waits for someone else's answer" (external registry, API server) is an availability risk; any criterion that "runs on every status write-back" is a cost risk. **Neither belongs on the main path without a budget.**
 
@@ -2033,13 +2036,13 @@ Run in order. **The requirement "one probe that should be allowed + one that sho
 |---|---|---|
 | 1 | The 7-item checklist of [§3.1](#s3-1) + the four configs `config-defaults` / `feature-flags` / `hubresolver-config` / the kyverno ConfigMap | Values match the pre-upgrade state; for any mismatch, first locate the affected policies per [§3.6](#s3-6) |
 | 2 | The template allowlist of [§4.1.1](#s4-1-1) | The approved template is allowed; all three of an old version number, an unknown resolver, and a request-level `url` are denied |
-| 3 | The gate parameter contract of [§4.2](#s4-2) (in whichever response shape you actually chose) | Compliant parameters are allowed; all three of switching the gate off / an explicit empty value / **an override field the criterion has never seen** are blocked (the third is the key probe for the denylist shape) |
+| 3 | The gate parameter contract of [§4.2](#s4-2) (in whichever response shape you actually chose) | Compliant parameters are allowed; both switching the gate off and an explicit empty value are blocked. **New override entry points go through two phases — do not demand that a denylist naturally block a field it has never seen** ([§3.6](#s3-6) states it: anything unseen lands on the allow side by default; an "it blocked it" obtained by presenting a known old field as "unknown" is a fake regression pass): **first enumerate** — find the override entry points this upgrade added via the API schema / `kubectl explain` / a diff of real objects against the pre-upgrade archive, probe each one to establish the old criterion's actual direction, and **record any that pass as open gaps — the regression is not passed at this point**; **then govern** — decide whether the entry point can affect the protected behavior; where it can, update the criterion first, then verify the updated policy blocks it (keeping one positive case where normal input is still allowed, against over-blocking). The pass criterion for this step: "every newly added entry point that affects protected behavior is blocked **after the criterion update**" |
 | 4 | One real gate TaskRun | Non-compliant parameters terminate in **the one** response shape you chose, and the three shapes are checked in different places ([§6.2.3](#s6-2-3)): [§4.2.1](#s4-2-1) deny → parent run `CreateRunFailed`; [§4.2.2](#s4-2-2) cancel the parent run → parent run `Cancelled` + the `cancel-reason` annotation; [§4.2.3](#s4-2-3) cancel the gate TaskRun itself → **that TaskRun** `Cancelled` + `spec.statusMessage` (no `cancel-reason` appears on the parent run — do not judge the failure by it) |
 | 5 | One scan that **genuinely fails** (one for sonar and one for trivy) | The corresponding `fail` appears in the PolicyReport. **No `fail` is always judged "acceptance not passed" — never "the scan passed", and it must not be directly classified as "the policy did not match" either** — a policy identity mismatch, a `resourceFilters` skip, a report not yet converged, an object already GC'd all yield the same empty result; work through the five meanings in [§4.4.4](#s4-4-4) one by one |
 | 6 | Have the gate skipped via `when` / an empty matrix | It shows up in `status.skippedTasks`, and the [§4.1.5](#s4-1-5) Audit records the violation |
 | 7 | The Pod image allowlist of [§4.5.3](#s4-5-3) | Approved registries are allowed; unapproved ones are denied on all three paths — **regular containers / init containers / the `ephemeralcontainers` subresource** — with the violating images listed in the message |
 | 8 | The release targets of [§4.5.5](#s4-5-5) | Approved namespaces / credentials are allowed; anything off the list is denied |
-| 9 | When the cancellation policies of [§4.6](#s4-6) are installed: one run whose results miss the bar ([§4.6.1](#s4-6-1)) + one run with definition drift ([§4.6.2](#s4-6-2)) | The target run's `spec.status` gets written to `CancelledRunFinally` with the correct `cancel-reason` wording; **at the same time, confirm this asynchronous chain itself is intact** — `kubectl get updaterequests -n kyverno` shows no pile-up / failures, and the background-controller logs no errors. This chain is precisely what an upgrade breaks most quietly (RBAC aggregation rule changes, UpdateRequest API version changes), and when it breaks there is no denial message of any kind (the asynchronous delivery chain row of [§3.7](#s3-7)) |
+| 9 | When the cancellation policies of [§4.6](#s4-6) are installed: one run whose results miss the bar ([§4.6.1](#s4-6-1)) + one run with definition drift ([§4.6.2](#s4-6-2)) | The target run's `spec.status` gets written to `CancelledRunFinally` with the correct `cancel-reason` wording; **at the same time, confirm the asynchronous chain itself is intact — in a falsifiable way, not with an after-the-fact `kubectl get updaterequests`** (a failed UpdateRequest is deleted after its retries; the after-the-fact get is equally empty for a broken chain and a healthy one, so empty output from that command proves nothing): either **start `kubectl get updaterequests -n kyverno -w` before triggering** and see this run's UpdateRequest reach `Completed` in the watch (`Pending → Failed` repeatedly and then gone = the chain is broken); or check on the background-controller metrics that `kyverno_policy_results_total` for this policy shows a `rule_result="pass"` increase and no `"error"` increase, and that the log has no `failed to mutate existing resource` ERR line for this policy (the three data sources in the asynchronous-delivery-chain row of [§3.7](#s3-7)). This chain is precisely what an upgrade breaks most quietly (RBAC aggregation rule changes, UpdateRequest API version changes), and when it breaks there is no denial message of any kind |
 | 10 | When PolicyException is enabled ([§5.3](#s5-3)) | Denied without an exception → allowed under a controlled exception → denied again after deletion (check all three states; cache revocation takes a moment) |
 | 11 | One complete business pipeline run to its terminal state (if none is handy, use `demo-run-pass` from [§3.3](#s3-3), the compliant fixture used throughout this document) | Check item by item rather than "it ran, good enough": the parent run's terminal state matches pre-upgrade; every child TaskRun in `status.childReferences` reaches its expected terminal state; finally executed; every Audit record that should be in the PolicyReport is there (pull them by run UID with the [§6.2.3](#s6-2-3) commands); and not a single `cancel-reason` or `statusMessage` appears unexpectedly |
 
@@ -2454,7 +2457,7 @@ One boundary in the other direction: **do not treat the message as an audit reco
 
 What this chapter ships is **demo assets**: every scope is pinned to `policy-poc`, and for 11 of the 21 policies **changing the scope and the placeholders is not enough** (the ones marked 🔧 in the "usable as copied?" column of [§4.0.2](#s4-0-2) — 10 of them pin their identity criteria to the demo fixtures, and the remaining one, `pipeline-entry-lockdown`, requires you to complete the list of legitimate automation creators in your environment). **Copied verbatim into production they will not error out, but neither will they work as you expect**, and the two categories fail in opposite directions: the allowlist / contract types will **reject all** of your real pipelines (noisy, spotted at a glance), while the Audit / cancellation / identity-preconditioned types will **silently skip** (not one record in PolicyReport — looking exactly like "no violations"). The five steps below are the complete move from demo assets to production assets; **step 4 is the only one that can uncover silent failure, and must not be skipped**.
 
-1. **Swap the scope**: replace the `policy-poc` listed under `namespaces` in every policy with the range you actually govern. Pick one of the four shapes per [§5.1](#s5-1): **enumerating** namespaces one by one, a `namespaceSelector` selecting by Namespace labels, "platform-level `ClusterPolicy` + **negative `exclude`** carving out system namespaces", or simply **converting to a namespaced `Policy`** for project self-service (the second layer of [§5.2](#s5-2)). For "covered by default, newly created namespaces picked up automatically" you must use the negative-`exclude` shape — enumeration and label selection both naturally miss namespaces created later (the first row of [§3.6](#s3-6)).
+1. **Swap the scope**: replace the `policy-poc` listed under `namespaces` in every policy with the range you actually govern. Pick one of the four shapes per [§5.1](#s5-1): **enumerating** namespaces one by one, a `namespaceSelector` selecting by Namespace labels, "platform-level `ClusterPolicy` + **negative `exclude`** carving out system namespaces", or simply **converting to a namespaced `Policy`** for project self-service (the second layer of [§5.2](#s5-2)). For "covered by default, newly created namespaces picked up automatically" you must use the negative-`exclude` shape — enumeration and label selection both naturally miss namespaces created later (the first row of [§3.6](#s3-6)). While in this step, also confirm that each policy's `spec.webhookConfiguration.failurePolicy` tier matches this cluster's availability plan (the tiering of [§3.7](#s3-7); a bookkeeping-only Audit policy that should run `Ignore` gets changed here, with the accepted vacuum boundary written into the change request).
 2. **Swap the identity criteria**: for the 11 policies marked 🔧 in [§4.0.2](#s4-0-2), replace the demo identities (`gated-build` / `policy-demo-scanner` / `tekton-templates` / the demo task aliases, etc.) with your real template names, Task names, and namespaces, one policy at a time; `pipeline-entry-lockdown` is a different kind — you must **enumerate every legitimate automation creator in the environment** (the inventory method is in that placeholder's row of [§4.0.3](#s4-0-3)).
 3. **Replace the placeholders**: work through [§4.0.3](#s4-0-3) one by one. **Do not just search for angle brackets**: the three rows that section calls out (the hub catalog name `catalog`, the Tekton controller identity, the batch of `approved-*` object names) are bare literals in the policies — searching for `<` will not find them; and conversely the `catalog` row also carries 11 **parameter-key** occurrences that must never be replaced.
 4. **Acceptance** (**mandatory**): run at least the two cells per policy — one **real violating input must produce the failure / audit / cancellation outcome expected for its category**, and one **real compliant input must not be falsely rejected**. Only the Enforce admission types manifest as "violating request denied, compliant request allowed"; the pass criteria for the Audit and cancellation types follow the table below, and the command skeletons are in [§3.4.1](#s3-4-1).
@@ -2580,6 +2583,8 @@ kind: ClusterPolicy
 metadata:
   name: pipeline-template-allowlist
 spec:
+  webhookConfiguration:
+    failurePolicy: Fail
   background: false
   rules:
     - name: only-approved-templates
@@ -2863,6 +2868,8 @@ kind: ClusterPolicy
 metadata:
   name: pipeline-resolved-definition-audit
 spec:
+  webhookConfiguration:
+    failurePolicy: Fail
   background: false
   rules:
     - name: resolved-definition-must-keep-scanner
@@ -3083,6 +3090,8 @@ kind: ClusterPolicy
 metadata:
   name: pipeline-gate-must-execute-audit
 spec:
+  webhookConfiguration:
+    failurePolicy: Fail
   background: false
   rules:
     - name: gate-must-not-be-skipped-by-config
@@ -3337,6 +3346,8 @@ kind: ClusterPolicy
 metadata:
   name: gate-param-contract
 spec:
+  webhookConfiguration:
+    failurePolicy: Fail
   background: false
   rules:
     - name: scan-quality-gate-must-stay-on
@@ -3564,6 +3575,8 @@ kind: ClusterPolicy
 metadata:
   name: gate-param-cancel-existing
 spec:
+  webhookConfiguration:
+    failurePolicy: Fail
   background: false
   rules:
     - name: cancel-parent-on-invalid-scan-gate
@@ -3836,6 +3849,8 @@ kind: ClusterPolicy
 metadata:
   name: gate-param-mutate-to-cancel
 spec:
+  webhookConfiguration:
+    failurePolicy: Fail
   # Admission-time mutation only. The subjects selector below is not allowed in
   # background mode, and no background scanning is needed for this response.
   background: false
@@ -4158,6 +4173,8 @@ kind: ClusterPolicy
 metadata:
   name: sonar-branch-analysis-branch-contract
 spec:
+  webhookConfiguration:
+    failurePolicy: Fail
   background: false
   rules:
     # Rule 1 -- scenario-neutral source integrity: the scanner's hub source must
@@ -4795,6 +4812,8 @@ kind: ClusterPolicy
 metadata:
   name: trivy-gate-must-stay-on
 spec:
+  webhookConfiguration:
+    failurePolicy: Fail
   background: false
   rules:
     - name: trivy-gate-must-stay-on
@@ -5077,6 +5096,8 @@ kind: ClusterPolicy
 metadata:
   name: official-template-gates-on
 spec:
+  webhookConfiguration:
+    failurePolicy: Fail
   background: false
   rules:
     - name: quality-gates-must-stay-enabled
@@ -5850,6 +5871,8 @@ kind: ClusterPolicy
 metadata:
   name: pipeline-run-defaults
 spec:
+  webhookConfiguration:
+    failurePolicy: Fail
   background: false
   rules:
     - name: inject-label-and-default-timeout
@@ -6043,6 +6066,8 @@ kind: ClusterPolicy
 metadata:
   name: scan-verdict-audit
 spec:
+  webhookConfiguration:
+    failurePolicy: Fail
   background: false
   rules:
     - name: sonar-verdict-must-pass
@@ -6319,6 +6344,8 @@ kind: ClusterPolicy
 metadata:
   name: vuln-summary-audit
 spec:
+  webhookConfiguration:
+    failurePolicy: Fail
   background: false
   rules:
     - name: trivy-summary-metadata-must-pass
@@ -6788,6 +6815,8 @@ kind: ClusterPolicy
 metadata:
   name: vuln-threshold-audit
 spec:
+  webhookConfiguration:
+    failurePolicy: Fail
   background: false
   rules:
     - name: no-critical-vulns
@@ -7135,6 +7164,8 @@ kind: ClusterPolicy
 metadata:
   name: inventory-ungated-runs
 spec:
+  webhookConfiguration:
+    failurePolicy: Fail
   background: true
   rules:
     - name: pipelinerun-should-carry-gated-label
@@ -7367,6 +7398,8 @@ kind: ClusterPolicy
 metadata:
   name: artifact-source-allowlist
 spec:
+  webhookConfiguration:
+    failurePolicy: Fail
   background: false
   rules:
     - name: skopeo-sources-from-approved-registries
@@ -7618,6 +7651,8 @@ kind: ClusterPolicy
 metadata:
   name: promotion-source-image-labels
 spec:
+  webhookConfiguration:
+    failurePolicy: Fail
   background: false
   rules:
     - name: src-image-must-carry-build-label
@@ -7767,6 +7802,8 @@ kind: ClusterPolicy
 metadata:
   name: pod-image-registry-allowlist
 spec:
+  webhookConfiguration:
+    failurePolicy: Fail
   background: false
   rules:
     - name: tekton-step-images-from-approved-registries
@@ -8141,6 +8178,8 @@ kind: ClusterPolicy
 metadata:
   name: pod-image-registry-allowlist
 spec:
+  webhookConfiguration:
+    failurePolicy: Fail
   background: false
   rules:
     - name: tekton-step-images-from-approved-registries
@@ -8378,6 +8417,8 @@ kind: ClusterPolicy
 metadata:
   name: pipeline-entry-lockdown
 spec:
+  webhookConfiguration:
+    failurePolicy: Fail
   background: false
   rules:
     - name: only-controller-creates-runs
@@ -8493,6 +8534,8 @@ kind: ClusterPolicy
 metadata:
   name: release-target-allowlist
 spec:
+  webhookConfiguration:
+    failurePolicy: Fail
   background: false
   rules:
     - name: deploy-targets-must-be-approved
@@ -9113,6 +9156,8 @@ kind: ClusterPolicy
 metadata:
   name: cancel-on-failed-verdict
 spec:
+  webhookConfiguration:
+    failurePolicy: Fail
   background: false
   rules:
     - name: cancel-parent-on-low-coverage
@@ -9353,6 +9398,8 @@ kind: ClusterPolicy
 metadata:
   name: cancel-run-without-gate
 spec:
+  webhookConfiguration:
+    failurePolicy: Fail
   background: false
   rules:
     - name: self-cancel-on-missing-gate
@@ -9616,6 +9663,8 @@ kind: ClusterPolicy
 metadata:
   name: pipeline-baseline
 spec:
+  webhookConfiguration:
+    failurePolicy: Fail
   background: false
   rules:
     - name: baseline-for-every-business-namespace
@@ -9656,6 +9705,8 @@ kind: ClusterPolicy
 metadata:
   name: project-alpha-tightening
 spec:
+  webhookConfiguration:
+    failurePolicy: Fail
   background: false
   rules:
     - name: alpha-extra-restriction
@@ -9757,7 +9808,7 @@ kubectl wait --for=condition=Ready clusterpolicy/project-alpha-tightening --time
 
 **The key conclusion**: with the baseline built on a negative `exclude`, an unclassified namespace has **nowhere to escape to**; with the tightening built on a positive `namespaceSelector`, it applies only to the target project. When multiple policies match the same resource the relationship is AND — a run in `proj-a` is constrained by the baseline and the tightening at once.
 
-**Project administrators' self-service governance**: the `project-alpha-tightening` above is only the platform-managed spelling. Under the project-autonomy model, put the same `spec.rules` into a `kind: Policy`, set `metadata.namespace` to the project namespace, and drop the `namespaceSelector` from the rule (a namespaced `Policy` naturally applies only to that namespace). Platform RBAC grants only the designated project administrators the right to manage `Policy` inside their namespace, and **does not grant `ClusterPolicy` permissions**. The prerequisites are that Kyverno has been installed by the platform and that the project role has been granted management of `policies.kyverno.io` inside this namespace; once that one-time platform configuration is done, project administrators' day-to-day rule adjustments need no platform-administrator role.
+**Project administrators' self-service governance**: the `project-alpha-tightening` above is only the platform-managed spelling. Under the project-autonomy model, put the same `spec.rules` into a `kind: Policy`, set `metadata.namespace` to the project namespace, and drop the `namespaceSelector` from the rule (a namespaced `Policy` naturally applies only to that namespace); carry the `spec.webhookConfiguration` tier declaration over unchanged — a namespaced `Policy` supports the same field, and its generated webhooks are grouped by value the same way. Platform RBAC grants only the designated project administrators the right to manage `Policy` inside their namespace, and **does not grant `ClusterPolicy` permissions**. The prerequisites are that Kyverno has been installed by the platform and that the project role has been granted management of `policies.kyverno.io` inside this namespace; once that one-time platform configuration is done, project administrators' day-to-day rule adjustments need no platform-administrator role.
 
 | Deployment mode | Policy resource | Maintainer | Effective scope |
 |---|---|---|---|
@@ -9916,6 +9967,8 @@ kind: ClusterPolicy
 metadata:
   name: exempt-namespace-approver-only
 spec:
+  webhookConfiguration:
+    failurePolicy: Fail
   background: false
   rules:
     - name: only-approver-creates-exempt-runs
@@ -11166,7 +11219,7 @@ kubectl get validatingwebhookconfiguration -o custom-columns=\
 'NAME:.metadata.name,FAIL:.webhooks[*].failurePolicy' | grep kyverno   # failure policy
 ```
 
-`failurePolicy: Fail` = reject the relevant requests while Kyverno is unavailable (safety first — but with too few controller replicas, or inside a rolling-update window, requests may be briefly rejected; Tekton retries); `Ignore` = allow them through (availability first, at the cost of a brief policy vacuum). **The actual value is whatever the webhook configuration in your target ACP environment says** (do not assume a fixed default), and plan controller replica count and HA accordingly (production should not sit on a single replica for long).
+`failurePolicy: Fail` = reject the relevant requests while Kyverno is unavailable (safety first — but with too few controller replicas, or inside a rolling-update window, requests may be briefly rejected; Tekton retries); `Ignore` = allow them through (availability first, at the cost of a brief policy vacuum). The default under the applicable versions is `Fail` / `timeoutSeconds=10` (the 1.15 CRD), but **the value actually in effect for a given policy can be rewritten by two layers** — the policy body's `spec.webhookConfiguration` (this document's assets declare it explicitly; tiering in [§3.7](#s3-7)) and the platform-level `forceFailurePolicyIgnore` override — so judge behavior by reading the policy's declaration and then checking the generated webhook grouping (the two-layer reading of checklist item 6 in [§3.1](#s3-1)), not by assuming the default; and plan controller replica count and HA accordingly (production should not sit on a single replica for long).
 
 ### 6.2 Pipeline users (whose runs are blocked) {#s6-2}
 
@@ -11216,7 +11269,7 @@ Troubleshoot in exactly that order: **first look for a TaskRun carrying a `statu
 - **Shapes 2 / 3 / 4 (the parent run carries this one marker only)**: drop it and **nothing can distinguish "policy cancellation" from "someone cancelled it by hand"** — the `Cancelled` terminal state is exactly identical in both cases. All you can do then is **infer** from "some result is clearly out of bounds" — and inference is not evidence; in an audit context it can only be recorded as "cause unknown" ([§4.0.6](#s4-0-6), [§4.4.4](#s4-4-4)).
 - **Shape 1 ([§4.2.3](#s4-2-3)) has a second marker**: the same patch also writes `spec.statusMessage`, whose text begins with `Cancelled by policy <policy-name>:` and is spliced verbatim into the TaskRun's failure condition. So this path **stays judgeable even with the annotation lost**; conversely, keeping only the annotation and deleting the `statusMessage` means the person who got blocked sees no reason in `tkn` / the console — **delete neither**.
 
-⚠️ **Watch for the reverse as well: it should have been cancelled, but was not**. Shapes 2 / 3 / 4 are all mutate-existing — the cancellation is delivered asynchronously in the background; when a result is plainly out of bounds yet the pipeline runs to completion with neither `spec.status` nor `cancel-reason` on the parent run, the cause is usually not a missed criterion but a broken delivery chain (`context.apiCall` cannot reach the target, the UpdateRequest never got created, the background-controller is down or backlogged, the update RBAC on the target was revoked). This failure **produces no denial message and no PolicyReport violation record**: look at the background-controller logs and `kubectl get updaterequests -n kyverno` first, and suspect the criterion itself only last (mechanism and monitoring items in the "asynchronous delivery chain" row of [§3.7](#s3-7)).
+⚠️ **Watch for the reverse as well: it should have been cancelled, but was not**. Shapes 2 / 3 / 4 are all mutate-existing — the cancellation is delivered asynchronously in the background; when a result is plainly out of bounds yet the pipeline runs to completion with neither `spec.status` nor `cancel-reason` on the parent run, the cause is usually not a missed criterion but a broken delivery chain (`context.apiCall` cannot reach the target, the UpdateRequest never got created, the background-controller is down or backlogged, the update RBAC on the target was revoked). This failure **produces no denial message and no PolicyReport violation record**. Troubleshooting order: first the background-controller logs (the deterministic signature is a `failed to mutate existing resource` ERR line carrying a `policy=` field) and the `rule_result="error"` count of that policy's `kyverno_policy_results_total` in the metrics; **do not treat an after-the-fact `kubectl get updaterequests -n kyverno` as evidence** — a failed UpdateRequest is deleted after its retries, the after-the-fact query is invariably empty, and empty output does not mean the chain is fine (to see UpdateRequests at all, start a `-w` watch before reproducing); suspect the criterion itself only last (mechanism and monitoring items in the "asynchronous delivery chain" row of [§3.7](#s3-7)).
 
 The commands below pull the evidence:
 
