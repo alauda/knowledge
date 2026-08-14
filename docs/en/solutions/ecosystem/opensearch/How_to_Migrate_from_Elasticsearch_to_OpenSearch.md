@@ -135,7 +135,7 @@ masterNodes:
 
 extraInitContainers:
   - name: install-plugins
-    image: docker.elastic.co/elasticsearch/elasticsearch-oss:7.10.2
+    image: <the-image-your-elasticsearch-nodes-run>  # see the note below
     command:
       - sh
       - -c
@@ -155,7 +155,14 @@ extraVolumeMounts:
 ```
 
 :::note
-- The init container must use the **same Elasticsearch image your nodes already run**. The image above is an example.
+- The init container must use the **same Elasticsearch image your nodes already run** — the plugin is installed into a volume that the node container then mounts, and a different distribution (for example an `-oss` image against a cluster that runs the default distribution) produces a plugin the node refuses to load. Read the image off the running workload and paste that exact value:
+
+  ```bash
+  kubectl get sts -n <namespace> <elasticsearch-sts-name> \
+    -o jsonpath='{.spec.template.spec.containers[0].image}'
+  ```
+
+  Air-gapped clusters can only pull from the internal registry the instance was deployed from, which is another reason to reuse the running image rather than a public one.
 - Mounting an `emptyDir` at `/usr/share/elasticsearch/plugins` hides anything already installed in that directory, so the init container must install every plugin the cluster needs, not just `repository-s3`.
 - The above configuration only sets S3 configs for master nodes. If you have dedicated data nodes, add the same S3 config to `dataNodes` as well.
 :::
@@ -185,7 +192,7 @@ spec:
 :::warning Every change to `additionalConfig` or `pluginsList` restarts the whole cluster
 
 - Both approaches trigger a **rolling restart of every node**, one at a time, to load the new configuration or plugin.
-- Every entry under `additionalConfig` is rendered as an environment variable on **every** pod, including the transient bootstrap pod, and OpenSearch reads it as a setting. The Operator **does not validate these values**. An unknown or misspelled setting is only rejected when the node boots, and the node then fails to start — see [Troubleshooting](#troubleshooting).
+- With **Operator 2.8.x**, every entry under `additionalConfig` is rendered as an environment variable on **every** pod, including the transient bootstrap pod, and OpenSearch reads it as a setting. (Other Operator versions may render the same entries into a mounted `opensearch.yml` ConfigMap instead — check both when you verify a setting.) The Operator **does not validate these values**. An unknown or misspelled setting is only rejected when the node boots, and the node then fails to start — see [Troubleshooting](#troubleshooting).
 - Because nodes are restarted one at a time, verify that the first restarted node returns to `Running` and `Ready` before letting the rollout continue. If it does not, fix the configuration before the remaining nodes pick it up.
 - Plugins in `pluginsList` are downloaded and installed **on every pod start**, not once. The URL must stay reachable from every node, or use an image with the plugin pre-installed.
 :::
@@ -328,6 +335,7 @@ spec:
       s3.client.default.endpoint: "http://minio.example.com:9000"
       s3.client.default.region: "us-east-1"
       s3.client.default.path_style_access: "true"
+      # Only needed when no securityConfigSecret is supplied - see the warning below.
       # OpenSearch 2.12 and later refuse to start without an initial admin password.
       OPENSEARCH_INITIAL_ADMIN_PASSWORD: "<strong-password>"
     pluginsList:
@@ -345,15 +353,15 @@ spec:
     ...
   security:
     config:
-      # credentials the Operator itself uses to reach the cluster; the password must be the
-      # same one set through OPENSEARCH_INITIAL_ADMIN_PASSWORD above
+      # credentials the Operator itself uses to reach the cluster; the password must match
+      # the admin password the cluster is initialized with (see the warning below)
       adminCredentialsSecret:
-        name: admin-credentials
+        name: admin-credentials-secret
 ```
 
 :::warning Two settings the cluster will not start without
 
-**1. `bootstrap.pluginsList`.** The Operator renders every `general.additionalConfig` entry as an environment variable on **all** pods, including the transient bootstrap pod. The `s3.client.*` entries are only valid settings when `repository-s3` is installed, so if the bootstrap pod does not install the plugin it fails immediately with:
+**1. `bootstrap.pluginsList`.** With Operator 2.8.x, every `general.additionalConfig` entry is rendered as an environment variable on **all** pods, including the transient bootstrap pod. The `s3.client.*` entries are only valid settings when `repository-s3` is installed, so if the bootstrap pod does not install the plugin it fails immediately with:
 
 ```text
 StartupException: unknown setting [s3.client.default.region] please check that any
@@ -362,9 +370,19 @@ required plugins are installed, or check the breaking changes documentation for 
 
 The bootstrap pod then crash-loops, and because the other nodes are pinned to it through `cluster.initial_master_nodes`, the cluster never forms.
 
-**2. An initial admin password.** From OpenSearch 2.12 onwards the demo password is rejected and the node exits with `No custom admin password found. Please provide a password via the environment variable OPENSEARCH_INITIAL_ADMIN_PASSWORD`. `security.config.adminCredentialsSecret` does **not** supply it — that secret is only used by the Operator to authenticate to the cluster. Because the bootstrap pod has no `env` field of its own, the password has to be passed through `additionalConfig`, which the Operator turns into environment variables on every pod.
+**2. An initial admin password.** From OpenSearch 2.12 onwards the demo password is rejected and the node exits with `No custom admin password found. Please provide a password via the environment variable OPENSEARCH_INITIAL_ADMIN_PASSWORD`. `security.config.adminCredentialsSecret` does **not** supply it — that secret is only used by the Operator to authenticate to the cluster.
 
-Note that a value placed in `additionalConfig` is stored in plain text in the cluster resource. Restrict access to the resource accordingly, and prefer supplying a complete security configuration through `security.config.securityConfigSecret` for anything beyond a short-lived migration cluster.
+There are two ways to satisfy this, and the right one depends on how long the cluster will live:
+
+- **Recommended — supply a full security configuration.** Create a `securityConfigSecret` holding `internal_users.yml` with the bcrypt hash of the admin password, alongside the matching `adminCredentialsSecret`. The security plugin then initializes from that configuration and the initial-password check no longer applies. This is the approach used everywhere else in this product; follow [How to Set and Update the OpenSearch Admin Password](./How_to_update_opensearch_admin_password.md) and skip the `OPENSEARCH_INITIAL_ADMIN_PASSWORD` entry above.
+- **Short-lived migration cluster only — `OPENSEARCH_INITIAL_ADMIN_PASSWORD` through `additionalConfig`.** With Operator 2.8.x the bootstrap pod has no `env` field of its own, so the only way to reach it is `general.additionalConfig`, which that Operator version turns into environment variables on every pod. Two caveats: the value is stored **in plain text** in the cluster resource, and the trick depends on the env-var rendering — on an Operator version that writes `additionalConfig` into `opensearch.yml` instead, this key becomes an unknown setting and every node fails to start exactly as described in [Troubleshooting](#troubleshooting). Verify it landed as an environment variable before relying on it:
+
+  ```bash
+  kubectl get sts -n <namespace> <cluster-name>-<nodepool> \
+    -o jsonpath='{.spec.template.spec.containers[0].env}' | tr ',' '\n' | grep OPENSEARCH_INITIAL_ADMIN_PASSWORD
+  ```
+
+Delete the migration cluster, or rotate the password through the security configuration, once the migration is finished.
 :::
 
 #### Step 2: Restore the Snapshot on OpenSearch
@@ -583,6 +601,14 @@ SettingsException[unknown setting [reindex.remote.whitelist] ...]
 Applying this change restarts the nodes one at a time. Confirm the first restarted node returns to `Running` and `Ready` before the rollout continues — see [Troubleshooting](#troubleshooting).
 :::
 
+**Confirm the setting actually took effect** once the rollout finishes. A misspelled setting crashes the node loudly, but a setting the Operator fails to propagate is silent — the nodes stay healthy and the reindex request later fails with `[es8-cluster-host:9200] not allowlisted in reindex.remote.allowlist`:
+
+```bash
+curl -k -u "admin:<password>" "https://localhost:9200/_nodes/settings?filter_path=**.reindex*"
+```
+
+Every node must report the allowlist. If the response is empty, the entry did not reach the nodes ([opensearch-k8s-operator#883](https://github.com/opensearch-project/opensearch-k8s-operator/issues/883) tracks this); set it on `nodePools[].additionalConfig` instead, or bake it into an `opensearch.yml` in a custom image, and check again before continuing.
+
 #### Step 2: Create Index Templates on OpenSearch (Optional but Recommended)
 
 If your ES 8.x indices rely on specific settings or mappings, it is recommended to manually create the corresponding Index Templates or Mappings in OpenSearch beforehand.
@@ -640,7 +666,7 @@ curl -k -u "elastic:<password>" "https://es8-cluster-host:9200/migration_test/_c
 
 ### A node stays in CrashLoopBackOff after a configuration change
 
-Every entry under `spec.general.additionalConfig` is rendered as an environment variable on the pods and read by OpenSearch as a setting. The Operator does not validate these values. An unknown or misspelled setting is rejected when the node boots, and the node never starts:
+Every entry under `spec.general.additionalConfig` is passed through to OpenSearch as a setting — with Operator 2.8.x, as an environment variable on the pods. The Operator does not validate these values. An unknown or misspelled setting is rejected when the node boots, and the node never starts:
 
 ```text
 [ERROR][o.o.b.OpenSearchUncaughtExceptionHandler] uncaught exception in thread [main]
@@ -662,10 +688,14 @@ kubectl logs -n <namespace> <cluster-name>-masters-0 --tail=50
 kubectl edit opensearchcluster -n <namespace> <cluster-name>
 
 # 3. Confirm the Operator has regenerated the configuration.
-#    additionalConfig entries become environment variables on the pods - the Operator does
-#    not write an opensearch.yml ConfigMap, so check the StatefulSet, not a ConfigMap.
+#    With Operator 2.8.x, additionalConfig entries become environment variables on the pods,
+#    so check the StatefulSet first:
 kubectl get sts -n <namespace> <cluster-name>-<nodepool> \
   -o jsonpath='{.spec.template.spec.containers[0].env}' | tr ',' '\n' | grep '<setting-name>'
+
+#    Other Operator versions render the same entries into a mounted opensearch.yml instead.
+#    If the setting is not in the StatefulSet env, look for it in the cluster's ConfigMaps:
+kubectl get cm -n <namespace> -o yaml | grep '<setting-name>'
 
 # 4. Restart the failing pod so it picks up the new configuration
 kubectl delete pod -n <namespace> <cluster-name>-masters-0
