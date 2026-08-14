@@ -7,19 +7,21 @@ ProductsVersion:
   - '4.2.x,4.3.x,4.4.x'
 ---
 
-# NodeLocal DNSCache 端口冲突、DNS 单点和指标访问问题的临时规避方案
+# NodeLocal DNSCache 常见现场问题的临时规避方案
 
-## 问题
+本文提供 NodeLocal DNSCache 三类常见现场问题的临时规避方案：
 
-在 ACP 集群中启用 NodeLocal DNSCache 后，可能出现以下风险：
+- 健康检查端口 `8080` 冲突。
+- `node-cache` Pod 异常后，节点上新建或存量 Pod 的 DNS 解析受影响。
+- Prometheus metrics 绑定到 NodeLocal DNSCache IP 后，外部监控或面板无法采集。
 
-- `node-cache` Pod 使用 `hostNetwork: true`，并在节点 loopback `127.0.0.1:8080` 上暴露健康检查端点。如果节点上的业务进程、运维代理或 `hostNetwork` Pod 也绑定 `127.0.0.1:8080` 或 `0.0.0.0:8080`，会发生端口冲突。
-- NodeLocal DNSCache 生效后，新建 Pod 使用节点本地 DNS 地址作为 DNS 服务器。当某个节点上的 `node-cache` Pod 不可用时，该节点上 Pod 的 DNS 解析可能失败，且不会自动无感切换到 CoreDNS。
-- 如果 Corefile 中的 `prometheus` 指令绑定到 NodeLocal DNSCache IP，例如 `169.254.20.10:9253`，外部监控或面板可能无法访问该 metrics 端点。
+这些方案仅用于临时规避。插件升级、重装、平台调谐、chart 重新渲染或节点重建后，手工修改可能被覆盖。建议在变更窗口执行，并在修改前保留备份。
 
-## 根本原因
+## 问题 1：NodeLocal DNSCache 健康检查端口占用 8080
 
-当前 NodeLocal DNSCache 插件只暴露 NodeLocal DNS IP 参数，未暴露健康检查端口或 kubelet 多 DNS server 参数。插件生成的 Corefile 和 DaemonSet 探针默认使用 `8080`：
+**现象：** 启用 NodeLocal DNSCache 后，节点上的业务进程、运维代理或 `hostNetwork` Pod 无法绑定 `127.0.0.1:8080` 或 `0.0.0.0:8080`。
+
+**原因：** `node-cache` Pod 使用 `hostNetwork: true`，并在节点 loopback `127.0.0.1:8080` 上暴露健康检查端点。当前插件未暴露健康检查端口参数，生成的 Corefile 和 DaemonSet 探针默认使用 `8080`。
 
 ```text
 health 127.0.0.1:8080
@@ -33,17 +35,7 @@ livenessProbe:
     port: 8080
 ```
 
-插件安装任务还会把 kubelet `--cluster-dns` 配置为 NodeLocal DNSCache IP。如果需要释放 `8080`，或把 CoreDNS ClusterIP 作为辅助 DNS server，需要临时修改运行中资源或节点 kubelet 配置。
-
-对于 metrics 访问问题，根因通常是 Corefile 中的 `prometheus` 指令绑定到了 NodeLocal DNSCache IP，而不是只监听端口。外部监控采集路径无法访问该节点本地地址时，就会拿不到指标。
-
-## 解决方案
-
-以下方案仅用于临时规避。插件升级、重装、平台调谐、chart 重新渲染或节点重建后，手工修改可能被覆盖。建议在变更窗口执行，并在修改前保留备份。
-
-### 方案一：修改 NodeLocal DNSCache 健康检查端口
-
-该方案适用于必须释放节点本地 `8080` 端口的场景。需要同时修改 Corefile 中的 `health` 端口和 DaemonSet 探针端口，两个位置必须保持一致。
+**解决方案：** 同时修改 Corefile 中的 `health` 端口和 DaemonSet 探针端口，两个位置必须保持一致。
 
 先确认资源名称，并备份当前资源：
 
@@ -87,7 +79,7 @@ livenessProbe:
     port: 18080
 ```
 
-如果目标环境中还存在访问 `/health` 或 `8080` 的 `readinessProbe`，也需要同步修改。不要修改 DNS 服务端口 `53` 或 metrics 端口 `9353`。
+如果目标环境中还存在访问 `/health` 或 `8080` 的 `readinessProbe`，也需要同步修改。不要修改 DNS 服务端口 `53` 或现场 metrics 端口；本问题只处理健康检查端口。
 
 等待 DaemonSet 滚动更新完成，并验证 DNS 解析正常：
 
@@ -105,9 +97,21 @@ ss -ltnp | grep ':8080'
 
 预期 `18080` 由 NodeLocal DNSCache 监听，`8080` 不再由 NodeLocal DNSCache 监听。
 
-### 方案二：配置 CoreDNS ClusterIP 作为辅助 DNS server
+**回滚：** 如果修改健康检查端口后异常，恢复备份的 ConfigMap 和 DaemonSet：
 
-该方案适用于希望降低 NodeLocal DNSCache 单点影响的场景。配置后，新建 Pod 的 `/etc/resolv.conf` 中同时包含 NodeLocal DNSCache IP 和 CoreDNS ClusterIP。
+```bash
+kubectl apply -f node-local-dns-cm.backup.yaml
+kubectl apply -f node-local-dns-ds.backup.yaml
+kubectl -n kube-system rollout status ds/node-local-dns
+```
+
+## 问题 2：`node-cache` Pod 异常后节点 DNS 解析失败
+
+**现象：** NodeLocal DNSCache 生效后，新建 Pod 使用节点本地 DNS 地址作为 DNS 服务器。当某个节点上的 `node-cache` Pod 异常、被驱逐或升级重启时，该节点上 Pod 的 DNS 解析可能失败。
+
+**原因：** 插件安装任务会把 kubelet `--cluster-dns` 配置为 NodeLocal DNSCache IP。默认情况下，新建 Pod 的 `/etc/resolv.conf` 只有 NodeLocal DNSCache IP，没有 CoreDNS ClusterIP 作为辅助 DNS server。
+
+**解决方案：** 将 CoreDNS ClusterIP 配置为 kubelet 的辅助 DNS server。配置后，新建 Pod 的 `/etc/resolv.conf` 中同时包含 NodeLocal DNSCache IP 和 CoreDNS ClusterIP。
 
 该方案不是无感故障切换机制。不同业务镜像中的 DNS 解析器重试行为不同；当第一个 DNS server 不可用时，部分工作负载可能需要等待超时后才尝试下一个 DNS server，故障期间 DNS 解析可能变慢。
 
@@ -166,9 +170,22 @@ nameserver 10.96.0.10
 
 如果集群启用了 NetworkPolicy，需要同时放行 Pod 访问 NodeLocal DNSCache IP 和 CoreDNS ClusterIP 的 TCP/UDP `53` 端口。
 
-### 方案三：去掉 Prometheus metrics 的固定 IP 绑定
+**回滚：** 如果配置多个 DNS server 后异常，登录已修改节点，将 `/var/lib/kubelet/kubeadm-flags.env` 恢复为备份文件并重启 kubelet：
 
-该方案适用于外部监控或面板无法访问 NodeLocal DNSCache metrics 的场景。只修改 Corefile 中的 `prometheus` 监听地址，不修改 DNS 服务端口。
+```bash
+sudo cp -a /var/lib/kubelet/kubeadm-flags.env.bak.<timestamp> /var/lib/kubelet/kubeadm-flags.env
+sudo systemctl restart kubelet
+```
+
+然后重建受影响 Pod，使其 `/etc/resolv.conf` 重新生成。
+
+## 问题 3：Prometheus metrics 绑定固定 NodeLocal DNSCache IP 后无法被外部采集
+
+**现象：** 外部监控或面板无法访问 NodeLocal DNSCache metrics。
+
+**原因：** Corefile 中的 `prometheus` 指令可能绑定到了 NodeLocal DNSCache IP，例如 `169.254.20.10:9253`。如果外部监控采集路径无法访问该节点本地地址，就会拿不到指标。
+
+**解决方案：** 只修改 Corefile 中的 `prometheus` 监听地址，不修改 DNS 服务端口。
 
 先备份当前 ConfigMap：
 
@@ -213,54 +230,7 @@ kubectl -n "$NS" rollout status ds "$DS"
 kubectl -n "$NS" get cm "$CM" -o yaml | grep 'prometheus'
 ```
 
-## 诊断步骤
-
-确认 NodeLocal DNSCache 是否安装、Pod 是否就绪：
-
-```bash
-kubectl -n kube-system get pods -l k8s-app=node-local-dns -o wide
-kubectl -n kube-system rollout status ds/node-local-dns
-```
-
-确认当前 Corefile 和 DaemonSet 探针是否仍使用 `8080`：
-
-```bash
-kubectl -n kube-system get cm node-local-dns -o yaml | grep 'health 127.0.0.1'
-kubectl -n kube-system get ds node-local-dns -o yaml | grep -A5 -E 'livenessProbe|readinessProbe'
-```
-
-确认 Corefile 中的 metrics 监听地址：
-
-```bash
-kubectl -n kube-system get cm node-local-dns -o yaml | grep 'prometheus'
-```
-
-确认新建 Pod 实际使用的 DNS server：
-
-```bash
-kubectl run dns-check --rm -it --restart=Never --image=busybox:1.36 -- cat /etc/resolv.conf
-```
-
-## 回滚
-
-如果修改健康检查端口后异常，恢复备份的 ConfigMap 和 DaemonSet：
-
-```bash
-kubectl apply -f node-local-dns-cm.backup.yaml
-kubectl apply -f node-local-dns-ds.backup.yaml
-kubectl -n kube-system rollout status ds/node-local-dns
-```
-
-如果配置多个 DNS server 后异常，登录已修改节点，将 `/var/lib/kubelet/kubeadm-flags.env` 恢复为备份文件并重启 kubelet：
-
-```bash
-sudo cp -a /var/lib/kubelet/kubeadm-flags.env.bak.<timestamp> /var/lib/kubelet/kubeadm-flags.env
-sudo systemctl restart kubelet
-```
-
-然后重建受影响 Pod，使其 `/etc/resolv.conf` 重新生成。
-
-如果修改 metrics 监听地址后异常，恢复备份的 ConfigMap，并重启 DaemonSet：
+**回滚：** 如果修改 metrics 监听地址后异常，恢复备份的 ConfigMap，并重启 DaemonSet：
 
 ```bash
 kubectl apply -f node-local-dns-cm.backup.yaml

@@ -7,19 +7,21 @@ ProductsVersion:
   - '4.2.x,4.3.x,4.4.x'
 ---
 
-# Temporary Workarounds for NodeLocal DNSCache Port Conflicts, DNS Single-Point Risk, and Metrics Access Issues
+# Temporary Workarounds for Common NodeLocal DNSCache Issues in Field Environments
 
-## Problem
+This article provides temporary workarounds for three common NodeLocal DNSCache issues in field environments:
 
-After NodeLocal DNSCache is enabled in an ACP cluster, the following risks may occur:
+- Health check port `8080` conflicts.
+- DNS resolution is affected when the `node-cache` Pod on a node is unavailable.
+- External monitoring systems or dashboards cannot collect Prometheus metrics because the metrics endpoint binds to the NodeLocal DNSCache IP.
 
-- The `node-cache` Pod runs with `hostNetwork: true` and exposes its health check endpoint on the node loopback `127.0.0.1:8080`. If a business process, operations agent, or `hostNetwork` Pod on the same node also binds `127.0.0.1:8080` or `0.0.0.0:8080`, a port conflict occurs.
-- After NodeLocal DNSCache takes effect, newly created Pods use the node-local DNS address as their DNS server. If the `node-cache` Pod on a node is unavailable, DNS resolution for Pods on that node may fail and does not automatically switch to CoreDNS without impact.
-- If the Corefile `prometheus` directive binds to the NodeLocal DNSCache IP, for example `169.254.20.10:9253`, external monitoring systems or dashboards may fail to access the metrics endpoint.
+These workarounds are temporary. Manual changes may be overwritten after plugin upgrade, plugin reinstall, platform reconciliation, chart re-rendering, or node rebuild. Perform the change in a maintenance window and keep backups before editing resources.
 
-## Root Cause
+## Issue 1: NodeLocal DNSCache health check uses port 8080
 
-The current NodeLocal DNSCache plugin exposes only the NodeLocal DNS IP parameter. It does not expose the health check port or multiple DNS server settings for kubelet. The generated Corefile and DaemonSet probe use `8080` by default:
+**Symptom:** After NodeLocal DNSCache is enabled, a business process, operations agent, or `hostNetwork` Pod on the node cannot bind `127.0.0.1:8080` or `0.0.0.0:8080`.
+
+**Cause:** The `node-cache` Pod runs with `hostNetwork: true` and exposes its health check endpoint on the node loopback `127.0.0.1:8080`. The current plugin does not expose the health check port. The generated Corefile and DaemonSet probe use `8080` by default.
 
 ```text
 health 127.0.0.1:8080
@@ -33,17 +35,7 @@ livenessProbe:
     port: 8080
 ```
 
-The plugin installation job also configures kubelet `--cluster-dns` to the NodeLocal DNSCache IP. To release port `8080`, or to use CoreDNS ClusterIP as an additional DNS server, you need to temporarily modify runtime resources or node kubelet configuration.
-
-For metrics access issues, the common root cause is that the Corefile `prometheus` directive binds to the NodeLocal DNSCache IP instead of listening only on a port. If the external monitoring path cannot reach that node-local address, metrics cannot be collected.
-
-## Resolution
-
-The following workarounds are temporary. Manual changes may be overwritten after plugin upgrade, plugin reinstall, platform reconciliation, chart re-rendering, or node rebuild. Perform the change in a maintenance window and keep backups before editing resources.
-
-### Workaround 1: Change the NodeLocal DNSCache health check port
-
-Use this workaround when node-local port `8080` must be released. Change both the Corefile `health` port and the DaemonSet probe port. The two values must stay consistent.
+**Resolution:** Change both the Corefile `health` port and the DaemonSet probe port. The two values must stay consistent.
 
 Confirm resource names and back up current resources:
 
@@ -87,7 +79,7 @@ livenessProbe:
     port: 18080
 ```
 
-If the target environment also has a `readinessProbe` that accesses `/health` or `8080`, change it as well. Do not change DNS service port `53` or metrics port `9353`.
+If the target environment also has a `readinessProbe` that accesses `/health` or `8080`, change it as well. Do not change DNS service port `53` or the metrics port used in the environment. This issue only requires changing the health check port.
 
 Wait for the DaemonSet rolling update to complete and verify DNS resolution:
 
@@ -105,9 +97,21 @@ ss -ltnp | grep ':8080'
 
 The expected result is that `18080` is listened on by NodeLocal DNSCache, and `8080` is no longer listened on by NodeLocal DNSCache.
 
-### Workaround 2: Configure CoreDNS ClusterIP as an additional DNS server
+**Rollback:** If changing the health check port causes problems, restore the backed-up ConfigMap and DaemonSet:
 
-Use this workaround when you want to reduce the single-point impact of NodeLocal DNSCache. After configuration, newly created Pods have both the NodeLocal DNSCache IP and CoreDNS ClusterIP in `/etc/resolv.conf`.
+```bash
+kubectl apply -f node-local-dns-cm.backup.yaml
+kubectl apply -f node-local-dns-ds.backup.yaml
+kubectl -n kube-system rollout status ds/node-local-dns
+```
+
+## Issue 2: DNS resolution fails when the `node-cache` Pod is unavailable
+
+**Symptom:** After NodeLocal DNSCache takes effect, newly created Pods use the node-local DNS address as their DNS server. If the `node-cache` Pod on a node becomes unavailable, is evicted, or restarts during an upgrade, DNS resolution for Pods on that node may fail.
+
+**Cause:** The plugin installation job configures kubelet `--cluster-dns` to the NodeLocal DNSCache IP. By default, newly created Pods have only the NodeLocal DNSCache IP in `/etc/resolv.conf`, without the CoreDNS ClusterIP as an additional DNS server.
+
+**Resolution:** Configure CoreDNS ClusterIP as an additional DNS server for kubelet. After configuration, newly created Pods have both the NodeLocal DNSCache IP and CoreDNS ClusterIP in `/etc/resolv.conf`.
 
 This is not a transparent failover mechanism. DNS resolver retry behavior differs between business images. When the first DNS server is unavailable, some workloads may wait for timeout before trying the next DNS server, which can slow down DNS resolution during the failure.
 
@@ -166,9 +170,22 @@ nameserver 10.96.0.10
 
 If NetworkPolicy is enabled in the cluster, allow Pods to access both the NodeLocal DNSCache IP and CoreDNS ClusterIP on TCP/UDP port `53`.
 
-### Workaround 3: Remove the fixed IP binding from Prometheus metrics
+**Rollback:** If configuring multiple DNS servers causes problems, log in to the modified nodes, restore `/var/lib/kubelet/kubeadm-flags.env` from the backup, and restart kubelet:
 
-Use this workaround when external monitoring systems or dashboards cannot access NodeLocal DNSCache metrics. Change only the `prometheus` listen address in the Corefile. Do not change the DNS service port.
+```bash
+sudo cp -a /var/lib/kubelet/kubeadm-flags.env.bak.<timestamp> /var/lib/kubelet/kubeadm-flags.env
+sudo systemctl restart kubelet
+```
+
+Then recreate the affected Pods so their `/etc/resolv.conf` is regenerated.
+
+## Issue 3: Prometheus metrics bind to a fixed NodeLocal DNSCache IP and cannot be collected externally
+
+**Symptom:** External monitoring systems or dashboards cannot access NodeLocal DNSCache metrics.
+
+**Cause:** The Corefile `prometheus` directive may bind to the NodeLocal DNSCache IP, for example `169.254.20.10:9253`. If the external monitoring collection path cannot reach that node-local address, metrics cannot be collected.
+
+**Resolution:** Change only the `prometheus` listen address in the Corefile. Do not change the DNS service port.
 
 Back up the current ConfigMap first:
 
@@ -213,54 +230,7 @@ Confirm that the Corefile is updated, and verify that metrics can be accessed fr
 kubectl -n "$NS" get cm "$CM" -o yaml | grep 'prometheus'
 ```
 
-## Diagnostic Steps
-
-Confirm that NodeLocal DNSCache is installed and Pods are Ready:
-
-```bash
-kubectl -n kube-system get pods -l k8s-app=node-local-dns -o wide
-kubectl -n kube-system rollout status ds/node-local-dns
-```
-
-Confirm whether the current Corefile and DaemonSet probe still use `8080`:
-
-```bash
-kubectl -n kube-system get cm node-local-dns -o yaml | grep 'health 127.0.0.1'
-kubectl -n kube-system get ds node-local-dns -o yaml | grep -A5 -E 'livenessProbe|readinessProbe'
-```
-
-Confirm the metrics listen address in the Corefile:
-
-```bash
-kubectl -n kube-system get cm node-local-dns -o yaml | grep 'prometheus'
-```
-
-Confirm the DNS servers used by newly created Pods:
-
-```bash
-kubectl run dns-check --rm -it --restart=Never --image=busybox:1.36 -- cat /etc/resolv.conf
-```
-
-## Rollback
-
-If changing the health check port causes problems, restore the backed-up ConfigMap and DaemonSet:
-
-```bash
-kubectl apply -f node-local-dns-cm.backup.yaml
-kubectl apply -f node-local-dns-ds.backup.yaml
-kubectl -n kube-system rollout status ds/node-local-dns
-```
-
-If configuring multiple DNS servers causes problems, log in to the modified nodes, restore `/var/lib/kubelet/kubeadm-flags.env` from the backup, and restart kubelet:
-
-```bash
-sudo cp -a /var/lib/kubelet/kubeadm-flags.env.bak.<timestamp> /var/lib/kubelet/kubeadm-flags.env
-sudo systemctl restart kubelet
-```
-
-Then recreate the affected Pods so their `/etc/resolv.conf` is regenerated.
-
-If changing the metrics listen address causes problems, restore the backed-up ConfigMap and restart the DaemonSet:
+**Rollback:** If changing the metrics listen address causes problems, restore the backed-up ConfigMap and restart the DaemonSet:
 
 ```bash
 kubectl apply -f node-local-dns-cm.backup.yaml
