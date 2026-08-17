@@ -114,13 +114,6 @@ DS=node-local-dns
 CM=node-local-dns
 ```
 
-If the DaemonSet or ConfigMap uses a different name in the actual environment, find the resource first:
-
-```bash
-kubectl get ds -A | grep -i node-local
-kubectl get cm -A | grep -i node-local
-```
-
 Edit the ConfigMap and change the health check port in the Corefile to an unused port, for example `18080`:
 
 ```bash
