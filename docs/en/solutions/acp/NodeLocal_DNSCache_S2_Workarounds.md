@@ -13,7 +13,7 @@ This article provides temporary workarounds for three common NodeLocal DNSCache 
 
 - DNS resolution is affected when the `node-cache` Pod on a node is unavailable.
 - Health check port `8080` conflicts.
-- External monitoring systems or dashboards cannot collect Prometheus metrics because the metrics endpoint binds to the NodeLocal DNSCache IP.
+- External monitoring systems or dashboards cannot collect NodeLocal DNSCache metrics.
 
 These workarounds are temporary. Manual changes may be overwritten after plugin upgrade, plugin reinstall, platform reconciliation, chart re-rendering, or node rebuild. Perform the change in a maintenance window and keep backups before editing resources.
 
@@ -79,8 +79,6 @@ Expected output contains similar entries:
 nameserver 169.254.20.10
 nameserver 10.96.0.10
 ```
-
-If NetworkPolicy is enabled in the cluster, allow Pods to access both the NodeLocal DNSCache IP and CoreDNS ClusterIP on TCP/UDP port `53`.
 
 **Rollback:** If configuring multiple DNS servers causes problems, log in to the modified nodes, restore `/var/lib/kubelet/kubeadm-flags.env` from the backup, and restart kubelet:
 
@@ -153,13 +151,10 @@ livenessProbe:
     port: 18080
 ```
 
-If the target environment also has a `readinessProbe` that accesses `/health` or `8080`, change it as well. Do not change DNS service port `53` or the metrics port used in the environment. This issue only requires changing the health check port.
-
-Wait for the DaemonSet rolling update to complete and verify DNS resolution:
+Wait for the DaemonSet rolling update to complete:
 
 ```bash
 kubectl -n "$NS" rollout status ds "$DS"
-kubectl run dns-check --rm -it --restart=Never --image=busybox:1.36 -- nslookup kubernetes.default.svc
 ```
 
 To confirm node port listeners, log in to a node running the `node-cache` Pod and run:
@@ -179,7 +174,7 @@ kubectl apply -f node-local-dns-ds.backup.yaml
 kubectl -n kube-system rollout status ds/node-local-dns
 ```
 
-## Issue 3: Prometheus metrics bind to a fixed NodeLocal DNSCache IP and cannot be collected externally
+## Issue 3: NodeLocal DNSCache metrics cannot be collected externally
 
 **Symptom:** External monitoring systems or dashboards cannot access NodeLocal DNSCache metrics.
 

@@ -13,7 +13,7 @@ ProductsVersion:
 
 - `node-cache` Pod 异常后，节点上新建或存量 Pod 的 DNS 解析受影响。
 - 健康检查端口 `8080` 冲突。
-- Prometheus metrics 绑定到 NodeLocal DNSCache IP 后，外部监控或面板无法采集。
+- NodeLocal DNSCache metrics 无法被外部监控或面板采集。
 
 这些方案仅用于临时规避。插件升级、重装、平台调谐、chart 重新渲染或节点重建后，手工修改可能被覆盖。建议在变更窗口执行，并在修改前保留备份。
 
@@ -79,8 +79,6 @@ kubectl run dns-check --rm -it --restart=Never --image=busybox:1.36 -- cat /etc/
 nameserver 169.254.20.10
 nameserver 10.96.0.10
 ```
-
-如果集群启用了 NetworkPolicy，需要同时放行 Pod 访问 NodeLocal DNSCache IP 和 CoreDNS ClusterIP 的 TCP/UDP `53` 端口。
 
 **回滚：** 如果配置多个 DNS server 后异常，登录已修改节点，将 `/var/lib/kubelet/kubeadm-flags.env` 恢复为备份文件并重启 kubelet：
 
@@ -153,13 +151,10 @@ livenessProbe:
     port: 18080
 ```
 
-如果目标环境中还存在访问 `/health` 或 `8080` 的 `readinessProbe`，也需要同步修改。不要修改 DNS 服务端口 `53` 或现场 metrics 端口；本问题只处理健康检查端口。
-
-等待 DaemonSet 滚动更新完成，并验证 DNS 解析正常：
+等待 DaemonSet 滚动更新完成：
 
 ```bash
 kubectl -n "$NS" rollout status ds "$DS"
-kubectl run dns-check --rm -it --restart=Never --image=busybox:1.36 -- nslookup kubernetes.default.svc
 ```
 
 如需确认节点端口监听，可登录运行 `node-cache` Pod 的节点执行：
@@ -179,7 +174,7 @@ kubectl apply -f node-local-dns-ds.backup.yaml
 kubectl -n kube-system rollout status ds/node-local-dns
 ```
 
-## 问题 3：Prometheus metrics 绑定固定 NodeLocal DNSCache IP 后无法被外部采集
+## 问题 3：NodeLocal DNSCache metrics 无法被外部采集
 
 **现象：** 外部监控或面板无法访问 NodeLocal DNSCache metrics。
 
