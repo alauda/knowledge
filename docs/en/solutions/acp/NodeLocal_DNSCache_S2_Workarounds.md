@@ -25,7 +25,20 @@ These workarounds are temporary. Manual changes may be overwritten after plugin 
 
 **Resolution:** Configure CoreDNS ClusterIP as an additional DNS server for kubelet. After configuration, newly created Pods have both the NodeLocal DNSCache IP and CoreDNS ClusterIP in `/etc/resolv.conf`.
 
-This is not a transparent failover mechanism. DNS resolver retry behavior differs between business images. When the first DNS server is unavailable, some workloads may wait for timeout before trying the next DNS server, which can slow down DNS resolution during the failure.
+This is not a transparent failover mechanism. Images that use musl libc, such as Alpine Linux, usually switch faster. Images that use glibc may repeatedly wait for timeout across multiple queries triggered by `ndots` and `search` when the first DNS server is unavailable, which can slow down DNS resolution during the failure.
+
+If the workload is sensitive to DNS resolution delay during the failure, reduce the resolver timeout and retry count for the affected workload:
+
+```yaml
+dnsConfig:
+  options:
+    - name: timeout
+      value: "1"
+    - name: attempts
+      value: "1"
+```
+
+This configuration gives up on an unavailable DNS server faster, but it also reduces tolerance for transient DNS latency or packet loss. Validate it with the affected workload before use.
 
 Get the CoreDNS ClusterIP:
 
@@ -33,16 +46,10 @@ Get the CoreDNS ClusterIP:
 kubectl -n kube-system get svc kube-dns
 ```
 
-If the DNS Service in the target cluster is not named `kube-dns`, find the actual name first:
-
-```bash
-kubectl -n kube-system get svc | grep -E 'kube-dns|coredns'
-```
-
 Log in to each node that needs the change, then edit the kubelet argument file:
 
 ```bash
-sudo vi /var/lib/kubelet/kubeadm-flags.env
+vi /var/lib/kubelet/kubeadm-flags.env
 ```
 
 Change kubelet `--cluster-dns` from a single NodeLocal DNSCache IP to a combination of NodeLocal DNSCache IP and CoreDNS ClusterIP. For example:
@@ -56,7 +63,7 @@ In this example, `169.254.20.10` is the NodeLocal DNSCache IP and `10.96.0.10` i
 Restart kubelet after saving the change:
 
 ```bash
-sudo systemctl restart kubelet
+systemctl restart kubelet
 ```
 
 The kubelet `cluster-dns` change only affects newly created Pods. Existing Pods do not automatically update `/etc/resolv.conf`. Recreate the affected business Pods during the maintenance window. For example:

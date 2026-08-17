@@ -25,7 +25,20 @@ ProductsVersion:
 
 **解决方案：** 将 CoreDNS ClusterIP 配置为 kubelet 的辅助 DNS server。配置后，新建 Pod 的 `/etc/resolv.conf` 中同时包含 NodeLocal DNSCache IP 和 CoreDNS ClusterIP。
 
-该方案不是无感故障切换机制。不同业务镜像中的 DNS 解析器重试行为不同；当第一个 DNS server 不可用时，部分工作负载可能需要等待超时后才尝试下一个 DNS server，故障期间 DNS 解析可能变慢。
+该方案不是无感故障切换机制。Alpine Linux 等使用 musl libc 的镜像通常切换较快；使用 glibc 的镜像在第一个 DNS server 不可用时，可能会在 `ndots` 和 `search` 触发的多轮查询中反复等待超时，故障期间 DNS 解析可能变慢。
+
+如果业务对故障期间的解析耗时敏感，可在相关工作负载中降低 resolver 超时和重试次数：
+
+```yaml
+dnsConfig:
+  options:
+    - name: timeout
+      value: "1"
+    - name: attempts
+      value: "1"
+```
+
+该配置会更快放弃不可达 DNS server，但也会降低对瞬时 DNS 抖动的容忍度，建议按业务验证后使用。
 
 先查询 CoreDNS ClusterIP：
 
@@ -33,16 +46,10 @@ ProductsVersion:
 kubectl -n kube-system get svc kube-dns
 ```
 
-如果目标集群中的 DNS Service 不叫 `kube-dns`，先查找实际名称：
-
-```bash
-kubectl -n kube-system get svc | grep -E 'kube-dns|coredns'
-```
-
 登录需要生效的节点，编辑 kubelet 参数文件：
 
 ```bash
-sudo vi /var/lib/kubelet/kubeadm-flags.env
+vi /var/lib/kubelet/kubeadm-flags.env
 ```
 
 将 kubelet 的 `--cluster-dns` 从单个 NodeLocal DNSCache IP 改为 NodeLocal DNSCache IP 和 CoreDNS ClusterIP 的组合。例如：
@@ -56,7 +63,7 @@ sudo vi /var/lib/kubelet/kubeadm-flags.env
 保存后重启 kubelet：
 
 ```bash
-sudo systemctl restart kubelet
+systemctl restart kubelet
 ```
 
 kubelet 的 `cluster-dns` 变更只影响新建 Pod，已有 Pod 的 `/etc/resolv.conf` 不会自动更新。需要在变更窗口内重建受影响业务 Pod，例如：
