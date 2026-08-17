@@ -25,21 +25,6 @@ ProductsVersion:
 
 **解决方案：** 将 CoreDNS ClusterIP 配置为 kubelet 的辅助 DNS server。配置后，新建 Pod 的 `/etc/resolv.conf` 中同时包含 NodeLocal DNSCache IP 和 CoreDNS ClusterIP。
 
-该方案不是无感故障切换机制。Alpine Linux 等使用 musl libc 的镜像通常切换较快；使用 glibc 的镜像在第一个 DNS server 不可用时，可能会在 `ndots` 和 `search` 触发的多轮查询中反复等待超时，故障期间 DNS 解析可能变慢。
-
-如果业务对故障期间的解析耗时敏感，可在相关工作负载中降低 resolver 超时和重试次数：
-
-```yaml
-dnsConfig:
-  options:
-    - name: timeout
-      value: "1"
-    - name: attempts
-      value: "1"
-```
-
-该配置会更快放弃不可达 DNS server，但也会降低对瞬时 DNS 抖动的容忍度，建议按业务验证后使用。
-
 先查询 CoreDNS ClusterIP：
 
 ```bash
@@ -85,6 +70,21 @@ kubectl run dns-check --rm -it --restart=Never --image=busybox:1.36 -- cat /etc/
 nameserver 169.254.20.10
 nameserver 10.96.0.10
 ```
+
+配置多个 DNS server 后，NodeLocal DNSCache 异常时可以由 CoreDNS 兜底解析，但这不是无感故障切换。Alpine Linux 等使用 musl libc 的镜像通常切换较快；使用 glibc 的镜像可能会在 `ndots` 和 `search` 触发的多轮查询中反复等待超时，故障期间 DNS 解析可能变慢。
+
+如果业务对故障期间的解析耗时敏感，可在相关工作负载中降低 resolver 超时和重试次数：
+
+```yaml
+dnsConfig:
+  options:
+    - name: timeout
+      value: "1"
+    - name: attempts
+      value: "1"
+```
+
+该配置会更快放弃不可达 DNS server，但也会降低对瞬时 DNS 抖动的容忍度，建议按业务验证后使用。
 
 ## 问题 2：NodeLocal DNSCache 健康检查端口占用 8080
 

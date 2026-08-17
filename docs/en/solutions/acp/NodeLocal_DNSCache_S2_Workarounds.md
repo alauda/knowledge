@@ -25,21 +25,6 @@ These workarounds are temporary. Manual changes may be overwritten after plugin 
 
 **Resolution:** Configure CoreDNS ClusterIP as an additional DNS server for kubelet. After configuration, newly created Pods have both the NodeLocal DNSCache IP and CoreDNS ClusterIP in `/etc/resolv.conf`.
 
-This is not a transparent failover mechanism. Images that use musl libc, such as Alpine Linux, usually switch faster. Images that use glibc may repeatedly wait for timeout across multiple queries triggered by `ndots` and `search` when the first DNS server is unavailable, which can slow down DNS resolution during the failure.
-
-If the workload is sensitive to DNS resolution delay during the failure, reduce the resolver timeout and retry count for the affected workload:
-
-```yaml
-dnsConfig:
-  options:
-    - name: timeout
-      value: "1"
-    - name: attempts
-      value: "1"
-```
-
-This configuration gives up on an unavailable DNS server faster, but it also reduces tolerance for transient DNS latency or packet loss. Validate it with the affected workload before use.
-
 Get the CoreDNS ClusterIP:
 
 ```bash
@@ -85,6 +70,21 @@ Expected output contains similar entries:
 nameserver 169.254.20.10
 nameserver 10.96.0.10
 ```
+
+After multiple DNS servers are configured, CoreDNS can be used as a fallback when NodeLocal DNSCache is unavailable, but this is not a transparent failover mechanism. Images that use musl libc, such as Alpine Linux, usually switch faster. Images that use glibc may repeatedly wait for timeout across multiple queries triggered by `ndots` and `search`, which can slow down DNS resolution during the failure.
+
+If the workload is sensitive to DNS resolution delay during the failure, reduce the resolver timeout and retry count for the affected workload:
+
+```yaml
+dnsConfig:
+  options:
+    - name: timeout
+      value: "1"
+    - name: attempts
+      value: "1"
+```
+
+This configuration gives up on an unavailable DNS server faster, but it also reduces tolerance for transient DNS latency or packet loss. Validate it with the affected workload before use.
 
 ## Issue 2: NodeLocal DNSCache health check uses port 8080
 
