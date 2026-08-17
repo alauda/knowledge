@@ -114,13 +114,6 @@ DS=node-local-dns
 CM=node-local-dns
 ```
 
-如果实际环境中的 DaemonSet 或 ConfigMap 名称不同，可通过以下命令查找：
-
-```bash
-kubectl get ds -A | grep -i node-local
-kubectl get cm -A | grep -i node-local
-```
-
 编辑 ConfigMap，把 Corefile 中的健康检查端口改为未被占用的新端口，例如 `18080`：
 
 ```bash
