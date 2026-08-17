@@ -11,13 +11,87 @@ ProductsVersion:
 
 本文提供 NodeLocal DNSCache 三类常见现场问题的临时规避方案：
 
-- 健康检查端口 `8080` 冲突。
 - `node-cache` Pod 异常后，节点上新建或存量 Pod 的 DNS 解析受影响。
+- 健康检查端口 `8080` 冲突。
 - Prometheus metrics 绑定到 NodeLocal DNSCache IP 后，外部监控或面板无法采集。
 
 这些方案仅用于临时规避。插件升级、重装、平台调谐、chart 重新渲染或节点重建后，手工修改可能被覆盖。建议在变更窗口执行，并在修改前保留备份。
 
-## 问题 1：NodeLocal DNSCache 健康检查端口占用 8080
+## 问题 1：`node-cache` Pod 异常后节点 DNS 解析失败
+
+**现象：** NodeLocal DNSCache 生效后，新建 Pod 使用节点本地 DNS 地址作为 DNS 服务器。当某个节点上的 `node-cache` Pod 异常、被驱逐或升级重启时，该节点上 Pod 的 DNS 解析可能失败。
+
+**原因：** 插件安装任务会把 kubelet `--cluster-dns` 配置为 NodeLocal DNSCache IP。默认情况下，新建 Pod 的 `/etc/resolv.conf` 只有 NodeLocal DNSCache IP，没有 CoreDNS ClusterIP 作为辅助 DNS server。
+
+**解决方案：** 将 CoreDNS ClusterIP 配置为 kubelet 的辅助 DNS server。配置后，新建 Pod 的 `/etc/resolv.conf` 中同时包含 NodeLocal DNSCache IP 和 CoreDNS ClusterIP。
+
+该方案不是无感故障切换机制。不同业务镜像中的 DNS 解析器重试行为不同；当第一个 DNS server 不可用时，部分工作负载可能需要等待超时后才尝试下一个 DNS server，故障期间 DNS 解析可能变慢。
+
+先查询 CoreDNS ClusterIP：
+
+```bash
+kubectl -n kube-system get svc kube-dns
+```
+
+如果目标集群中的 DNS Service 不叫 `kube-dns`，先查找实际名称：
+
+```bash
+kubectl -n kube-system get svc | grep -E 'kube-dns|coredns'
+```
+
+登录需要生效的节点，备份并编辑 kubelet 参数文件：
+
+```bash
+sudo cp -a /var/lib/kubelet/kubeadm-flags.env /var/lib/kubelet/kubeadm-flags.env.bak.$(date +%Y%m%d%H%M%S)
+sudo vi /var/lib/kubelet/kubeadm-flags.env
+```
+
+将 kubelet 的 `--cluster-dns` 从单个 NodeLocal DNSCache IP 改为 NodeLocal DNSCache IP 和 CoreDNS ClusterIP 的组合。例如：
+
+```text
+--cluster-dns=169.254.20.10,10.96.0.10
+```
+
+其中 `169.254.20.10` 是 NodeLocal DNSCache IP，`10.96.0.10` 是 CoreDNS ClusterIP。不要删除同一行上的其他 kubelet 参数。
+
+保存后重启 kubelet：
+
+```bash
+sudo systemctl restart kubelet
+```
+
+kubelet 的 `cluster-dns` 变更只影响新建 Pod，已有 Pod 的 `/etc/resolv.conf` 不会自动更新。需要在变更窗口内重建受影响业务 Pod，例如：
+
+```bash
+kubectl -n <namespace> rollout restart deployment/<deployment-name>
+kubectl -n <namespace> rollout status deployment/<deployment-name>
+```
+
+创建临时 Pod，确认 `/etc/resolv.conf` 中同时包含 NodeLocal DNSCache IP 和 CoreDNS ClusterIP：
+
+```bash
+kubectl run dns-check --rm -it --restart=Never --image=busybox:1.36 -- cat /etc/resolv.conf
+```
+
+预期输出包含类似内容：
+
+```text
+nameserver 169.254.20.10
+nameserver 10.96.0.10
+```
+
+如果集群启用了 NetworkPolicy，需要同时放行 Pod 访问 NodeLocal DNSCache IP 和 CoreDNS ClusterIP 的 TCP/UDP `53` 端口。
+
+**回滚：** 如果配置多个 DNS server 后异常，登录已修改节点，将 `/var/lib/kubelet/kubeadm-flags.env` 恢复为备份文件并重启 kubelet：
+
+```bash
+sudo cp -a /var/lib/kubelet/kubeadm-flags.env.bak.<timestamp> /var/lib/kubelet/kubeadm-flags.env
+sudo systemctl restart kubelet
+```
+
+然后重建受影响 Pod，使其 `/etc/resolv.conf` 重新生成。
+
+## 问题 2：NodeLocal DNSCache 健康检查端口占用 8080
 
 **现象：** 启用 NodeLocal DNSCache 后，节点上的业务进程、运维代理或 `hostNetwork` Pod 无法绑定 `127.0.0.1:8080` 或 `0.0.0.0:8080`。
 
@@ -104,80 +178,6 @@ kubectl apply -f node-local-dns-cm.backup.yaml
 kubectl apply -f node-local-dns-ds.backup.yaml
 kubectl -n kube-system rollout status ds/node-local-dns
 ```
-
-## 问题 2：`node-cache` Pod 异常后节点 DNS 解析失败
-
-**现象：** NodeLocal DNSCache 生效后，新建 Pod 使用节点本地 DNS 地址作为 DNS 服务器。当某个节点上的 `node-cache` Pod 异常、被驱逐或升级重启时，该节点上 Pod 的 DNS 解析可能失败。
-
-**原因：** 插件安装任务会把 kubelet `--cluster-dns` 配置为 NodeLocal DNSCache IP。默认情况下，新建 Pod 的 `/etc/resolv.conf` 只有 NodeLocal DNSCache IP，没有 CoreDNS ClusterIP 作为辅助 DNS server。
-
-**解决方案：** 将 CoreDNS ClusterIP 配置为 kubelet 的辅助 DNS server。配置后，新建 Pod 的 `/etc/resolv.conf` 中同时包含 NodeLocal DNSCache IP 和 CoreDNS ClusterIP。
-
-该方案不是无感故障切换机制。不同业务镜像中的 DNS 解析器重试行为不同；当第一个 DNS server 不可用时，部分工作负载可能需要等待超时后才尝试下一个 DNS server，故障期间 DNS 解析可能变慢。
-
-先查询 CoreDNS ClusterIP：
-
-```bash
-kubectl -n kube-system get svc kube-dns
-```
-
-如果目标集群中的 DNS Service 不叫 `kube-dns`，先查找实际名称：
-
-```bash
-kubectl -n kube-system get svc | grep -E 'kube-dns|coredns'
-```
-
-登录需要生效的节点，备份并编辑 kubelet 参数文件：
-
-```bash
-sudo cp -a /var/lib/kubelet/kubeadm-flags.env /var/lib/kubelet/kubeadm-flags.env.bak.$(date +%Y%m%d%H%M%S)
-sudo vi /var/lib/kubelet/kubeadm-flags.env
-```
-
-将 kubelet 的 `--cluster-dns` 从单个 NodeLocal DNSCache IP 改为 NodeLocal DNSCache IP 和 CoreDNS ClusterIP 的组合。例如：
-
-```text
---cluster-dns=169.254.20.10,10.96.0.10
-```
-
-其中 `169.254.20.10` 是 NodeLocal DNSCache IP，`10.96.0.10` 是 CoreDNS ClusterIP。不要删除同一行上的其他 kubelet 参数。
-
-保存后重启 kubelet：
-
-```bash
-sudo systemctl restart kubelet
-```
-
-kubelet 的 `cluster-dns` 变更只影响新建 Pod，已有 Pod 的 `/etc/resolv.conf` 不会自动更新。需要在变更窗口内重建受影响业务 Pod，例如：
-
-```bash
-kubectl -n <namespace> rollout restart deployment/<deployment-name>
-kubectl -n <namespace> rollout status deployment/<deployment-name>
-```
-
-创建临时 Pod，确认 `/etc/resolv.conf` 中同时包含 NodeLocal DNSCache IP 和 CoreDNS ClusterIP：
-
-```bash
-kubectl run dns-check --rm -it --restart=Never --image=busybox:1.36 -- cat /etc/resolv.conf
-```
-
-预期输出包含类似内容：
-
-```text
-nameserver 169.254.20.10
-nameserver 10.96.0.10
-```
-
-如果集群启用了 NetworkPolicy，需要同时放行 Pod 访问 NodeLocal DNSCache IP 和 CoreDNS ClusterIP 的 TCP/UDP `53` 端口。
-
-**回滚：** 如果配置多个 DNS server 后异常，登录已修改节点，将 `/var/lib/kubelet/kubeadm-flags.env` 恢复为备份文件并重启 kubelet：
-
-```bash
-sudo cp -a /var/lib/kubelet/kubeadm-flags.env.bak.<timestamp> /var/lib/kubelet/kubeadm-flags.env
-sudo systemctl restart kubelet
-```
-
-然后重建受影响 Pod，使其 `/etc/resolv.conf` 重新生成。
 
 ## 问题 3：Prometheus metrics 绑定固定 NodeLocal DNSCache IP 后无法被外部采集
 

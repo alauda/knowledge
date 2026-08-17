@@ -11,13 +11,87 @@ ProductsVersion:
 
 This article provides temporary workarounds for three common NodeLocal DNSCache issues in field environments:
 
-- Health check port `8080` conflicts.
 - DNS resolution is affected when the `node-cache` Pod on a node is unavailable.
+- Health check port `8080` conflicts.
 - External monitoring systems or dashboards cannot collect Prometheus metrics because the metrics endpoint binds to the NodeLocal DNSCache IP.
 
 These workarounds are temporary. Manual changes may be overwritten after plugin upgrade, plugin reinstall, platform reconciliation, chart re-rendering, or node rebuild. Perform the change in a maintenance window and keep backups before editing resources.
 
-## Issue 1: NodeLocal DNSCache health check uses port 8080
+## Issue 1: DNS resolution fails when the `node-cache` Pod is unavailable
+
+**Symptom:** After NodeLocal DNSCache takes effect, newly created Pods use the node-local DNS address as their DNS server. If the `node-cache` Pod on a node becomes unavailable, is evicted, or restarts during an upgrade, DNS resolution for Pods on that node may fail.
+
+**Cause:** The plugin installation job configures kubelet `--cluster-dns` to the NodeLocal DNSCache IP. By default, newly created Pods have only the NodeLocal DNSCache IP in `/etc/resolv.conf`, without the CoreDNS ClusterIP as an additional DNS server.
+
+**Resolution:** Configure CoreDNS ClusterIP as an additional DNS server for kubelet. After configuration, newly created Pods have both the NodeLocal DNSCache IP and CoreDNS ClusterIP in `/etc/resolv.conf`.
+
+This is not a transparent failover mechanism. DNS resolver retry behavior differs between business images. When the first DNS server is unavailable, some workloads may wait for timeout before trying the next DNS server, which can slow down DNS resolution during the failure.
+
+Get the CoreDNS ClusterIP:
+
+```bash
+kubectl -n kube-system get svc kube-dns
+```
+
+If the DNS Service in the target cluster is not named `kube-dns`, find the actual name first:
+
+```bash
+kubectl -n kube-system get svc | grep -E 'kube-dns|coredns'
+```
+
+Log in to each node that needs the change, then back up and edit the kubelet argument file:
+
+```bash
+sudo cp -a /var/lib/kubelet/kubeadm-flags.env /var/lib/kubelet/kubeadm-flags.env.bak.$(date +%Y%m%d%H%M%S)
+sudo vi /var/lib/kubelet/kubeadm-flags.env
+```
+
+Change kubelet `--cluster-dns` from a single NodeLocal DNSCache IP to a combination of NodeLocal DNSCache IP and CoreDNS ClusterIP. For example:
+
+```text
+--cluster-dns=169.254.20.10,10.96.0.10
+```
+
+In this example, `169.254.20.10` is the NodeLocal DNSCache IP and `10.96.0.10` is the CoreDNS ClusterIP. Do not remove other kubelet arguments on the same line.
+
+Restart kubelet after saving the change:
+
+```bash
+sudo systemctl restart kubelet
+```
+
+The kubelet `cluster-dns` change only affects newly created Pods. Existing Pods do not automatically update `/etc/resolv.conf`. Recreate the affected business Pods during the maintenance window. For example:
+
+```bash
+kubectl -n <namespace> rollout restart deployment/<deployment-name>
+kubectl -n <namespace> rollout status deployment/<deployment-name>
+```
+
+Create a temporary Pod and confirm that `/etc/resolv.conf` contains both the NodeLocal DNSCache IP and CoreDNS ClusterIP:
+
+```bash
+kubectl run dns-check --rm -it --restart=Never --image=busybox:1.36 -- cat /etc/resolv.conf
+```
+
+Expected output contains similar entries:
+
+```text
+nameserver 169.254.20.10
+nameserver 10.96.0.10
+```
+
+If NetworkPolicy is enabled in the cluster, allow Pods to access both the NodeLocal DNSCache IP and CoreDNS ClusterIP on TCP/UDP port `53`.
+
+**Rollback:** If configuring multiple DNS servers causes problems, log in to the modified nodes, restore `/var/lib/kubelet/kubeadm-flags.env` from the backup, and restart kubelet:
+
+```bash
+sudo cp -a /var/lib/kubelet/kubeadm-flags.env.bak.<timestamp> /var/lib/kubelet/kubeadm-flags.env
+sudo systemctl restart kubelet
+```
+
+Then recreate the affected Pods so their `/etc/resolv.conf` is regenerated.
+
+## Issue 2: NodeLocal DNSCache health check uses port 8080
 
 **Symptom:** After NodeLocal DNSCache is enabled, a business process, operations agent, or `hostNetwork` Pod on the node cannot bind `127.0.0.1:8080` or `0.0.0.0:8080`.
 
@@ -104,80 +178,6 @@ kubectl apply -f node-local-dns-cm.backup.yaml
 kubectl apply -f node-local-dns-ds.backup.yaml
 kubectl -n kube-system rollout status ds/node-local-dns
 ```
-
-## Issue 2: DNS resolution fails when the `node-cache` Pod is unavailable
-
-**Symptom:** After NodeLocal DNSCache takes effect, newly created Pods use the node-local DNS address as their DNS server. If the `node-cache` Pod on a node becomes unavailable, is evicted, or restarts during an upgrade, DNS resolution for Pods on that node may fail.
-
-**Cause:** The plugin installation job configures kubelet `--cluster-dns` to the NodeLocal DNSCache IP. By default, newly created Pods have only the NodeLocal DNSCache IP in `/etc/resolv.conf`, without the CoreDNS ClusterIP as an additional DNS server.
-
-**Resolution:** Configure CoreDNS ClusterIP as an additional DNS server for kubelet. After configuration, newly created Pods have both the NodeLocal DNSCache IP and CoreDNS ClusterIP in `/etc/resolv.conf`.
-
-This is not a transparent failover mechanism. DNS resolver retry behavior differs between business images. When the first DNS server is unavailable, some workloads may wait for timeout before trying the next DNS server, which can slow down DNS resolution during the failure.
-
-Get the CoreDNS ClusterIP:
-
-```bash
-kubectl -n kube-system get svc kube-dns
-```
-
-If the DNS Service in the target cluster is not named `kube-dns`, find the actual name first:
-
-```bash
-kubectl -n kube-system get svc | grep -E 'kube-dns|coredns'
-```
-
-Log in to each node that needs the change, then back up and edit the kubelet argument file:
-
-```bash
-sudo cp -a /var/lib/kubelet/kubeadm-flags.env /var/lib/kubelet/kubeadm-flags.env.bak.$(date +%Y%m%d%H%M%S)
-sudo vi /var/lib/kubelet/kubeadm-flags.env
-```
-
-Change kubelet `--cluster-dns` from a single NodeLocal DNSCache IP to a combination of NodeLocal DNSCache IP and CoreDNS ClusterIP. For example:
-
-```text
---cluster-dns=169.254.20.10,10.96.0.10
-```
-
-In this example, `169.254.20.10` is the NodeLocal DNSCache IP and `10.96.0.10` is the CoreDNS ClusterIP. Do not remove other kubelet arguments on the same line.
-
-Restart kubelet after saving the change:
-
-```bash
-sudo systemctl restart kubelet
-```
-
-The kubelet `cluster-dns` change only affects newly created Pods. Existing Pods do not automatically update `/etc/resolv.conf`. Recreate the affected business Pods during the maintenance window. For example:
-
-```bash
-kubectl -n <namespace> rollout restart deployment/<deployment-name>
-kubectl -n <namespace> rollout status deployment/<deployment-name>
-```
-
-Create a temporary Pod and confirm that `/etc/resolv.conf` contains both the NodeLocal DNSCache IP and CoreDNS ClusterIP:
-
-```bash
-kubectl run dns-check --rm -it --restart=Never --image=busybox:1.36 -- cat /etc/resolv.conf
-```
-
-Expected output contains similar entries:
-
-```text
-nameserver 169.254.20.10
-nameserver 10.96.0.10
-```
-
-If NetworkPolicy is enabled in the cluster, allow Pods to access both the NodeLocal DNSCache IP and CoreDNS ClusterIP on TCP/UDP port `53`.
-
-**Rollback:** If configuring multiple DNS servers causes problems, log in to the modified nodes, restore `/var/lib/kubelet/kubeadm-flags.env` from the backup, and restart kubelet:
-
-```bash
-sudo cp -a /var/lib/kubelet/kubeadm-flags.env.bak.<timestamp> /var/lib/kubelet/kubeadm-flags.env
-sudo systemctl restart kubelet
-```
-
-Then recreate the affected Pods so their `/etc/resolv.conf` is regenerated.
 
 ## Issue 3: Prometheus metrics bind to a fixed NodeLocal DNSCache IP and cannot be collected externally
 
