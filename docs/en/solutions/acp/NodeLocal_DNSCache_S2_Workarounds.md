@@ -15,7 +15,7 @@ This article provides temporary workarounds for three common NodeLocal DNSCache 
 - Health check port `8080` conflicts.
 - External monitoring systems or dashboards cannot collect NodeLocal DNSCache metrics.
 
-These workarounds are temporary. Manual changes may be overwritten after plugin upgrade, plugin reinstall, platform reconciliation, chart re-rendering, or node rebuild. Perform the change in a maintenance window and keep backups before editing resources.
+These workarounds are temporary. Manual changes may be overwritten after plugin upgrade, plugin reinstall, platform reconciliation, chart re-rendering, or node rebuild. Perform the change in a maintenance window.
 
 ## Issue 1: DNS resolution fails when the `node-cache` Pod is unavailable
 
@@ -39,10 +39,9 @@ If the DNS Service in the target cluster is not named `kube-dns`, find the actua
 kubectl -n kube-system get svc | grep -E 'kube-dns|coredns'
 ```
 
-Log in to each node that needs the change, then back up and edit the kubelet argument file:
+Log in to each node that needs the change, then edit the kubelet argument file:
 
 ```bash
-sudo cp -a /var/lib/kubelet/kubeadm-flags.env /var/lib/kubelet/kubeadm-flags.env.bak.$(date +%Y%m%d%H%M%S)
 sudo vi /var/lib/kubelet/kubeadm-flags.env
 ```
 
@@ -80,15 +79,6 @@ nameserver 169.254.20.10
 nameserver 10.96.0.10
 ```
 
-**Rollback:** If configuring multiple DNS servers causes problems, log in to the modified nodes, restore `/var/lib/kubelet/kubeadm-flags.env` from the backup, and restart kubelet:
-
-```bash
-sudo cp -a /var/lib/kubelet/kubeadm-flags.env.bak.<timestamp> /var/lib/kubelet/kubeadm-flags.env
-sudo systemctl restart kubelet
-```
-
-Then recreate the affected Pods so their `/etc/resolv.conf` is regenerated.
-
 ## Issue 2: NodeLocal DNSCache health check uses port 8080
 
 **Symptom:** After NodeLocal DNSCache is enabled, a business process, operations agent, or `hostNetwork` Pod on the node cannot bind `127.0.0.1:8080` or `0.0.0.0:8080`.
@@ -109,15 +99,12 @@ livenessProbe:
 
 **Resolution:** Change both the Corefile `health` port and the DaemonSet probe port. The two values must stay consistent.
 
-Confirm resource names and back up current resources:
+Set resource variables:
 
 ```bash
 NS=kube-system
 DS=node-local-dns
 CM=node-local-dns
-
-kubectl -n "$NS" get cm "$CM" -o yaml > node-local-dns-cm.backup.yaml
-kubectl -n "$NS" get ds "$DS" -o yaml > node-local-dns-ds.backup.yaml
 ```
 
 If the DaemonSet or ConfigMap uses a different name in the actual environment, find the resource first:
@@ -166,14 +153,6 @@ ss -ltnp | grep ':8080'
 
 The expected result is that `18080` is listened on by NodeLocal DNSCache, and `8080` is no longer listened on by NodeLocal DNSCache.
 
-**Rollback:** If changing the health check port causes problems, restore the backed-up ConfigMap and DaemonSet:
-
-```bash
-kubectl apply -f node-local-dns-cm.backup.yaml
-kubectl apply -f node-local-dns-ds.backup.yaml
-kubectl -n kube-system rollout status ds/node-local-dns
-```
-
 ## Issue 3: NodeLocal DNSCache metrics cannot be collected externally
 
 **Symptom:** External monitoring systems or dashboards cannot access NodeLocal DNSCache metrics.
@@ -182,14 +161,12 @@ kubectl -n kube-system rollout status ds/node-local-dns
 
 **Resolution:** Change only the `prometheus` listen address in the Corefile. Do not change the DNS service port.
 
-Back up the current ConfigMap first:
+Set resource variables:
 
 ```bash
 NS=kube-system
 CM=node-local-dns
 DS=node-local-dns
-
-kubectl -n "$NS" get cm "$CM" -o yaml > node-local-dns-cm.backup.yaml
 ```
 
 Edit the ConfigMap:
@@ -224,21 +201,3 @@ Confirm that the Corefile is updated, and verify that metrics can be accessed fr
 ```bash
 kubectl -n "$NS" get cm "$CM" -o yaml | grep 'prometheus'
 ```
-
-**Rollback:** If changing the metrics listen address causes problems, restore the backed-up ConfigMap and restart the DaemonSet:
-
-```bash
-kubectl apply -f node-local-dns-cm.backup.yaml
-kubectl -n kube-system rollout restart ds/node-local-dns
-kubectl -n kube-system rollout status ds/node-local-dns
-```
-
-## Related Information
-
-If the cluster is upgraded by rebuilding nodes, directly changing `/var/lib/kubelet/kubeadm-flags.env` on nodes is lost after node rebuild. You need to synchronize the same multi-address `cluster-dns` value to every `kubeletExtraArgs` location in the cluster template:
-
-- `KubeadmControlPlane` → `initConfiguration` → `nodeRegistration` → `kubeletExtraArgs`
-- `KubeadmControlPlane` → `joinConfiguration` → `nodeRegistration` → `kubeletExtraArgs`
-- `KubeadmConfigTemplate` → `template` → `spec` → `joinConfiguration` → `nodeRegistration` → `kubeletExtraArgs`
-
-The long-term fix should be implemented on the product side, for example by exposing the health check port and metrics listen address in the NodeLocal DNSCache plugin parameters, or by supporting multiple kubelet `cluster-dns` addresses in the plugin or cluster configuration.
