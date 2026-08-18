@@ -57,7 +57,8 @@ The following placeholders are used throughout this guide. Replace them with the
 | `<private-registry>` | Registry reachable from the cluster |
 | `<storage-class>` | Networked StorageClass that supports expansion |
 | `<namespace>` | Namespace that hosts the Redis Enterprise cluster |
-| `<license-email>` | Email address associated with the Redis license |
+| `<pull-secret>` | `kubernetes.io/dockerconfigjson` Secret holding the credentials for `<private-registry>` |
+| `<admin-username>` | Login name of the Redis Enterprise cluster administrator, in email format |
 
 ## Resolution
 
@@ -87,22 +88,38 @@ If you plan to run a load test after installation, mirror a `memtier_benchmark` 
 
 ### 2. Install the Operator
 
-Download the bundle for the target version, replace every image reference with the `<private-registry>` prefix, and apply it:
+Create the namespace, and — when the private registry requires authentication — an image pull Secret in it, using the same credentials exported in step 1. The Operator Deployment runs with `imagePullPolicy: Always`, so without this Secret the Operator pod stays in `ImagePullBackOff`:
+
+```shell
+kubectl create namespace <namespace>
+kubectl create secret docker-registry <pull-secret> \
+  --namespace <namespace> \
+  --docker-server=<private-registry> \
+  --docker-username="$REG_USER" \
+  --docker-password="$REG_PASS"
+```
+
+Download the bundle for the target version, repoint its image at the private registry, attach the pull Secret, and apply it:
 
 ```shell
 VERSION='v8.0.2-6'
 curl -sSLO https://raw.githubusercontent.com/RedisLabs/redis-enterprise-k8s-docs/${VERSION}/bundle.yaml
-# Edit bundle.yaml: prefix all redislabs/* images with <private-registry>/
-kubectl create namespace <namespace>
+# Edit bundle.yaml, in the redis-enterprise-operator Deployment:
+#   - prefix both redislabs/operator image references with <private-registry>/
+#   - add `imagePullSecrets: [{name: <pull-secret>}]` to the pod spec
 kubectl apply -n <namespace> -f bundle.yaml
 kubectl get pod -n <namespace>
 ```
 
-From `8.0.2-6` onward the Operator installs an admission webhook by default and creates an `admission-tls` Secret in its own namespace. If the webhook must only validate specific namespaces, patch the `ValidatingWebhookConfiguration` with a `namespaceSelector`.
+> **Note**: The bundle references only the Operator image — in `v8.0.2-6` it appears twice, once for the `redis-enterprise-operator` container and once for the `admission` container. The other three images mirrored in step 1 (`redis`, `k8s-controller`, `re-call-home-client`) do not appear in the bundle; they are selected by the REC in step 3.
+
+From `8.0.2-6` onward the admission controller ships as a second container in the Operator Deployment, and the Operator creates the `ValidatingWebhookConfiguration` and the `admission-tls` Secret in its own namespace — no separate webhook manifest has to be applied. If the webhook must only validate specific namespaces, patch the `ValidatingWebhookConfiguration` with a `namespaceSelector`.
 
 Helm is also supported, with limitations — the chart only performs a fresh install. It does not cover upgrades or migration, custom configuration values, multi-namespace watching, rack awareness, or Vault integration:
 
 ```shell
+helm repo add redis https://helm.redis.io/
+helm repo update
 helm install <release-name> redis/redis-enterprise-operator \
   --version <chart-version> \
   --namespace <namespace> \
@@ -113,7 +130,19 @@ Use the bundle YAML when the deployment must be upgraded later.
 
 ### 3. Create the RedisEnterpriseCluster (REC)
 
-A namespace can hold only one REC. Point every image spec at the private registry:
+A namespace can hold only one REC.
+
+If you hold a commercial license, store it in a Secret first. When neither `spec.license` nor `spec.licenseSecretName` is set, the cluster starts on the built-in trial license, with the shard limits listed under Known Limitations below:
+
+```shell
+kubectl create secret generic my-rec-license \
+  --namespace <namespace> \
+  --from-file=license=./license.txt
+```
+
+> **Note**: `spec.license` and `spec.licenseSecretName` are mutually exclusive — set only one of them. The Secret must store the license string under the key `license`.
+
+Point every image spec at the private registry, and reference both the pull Secret and the license Secret:
 
 ```yaml
 apiVersion: app.redislabs.com/v1
@@ -126,7 +155,8 @@ spec:
   clusterCredentialSecretType: kubernetes
   createServiceAccount: true
   serviceAccountName: my-rec
-  username: <license-email>
+  username: <admin-username>
+  licenseSecretName: my-rec-license  # omit to use the built-in trial license
   persistentSpec:
     enabled: true
     storageClassName: <storage-class>
@@ -138,6 +168,8 @@ spec:
     limits:
       cpu: "8"
       memory: 20Gi
+  pullSecrets:  # omit when the registry needs no authentication
+    - name: <pull-secret>
   bootstrapperImageSpec:
     repository: <private-registry>/redislabs/operator
     versionTag: 8.0.2-6
@@ -163,7 +195,7 @@ kubectl apply -n <namespace> -f rec.yaml
 kubectl get rec -n <namespace>
 ```
 
-The Operator generates random administrator credentials into a Secret named after the CR and distributes self-signed TLS certificates across the nodes. Read the credentials from that Secret:
+The Operator creates a Secret named after the CR holding the administrator credentials — the username is the one set in `spec.username`, the password is generated randomly — and distributes self-signed TLS certificates across the nodes. Read the password from that Secret:
 
 ```shell
 kubectl get secret my-rec -n <namespace> -o jsonpath='{.data.password}' | base64 -d
@@ -237,9 +269,9 @@ Metrics are exposed on port `8070` and can be collected with a `ServiceMonitor`.
 
 Upgrade the three layers in order, and confirm the supported upgrade path and module compatibility in the Redis documentation before starting:
 
-1. **Operator** — apply the bundle and webhook YAML of the target version.
+1. **Operator** — apply the bundle of the target version. The admission controller is a container in the Operator Deployment, so it is upgraded together with the Operator.
 2. **REC** — set `spec.autoUpgradeRedisEnterprise: true`, or update `redisEnterpriseImageSpec.versionTag` manually.
-3. **REDB** — update `spec.redisVersion` to the target minor version, for example `"7.4"`. The REC upgrade policy and the REDB version must be consistent.
+3. **REDB** — update `spec.redisVersion` to the target minor version, for example `"8.0"`. The field also accepts the `major` and `latest` channels, which always upgrade to the most recent major or the latest available version. The REC upgrade policy and the REDB version must be consistent.
 
 ## Known Limitations
 
