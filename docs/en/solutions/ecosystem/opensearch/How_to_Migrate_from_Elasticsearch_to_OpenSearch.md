@@ -21,7 +21,7 @@ There are two migration mechanisms. Choose the mechanism first, then follow the 
 | Source Version | Target Version | Migration Method | Notes |
 | :--- | :--- | :--- | :--- |
 | **ES 7.10** | **OS 2.x** | Snapshot & Restore | ✅ Direct restore supported |
-| **ES 7.10** | **OS 3.x** | Snapshot & Restore → Reindex → Upgrade | ⚠️ Must restore to OS 2.x first, then upgrade |
+| **ES 7.10** | **OS 3.x** | Snapshot & Restore → Reindex → Upgrade | ⚠️ Must restore to OS 2.x, reindex there, then upgrade |
 | **ES 7.10** | **OS 3.x** | Reindex from Remote | ✅ Single step, no intermediate 2.x cluster |
 | **ES 8.x** | **OS 3.x** | Reindex from Remote | ✅ Direct migration supported |
 
@@ -59,6 +59,8 @@ This migration requires a **three-phase approach**:
 * **Phase 0**: Create a snapshot on the source Elasticsearch 7.10 cluster
 * **Phase 1**: Restore that snapshot to OpenSearch 2.x
 * **Phase 2**: Reindex the restored indices, then upgrade OpenSearch 2.x to 3.x
+
+If OpenSearch **2.x** is your target rather than a stop on the way to 3.x, follow Phase 0 and Phase 1 and stop there — Phase 2 exists only to reach 3.x.
 
 ### Prerequisites
 
@@ -274,7 +276,9 @@ Use the Operator's declarative configuration:
               name: s3-secret
     ```
 
-    > The Operator will automatically mount the secret and reload the secure settings.
+    :::note
+    The Operator mounts the Secret and builds the keystore in an init container, so the credentials are only read when a pod starts. Adding or changing `general.keystore` therefore triggers a rolling restart of the nodes — the Operator does **not** call `_nodes/reload_secure_settings`.
+    :::
 
 #### Step 2: Register Snapshot Repository on Source Cluster (ES 7.10)
 
@@ -349,6 +353,9 @@ spec:
         settings:
           bucket: my-migration-bucket
           base_path: es_710_backup
+          # Read-only is correct for the restore, but it also means this repository
+          # cannot receive the pre-upgrade snapshot taken in Phase 2. Register a second,
+          # writable repository (different base_path) when you get there.
           readonly: "true"
     ...
   security:
@@ -430,6 +437,7 @@ For each restored index, create a new index and reindex the data:
 - The examples below use `migration_test` as the index name. Replace `migration_test` with your actual index name when executing these commands.
 - The commands require `jq`. If it is not available in the OpenSearch container, run them from a workstation that can reach the cluster.
 - Copying the index **settings** matters: shard counts, custom analyzers and similar settings live there, not in the mappings. If an index uses a custom analyzer, the corresponding analysis plugin must also be installed on the target cluster before the new index can be created.
+- An index produced by a shrink or split also carries `index.resize.*` and `index.routing.allocation.initial_recovery.*`, which cannot be set on a new index either. Delete those from `index_def.json` as well if the create call rejects them.
 :::
 
 ```bash
@@ -450,7 +458,9 @@ curl -k -u "admin:<password>" -X PUT "https://localhost:9200/migration_test_v2" 
   -H 'Content-Type: application/json' \
   -d @index_def.json
 
-# 3. Reindex data from old index to new index
+# 3. Reindex data from old index to new index.
+#    For a large index use wait_for_completion=false and poll GET _tasks/<task_id>
+#    instead - a request held open for minutes can be cut off by an intermediate proxy.
 
 curl -k -u "admin:<password>" -X POST "https://localhost:9200/_reindex?wait_for_completion=true" \
   -H 'Content-Type: application/json' -d'
@@ -459,7 +469,12 @@ curl -k -u "admin:<password>" -X POST "https://localhost:9200/_reindex?wait_for_
   "dest": { "index": "migration_test_v2" }
 }'
 
-# 4. Delete old index and create alias (or rename)
+# 4. Compare the document counts BEFORE deleting anything - the next step is destructive
+
+curl -k -u "admin:<password>" "https://localhost:9200/migration_test/_count"
+curl -k -u "admin:<password>" "https://localhost:9200/migration_test_v2/_count"
+
+# 5. Only once the two counts match: delete the old index and create an alias (or rename)
 curl -k -u "admin:<password>" -X DELETE "https://localhost:9200/migration_test"
 curl -k -u "admin:<password>" -X POST "https://localhost:9200/_aliases" \
   -H 'Content-Type: application/json' -d'
@@ -476,12 +491,14 @@ Repeat for all restored indices. After reindexing, verify the new index version:
 curl -k -u "admin:<password>" "https://localhost:9200/migration_test_v2/_settings?filter_path=**.version"
 ```
 
-The `version.created` should show an OpenSearch 2.x internal version number (for example `136408427` for OS 2.19.6), rather than the `7100299` that ES 7.10.2 indices carry. The exact number varies with the patch release, so do not compare against a literal: any `136xxxxxx` value means the index was created by OpenSearch 2.x and the reindex was successful.
+The `version.created` should show an OpenSearch 2.x internal version number (for example `136408127` for OS 2.19.3), rather than the `7100299` that ES 7.10.2 indices carry. The exact number varies with the patch release, so do not compare against a literal: any `136xxxxxx` value means the index was created by OpenSearch 2.x and the reindex was successful.
 
 #### Step 2: Upgrade OpenSearch Cluster
 
 :::warning
 Take a snapshot of the OpenSearch 2.x cluster before starting the upgrade. A major version upgrade cannot be rolled back in place.
+
+The `migration_repo` registered in Phase 1 is declared `readonly: "true"`, so it cannot receive this snapshot. Register a second repository first — same bucket is fine, but a different `base_path` and without `readonly`.
 :::
 
 Update the `OpenSearchCluster` CR to upgrade the version. Use the same version for OpenSearch and OpenSearch Dashboards:
@@ -609,9 +626,11 @@ curl -k -u "admin:<password>" "https://localhost:9200/_nodes/settings?filter_pat
 
 Every node must report the allowlist. If the response is empty, the entry did not reach the nodes ([opensearch-k8s-operator#883](https://github.com/opensearch-project/opensearch-k8s-operator/issues/883) tracks this); set it on `nodePools[].additionalConfig` instead, or bake it into an `opensearch.yml` in a custom image, and check again before continuing.
 
-#### Step 2: Create Index Templates on OpenSearch (Optional but Recommended)
+#### Step 2: Create the Target Index on OpenSearch
 
-If your ES 8.x indices rely on specific settings or mappings, it is recommended to manually create the corresponding Index Templates or Mappings in OpenSearch beforehand.
+Reindex copies documents only, so create the target index — or an Index Template that matches its name — with the settings and mappings you need **before** running the reindex. An index created implicitly by the reindex uses dynamic mapping defaults and will not reproduce the source's shard count, custom analyzers or field types.
+
+Only skip this when the source index has no mapping or setting worth preserving.
 
 #### Step 3: Execute Reindex on OpenSearch
 
