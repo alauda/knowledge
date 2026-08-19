@@ -46,18 +46,23 @@ export const EditOnGithub = () => {
   const t = useI18n<typeof import("i18n")>();
 
   return (
-    <div className="mb-2">
-      <div className="editLink">
-        <a href={editLink} target="_blank" className="flex">
-          <EditIcon></EditIcon>
-          <span className="ml-2">{t("edit_page")}</span>
-        </a>
-      </div>
-      <div className="editLink">
-        <a href={issueLink} target="_blank" className="flex">
-          <GithubIcon></GithubIcon>
-          <span className="ml-2">{t("create_issue")}</span>
-        </a>
+    <div className="edit-on-github sticky top-0 z-10">
+      {/* 48px 遮罩层，用于隐藏滚动上来的 outline 内容 */}
+      <div className="edit-on-github__mask"></div>
+      {/* 实际内容 */}
+      <div className="edit-on-github__content">
+        <div className="editLink">
+          <a href={editLink} target="_blank" className="flex">
+            <EditIcon></EditIcon>
+            <span className="ml-2">{t("edit_page")}</span>
+          </a>
+        </div>
+        <div className="editLink">
+          <a href={issueLink} target="_blank" className="flex">
+            <GithubIcon></GithubIcon>
+            <span className="ml-2">{t("create_issue")}</span>
+          </a>
+        </div>
       </div>
     </div>
   );

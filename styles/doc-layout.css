@@ -88,13 +88,29 @@
   top: calc(var(--rp-nav-height) + var(--rp-banner-height, 0px));
   margin-top: var(--rp-sidebar-menu-height);
   z-index: var(--rp-z-index-aside);
-  padding-top: var(--rp-content-padding-y);
+  padding-top: 0;
   scrollbar-width: none;
   max-height: calc(100vh - var(--rp-nav-height) - var(--rp-banner-height, 0px));
   box-shadow: var(--rp-shadow-1);
   position: sticky;
   right: 0;
   overflow: hidden scroll;
+}
+
+/* beforeOutline sticky 容器 */
+.edit-on-github {
+  margin-top: calc(-1 * var(--rp-content-padding-y));
+  background: var(--rp-c-bg);
+}
+
+.edit-on-github__mask {
+  height: var(--rp-content-padding-y);
+  background: var(--rp-c-bg);
+}
+
+.edit-on-github__content {
+  padding-bottom: 8px;
+  background: var(--rp-c-bg);
 }
 
 .rp-doc-layout__menu {
@@ -202,4 +218,23 @@
     left: 0;
     transform: translate3d(0, 0, 0);
   }
+}
+
+.edit-on-github{
+  margin-top:0 !important;
+}
+
+.rp-doc-layout__outline{
+  padding-top:0 !important;
+}
+
+/* Outline 标题 sticky 定位 */
+.rp-outline__title {
+  position: sticky;
+  top: calc(var(--rp-content-padding-y) + 59px);
+  background: var(--rp-c-bg);
+  z-index: 10;
+  padding-top: 8px;
+  padding-bottom: 8px;
+  margin-top: -8px;
 }
