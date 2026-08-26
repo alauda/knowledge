@@ -4,7 +4,7 @@ products:
 kind:
   - Solution
 ProductsVersion:
-  - '4.1,4.2,4.3'
+  - '4.1,4.2,4.3,4.4'
 id: KB260300008
 ---
 
@@ -27,7 +27,7 @@ OpenSearch is a community-driven, open-source search and analytics suite derived
 <!-- factory:auto:supported-versions BEGIN -->
 | Item | Version |
 |------|---------|
-| ACP | 4.1, 4.2, 4.3 |
+| ACP | 4.1, 4.2, 4.3, 4.4 |
 | Architectures | amd64 (x86_64), arm64 |
 | Alauda support for OpenSearch (bundle) | v2.8.0 |
 | OpenSearch Operator | 2.8.0 |

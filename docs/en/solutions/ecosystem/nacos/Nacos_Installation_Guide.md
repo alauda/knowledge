@@ -4,7 +4,7 @@ products:
 kind:
   - Solution
 ProductsVersion:
-  - '4.1,4.2,4.3'
+  - '4.1,4.2,4.3,4.4'
 id: KB260700056
 ---
 
@@ -41,7 +41,7 @@ discovery end to end.
 <!-- factory:auto:supported-versions BEGIN -->
 | Item | Version |
 |------|---------|
-| ACP | 4.1, 4.2, 4.3 |
+| ACP | 4.1, 4.2, 4.3, 4.4 |
 | Architectures | amd64 (x86_64), arm64 |
 | Alauda support for Nacos (bundle) | v3.0.1 |
 | Nacos server (operand) | v3.0.1 (`docker.io/nacos/nacos-server:v3.0.1`, multi-arch) |

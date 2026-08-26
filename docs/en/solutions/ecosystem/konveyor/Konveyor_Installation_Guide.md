@@ -4,7 +4,7 @@ products:
 kind:
   - Solution
 ProductsVersion:
-  - '4.1,4.2,4.3'
+  - '4.1,4.2,4.3,4.4'
 id: KB260700098
 ---
 
@@ -42,7 +42,7 @@ Marketplace. Creating a single `Tackle` resource then brings up the whole platfo
 <!-- factory:auto:supported-versions BEGIN -->
 | Item | Version |
 |------|---------|
-| ACP | 4.1, 4.2, 4.3 |
+| ACP | 4.1, 4.2, 4.3, 4.4 |
 | Architectures | amd64 (x86_64), arm64 |
 | Network | IPv4, IPv6 |
 | Alauda support for Konveyor (bundle) | v0.9.2 |

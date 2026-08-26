@@ -4,7 +4,7 @@ products:
 kind:
   - Solution
 ProductsVersion:
-  - '4.1,4.2,4.3'
+  - '4.1,4.2,4.3,4.4'
 id: KB260700092
 ---
 
@@ -52,7 +52,7 @@ the Debezium Operator, and run a CDC pipeline end to end.
 <!-- factory:auto:supported-versions BEGIN -->
 | Item | Version |
 |------|---------|
-| ACP | 4.1, 4.2, 4.3 |
+| ACP | 4.1, 4.2, 4.3, 4.4 |
 | Architectures | amd64 (x86_64), arm64 |
 | Alauda support for Debezium (bundle) | v3.6.0 |
 | Debezium Operator image | `quay.io/debezium/operator:3.6.0` (multi-arch) |
