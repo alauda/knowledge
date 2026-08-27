@@ -233,6 +233,119 @@ $ kubectl -n $NAMESPACE exec $STANDBY_CLUSTER-0 -- patronictl list
 
 ### Cross-cluster Setup
 
+#### Port Planning for Firewalled Environments
+
+In an environment where traffic between the two Kubernetes clusters passes through a firewall, decide which ports will be allowed **before** you create the clusters. By default the operator lets Kubernetes allocate NodePorts automatically, and a new port is allocated whenever the Service is recreated — an allocation you cannot submit to a firewall change request in advance, and one that does not survive the cluster recreation steps described in [Troubleshooting](#troubleshooting).
+
+**Which ports the firewall must allow**
+
+| Direction | Destination nodes | Port to open |
+| --- | --- | --- |
+| Standby cluster → Primary cluster | Every node running a primary-cluster PostgreSQL pod | Primary cluster's **master** Service NodePort |
+| Primary cluster → Standby cluster | Every node running a standby-cluster PostgreSQL pod | Standby cluster's **master** Service NodePort |
+
+Two points are easy to get wrong:
+
+- **Open the port on every node that can host a PostgreSQL pod, not only the address you put in `peerHost`.** The operator records the host IP of every member pod and builds the cross-cluster endpoints from that list, so a connection may be made to any of them. If pods can be rescheduled onto other nodes, include those nodes as well.
+- **Both directions are required.** Only the standby dials the primary while replication is running normally, but the direction reverses during a switchover: the demoted cluster becomes the one that dials. A rule set that allows only standby → primary works until the first switchover and then fails.
+
+**Identifying the Service to pin**
+
+A cluster has several Services, and none of them is named `master`. For a cluster named `<cluster-name>`:
+
+| Service name | Role | `serviceTemplates` key | Include in firewall rule |
+| --- | --- | --- | --- |
+| `<cluster-name>` | master | `master` | **Yes** — this is the NodePort to open |
+| `<cluster-name>-repl` | replica | `replica` | No |
+| `<cluster-name>-xcr` | cross-cluster alias | not configurable | No |
+| `<cluster-name>-exporter` | metrics | not configurable | No |
+
+:::warning `-repl` is the replica Service, not the replication Service
+The `-repl` suffix stands for **replica**: it is the read-only client endpoint that load balances across replica pods, and it plays no part in cross-cluster replication. Its similarity to "replication" makes it the most common wrong answer when a firewall rule is requested.
+:::
+
+:::info The `-xcr` Service NodePort does not need to be opened
+The `<cluster-name>-xcr` Service also receives its own auto-allocated NodePort, but it is a local alias for the **peer** cluster: its target port is the peer's master NodePort. Traffic leaves through it, nothing arrives on it, and no external client ever connects to it. It is also built directly by the operator rather than from `serviceTemplates`, so its port cannot be pinned — and does not need to be.
+:::
+
+To read the port that must be opened — the web console shows cluster IPs rather than node ports, so query it directly:
+
+```bash
+kubectl get svc -n <namespace> <cluster-name> -o jsonpath='{.spec.ports[0].nodePort}'
+```
+
+
+**Pinning the NodePort to a fixed number**
+
+`clusterReplication` has no field for the port number. Pin the master Service's NodePort with `spec.serviceTemplates.master`, which is merged into the generated Service:
+
+```yaml
+spec:
+  clusterReplication:
+    enabled: true
+    replSvcType: NodePort
+  serviceTemplates:
+    master:
+      spec:
+        type: NodePort
+        ports:
+          - name: postgresql
+            port: 5432
+            targetPort: 5432
+            nodePort: 31234        # must be within the cluster's node port range
+```
+
+Apply the same pattern to both clusters, choosing a different number for each if they share a firewall policy. The standby's `peerPort` is then the number you pinned on the primary, and it no longer changes when a Service is recreated.
+
+:::warning Write the port entry out in full
+The template's `ports` list **replaces** the generated one entirely rather than merging field by field, so a partial entry does not inherit the defaults of the entry it replaces.
+
+The schema catches the worst case: `port` is required, and an entry that omits it is rejected outright with `spec.serviceTemplates.master.spec.ports[0].port: Required value`. `targetPort` is optional and Kubernetes defaults it to the value of `port`. Writing the entry out in full, as shown above, keeps the result independent of both behaviours and makes the intent readable.
+:::
+
+:::warning Verify the CRD in your cluster accepts `serviceTemplates`
+This field is present in the CRD schema shipped with the operator bundle, but not in every packaged copy of the CRD. If the operator is running with `enable_crd_registration: true`, it can replace the installed CRD with a schema that omits the field.
+
+How that presents depends on the client. `kubectl apply` requests strict field validation by default and fails loudly:
+
+```
+error: ... strict decoding error: unknown field "spec.serviceTemplates"
+```
+
+Clients that do not request strict validation — `kubectl apply --validate=ignore`, older clients, and some controllers and GitOps tools — are told the object was created successfully while the API server discards the field. The NodePort then stays auto-allocated, with nothing in the logs explaining why. Confirm the schema rather than relying on the apply succeeding:
+
+```bash
+kubectl get crd postgresqls.acid.zalan.do -o json \
+  | jq '.spec.versions[0].schema.openAPIV3Schema.properties.spec.properties.serviceTemplates != null'
+```
+
+The command must print `true`. If it prints `false`, use the LoadBalancer option below, or open the automatically allocated ports and re-check them after any change that recreates the Service.
+:::
+
+**Set the ports before pairing the clusters**
+
+Choose the port numbers before the clusters are paired, and treat them as fixed afterwards.
+
+:::warning Changing the node port of a paired cluster breaks replication and does not repair itself
+The peer learns the port from the `sys_operator.multi_cluster_info` metadata table, and that table reaches the standby over the replication stream itself. Changing the primary's node port cuts the stream, so the updated row never arrives: the primary records the new port while the standby keeps the old one indefinitely, pointing its `-xcr` endpoints at a port that no longer exists. The two sides cannot re-synchronise on their own, because the only channel that would carry the correction is the one the change severed.
+
+Recovery is to restore the previous node port, at which point the standby reconnects and catches up, or to rebuild the standby. Plan the numbers up front rather than adjusting them on a running pair.
+:::
+
+**Alternative: use LoadBalancer**
+
+With `replSvcType: LoadBalancer` (operator v4.2.0 or later) the peer connects to the load balancer address on port 5432 and no NodePort is involved, which usually makes the firewall rule simpler and stable. This requires a load balancer implementation in both clusters.
+
+:::info Confirm the failure really is the firewall before renumbering ports
+A firewall drop and a failure in the cluster's own overlay network both look identical from inside the PostgreSQL pod: a connection timeout. Test from a **node shell** on the standby side, not from a pod:
+
+```bash
+nc -vz <primary-node-ip> <primary-master-nodeport>
+```
+
+`Connection refused` means the path is open and nothing is listening on that port — the port number or Service is wrong. A timeout is consistent with a firewall drop. If the node-level test succeeds but the pod-level one times out, the problem is inside the cluster network and changing port numbers will not fix it.
+:::
+
 #### Primary Cluster Configuration
 
 **Option 1: Using NodePort**
@@ -353,9 +466,25 @@ After the standby cluster is successfully running, verify that its External IP i
 
 ### Switchover Procedure
 
-To avoid split-brain scenarios, perform planned switchovers in two phases:
+To avoid split-brain scenarios, perform planned switchovers in three phases. **Phase 3 is not optional** — promoting the new primary does not change where the application sends its database connections.
 
 > **Important**: For Cross-cluster setups, ensure you switch your `kubectl` context to the appropriate cluster before executing commands.
+
+:::info Confirm the replication metadata is clean before switching over
+Phase 1 demotes the current primary **in place**. The demoted cluster obtains its new peer's
+connection details from the `sys_operator.multi_cluster_info` table, so a switchover is only as
+reliable as the contents of that table.
+
+If either cluster has ever been deleted and recreated, verify that exactly one row exists per
+cluster before proceeding — see
+[Stale replication metadata](#stale-replication-metadata-after-recreating-a-cluster).
+
+```bash
+kubectl -n <ns> exec <primary-leader-pod> -c postgres -- psql -U postgres -c \
+  "select id, trim(cluster_name) as cluster_name, trim(role) as role, node_port, last_update
+     from sys_operator.multi_cluster_info order by cluster_name, last_update desc;"
+```
+:::
 
 #### Phase 1: Demote Primary to Standby
 
@@ -389,6 +518,73 @@ $ kubectl -n $NAMESPACE exec $STANDBY_CLUSTER-0 -- patronictl list
 | acid-standby-1 | fd00:10:16::2a2e | Sync Standby | streaming |  2 |         0 |
 +----------------+------------------+--------------+-----------+----+-----------+
 ```
+
+#### Phase 3: Repoint the Application to the New Primary
+
+⚠ **The switchover does not do this for you.** After Phases 1 and 2, the former primary is a
+**read-only standby**, and the application's database connection still points at it. Writes keep
+failing:
+
+```
+ERROR: cannot execute UPDATE in a read-only transaction
+ERROR: cannot execute INSERT in a read-only transaction
+```
+
+Healthy replication does not mean the service is restored — **the application connection must be
+repointed explicitly.**
+
+**1. Confirm the new primary is writable**
+
+```bash
+kubectl -n $NAMESPACE exec $STANDBY_CLUSTER-0 -- psql -Atc "select pg_is_in_recovery()"
+# expected: f
+```
+
+**2. Get the new primary's connection endpoint**
+
+```bash
+# Intra-cluster: use the master service directly
+echo "$STANDBY_CLUSTER.$NAMESPACE.svc.cluster.local:5432"
+
+# Cross-cluster: the application reaches it via NodePort / LoadBalancer
+kubectl -n $NAMESPACE get svc $STANDBY_CLUSTER -o wide
+```
+
+> In a cross-cluster setup this is the same class of path as the `peerHost` / `peerPort` used when
+> configuring the standby — confirm the firewall permits it as well.
+
+**3. Confirm credentials**
+
+Database credentials live in a Secret named **after the cluster**, so the Secret name changes with
+the cluster:
+
+```bash
+kubectl -n $NAMESPACE get secret \
+  <username>.$STANDBY_CLUSTER.credentials.postgresql.acid.zalan.do \
+  -o jsonpath='{.data.password}' | base64 -d; echo
+```
+
+**4. Update the application configuration and restart**
+
+Update the database endpoint however the application is configured (ConfigMap / Secret / environment
+variable / connection string), then restart its pods so the new connection takes effect.
+
+**5. Verify**
+
+```bash
+# Connections from the application should appear on the new primary
+kubectl -n $NAMESPACE exec $STANDBY_CLUSTER-0 -- \
+  psql -x -c "select client_addr, usename, state, query_start from pg_stat_activity
+                where backend_type = 'client backend'"
+```
+
+Confirm that `read-only transaction` errors no longer appear in either the application or the
+database logs.
+
+> **Recommendation**: where the application supports it, connect through an indirection that is
+> decoupled from the cluster name (a stable Service alias, an external DNS name, or a connection
+> pooler), so future switchovers only require repointing that indirection rather than editing
+> application configuration.
 
 ### Monitoring Replication Status
 
@@ -463,7 +659,7 @@ $ kubectl exec $(kubectl -n $NAMESPACE get pod -l spilo-role=master,cluster-name
 When the primary cluster fails and cannot be recovered promptly:
 
 1. **Manual Intervention Required**: Promote the standby cluster using the manual failover procedure
-2. Update application connections to point to the new primary
+2. Update application connections to point to the new primary (see *Normal Operations → Phase 3*)
 3. When the original primary recovers, reconfigure it as a standby
 4. **Note**: Some data loss may occur depending on replication lag at the time of failure
 
@@ -516,16 +712,155 @@ Standby cluster fails to join replication, data synchronization issues
 
 ##### Cause
 
-Excessive data drift between clusters preventing WAL-based recovery
+Two different conditions produce the same symptom, and they have different remedies. Identify which
+one you have before acting.
+
+- **The standby is behind, and the WAL it needs has been recycled.** The standby log repeats
+  `requested WAL segment ... has already been removed`. The data is intact and consistent; the
+  standby simply cannot obtain the WAL required to catch up.
+- **The standby has diverged.** The standby log reports
+  `requested starting point ... is not in this server's history`, or the two clusters report
+  different `system identifier` values. Streaming replication cannot reconcile this.
+
+##### Diagnosis
+
+```bash
+# 1. Same lineage? The two values must match. Different values mean these are unrelated databases.
+kubectl -n <ns> exec <primary-leader-pod> -c postgres -- \
+  pg_controldata /home/postgres/pgdata/pgroot/data | grep -i "system identifier"
+
+# 2. What is the standby actually reporting? Read the error, not just the symptom.
+kubectl -n <ns> exec <standby-pod> -c postgres -- \
+  tail -200 /home/postgres/pgdata/pgroot/pg_log/postgresql-*.csv | grep -iE "removed|history"
+
+# 3. Does the primary still hold the WAL the standby needs, and is anything retaining it?
+kubectl -n <ns> exec <primary-leader-pod> -c postgres -- psql -U postgres -x \
+  -c "select substr(name,1,8) as timeline, count(*) as segments,
+             min(name) as oldest, max(name) as newest
+        from pg_ls_waldir() where name ~ '^[0-9A-F]{24}$' group by 1 order by 1;" \
+  -c "select slot_name, active, restart_lsn, wal_status,
+             pg_size_pretty(safe_wal_size) as safe
+        from pg_replication_slots;"
+```
+
+Use the primary's **current leader**, which is not necessarily pod `-0`. Determine it with
+`patronictl list`.
 
 ##### Solution
+
+:::warning Rebuilding discards your ability to recover any other way
+The procedure below deletes the standby cluster. Deleting it removes `spec.clusterReplication`, so
+the operator drops the `xdc_hotstandby` replication slot on the primary, and **all WAL retention for
+that peer is released immediately**. Any WAL the standby still needed becomes eligible for recycling
+at the primary's next checkpoint.
+
+If the standby was only behind rather than diverged, applying this procedure converts a recoverable
+situation into one that requires a full base backup, and destroys the evidence needed to determine
+why replication stopped.
+
+**Before deleting anything:**
+
+1. Complete the Diagnosis steps above and record the output.
+2. If the missing WAL still exists — in the primary's `pg_wal`, in a WAL archive, or on another
+   member of the primary cluster — the standby can be repaired by making those segments available
+   to it instead. Copy the complete segments into the standby's `pg_wal` directory (owned by
+   `postgres`, mode `600`) and restart it. Verify each copied file against its source by checksum:
+   a standby that is stuck often already holds a **partial** copy of the very segment it is failing
+   on, and that partial file is a full 16 MiB, so file size does not indicate completeness.
+3. Take a storage-level snapshot of the primary's volumes.
+:::
 
 1. Delete the failed standby cluster
 2. Remove cluster metadata from primary:
 ```sql
 DELETE FROM sys_operator.multi_cluster_info WHERE cluster_name='<failed-cluster-name>';
 ```
+
+   **Step 2 must be completed before step 3, and must not be skipped.** Each cluster's row is keyed
+   by an ID derived from the cluster's Kubernetes UID, so a recreated cluster registers under a
+   *new* ID. If the old row is still present, the table ends up holding two rows for the same
+   cluster — one current, one obsolete. See
+   [Stale replication metadata](#stale-replication-metadata-after-recreating-a-cluster).
+
 3. Recreate the standby cluster following initial setup procedures
+4. Verify that exactly one row exists per cluster:
+
+```bash
+kubectl -n <ns> exec <primary-leader-pod> -c postgres -- psql -U postgres -c \
+  "select id, trim(cluster_name) as cluster_name, trim(role) as role, node_port, last_update
+     from sys_operator.multi_cluster_info order by cluster_name, last_update desc;"
+```
+
+5. After the standby is running, confirm that replication is actually retained — not merely
+   connected. The slot must exist, be active, and track the standby:
+
+```bash
+kubectl -n <ns> exec <primary-leader-pod> -c postgres -- psql -U postgres -x -c \
+  "select slot_name, active, restart_lsn, wal_status from pg_replication_slots
+    where slot_name = 'xdc_hotstandby';"
+```
+
+An empty `restart_lsn` means the slot is reserving nothing, and WAL will be recycled regardless of
+`max_slot_wal_keep_size`. A missing row means no slot exists and the peer has no retention at all.
+
+#### Stale Replication Metadata After Recreating a Cluster
+
+##### Symptoms
+
+Replication does not resume after a switchover or after recreating a cluster, even though both
+clusters are running and the network path between them is open. The demoted or recreated cluster
+may address the peer on a port or address that is no longer in use.
+
+##### Cause
+
+Cross-cluster replication stores each participating cluster's connection details in the
+`sys_operator.multi_cluster_info` table on the primary. Each row's ID is derived from the cluster's
+Kubernetes UID, so **a recreated cluster registers under a new ID rather than updating the existing
+row**. If the previous row was not removed first, the table holds two rows describing the same
+cluster, one of which is obsolete.
+
+On **PostgreSQL Operator versions earlier than v4.3.4**, the query that reads peer details applies
+no ordering and the first row returned is used, so an obsolete row may be selected in preference to
+the current one. Those versions also do not refresh a row's `last_update` timestamp when re-registering,
+so the timestamps give no reliable indication of which row is current.
+
+**PostgreSQL Operator v4.3.4 and later** refresh `last_update` on every registration and select the
+most recently updated row, so a leftover row no longer takes precedence.
+
+##### Diagnosis
+
+```bash
+kubectl -n <ns> exec <primary-leader-pod> -c postgres -- psql -U postgres -c \
+  "select id, trim(cluster_name) as cluster_name, trim(role) as role,
+          repl_svc_ip, node_port, trim(member_hosts) as member_hosts, last_update
+     from sys_operator.multi_cluster_info order by cluster_name, last_update desc;"
+```
+
+Expect exactly one row per cluster. More than one row for the same `cluster_name` indicates leftover
+metadata. Compare `node_port` against the peer's current master Service:
+
+```bash
+kubectl -n <ns> get svc <peer-cluster-name> -o jsonpath='{.spec.ports[0].nodePort}{"\n"}'
+```
+
+##### Solution
+
+1. Remove the obsolete rows, keeping only the row whose `node_port` and `member_hosts` match the
+   peer's current master Service:
+
+```sql
+DELETE FROM sys_operator.multi_cluster_info WHERE id = <obsolete-id>;
+```
+
+2. Allow the operator to reconcile, then confirm the `-xcr` Service endpoints now address the peer's
+   current port:
+
+```bash
+kubectl -n <ns> get endpoints <cluster-name>-xcr -o yaml
+```
+
+3. Where practical, run PostgreSQL Operator v4.3.4 or later, which selects the most recently updated
+   row and so is not affected by leftover metadata.
 
 #### Data Synchronization Issues
 
