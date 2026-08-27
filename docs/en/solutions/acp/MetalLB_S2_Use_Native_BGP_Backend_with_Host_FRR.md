@@ -34,6 +34,7 @@ Switch MetalLB to the `native` BGP backend to disable the MetalLB-managed FRR co
 
 :::warning
 Updating the `MetalLB` resource rolls the Speaker DaemonSet and can briefly interrupt MetalLB BGP advertisements. Perform the change during a maintenance window and confirm the advertised VIP routes after the rollout.
+The `kubectl patch` change is not guaranteed to persist. A MetalLB plugin upgrade, reinstall, or resource recreation can remove the change and restore the default `frr` backend. Recheck `spec.bgpBackend` after an upgrade and repeat Step 2 if it is no longer `native`.
 :::
 
 ### 1. Confirm the current MetalLB backend
@@ -81,8 +82,6 @@ kubectl -n metallb-system get pods -l app=metallb,component=speaker -o wide
 ```
 
 The first command must return `native`. The container list must not include `frr`, `reloader`, `frr-metrics`, or `metrics-auth-proxy-frr`. All Speaker Pods should be `Running` and `Ready`.
-
-The `MetalLB` resource stores this setting. Recheck `spec.bgpBackend` after a MetalLB plugin upgrade or reinstall, because a resource recreation or reset can restore the default backend.
 
 ## Rollback
 
