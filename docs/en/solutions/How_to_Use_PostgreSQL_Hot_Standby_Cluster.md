@@ -249,9 +249,31 @@ Two points are easy to get wrong:
 - **Open the port on every node that can host a PostgreSQL pod, not only the address you put in `peerHost`.** The operator records the host IP of every member pod and builds the cross-cluster endpoints from that list, so a connection may be made to any of them. If pods can be rescheduled onto other nodes, include those nodes as well.
 - **Both directions are required.** Only the standby dials the primary while replication is running normally, but the direction reverses during a switchover: the demoted cluster becomes the one that dials. A rule set that allows only standby → primary works until the first switchover and then fails.
 
-:::info The `-xcr` Service NodePort does not need to be opened
-Each cluster also has a `<cluster-name>-xcr` Service which receives its own auto-allocated NodePort. It is a local alias that points at the **peer's** node IPs — nothing outside the cluster ever connects to it. Do not include it in the firewall request.
+**Identifying the Service to pin**
+
+A cluster has several Services, and none of them is named `master`. For a cluster named `<cluster-name>`:
+
+| Service name | Role | `serviceTemplates` key | Include in firewall rule |
+| --- | --- | --- | --- |
+| `<cluster-name>` | master | `master` | **Yes** — this is the NodePort to open |
+| `<cluster-name>-repl` | replica | `replica` | No |
+| `<cluster-name>-xcr` | cross-cluster alias | not configurable | No |
+| `<cluster-name>-exporter` | metrics | not configurable | No |
+
+:::warning `-repl` is the replica Service, not the replication Service
+The `-repl` suffix stands for **replica**: it is the read-only client endpoint that load balances across replica pods, and it plays no part in cross-cluster replication. Its similarity to "replication" makes it the most common wrong answer when a firewall rule is requested.
 :::
+
+:::info The `-xcr` Service NodePort does not need to be opened
+The `<cluster-name>-xcr` Service also receives its own auto-allocated NodePort, but it is a local alias for the **peer** cluster: its target port is the peer's master NodePort. Traffic leaves through it, nothing arrives on it, and no external client ever connects to it. It is also built directly by the operator rather than from `serviceTemplates`, so its port cannot be pinned — and does not need to be.
+:::
+
+To read the port that must be opened — the web console shows cluster IPs rather than node ports, so query it directly:
+
+```bash
+kubectl get svc -n <namespace> <cluster-name> -o jsonpath='{.spec.ports[0].nodePort}'
+```
+
 
 **Pinning the NodePort to a fixed number**
 
