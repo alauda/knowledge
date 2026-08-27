@@ -233,6 +233,81 @@ $ kubectl -n $NAMESPACE exec $STANDBY_CLUSTER-0 -- patronictl list
 
 ### Cross-cluster Setup
 
+#### Port Planning for Firewalled Environments
+
+In an environment where traffic between the two Kubernetes clusters passes through a firewall, decide which ports will be allowed **before** you create the clusters. By default the operator lets Kubernetes allocate NodePorts automatically, and a new port is allocated whenever the Service is recreated — an allocation you cannot submit to a firewall change request in advance, and one that does not survive the cluster recreation steps described in [Troubleshooting](#troubleshooting).
+
+**Which ports the firewall must allow**
+
+| Direction | Destination nodes | Port to open |
+| --- | --- | --- |
+| Standby cluster → Primary cluster | Every node running a primary-cluster PostgreSQL pod | Primary cluster's **master** Service NodePort |
+| Primary cluster → Standby cluster | Every node running a standby-cluster PostgreSQL pod | Standby cluster's **master** Service NodePort |
+
+Two points are easy to get wrong:
+
+- **Open the port on every node that can host a PostgreSQL pod, not only the address you put in `peerHost`.** The operator records the host IP of every member pod and builds the cross-cluster endpoints from that list, so a connection may be made to any of them. If pods can be rescheduled onto other nodes, include those nodes as well.
+- **Both directions are required.** Only the standby dials the primary while replication is running normally, but the direction reverses during a switchover: the demoted cluster becomes the one that dials. A rule set that allows only standby → primary works until the first switchover and then fails.
+
+:::info The `-xcr` Service NodePort does not need to be opened
+Each cluster also has a `<cluster-name>-xcr` Service which receives its own auto-allocated NodePort. It is a local alias that points at the **peer's** node IPs — nothing outside the cluster ever connects to it. Do not include it in the firewall request.
+:::
+
+**Pinning the NodePort to a fixed number**
+
+`clusterReplication` has no field for the port number. Pin the master Service's NodePort with `spec.serviceTemplates.master`, which is merged into the generated Service:
+
+```yaml
+spec:
+  clusterReplication:
+    enabled: true
+    replSvcType: NodePort
+  serviceTemplates:
+    master:
+      spec:
+        type: NodePort
+        ports:
+          - name: postgresql
+            port: 5432
+            targetPort: 5432
+            nodePort: 31234        # must be within the cluster's node port range
+```
+
+Apply the same pattern to both clusters, choosing a different number for each if they share a firewall policy. The standby's `peerPort` is then the number you pinned on the primary, and it no longer changes when a Service is recreated.
+
+:::warning Specify every field of the port entry
+The template's `ports` list **replaces** the generated one entirely rather than merging field by field. A template that sets only `nodePort` will drop `port` and `targetPort`, and the Service will stop serving PostgreSQL on 5432. Always give all four fields as shown above.
+:::
+
+:::warning Verify the CRD in your cluster accepts `serviceTemplates`
+This field is present in the CRD schema shipped with the operator bundle, but not in every packaged copy of the CRD. If the operator is running with `enable_crd_registration: true`, it can replace the installed CRD with a schema that omits the field. The API server then silently removes `spec.serviceTemplates` when you apply the resource: `kubectl` reports success, no error is logged, and the NodePort stays auto-allocated. Confirm before relying on it:
+
+```bash
+kubectl get crd postgresqls.acid.zalan.do -o json \
+  | jq '.spec.versions[0].schema.openAPIV3Schema.properties.spec.properties.serviceTemplates != null'
+```
+
+The command must print `true`. If it prints `false`, use the LoadBalancer option below, or open the automatically allocated ports and re-check them after any change that recreates the Service.
+:::
+
+**Set the ports before pairing the clusters**
+
+A change to the NodePort only reaches the peer through the `sys_operator.multi_cluster_info` metadata table. Configure `serviceTemplates` when you create the clusters, or at the latest before a switchover. On operator versions earlier than v4.3.4, a cluster that has already been demoted reads peer information from its own local copy of that table, so a port changed at that point may never propagate to the peer.
+
+**Alternative: use LoadBalancer**
+
+With `replSvcType: LoadBalancer` (operator v4.2.0 or later) the peer connects to the load balancer address on port 5432 and no NodePort is involved, which usually makes the firewall rule simpler and stable. This requires a load balancer implementation in both clusters.
+
+:::info Confirm the failure really is the firewall before renumbering ports
+A firewall drop and a failure in the cluster's own overlay network both look identical from inside the PostgreSQL pod: a connection timeout. Test from a **node shell** on the standby side, not from a pod:
+
+```bash
+nc -vz <primary-node-ip> <primary-master-nodeport>
+```
+
+`Connection refused` means the path is open and nothing is listening on that port — the port number or Service is wrong. A timeout is consistent with a firewall drop. If the node-level test succeeds but the pod-level one times out, the problem is inside the cluster network and changing port numbers will not fix it.
+:::
+
 #### Primary Cluster Configuration
 
 **Option 1: Using NodePort**
