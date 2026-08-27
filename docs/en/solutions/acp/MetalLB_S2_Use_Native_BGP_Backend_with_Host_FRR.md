@@ -30,7 +30,7 @@ For non-OpenShift clusters, MetalLB uses the `frr` backend when `spec.bgpBackend
 
 ## Resolution
 
-Use the `native` BGP backend and give MetalLB its own BGP session identity.
+Switch MetalLB to the `native` BGP backend to disable the MetalLB-managed FRR containers.
 
 :::warning
 Updating the `MetalLB` resource rolls the Speaker DaemonSet and can briefly interrupt MetalLB BGP advertisements. Perform the change during a maintenance window and confirm the advertised VIP routes after the rollout.
@@ -50,30 +50,7 @@ kubectl -n metallb-system get daemonset speaker \
 
 If the `bgpBackend` output is empty on a non-OpenShift cluster, the Operator uses `frr` by default. If the container list includes `frr`, the MetalLB FRR process is running in the Speaker Pod. Replace `metallb` in the commands if the resource has a different name.
 
-### 2. Configure independent BGP sessions
-
-In the target cluster, go to **Administrator -> Network Management -> BGP Peers** and create or edit the BGP peers used by MetalLB. Configure values reserved for MetalLB:
-
-- **Local AS Number**: The local AS number for the MetalLB session. Do not reuse the host FRR local AS number when the upstream router requires separate sessions.
-- **Peer AS Number** and **Peer IP**: The values configured on the upstream router for the MetalLB session.
-- **Local IP**: A source address that is different from the source address used by the host FRR session.
-- **RouterID**: A router ID that is different from the host FRR router ID and other BGP instances on the node.
-- **BGP-Connected Node**: Only the nodes that have the MetalLB source address and should run the MetalLB Speaker.
-
-If MetalLB and the host FRR service use the same upstream router, configure the router to accept both sessions. MetalLB and host FRR must not reuse the same local address, router ID, or advertised prefixes.
-
-### 3. Configure the BGP external address pool
-
-Go to **Administrator -> Network Management -> External IP Address Pool** and create or edit the pool used by the LoadBalancer Services:
-
-1. Set **Type** to **BGP**.
-2. Enter the MetalLB VIP range in **IP Resources**.
-3. Associate the MetalLB BGP peer.
-4. Select only the nodes that are allowed to advertise the VIP range.
-
-The VIP range must not overlap with prefixes advertised by the host FRR service.
-
-### 4. Switch MetalLB to the native BGP backend
+### 2. Switch MetalLB to the native BGP backend
 
 The console does not expose the `spec.bgpBackend` field. A platform administrator must set it with `kubectl`:
 
@@ -85,7 +62,7 @@ kubectl -n metallb-system patch metallb metallb \
 
 The command should report that the resource was configured. The Operator then rolls the Speaker DaemonSet and removes the MetalLB-managed FRR containers. It does not stop or reconfigure the host FRR systemd service.
 
-### 5. Verify the result
+### 3. Verify the result
 
 Wait for the Speaker rollout to complete:
 
@@ -103,7 +80,7 @@ kubectl -n metallb-system get daemonset speaker \
 kubectl -n metallb-system get pods -l app=metallb,component=speaker -o wide
 ```
 
-The first command must return `native`. The container list must not include `frr`, `reloader`, `frr-metrics`, or `metrics-auth-proxy-frr`. All Speaker Pods should be `Running` and `Ready`. Pod readiness alone does not prove that BGP sessions are established or that VIP prefixes are advertised; confirm both the MetalLB session and the existing host FRR sessions with the upstream router or the customer's normal network monitoring tools.
+The first command must return `native`. The container list must not include `frr`, `reloader`, `frr-metrics`, or `metrics-auth-proxy-frr`. All Speaker Pods should be `Running` and `Ready`.
 
 The `MetalLB` resource stores this setting. Recheck `spec.bgpBackend` after a MetalLB plugin upgrade or reinstall, because a resource recreation or reset can restore the default backend.
 
