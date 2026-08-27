@@ -33,7 +33,7 @@ For non-OpenShift clusters, MetalLB uses the `frr` backend when `spec.bgpBackend
 Switch MetalLB to the `native` BGP backend to disable the MetalLB-managed FRR containers.
 
 :::warning
-Updating the `MetalLB` resource rolls the Speaker DaemonSet and can briefly interrupt MetalLB BGP advertisements. Perform the change during a maintenance window and confirm the advertised VIP routes after the rollout.
+Updating the `MetalLB` resource rolls the Speaker DaemonSet and can briefly interrupt MetalLB BGP advertisements. Perform the change during a maintenance window and confirm that the Speaker rollout completes successfully.
 The `kubectl patch` change is not guaranteed to persist. A MetalLB plugin upgrade, reinstall, or resource recreation can remove the change and restore the default `frr` backend. Recheck `spec.bgpBackend` after an upgrade and repeat Step 2 if it is no longer `native`.
 :::
 
@@ -61,7 +61,7 @@ kubectl -n metallb-system patch metallb metallb \
   -p '{"spec":{"bgpBackend":"native"}}'
 ```
 
-The command should report that the resource was configured. The Operator then rolls the Speaker DaemonSet and removes the MetalLB-managed FRR containers. It does not stop or reconfigure the host FRR systemd service.
+The command should report `metallb.metallb.io/metallb patched`. The Operator then rolls the Speaker DaemonSet and removes the MetalLB-managed FRR containers. It does not stop or reconfigure the host FRR systemd service.
 
 ### 3. Verify the result
 

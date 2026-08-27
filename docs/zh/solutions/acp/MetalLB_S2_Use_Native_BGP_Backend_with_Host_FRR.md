@@ -33,7 +33,7 @@ MetalLB Speaker 使用 `hostNetwork: true`。当 BGP 后端为 `frr` 时，每�
 将 MetalLB 切换到 `native` BGP 后端，以停用 MetalLB 管理的 FRR 容器。
 
 :::warning
-更新 `MetalLB` 资源会滚动更新 Speaker DaemonSet，可能短暂中断 MetalLB 的 BGP 宣告。请在维护窗口内执行变更，并在滚动更新完成后确认 VIP 路由已重新宣告。
+更新 `MetalLB` 资源会滚动更新 Speaker DaemonSet，可能短暂中断 MetalLB 的 BGP 宣告。请在维护窗口内执行变更，并确认 Speaker 已成功完成滚动更新。
 通过 `kubectl patch` 修改的配置不保证在升级后保留。MetalLB 插件升级、重装或资源重建可能删除此修改并恢复默认的 `frr` 后端。升级后请重新检查 `spec.bgpBackend`；如果不再是 `native`，请重新执行步骤 2。
 :::
 
@@ -61,7 +61,7 @@ kubectl -n metallb-system patch metallb metallb \
   -p '{"spec":{"bgpBackend":"native"}}'
 ```
 
-命令应报告资源已被配置。随后 Operator 会滚动更新 Speaker DaemonSet，并移除由 MetalLB 管理的 FRR 容器。该操作不会停止或重新配置主机上的 FRR systemd 服务。
+命令应返回 `metallb.metallb.io/metallb patched`。随后 Operator 会滚动更新 Speaker DaemonSet，并移除由 MetalLB 管理的 FRR 容器。该操作不会停止或重新配置主机上的 FRR systemd 服务。
 
 ### 3. 验证结果
 
