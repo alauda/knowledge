@@ -297,12 +297,22 @@ spec:
 
 Apply the same pattern to both clusters, choosing a different number for each if they share a firewall policy. The standby's `peerPort` is then the number you pinned on the primary, and it no longer changes when a Service is recreated.
 
-:::warning Specify every field of the port entry
-The template's `ports` list **replaces** the generated one entirely rather than merging field by field. A template that sets only `nodePort` will drop `port` and `targetPort`, and the Service will stop serving PostgreSQL on 5432. Always give all four fields as shown above.
+:::warning Write the port entry out in full
+The template's `ports` list **replaces** the generated one entirely rather than merging field by field, so a partial entry does not inherit the defaults of the entry it replaces.
+
+The schema catches the worst case: `port` is required, and an entry that omits it is rejected outright with `spec.serviceTemplates.master.spec.ports[0].port: Required value`. `targetPort` is optional and Kubernetes defaults it to the value of `port`. Writing the entry out in full, as shown above, keeps the result independent of both behaviours and makes the intent readable.
 :::
 
 :::warning Verify the CRD in your cluster accepts `serviceTemplates`
-This field is present in the CRD schema shipped with the operator bundle, but not in every packaged copy of the CRD. If the operator is running with `enable_crd_registration: true`, it can replace the installed CRD with a schema that omits the field. The API server then silently removes `spec.serviceTemplates` when you apply the resource: `kubectl` reports success, no error is logged, and the NodePort stays auto-allocated. Confirm before relying on it:
+This field is present in the CRD schema shipped with the operator bundle, but not in every packaged copy of the CRD. If the operator is running with `enable_crd_registration: true`, it can replace the installed CRD with a schema that omits the field.
+
+How that presents depends on the client. `kubectl apply` requests strict field validation by default and fails loudly:
+
+```
+error: ... strict decoding error: unknown field "spec.serviceTemplates"
+```
+
+Clients that do not request strict validation — `kubectl apply --validate=ignore`, older clients, and some controllers and GitOps tools — are told the object was created successfully while the API server discards the field. The NodePort then stays auto-allocated, with nothing in the logs explaining why. Confirm the schema rather than relying on the apply succeeding:
 
 ```bash
 kubectl get crd postgresqls.acid.zalan.do -o json \
