@@ -107,20 +107,6 @@ The first command must return `native`. The container list must not include `frr
 
 The `MetalLB` resource stores this setting. Recheck `spec.bgpBackend` after a MetalLB plugin upgrade or reinstall, because a resource recreation or reset can restore the default backend.
 
-## Diagnostic Steps
-
-Use the following checks to determine whether the host FRR and MetalLB FRR conflict is present:
-
-```bash
-kubectl -n metallb-system get metallb metallb \
-  -o jsonpath='{.spec.bgpBackend}{"\n"}'
-kubectl -n metallb-system get daemonset speaker \
-  -o jsonpath='{.spec.template.spec.hostNetwork}{"\n"}{range .spec.template.spec.containers[*]}{.name}{"\n"}{end}'
-kubectl -n metallb-system get bgppeers,bgpadvertisements,ipaddresspools
-```
-
-An empty backend on a non-OpenShift cluster and an `frr` container in the Speaker template indicate that the default MetalLB FRR backend is active. `hostNetwork` should be `true`. Compare the BGP peer source address, router ID, local AS number, and advertised prefixes with the host FRR configuration and the upstream router configuration.
-
 ## Rollback
 
 If the native backend cannot meet the BGP requirements, restore the FRR backend:
