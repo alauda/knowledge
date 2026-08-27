@@ -324,7 +324,13 @@ The command must print `true`. If it prints `false`, use the LoadBalancer option
 
 **Set the ports before pairing the clusters**
 
-A change to the NodePort only reaches the peer through the `sys_operator.multi_cluster_info` metadata table. Configure `serviceTemplates` when you create the clusters, or at the latest before a switchover. On operator versions earlier than v4.3.4, a cluster that has already been demoted reads peer information from its own local copy of that table, so a port changed at that point may never propagate to the peer.
+Choose the port numbers before the clusters are paired, and treat them as fixed afterwards.
+
+:::warning Changing the node port of a paired cluster breaks replication and does not repair itself
+The peer learns the port from the `sys_operator.multi_cluster_info` metadata table, and that table reaches the standby over the replication stream itself. Changing the primary's node port cuts the stream, so the updated row never arrives: the primary records the new port while the standby keeps the old one indefinitely, pointing its `-xcr` endpoints at a port that no longer exists. The two sides cannot re-synchronise on their own, because the only channel that would carry the correction is the one the change severed.
+
+Recovery is to restore the previous node port, at which point the standby reconnects and catches up, or to rebuild the standby. Plan the numbers up front rather than adjusting them on a running pair.
+:::
 
 **Alternative: use LoadBalancer**
 
