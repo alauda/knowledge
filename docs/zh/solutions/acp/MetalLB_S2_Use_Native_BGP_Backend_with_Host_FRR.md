@@ -107,20 +107,6 @@ kubectl -n metallb-system get pods -l app=metallb,component=speaker -o wide
 
 `MetalLB` 资源会保存此设置。MetalLB 插件升级或重装后，请重新检查 `spec.bgpBackend`，因为资源重建或重置可能恢复默认后端。
 
-## 诊断步骤
-
-使用以下检查确定是否存在主机 FRR 与 MetalLB FRR 冲突：
-
-```bash
-kubectl -n metallb-system get metallb metallb \
-  -o jsonpath='{.spec.bgpBackend}{"\n"}'
-kubectl -n metallb-system get daemonset speaker \
-  -o jsonpath='{.spec.template.spec.hostNetwork}{"\n"}{range .spec.template.spec.containers[*]}{.name}{"\n"}{end}'
-kubectl -n metallb-system get bgppeers,bgpadvertisements,ipaddresspools
-```
-
-在非 OpenShift 集群中，后端输出为空且 Speaker 模板中包含 `frr`，表示 MetalLB 默认 FRR 后端处于启用状态。`hostNetwork` 应为 `true`。将 BGP 对等体的源地址、Router ID、本地 AS 号和宣告前缀与主机 FRR 配置及上游路由器配置进行比较。
-
 ## 回滚
 
 如果 Native 后端无法满足 BGP 要求，请恢复 FRR 后端：
