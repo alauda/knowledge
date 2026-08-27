@@ -34,6 +34,7 @@ MetalLB Speaker 使用 `hostNetwork: true`。当 BGP 后端为 `frr` 时，每�
 
 :::warning
 更新 `MetalLB` 资源会滚动更新 Speaker DaemonSet，可能短暂中断 MetalLB 的 BGP 宣告。请在维护窗口内执行变更，并在滚动更新完成后确认 VIP 路由已重新宣告。
+通过 `kubectl patch` 修改的配置不保证在升级后保留。MetalLB 插件升级、重装或资源重建可能删除此修改并恢复默认的 `frr` 后端。升级后请重新检查 `spec.bgpBackend`；如果不再是 `native`，请重新执行步骤 2。
 :::
 
 ### 1. 确认当前 MetalLB 后端
@@ -81,8 +82,6 @@ kubectl -n metallb-system get pods -l app=metallb,component=speaker -o wide
 ```
 
 第一条命令必须返回 `native`。容器列表中不得包含 `frr`、`reloader`、`frr-metrics` 或 `metrics-auth-proxy-frr`。所有 Speaker Pod 都应处于 `Running` 和 `Ready` 状态。
-
-`MetalLB` 资源会保存此设置。MetalLB 插件升级或重装后，请重新检查 `spec.bgpBackend`，因为资源重建或重置可能恢复默认后端。
 
 ## 回滚
 
