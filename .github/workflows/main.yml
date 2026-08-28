@@ -55,13 +55,25 @@ jobs:
       - name: Install dependencies (immutable)
         run: yarn --immutable
 
+      # The integrity check is what stands between a truncated machine
+      # translation and the published site, so it is itself tested -- on every
+      # event, not just the pushes that translate.
+      - name: Test the translation integrity check
+        run: yarn test:translation
+
       - name: generate id
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: ./add_id.sh docs/en/solutions && ./add_id.sh docs/en/articles
 
-      - name: translate
+      # Translate, verify, and retranslate whatever came back incomplete. A single
+      # pass is not trustworthy: this model has dropped a whole section, invented
+      # a table, and rewritten link targets into the literal `URL` from its own
+      # prompt example -- none of which the build would notice. If a document is
+      # still incomplete after the retries, this step fails and nothing is
+      # committed, so a short page never reaches the site.
+      - name: Translate and verify
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        run: yarn translate -s en -t zh -g "*"
+        run: node scripts/translate-verified.mjs
 
       - name: Build
         run: yarn build
@@ -81,3 +93,17 @@ jobs:
         with:
           branch: ${{ github.ref }}
           github_token: ${{ secrets.KNOWLEDGE_SECRET }}
+
+      # Nothing is committed unless the build passes, so a failed run otherwise
+      # discards the generated translations and leaves no way to see what the
+      # model produced. Keep them for post-mortems. docs/en is included because
+      # add_id.sh rewrites it earlier in the same run.
+      - name: Upload generated docs on failure
+        if: failure() && github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: actions/upload-artifact@v4
+        with:
+          name: generated-docs-${{ github.run_id }}
+          path: |
+            docs/en
+            docs/zh
+          retention-days: 7

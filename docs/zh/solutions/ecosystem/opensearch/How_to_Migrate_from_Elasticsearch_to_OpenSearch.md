@@ -4,7 +4,6 @@ products:
 kind:
   - Solution
 id: KB260100026
-sourceSHA: 4d71480f5d5df1aa4044adeeedaadb443b8cd9b2bd075df00f762f1ec153febe
 ---
 
 # 如何从 Elasticsearch 迁移到 OpenSearch

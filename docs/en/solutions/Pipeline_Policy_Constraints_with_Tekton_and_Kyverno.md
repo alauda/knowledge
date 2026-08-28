@@ -6,6 +6,7 @@ kind:
   - Solution
 ProductsVersion:
   - 4.3.x
+id: KB260800021
 ---
 # Pipeline Policy Constraints with Tekton and Kyverno
 

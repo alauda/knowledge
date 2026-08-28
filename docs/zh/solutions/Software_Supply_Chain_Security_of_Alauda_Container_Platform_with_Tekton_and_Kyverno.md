@@ -4,7 +4,6 @@ products:
   - Alauda Container Platform
 kind:
   - Solution
-sourceSHA: 7e3980ae21e998f2fd0014ace7f2cd8b3264c605d2948ce55999536f20eab834
 ---
 
 ```yaml

@@ -6,7 +6,6 @@ products:
 ProductsVersion:
   - 4.x
 id: KB251000009
-sourceSHA: 5eae23c900f5a89e26fec5e773b3d048e043b171bab6d6bbf975d3c26b823250
 ---
 
 # PostgreSQL 热备份集群配置指南
