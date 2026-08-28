@@ -63,6 +63,14 @@ jobs:
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: yarn translate -s en -t zh -g "*"
 
+      # Machine translation occasionally rewrites a link target -- it has emitted
+      # the literal `URL` copied from its own prompt example -- which then fails
+      # the build's dead-link check. Restore internal targets from English before
+      # building, using the English document as the source of truth.
+      - name: Repair machine-translated links
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: node scripts/check-translation-links.mjs --fix
+
       - name: Build
         run: yarn build
 
@@ -81,3 +89,17 @@ jobs:
         with:
           branch: ${{ github.ref }}
           github_token: ${{ secrets.KNOWLEDGE_SECRET }}
+
+      # Nothing is committed unless the build passes, so a failed run otherwise
+      # discards the generated translations and leaves no way to see what the
+      # model produced. Keep them for post-mortems. docs/en is included because
+      # add_id.sh rewrites it earlier in the same run.
+      - name: Upload generated docs on failure
+        if: failure() && github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: actions/upload-artifact@v4
+        with:
+          name: generated-docs-${{ github.run_id }}
+          path: |
+            docs/en
+            docs/zh
+          retention-days: 7

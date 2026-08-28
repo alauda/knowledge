@@ -20,6 +20,7 @@
     "new": "doom new",
     "serve": "doom serve",
     "translate": "doom translate",
+    "check:translation-links": "node scripts/check-translation-links.mjs",
     "export": "doom export"
   }
 }
