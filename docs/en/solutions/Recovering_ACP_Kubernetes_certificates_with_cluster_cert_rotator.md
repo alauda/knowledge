@@ -7,17 +7,17 @@ ProductsVersion:
   - '4.x'
 ---
 
-# Recovering ACP Kubernetes Certificates with cluster-cert-rotator
+# Recovering ACP Kubernetes Certificates with Kubernetes Certificates Rotator
 
 ## Issue
 
-After `cluster-cert-rotator` issues short-lived certificates, uninstalling the plugin does not restore the previous long-lived certificates. Certificates already written to a node remain unchanged, and automatic renewal stops when the plugin is removed.
+After Kubernetes Certificates Rotator issues short-lived certificates, uninstalling the plugin does not restore the previous long-lived certificates. Certificates already written to a node remain unchanged, and automatic renewal stops when the plugin is removed.
 
 This procedure is for an approved emergency recovery. It re-signs existing certificates with the cluster's current CA certificates and private keys. It is not a standard maintenance operation and does not extend the CA itself.
 
 ## Environment
 
-This procedure applies to an ACP cluster that uses kubeadm-style files under `/etc/kubernetes` and has the `cert-renew` tool files delivered by `cluster-cert-rotator`. The plugin namespace is normally `cpaas-system`; confirm the installed release and image tag before using a tool from a different release.
+This procedure applies to an ACP cluster that uses kubeadm-style files under `/etc/kubernetes` and has the `cert-renew` tool files delivered by Kubernetes Certificates Rotator. The plugin namespace is normally `cpaas-system`; confirm the installed release and image tag before using a tool from a different release.
 
 Run the recovery separately on every node in the cluster, including all control-plane and worker nodes. The script changes only the local files on the node where it runs; running it on one node does not update any other node. Worker nodes normally do not have the CA private key. Because the script requires a CA private key, the approved recovery plan must define how to provide, protect, and remove the key on each worker node.
 
@@ -180,7 +180,7 @@ Check the kubelet and control-plane logs for restart failures. Confirm etcd endp
 
 ## Root Cause
 
-`cluster-cert-rotator` changes the requested duration through its controller configuration, but removing the plugin does not rewrite certificates that it already issued. The standalone `cert-renew` utility signs replacement certificates with the existing CA and sets `NotAfter` to `now + days`; it does not inspect or clamp that value to the CA expiry. The effective lifetime is bounded by whichever comes first: the requested duration or the CA expiry.
+Kubernetes Certificates Rotator changes the requested duration through its controller configuration, but removing the plugin does not rewrite certificates that it already issued. The standalone `cert-renew` utility signs replacement certificates with the existing CA and sets `NotAfter` to `now + days`; it does not inspect or clamp that value to the CA expiry. The effective lifetime is bounded by whichever comes first: the requested duration or the CA expiry.
 
 ## Rollback
 

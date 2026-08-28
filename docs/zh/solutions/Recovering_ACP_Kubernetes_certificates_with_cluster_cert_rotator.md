@@ -7,17 +7,17 @@ ProductsVersion:
   - '4.x'
 ---
 
-# 使用 cluster-cert-rotator 恢复 ACP Kubernetes 证书
+# 使用 Kubernetes Certificates Rotator 恢复 ACP Kubernetes 证书
 
 ## 问题
 
-`cluster-cert-rotator` 已经签发短有效期证书后，卸载插件不会自动恢复之前的长有效期证书。节点上已经写入的证书保持不变，插件移除后也不会再发生自动续期。
+Kubernetes Certificates Rotator 已经签发短有效期证书后，卸载插件不会自动恢复之前的长有效期证书。节点上已经写入的证书保持不变，插件移除后也不会再发生自动续期。
 
 本文步骤只用于经过批准的紧急恢复。它使用集群当前的 CA 证书和私钥重新签发现有证书，不是日常维护操作，也不会延长 CA 自身的有效期。
 
 ## 环境
 
-本文适用于使用 kubeadm 风格 `/etc/kubernetes` 文件布局，并且已经由 `cluster-cert-rotator` 交付 `cert-renew` 工具文件的 ACP 集群。插件命名空间通常是 `cpaas-system`；执行前先确认已安装插件的版本和镜像标签，不要直接使用其他版本的工具。
+本文适用于使用 kubeadm 风格 `/etc/kubernetes` 文件布局，并且已经由 Kubernetes Certificates Rotator 交付 `cert-renew` 工具文件的 ACP 集群。插件命名空间通常是 `cpaas-system`；执行前先确认已安装插件的版本和镜像标签，不要直接使用其他版本的工具。
 
 恢复操作必须在集群中的每个节点上分别执行，包括所有控制平面节点和工作节点。该脚本只修改当前节点的本地文件，在一台节点上执行不会更新其他节点。工作节点通常没有 CA 私钥；由于脚本需要 CA 私钥才能运行，获批的恢复方案必须明确规定如何临时提供、保护并清理工作节点上的 CA 私钥。
 
@@ -180,7 +180,7 @@ kubectl get pods -n kube-system -o wide
 
 ## 根本原因
 
-`cluster-cert-rotator` 通过控制器配置改变签发有效期，但卸载插件不会改写它已经签发的证书。独立的 `cert-renew` 工具使用现有 CA 重新签发证书，并将 `NotAfter` 设置为 `now + days`；它不会检查或截断为 CA 到期时间。因此实际有效期同时受请求天数和 CA 剩余有效期约束，不能只看请求参数。
+Kubernetes Certificates Rotator 通过控制器配置改变签发有效期，但卸载插件不会改写它已经签发的证书。独立的 `cert-renew` 工具使用现有 CA 重新签发证书，并将 `NotAfter` 设置为 `now + days`；它不会检查或截断为 CA 到期时间。因此实际有效期同时受请求天数和 CA 剩余有效期约束，不能只看请求参数。
 
 ## 回滚
 
