@@ -6,7 +6,6 @@ products:
 ProductsVersion:
   - 4.x
 id: KB260300002
-sourceSHA: 42488d5a3548fdf9f213199c719714baf2fc5c10e533ae99782ddc71a85b77e5
 ---
 
 # MySQL 5.7 到 8.0 迁移指南
