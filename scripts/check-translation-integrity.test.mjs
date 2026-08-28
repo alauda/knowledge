@@ -498,5 +498,56 @@ a
   fs.rmSync(root, { recursive: true, force: true })
 }
 
+// ---------------------------------------------------------------------------
+// A table written without leading pipes is still a table. The English pages in
+// this repository use both forms; the translator normalises everything to the
+// piped form. Counting rows by their leading pipe therefore scored the English
+// side at zero and the Chinese at full, and reported invented rows against a
+// page that had lost nothing -- which is what kept
+// Install_Multi-Primary_Service_Mesh_on_Different_Networks failing every
+// retranslation attempt in run 33160218909.
+// ---------------------------------------------------------------------------
+{
+  const pipeless = 'Priority | Locality | Details\n-------- | -------- | -------\n0 | `region1` | Current cluster.\n1 | `region2` | Failover is defined.\n'
+  const piped = '| 优先级 | 区域 | 详细信息 |\n| ------ | -------- | ------------ |\n| 0 | `region1` | 当前集群。 |\n| 1 | `region2` | 已定义故障转移。 |\n'
+  const root = makeTree({
+    en: { 'a.md': `${FRONTMATTER}# T\n\nProse.\n\n${pipeless}\nMore prose.\n` },
+    zh: { 'a.md': `${FRONTMATTER}# T\n\n正文。\n\n${piped}\n更多正文。\n` },
+  })
+  const { status, out } = check(root, '--fix')
+  ok(status === 0, 'a pipeless table matched against a piped translation passes', out)
+  ok(!out.includes('table rows'), 'no invented rows are reported for the two forms', out)
+  fs.rmSync(root, { recursive: true, force: true })
+}
+
+// ---------------------------------------------------------------------------
+// The counter still has to see rows that really went missing, in either form.
+// ---------------------------------------------------------------------------
+{
+  const pipeless = 'Priority | Locality\n-------- | --------\n0 | `region1`\n1 | `region2`\n2 | `region3`\n'
+  const short = 'Priority | Locality\n-------- | --------\n0 | `region1`\n'
+  const root = makeTree({
+    en: { 'a.md': `${FRONTMATTER}# T\n\nProse.\n\n${pipeless}\nMore prose.\n` },
+    zh: { 'a.md': `${FRONTMATTER}# T\n\n正文。\n\n${short}\n更多正文。\n` },
+  })
+  const { status, out } = check(root, '--fix')
+  ok(status === 1, 'rows dropped from a pipeless table are still caught', out)
+  ok(out.includes('table rows 3 vs 5 -- 2 lost'), 'the shortfall is counted exactly', out)
+  fs.rmSync(root, { recursive: true, force: true })
+}
+
+// ---------------------------------------------------------------------------
+// A line of prose that merely contains a pipe is not a table row -- without an
+// anchor on the delimiter row the counter would drift with the wording.
+// ---------------------------------------------------------------------------
+{
+  const en = `${FRONTMATTER}# T\n\nRun \`a | b\` and read the output.\n\nThe pipe | in prose means nothing here.\n`
+  const zh = `${FRONTMATTER}# T\n\n运行 \`a | b\` 并读取输出。\n\n这里正文中的竖线毫无含义。\n`
+  const root = makeTree({ en: { 'a.md': en }, zh: { 'a.md': zh } })
+  const { status, out } = check(root, '--fix')
+  ok(status === 0, 'pipes in prose are not counted as table rows', out)
+  fs.rmSync(root, { recursive: true, force: true })
+}
+
 console.log(`== result: ${pass} pass / ${fail} fail ==`)
 process.exit(fail > 0 ? 1 : 0)

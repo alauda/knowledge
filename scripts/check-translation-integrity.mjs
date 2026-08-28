@@ -345,6 +345,39 @@ const stripOrphanTrailingFence = (content) => {
 }
 
 /**
+ * Rows of every GFM table, counted the way the renderer sees them rather than
+ * by a leading pipe. Both of these are tables, and only the first one starts
+ * its lines with `|`:
+ *
+ *     | Priority | Locality |        Priority | Locality
+ *     |----------|----------|        -------- | --------
+ *     | 0        | region1  |        0        | region1
+ *
+ * Counting leading pipes scored the pipeless form as zero rows on the English
+ * side while the translation, which the model normalised to the piped form,
+ * scored the full count -- reporting invented rows for a page that had lost
+ * nothing. A table is anchored on its delimiter row instead: a line of dashes
+ * and pipes directly under a line containing a pipe. Everything contiguous
+ * after it that still carries a pipe is a row of that table.
+ */
+const DELIMITER_ROW = /^\s*\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)+\|?\s*$/
+const countTableRows = (lines) => {
+  let rows = 0
+  for (let i = 0; i < lines.length; i++) {
+    if (!DELIMITER_ROW.test(lines[i])) continue
+    if (i === 0 || !lines[i - 1].includes('|')) continue
+    rows += 2 // the header and the delimiter itself
+    let j = i + 1
+    while (j < lines.length && lines[j].includes('|') && lines[j].trim()) {
+      rows++
+      j++
+    }
+    i = j - 1
+  }
+  return rows
+}
+
+/**
  * Counts a translation must not change. Wording is the translator's business;
  * how many sections, code blocks and table rows a document has is not.
  *
@@ -364,7 +397,7 @@ const documentStructure = (content) => {
       const m = /^(#{1,6}) /.exec(l)
       return m ? [m[1].length] : []
     }),
-    tableRows: lines.filter((l) => l.trimStart().startsWith('|')).length,
+    tableRows: countTableRows(lines),
     codeBlocks: countFences(content),
     // Volume and identifiers: what a translation that silently drops prose
     // cannot fake. Wording is the translator's business; how much text there is,
