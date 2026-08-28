@@ -27,6 +27,9 @@
  *   (default scope)  files under docs/<target> that git reports as modified or
  *                    untracked -- i.e. the ones translate just (re)wrote
  *   --all            every file under docs/<target>
+ *   --only <file>    just this file (repeatable); overrides every other scope
+ *   --since <ref>    every pair this branch touches since <ref> -- the pull
+ *                    request scope, where nothing is modified in the worktree
  *   --docs <dir>     check a docs tree outside this repo (implies a full scan)
  *   --failures <f>   write the failing documents to <f>, one path per line, for
  *                    translate-verified.mjs to hand back to the translator
@@ -58,12 +61,19 @@ const ALL = hasFlag('--all')
 const SOURCE_LANG = flagValue('--source', 'en')
 const TARGET_LANG = flagValue('--target', 'zh')
 const DOCS_OVERRIDE = flagValue('--docs', '')
+const SINCE = flagValue('--since', '')
+// Repeatable: `--only a.md --only b.md`. Paths are as this script prints them,
+// relative to the repository root, so a caller can feed its own failure list
+// straight back in.
+const ONLY = argv.flatMap((arg, i) => (arg === '--only' && argv[i + 1] ? [argv[i + 1]] : []))
 
 const repoRoot = path.resolve(fileURLToPath(new URL('.', import.meta.url)), '..')
 // --docs points the checker at a docs tree outside the repo (used by the tests);
 // it also switches off git-based scoping, since that tree is not tracked here.
 const docsDir = DOCS_OVERRIDE ? path.resolve(DOCS_OVERRIDE) : path.join(repoRoot, 'docs')
-const scanAll = ALL || Boolean(DOCS_OVERRIDE)
+// --since brings its own scope, so it is not overridden by the full scan that
+// --docs otherwise implies; an explicit --all still wins.
+const scanAll = ALL || (Boolean(DOCS_OVERRIDE) && !SINCE)
 const sourceDir = path.join(docsDir, SOURCE_LANG)
 const targetDir = path.join(docsDir, TARGET_LANG)
 
@@ -103,6 +113,40 @@ const changedTargetFiles = () => {
     if (DOC_EXTENSIONS.has(path.extname(abs)) && fs.existsSync(abs)) files.push(abs)
   }
   return files
+}
+
+/**
+ * Target files of every pair this branch touches since <ref>.
+ *
+ * The default scope reads the working tree, which is right on main -- translate
+ * has just rewritten those files. On a pull request the tree is clean, so that
+ * scope selects nothing and the documents the branch actually changed go
+ * unchecked; the only thing running on a pull request was the check's own unit
+ * tests. A source-language edit counts too: it can leave an existing
+ * translation short of a section that was only just added.
+ */
+const changedSinceTargetFiles = (ref) => {
+  const stdout = execFileSync(
+    'git',
+    // --diff-filter=d drops deletions: a file that is gone cannot be read, and
+    // a removed translation is translate's business, not this check's.
+    // Run inside the docs tree with --relative so the same code works whether
+    // that tree is this repository's or one --docs pointed at.
+    ['diff', '--name-only', '--relative', '--diff-filter=d', `${ref}...HEAD`, '--', '.'],
+    { cwd: docsDir, encoding: 'utf8' },
+  )
+  const files = new Set()
+  for (const line of stdout.split('\n')) {
+    if (!line.trim()) continue
+    const abs = path.resolve(docsDir, line.trim())
+    if (!DOC_EXTENSIONS.has(path.extname(abs))) continue
+    // Either language names the same pair; the scan below is driven by targets.
+    const target = abs.startsWith(sourceDir + path.sep)
+      ? path.join(targetDir, path.relative(sourceDir, abs))
+      : abs
+    if (fs.existsSync(target)) files.add(target)
+  }
+  return [...files]
 }
 
 /**
@@ -664,8 +708,13 @@ const disablesAutoTranslation = (content) => {
   for (const raw of match[1].split('\n')) {
     const line = raw.replace(/\r$/, '')
     // A key at column 0 ends the previous block and starts whatever is next.
-    if (/^\S/.test(line)) inI18n = /^i18n\s*:/.test(line)
-    else if (inI18n && /^\s+disableAutoTranslation\s*:\s*true\s*$/.test(line)) return true
+    if (/^\S/.test(line)) {
+      inI18n = /^i18n\s*:/.test(line)
+      // The same mapping written inline on one line. Rare, but valid YAML that
+      // doom honours, and reading it as "not opted out" would report a page as
+      // a missing translation when nothing is ever going to translate it.
+      if (inI18n && /\{[^}]*\bdisableAutoTranslation\s*:\s*true\b[^}]*\}/.test(line)) return true
+    } else if (inI18n && /^\s+disableAutoTranslation\s*:\s*true\s*$/.test(line)) return true
   }
   return false
 }
@@ -704,7 +753,7 @@ let fencesRemoved = 0
  */
 const CHUNK_THRESHOLD = 60 * 1024
 let warnings = 0
-for (const sourceFile of walk(sourceDir).sort()) {
+for (const sourceFile of ONLY.length ? [] : walk(sourceDir).sort()) {
   const size = fs.statSync(sourceFile).size
   if (size <= CHUNK_THRESHOLD) continue
   // A page that opted out is not machine-translated at all, so how doom would
@@ -719,13 +768,27 @@ for (const sourceFile of walk(sourceDir).sort()) {
 }
 
 const missingTranslations = []
-for (const sourceFile of walk(sourceDir).sort()) {
+for (const sourceFile of ONLY.length ? [] : walk(sourceDir).sort()) {
   const targetFile = path.join(targetDir, path.relative(sourceDir, sourceFile))
   if (fs.existsSync(targetFile)) continue
   if (disablesAutoTranslation(fs.readFileSync(sourceFile, 'utf8'))) {
     console.log(`SKIP ${relative(sourceFile)} (i18n.disableAutoTranslation)`)
+    // An opted-out page is the one case where a missing translation is the
+    // branch's problem: nothing downstream will write it, so it has to arrive
+    // with the source. Fall through to the failure below.
+    if (!SINCE) continue
+    fail++
+    failures.push(relative(targetFile))
+    missingTranslations.push(relative(targetFile))
+    console.log(
+      `FAIL ${relative(targetFile)} is missing and ${relative(sourceFile)} opts out of machine` +
+        ' translation -- nothing will produce it, so it has to be written by hand',
+    )
     continue
   }
+  // On a branch, a new English page has no translation yet and is not supposed
+  // to: translate writes it on main. Only the opted-out case above is fatal here.
+  if (SINCE) continue
   fail++
   // Named by its expected target path: that is what the retry globs are
   // computed from, and it is where the missing document belongs.
@@ -734,12 +797,27 @@ for (const sourceFile of walk(sourceDir).sort()) {
   console.log(`FAIL ${relative(targetFile)} was never produced from ${relative(sourceFile)} -- retranslate`)
 }
 
-const targetFiles = (scanAll ? walk(targetDir) : changedTargetFiles()).filter((file) =>
+const selectTargets = () => {
+  // Named files win over every other scope: the caller has already decided what
+  // it wants judged, and widening that would report failures it cannot act on.
+  if (ONLY.length) return ONLY.map((file) => path.resolve(repoRoot, file))
+  if (scanAll) return walk(targetDir)
+  if (SINCE) return changedSinceTargetFiles(SINCE)
+  return changedTargetFiles()
+}
+const targetFiles = selectTargets().filter((file) =>
   file.startsWith(targetDir + path.sep),
 )
 
 if (targetFiles.length === 0 && missingTranslations.length === 0) {
-  console.log(`no ${TARGET_LANG} documents to check (${scanAll ? 'full scan' : 'changed files only'})`)
+  const scopeName = ONLY.length
+    ? 'named files only'
+    : scanAll
+      ? 'full scan'
+      : SINCE
+        ? `changed since ${SINCE}`
+        : 'changed files only'
+  console.log(`no ${TARGET_LANG} documents to check (${scopeName})`)
   console.log('== result: 0 pass / 0 fail ==')
   process.exit(0)
 }

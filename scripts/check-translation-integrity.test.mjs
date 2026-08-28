@@ -54,6 +54,29 @@ const makeTree = ({ en, zh, extra = {} }) => {
   return root
 }
 
+/** A docs tree that is its own git repository, for the --since scope. */
+const makeGitTree = (files) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'translation-check-git-'))
+  for (const [name, content] of Object.entries(files)) {
+    const file = path.join(root, name)
+    fs.mkdirSync(path.dirname(file), { recursive: true })
+    fs.writeFileSync(file, content)
+  }
+  const git = (...args) => spawnSync('git', args, { cwd: root, stdio: 'pipe' })
+  git('init', '-q')
+  git('config', 'user.email', 'test@example.invalid')
+  git('config', 'user.name', 'test')
+  git('add', '-A')
+  git('commit', '-qm', 'base')
+  return root
+}
+
+const commitAll = (root, message) => {
+  const git = (...args) => spawnSync('git', args, { cwd: root, stdio: 'pipe' })
+  git('add', '-A')
+  git('commit', '-qm', message)
+}
+
 const check = (root, ...args) => {
   const run = spawnSync('node', [checker, '--docs', root, ...args], { encoding: 'utf8' })
   return { status: run.status, out: `${run.stdout}${run.stderr}` }
@@ -546,6 +569,98 @@ a
   const root = makeTree({ en: { 'a.md': en }, zh: { 'a.md': zh } })
   const { status, out } = check(root, '--fix')
   ok(status === 0, 'pipes in prose are not counted as table rows', out)
+  fs.rmSync(root, { recursive: true, force: true })
+}
+
+// ---------------------------------------------------------------------------
+// The pull-request scope. The default scope reads the working tree, which is
+// right on main -- translate has just rewritten those files -- but a pull
+// request checkout is clean, so it selected nothing and the branch's own
+// documents went unchecked. --since compares against a ref instead.
+// ---------------------------------------------------------------------------
+{
+  const root = makeGitTree({
+    'en/a.md': `${FRONTMATTER}# T\n\nProse.\n\n${'x '.repeat(1200)}\n`,
+    'zh/a.md': `${FRONTMATTER}# T\n\n正文。\n\n${'x '.repeat(1200)}\n`,
+    'en/b.md': `${FRONTMATTER}# T\n\nProse.\n\n${'y '.repeat(1200)}\n`,
+    'zh/b.md': `${FRONTMATTER}# T\n\n正文。\n\n${'y '.repeat(1200)}\n`,
+  })
+  // Damage one of them on the branch; the other is untouched and out of scope.
+  fs.writeFileSync(path.join(root, 'zh', 'b.md'), `${FRONTMATTER}# T\n\n正文。\n`)
+  commitAll(root, 'branch')
+
+  const scoped = check(root, '--since', 'HEAD~1')
+  ok(scoped.status === 1, 'a document damaged on the branch fails the branch scope', scoped.out)
+  ok(scoped.out.includes('zh/b.md'), 'the damaged document is named', scoped.out)
+  ok(!scoped.out.includes('PASS') || !scoped.out.includes('a.md'), 'the untouched pair is not scanned', scoped.out)
+  fs.rmSync(root, { recursive: true, force: true })
+}
+
+// ---------------------------------------------------------------------------
+// A new English page on a branch has no translation yet and is not supposed to
+// -- translate writes it on main. Failing the branch for that would block every
+// pull request that adds a page.
+// ---------------------------------------------------------------------------
+{
+  const root = makeGitTree({ 'en/a.md': `${FRONTMATTER}# T\n\nProse.\n` })
+  fs.writeFileSync(path.join(root, 'en', 'new.md'), `${FRONTMATTER}# New\n\nProse.\n`)
+  commitAll(root, 'add a page')
+
+  const { status, out } = check(root, '--since', 'HEAD~1')
+  ok(status === 0, 'a new English page without a translation does not fail a branch', out)
+  ok(!out.includes('never produced'), 'it is not reported as a missing translation', out)
+  fs.rmSync(root, { recursive: true, force: true })
+}
+
+// ---------------------------------------------------------------------------
+// Unless it opted out. Nothing downstream will translate that page, so the hand
+// translation has to arrive with the source or it never arrives at all.
+// ---------------------------------------------------------------------------
+{
+  const root = makeGitTree({ 'en/a.md': `${FRONTMATTER}# T\n\nProse.\n` })
+  fs.writeFileSync(
+    path.join(root, 'en', 'owned.md'),
+    '---\nid: KB2\ni18n:\n  disableAutoTranslation: true\n---\n# Owned\n\nProse.\n',
+  )
+  commitAll(root, 'add an opted-out page')
+
+  const { status, out } = check(root, '--since', 'HEAD~1')
+  ok(status === 1, 'an opted-out page with no hand translation fails the branch', out)
+  ok(out.includes('written by hand'), 'the message says who has to write it', out)
+  fs.rmSync(root, { recursive: true, force: true })
+}
+
+// ---------------------------------------------------------------------------
+// --only judges exactly the files it is given, whatever else is wrong in the
+// tree. The retry loop feeds its own failure list back in this way.
+// ---------------------------------------------------------------------------
+{
+  const root = makeTree({
+    en: { 'a.md': `${FRONTMATTER}# T\n\nProse.\n`, 'b.md': `${FRONTMATTER}# T\n\nProse.\n` },
+    zh: { 'a.md': `${FRONTMATTER}# T\n\n正文。\n` },
+  })
+  const all = check(root)
+  ok(all.status === 1 && all.out.includes('never produced'), 'the full scan sees the missing page', all.out)
+
+  const only = check(root, '--only', path.join(root, 'zh', 'a.md'))
+  ok(only.status === 0, 'the named file is judged on its own', only.out)
+  ok(!only.out.includes('never produced'), 'the unrelated missing page is out of scope', only.out)
+  fs.rmSync(root, { recursive: true, force: true })
+}
+
+// ---------------------------------------------------------------------------
+// The opt-out written as an inline YAML mapping. Rare, but valid YAML that doom
+// honours -- reading it as "not opted out" reports a page as an untranslated
+// document that nothing is ever going to translate.
+// ---------------------------------------------------------------------------
+{
+  const root = makeTree({
+    en: { 'a.md': '---\nid: KB1\ni18n: { disableAutoTranslation: true }\n---\n# T\n\nProse.\n' },
+    zh: {},
+  })
+  const { status, out } = check(root)
+  ok(status === 0, 'an inline i18n mapping opts the page out', out)
+  ok(out.includes('SKIP'), 'the page is reported as skipped', out)
   fs.rmSync(root, { recursive: true, force: true })
 }
 

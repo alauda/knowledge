@@ -85,6 +85,25 @@ const runLoop = (root, fake, attempts = 3) => {
   return { status: run.status, out: `${run.stdout}${run.stderr}` }
 }
 
+/** The same tree, but its own git repository, so a committed version exists. */
+const makeGitRoot = () => {
+  const root = makeRoot()
+  const git = (...args) => spawnSync('git', args, { cwd: root, stdio: 'pipe' })
+  git('init', '-q')
+  git('config', 'user.email', 'test@example.invalid')
+  git('config', 'user.name', 'test')
+  return root
+}
+
+/** Commit `content` as the translation, the way a previous green run would have. */
+const commitTranslation = (root, content) => {
+  fs.mkdirSync(path.join(root, 'zh'), { recursive: true })
+  fs.writeFileSync(path.join(root, 'zh', 'a.md'), content)
+  const git = (...args) => spawnSync('git', args, { cwd: root, stdio: 'pipe' })
+  git('add', '-A')
+  git('commit', '-qm', 'translation')
+}
+
 const makeRoot = () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'translate-verified-'))
   fs.mkdirSync(path.join(root, 'en'), { recursive: true })
@@ -155,6 +174,67 @@ ${block('three')}`
     'the retry names only the failing document',
     retryLine,
   )
+  fs.rmSync(root, { recursive: true, force: true })
+}
+
+// ---------------------------------------------------------------------------
+// A document that will not converge keeps the translation already committed,
+// and the run carries on. This is the 82KB-source case: doom cuts it into
+// chunks, a chunk comes back short, and every attempt cuts it the same way.
+// Failing the whole job over it threw away every other document's good
+// translation too, because the job stops before the commit.
+// ---------------------------------------------------------------------------
+{
+  const root = makeGitRoot()
+  const good = `${FRONTMATTER}# 标题\n\n一些足够长的正文，用来度量体积。\n\n${block('one')}\n${block('two')}\n${block('three')}`
+  commitTranslation(root, good)
+  const damaged = `${FRONTMATTER}# 标题\n\n短。\n\n${block('one')}`
+  const { fake } = makeFakeTranslator(root, [damaged])
+
+  const { status, out } = runLoop(root, fake, 2)
+  ok(status === 0, 'the run succeeds when the committed translation is complete', out)
+  ok(out.includes('KEPT'), 'the kept document is named', out)
+  ok(
+    fs.readFileSync(path.join(root, 'zh', 'a.md'), 'utf8') === good,
+    'the committed translation is what is left on disk',
+    out,
+  )
+  fs.rmSync(root, { recursive: true, force: true })
+}
+
+// ---------------------------------------------------------------------------
+// With nothing good to fall back on, the run still fails. Keeping a damaged
+// page because it was damaged before would publish the very thing this script
+// exists to stop.
+// ---------------------------------------------------------------------------
+{
+  const root = makeGitRoot()
+  const alsoDamaged = `${FRONTMATTER}# 标题\n\n短。\n\n${block('one')}`
+  commitTranslation(root, alsoDamaged)
+  const { fake } = makeFakeTranslator(root, [alsoDamaged])
+
+  const { status, out } = runLoop(root, fake, 2)
+  ok(status === 1, 'the run fails when the committed translation is damaged too', out)
+  ok(out.includes('no complete translation, committed or new'), 'the reason says both were bad', out)
+  fs.rmSync(root, { recursive: true, force: true })
+}
+
+// ---------------------------------------------------------------------------
+// A retry count that is not a whole number would never end: `attempt <=
+// Infinity` is always true, and the job would retranslate until the runner
+// times out.
+// ---------------------------------------------------------------------------
+{
+  const root = makeRoot()
+  const { fake } = makeFakeTranslator(root, [EN])
+  const run = spawnSync('node', [loop, '--docs', root], {
+    cwd: repoRoot,
+    encoding: 'utf8',
+    env: { ...process.env, TRANSLATE_CMD: `node ${fake}`, TRANSLATE_ATTEMPTS: 'Infinity' },
+  })
+  const out = `${run.stdout}${run.stderr}`
+  ok(run.status === 1, 'a non-integer attempt count is refused', out)
+  ok(out.includes('whole number of at least 1'), 'the refusal says what is wrong', out)
   fs.rmSync(root, { recursive: true, force: true })
 }
 
