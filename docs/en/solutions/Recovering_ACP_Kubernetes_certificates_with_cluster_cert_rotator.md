@@ -5,6 +5,7 @@ products:
   - Alauda Container Platform
 ProductsVersion:
   - '4.x'
+id: KB260800061
 ---
 
 # Recovering ACP Kubernetes Certificates with Kubernetes Certificates Rotator

@@ -6,6 +6,7 @@ products:
 ProductsVersion:
   - 4.x
 id: KB260300002
+sourceSHA: 42488d5a3548fdf9f213199c719714baf2fc5c10e533ae99782ddc71a85b77e5
 ---
 
 # MySQL 5.7 到 8.0 迁移指南
@@ -14,39 +15,39 @@ id: KB260300002
 
 ### 挑战
 
-MySQL 5.7 于 2023 年 10 月达到生命周期结束（EOL），组织必须升级到 MySQL 8.0，以继续接收安全更新并利用新功能。迁移生产数据库涉及复杂的考虑因素，包括模式兼容性、字符集更改、身份验证插件更新以及在迁移过程中确保数据完整性。
+MySQL 5.7 于 2023 年 10 月达到生命周期结束（EOL），组织必须升级到 MySQL 8.0，以继续接收安全更新并利用新功能。迁移生产数据库涉及复杂的考虑因素，包括模式兼容性、字符集更改、身份验证插件更新以及确保在迁移过程中的数据完整性。
 
 ### 解决方案
 
-本指南提供了在 Alauda 容器平台（ACP）上将 MySQL 5.7 迁移到 8.0 的全面、经过验证的说明。该解决方案采用基于 mysqldump 的迁移策略，并进行全面验证：
+本指南提供了在 Alauda 容器平台（ACP）上将 MySQL 5.7 迁移到 8.0 的全面、经过验证的操作步骤。该解决方案采用基于 mysqldump 的迁移策略，并进行全面验证：
 
-- **经过验证的方法**：在 Alauda 容器平台（ACP v4.0+）上使用 Alauda 数据库服务 for MySQL 进行验证（有关详细信息，请参见 [环境信息](#环境信息)）。
+- **经过验证的方法**：在 Alauda 容器平台（ACP v4.0+）上使用 Alauda 数据库服务进行验证（有关详细信息，请参见 [环境信息](#环境信息)）。
 - **完整对象覆盖**：迁移所有标准 MySQL 对象（表、视图、例程、触发器、事件、用户、权限）。
 - **模式兼容性**：自动检查和修复 MySQL 8.0 兼容性问题。
 - **全面验证**：跨 9 个对象类别进行验证，包括视图执行测试。
-- **最小风险**：详细的回滚程序和每个步骤的验证。
+- **最小风险**：详细的回滚程序和每一步的验证。
 
 ## 环境信息
 
-**适用版本**：ACP v4.0 或更高版本，MySQL Operator（Alauda 数据库服务 for MySQL）v4.0 或更高版本  
+**适用版本**：ACP v4.0 或更高版本，MySQL Operator（Alauda 数据库服务）v4.0 或更高版本  
 **测试环境**：ACP v4.2.0，MySQL Operator v4.2.0  
 源：Percona XtraDB Cluster (PXC) 5.7.44  
 目标：MySQL Group Replication (MGR) 8.0.44  
 
-## 测试和验证
+## 测试与验证
 
-该迁移解决方案已在使用 PXC 5.7.44 和 MGR 8.0.44 集群的 Kubernetes 环境中**验证**。
+该迁移解决方案已在使用 PXC 5.7.44 和 MGR 8.0.44 集群的 Kubernetes 环境中进行 **验证**。
 
 ### 已验证内容
 
-| 类别                     | 验证项目                                                                                     |
-| ------------------------ | -------------------------------------------------------------------------------------------- |
-| **基本迁移**             | 表、数据行、外键、索引                                                                       |
-| **模式兼容性**          | 保留关键字检测、ZEROFILL 处理、无效日期默认值、TEXT 列默认值                               |
-| **数据库对象**          | 存储过程、函数、触发器、事件、视图（包括执行测试）                                           |
-| **用户和权限**          | 用户帐户创建、权限迁移、身份验证插件兼容性                                                  |
-| **字符集**              | utf8mb4 转换、多语言支持（中文、日文、拉丁字母重音）、表情符号保留                           |
-| **GTID 处理**           | 针对 MGR 目标的 GTID_PURGED 过滤，保持数据完整性                                            |
+| 类别                     | 验证项目                                                                                       |
+| ------------------------ | ---------------------------------------------------------------------------------------------- |
+| **基本迁移**             | 表、数据行、外键、索引                                                                         |
+| **模式兼容性**          | 保留关键字检测、ZEROFILL 处理、无效日期默认值、TEXT 列默认值                                 |
+| **数据库对象**          | 存储过程、函数、触发器、事件、视图（包括执行测试）                                            |
+| **用户与权限**          | 用户帐户创建、权限迁移、身份验证插件兼容性                                                    |
+| **字符集**              | utf8mb4 转换、多语言支持（中文、日文、拉丁字母重音）、表情符号保留                             |
+| **GTID 处理**           | 针对 MGR 目标的 GTID_PURGED 过滤，保持数据完整性                                              |
 
 ## 快速参考
 
@@ -56,31 +57,31 @@ MySQL 5.7 于 2023 年 10 月达到生命周期结束（EOL），组织必须升
 - **目标集群**：新的 MySQL 8.0.44 MGR 集群。
 - **GTID**：用于事务跟踪的全局事务标识符。
 - **模式兼容性**：MySQL 8.0 保留关键字和语法更改。
-- **字符集迁移**：转换为 utf8mb4 以支持完整的 Unicode。
+- **字符集迁移**：转换为 utf8mb4 以支持完整 Unicode。
 - **DEFINER 权限**：存储例程/视图/事件/触发器的安全上下文。
 
 ### PXC 与 MGR：关键区别
 
-| 方面                     | PXC 5.7（源）                               | MGR 8.0（目标）                                       |
-| ------------------------ | ------------------------------------------- | ----------------------------------------------------- |
-| **Pod 名称模式**        | `${NAME}-pxc-0`                             | `${NAME}-0`                                           |
-| **容器说明符**          | 不需要（默认为 mysql）                       | 需要：`-c mysql`                                     |
-| **主端点**              | `${NAME}-proxysql.${NS}.svc.cluster.local:3306` | `${NAME}-read-write.${NS}.svc.cluster.local:3306`     |
-| **副本端点**            | 与主端点相同（ProxySQL 处理路由）           | `${NAME}-read-only.${NS}.svc.cluster.local:3306`      |
-| **复制类型**            | Galera（同步多主）                           | 组复制（单主模式，异步副本）                         |
-| **密钥名称模式**        | `${NAME}`                                   | `mgr-${NAME}-password`                                 |
+| 方面                     | PXC 5.7（源）                                   | MGR 8.0（目标）                                      |
+| ------------------------ | ---------------------------------------------- | ---------------------------------------------------- |
+| **Pod 名称模式**        | `${NAME}-pxc-0`                                | `${NAME}-0`                                         |
+| **容器说明符**          | 不需要（默认为 mysql）                          | 必需：`-c mysql`                                    |
+| **主端点**              | `${NAME}-proxysql.${NS}.svc.cluster.local:3306` | `${NAME}-read-write.${NS}.svc.cluster.local:3306`   |
+| **副本端点**            | 与主端点相同（ProxySQL 处理路由）              | `${NAME}-read-only.${NS}.svc.cluster.local:3306`    |
+| **复制类型**            | Galera（同步多主）                             | 组复制（单主模式，异步副本）                        |
+| **密钥名称模式**        | `${NAME}`                                      | `mgr-${NAME}-password`                               |
 
 **重要提示**：在运行迁移命令之前，请始终使用 `kubectl get pod -n <namespace>` 检查实际的 pod 名称。
 
 ### 常见用例
 
-| 场景                     | 数据库大小  | 预计停机时间    | 部分参考                                                       |
-| ------------------------ | ------------ | ---------------- | ------------------------------------------------------------ |
-| **小型数据库**           | < 10GB       | 15-30 分钟       | [迁移程序](#步骤-4-迁移数据-用户和权限)                     |
-| **中型数据库**           | 10-50GB      | 30-60 分钟       | [迁移程序](#步骤-4-迁移数据-用户和权限)                     |
-| **大型数据库**           | 50-200GB     | 1-2 小时         | [迁移程序](#步骤-4-迁移数据-用户和权限)                     |
-| **模式问题**             | 任何大小     | +1-2 小时修复    | [模式兼容性](#步骤-1-模式兼容性分析)                       |
-| **字符集迁移**           | 任何大小     | +30-60 分钟      | [字符集迁移](#步骤-2-字符集和排序分析)                     |
+| 场景                     | 数据库大小   | 预计停机时间      | 部分参考                                                       |
+| ------------------------ | ------------ | ----------------- | ------------------------------------------------------------ |
+| **小型数据库**           | < 10GB       | 15-30 分钟        | [迁移操作步骤](#步骤-4-迁移数据-用户和权限)                 |
+| **中型数据库**           | 10-50GB      | 30-60 分钟        | [迁移操作步骤](#步骤-4-迁移数据-用户和权限)                 |
+| **大型数据库**           | 50-200GB     | 1-2 小时          | [迁移操作步骤](#步骤-4-迁移数据-用户和权限)                 |
+| **模式问题**             | 任何大小     | +1-2 小时修复     | [模式兼容性](#步骤-1-模式兼容性分析)                         |
+| **字符集迁移**           | 任何大小     | +30-60 分钟       | [字符集迁移](#步骤-2-字符集和排序分析)                       |
 
 ## 先决条件
 
@@ -90,7 +91,7 @@ MySQL 5.7 于 2023 年 10 月达到生命周期结束（EOL），组织必须升
 - 按照 [安装指南](https://docs.alauda.io/mysql-mgr/4.2/installation.html) 部署的 MySQL 插件
 - 查看 [Alauda MySQL MGR 文档](https://docs.alauda.io/mysql-mgr/4.2/functions/01-create.html) 以了解实例创建
 
-> **关于文档链接的说明**：上述链接指向 Alauda MySQL MGR 文档的 v4.2。如果您正在运行较新的 MySQL Operator 版本，请将 URL 路径中的 `4.2` 替换为您安装的版本（例如，`4.3`、`5.0`）。
+> **关于文档链接的说明**：上述链接指向 Alauda MySQL MGR 文档的 v4.2。如果您正在运行更新的 MySQL Operator 版本，请将 URL 路径中的 `4.2` 替换为您安装的版本（例如，`4.3`、`5.0`）。
 
 - **源集群要求**：
   - 健康的 MySQL 5.7.44 PXC 集群
@@ -100,23 +101,23 @@ MySQL 5.7 于 2023 年 10 月达到生命周期结束（EOL），组织必须升
   - 在迁移之前创建的新 MySQL 8.0.44 MGR 集群
   - 存储容量为源数据库大小的 2-3 倍
   - 与源相同或更高的资源分配（CPU/内存）
-  - 从本地机器到两个集群的网络连接
+  - 从本地计算机到两个集群的网络连接
 - **迁移前任务**：
   - 完成 [模式兼容性分析](#步骤-1-模式兼容性分析) 并修复问题
-  - 如果使用遗留字符集，则完成 [字符集迁移](#步骤-2-字符集和排序分析)
-  - 确定要迁移的用户数据库（不要包括：`information_schema`、`mysql`、`performance_schema`、`sys`）
-  - 与应用团队安排维护窗口
+  - 如果使用遗留字符集，请完成 [字符集迁移](#步骤-2-字符集和排序分析)
+  - 确定要迁移的用户数据库（请勿包括：`information_schema`、`mysql`、`performance_schema`、`sys`）
+  - 与应用程序团队安排维护窗口
   - 通知利益相关者计划的停机时间
   - 准备在 [灾难恢复](#灾难恢复) 中记录的回滚计划
 
 ### 重要限制
 
-- 在导出和导入期间需要应用停机，以确保一致性。
+- 在导出和导入期间需要应用程序停机，以确保一致性。
 - 推荐的最大数据库大小：200GB（较大的数据库可能需要替代方法）。
 - 源集群必须启用 GTID。
 - 目标集群必须在迁移开始之前创建。
-- 目标的存储性能（IOPS/吞吐量）应与源相匹配或超过源。
-- 一些 MySQL 8.0 功能（角色、缓存 SHA2 密码）需要迁移后配置。
+- 目标的存储性能（IOPS/吞吐量）应与源匹配或超过源。
+- 某些 MySQL 8.0 功能（角色、缓存 SHA2 密码）需要迁移后配置。
 
 ## 开始
 
@@ -187,7 +188,7 @@ kubectl exec <source-name>-pxc-0 -n <namespace> -- \
 **对于 MGR 8.0（目标）：**
 
 ```bash
-# 始终使用 -c mysql
+# 始终使用 -c mysql 进行 MGR
 kubectl exec <target-name>-0 -n <namespace> -c mysql -- \
   mysql -uroot -p<password> -e "SQL_HERE"
 ```
@@ -198,16 +199,16 @@ kubectl exec <target-name>-0 -n <namespace> -c mysql -- \
 - 在命令前使用 `--`（双破折号）以将 kubectl 选项与命令分开
 - 使用 `\`（反斜杠）进行多行命令
 - 避免使用 heredocs（`<<EOF`）与 `kubectl exec` - 由于 shell 引号问题，它们通常会失败
-- 使用 `-e "SQL"` 进行单个语句，多个 `-e` 用于多个语句
+- 使用 `-e "SQL"` 进行单个语句，多个 `-e` 进行多个语句
 - 使用变量时，将 `-n <namespace>` 放在 pod 名称之前，以避免解析问题
 
 ## 执行指南
 
-本指南使用 [附录](#附录-迁移脚本参考) 中提供的自动化迁移脚本来简化迁移过程。
+本指南使用 [附录](#附录-迁移脚本参考) 中提供的自动迁移脚本来简化迁移过程。
 
 ### 步骤 1：模式兼容性分析
 
-在计划迁移的**一周前**进行此分析。
+在计划迁移的 **一周前** 执行此分析。
 
 运行 `00-pre-migration-check.sh` 脚本以自动检测模式兼容性问题并识别要迁移的数据库。
 
@@ -255,7 +256,7 @@ kubectl exec ${SOURCE_NAME}-pxc-0 -n ${SOURCE_NAMESPACE} -- \
 
 ### 步骤 2：字符集和排序分析
 
-`00-pre-migration-check.sh` 脚本（在步骤 1 中运行）已经检查了非 utf8mb4 表。如果报告了“未使用 utf8mb4 的表”，请在计划迁移的**3-5 天前**进行转换。
+`00-pre-migration-check.sh` 脚本（在步骤 1 中运行）已经检查了非 utf8mb4 表。如果报告了任何“未使用 utf8mb4 的表”，请在计划迁移的 **3-5 天前** 进行转换。
 
 #### 转换为 utf8mb4
 
@@ -286,7 +287,7 @@ for db in ${DATABASES}; do
 done
 ```
 
-**重要说明**：对于具有长 VARCHAR/TEXT 索引（>191 个字符）的表，您可能需要调整索引长度：
+**重要说明**：对于具有较长 VARCHAR/TEXT 索引（>191 个字符）的表，您可能需要调整索引长度：
 
 ```sql
 -- 示例：修复 utf8mb4 的索引长度
@@ -296,9 +297,9 @@ ALTER TABLE users ADD UNIQUE INDEX idx_email (email(191));
 
 ### 步骤 3：创建目标 MySQL 8.0 实例
 
-在数据迁移阶段**之前不久**创建目标 MySQL 8.0 实例以节省资源。
+在数据迁移阶段 **之前不久** 创建目标 MySQL 8.0 实例以节省资源。
 
-**重要**：在启动迁移脚本之前创建目标 MySQL 8.0 实例。
+**重要提示**：在启动迁移脚本之前创建目标 MySQL 8.0 实例。
 
 **使用 Web 控制台：**
 
@@ -306,7 +307,7 @@ ALTER TABLE users ADD UNIQUE INDEX idx_email (email(191));
 
 1. 选择版本 **8.0**
 2. 配置资源（建议比源集群多 **10-20% 内存**，以应对 MySQL 8.0 的开销）
-3. 设置存储大小为 **2-3 倍** 源数据库大小
+3. 将存储大小设置为 **2-3 倍** 源数据库大小
 
 **使用命令行：**
 
@@ -399,16 +400,16 @@ kubectl -n $NAMESPACE get mysql $TARGET_NAME -w
 
 **操作步骤：**
 
-1. **停止应用写入**：将应用的副本缩放为零，以确保数据一致性。
+1. **停止应用程序写入**：将应用程序的副本缩放为零，以确保数据一致性。
 
-   **关键**：从此时起，应用必须保持停止（或严格只读），直到切换阶段完成。此步骤后写入源数据库的任何数据都将丢失。
+   **关键**：从此时起，应用程序必须保持停止（或严格只读），直到切换阶段完成。此步骤后写入源数据库的任何数据将会丢失。
 
    ```bash
    kubectl scale deployment <app-name> --replicas=0 -n <app-namespace>
    ```
 
 2. **配置脚本**：
-   编辑 `01-migrate-all.sh`，设置您的集群名称、命名空间和 `DATABASES` 变量（使用步骤 1 中的列表）。
+   编辑 `01-migrate-all.sh` 并设置您的集群名称、命名空间和 `DATABASES` 变量（使用步骤 1 中的列表）。
 
 3. **运行迁移**：
    ```bash
@@ -452,10 +453,10 @@ chmod +x 02-verify-migration.sh
 TARGET_NAME="mysql-8-target"
 TARGET_NAMESPACE="your-namespace"
 MYSQL_PASSWORD="your-password"
-DATABASES="db1 db2 db3"  # ← 仅您的数据库（NOT: information_schema, mysql, performance_schema, sys）
+DATABASES="db1 db2 db3"  # ← 仅为您的数据库（不包括：information_schema、mysql、performance_schema、sys）
 
 for db in ${DATABASES}; do
-  echo "分析 ${db} 中的表..."
+  echo "正在分析 ${db} 中的表..."
   TABLES=$(kubectl exec ${TARGET_NAME}-0 -n ${TARGET_NAMESPACE} -c mysql -- \
     mysql -uroot -p${MYSQL_PASSWORD} -N -e "
       SELECT TABLE_NAME FROM information_schema.TABLES
@@ -471,9 +472,9 @@ for db in ${DATABASES}; do
 done
 ```
 
-#### 2. 创建直方图（MySQL 8.0 特性）
+#### 2. 创建直方图（MySQL 8.0 功能）
 
-直方图提高了对非索引列的查询性能：
+直方图提高了对未索引列的查询性能：
 
 ```bash
 # 示例：在经常过滤的列上创建直方图
@@ -507,7 +508,7 @@ OPTIMIZE TABLE db1.orders;
 #### 4. 创建性能基线
 
 ```bash
-# 将当前性能指标（表计数、行计数、大小）记录到 /tmp/mysql-8-baseline.txt 以便后续比较
+# 将当前性能指标（表计数、行计数、大小）记录到 /tmp/mysql-8-baseline.txt 以供后续比较
 kubectl exec ${TARGET_NAME}-0 -n ${TARGET_NAMESPACE} -c mysql -- \
   mysql -uroot -p${MYSQL_PASSWORD} -e "
     SELECT NOW() AS baseline_date,
@@ -521,16 +522,16 @@ kubectl exec ${TARGET_NAME}-0 -n ${TARGET_NAMESPACE} -c mysql -- \
 
 ## 切换阶段
 
-### 步骤 7：应用切换
+### 步骤 7：应用程序切换
 
-在迁移验证完成后，切换应用流量：
+在迁移验证完成后，切换应用程序流量：
 
-#### 1. 验证应用已停止
+#### 1. 验证应用程序已停止
 
-确保应用仍然停止（如步骤 4 中所执行）。
+确保应用程序仍然停止（如步骤 4 中所执行）。
 
 ```bash
-# 确保应用已缩放为零
+# 确保应用程序已缩放
 kubectl scale deployment <app-name> --replicas=0 -n <app-namespace>
 
 # 验证没有活动连接
@@ -538,7 +539,7 @@ kubectl exec ${SOURCE_NAME}-pxc-0 -n ${SOURCE_NAMESPACE} -- \
   mysql -uroot -p${MYSQL_PASSWORD} -e "SHOW PROCESSLIST;" | grep -v "Sleep"
 ```
 
-#### 2. 更新应用连接字符串
+#### 2. 更新应用程序连接字符串
 
 ```bash
 # 更新 ConfigMap 或环境变量
@@ -549,25 +550,25 @@ kubectl patch configmap <app-config> -n <app-namespace> --type=json \
   -p='[{"op": "replace", "path": "/data/database-port", "value":"3306"}]'
 ```
 
-#### 3. 重启应用
+#### 3. 重启应用程序
 
 ```bash
-# 缩放应用
+# 将应用程序缩放回去
 kubectl scale deployment <app-name> --replicas=<original-replica-count> -n <app-namespace>
 
 # 等待 Pods 准备就绪
 kubectl -n <app-namespace> rollout status deployment <app-name>
 ```
 
-#### 4. 验证应用功能
+#### 4. 验证应用程序功能
 
 ```bash
-# 测试应用 Pod 的数据库连接
+# 从应用程序 Pod 测试数据库连接
 kubectl exec -it <app-pod> -n <app-namespace> -- \
   mysql -h mysql-8-target-read-write.${TARGET_NAMESPACE}.svc.cluster.local \
     -uroot -p${MYSQL_PASSWORD} -e "SELECT 1 AS test;"
 
-# 检查应用日志中的错误
+# 检查应用程序日志中的错误
 kubectl logs -n <app-namespace> <app-pod> --tail=100 | grep -i error
 ```
 
@@ -594,14 +595,14 @@ kubectl exec ${TARGET_NAME}-0 -n ${TARGET_NAMESPACE} -c mysql -- \
 如果在切换后发现关键问题：
 
 ```bash
-# 1. 停止应用
+# 1. 停止应用程序
 kubectl scale deployment <app-name> --replicas=0 -n <app-namespace>
 
 # 2. 将连接字符串更新回源
 kubectl patch configmap <app-config> -n <app-namespace> --type=json \
   -p='[{"op": "replace", "path": "/data/database-host", "value":"'${SOURCE_NAME}'-proxysql.'${SOURCE_NAMESPACE}'.svc.cluster.local"}]'
 
-# 3. 重启应用
+# 3. 重启应用程序
 kubectl scale deployment <app-name> --replicas=<original-replica-count> -n <app-namespace>
 
 # 4. 验证连接性
@@ -609,7 +610,7 @@ kubectl exec -it <app-pod> -n <app-namespace> -- \
   mysql -h ${SOURCE_NAME}-proxysql.${SOURCE_NAMESPACE}.svc.cluster.local \
     -uroot -p${MYSQL_PASSWORD} -e "SELECT 1 AS test;"
 
-# 5. 监控应用日志
+# 5. 监控应用程序日志
 kubectl logs -n <app-namespace> <app-pod> --tail=100 -f
 ```
 
@@ -623,7 +624,7 @@ kubectl logs -n <app-namespace> <app-pod> --tail=100 -f
 ERROR 3546 (HY000) at line XX: Cannot update GTID_PURGED with the Group Replication plugin running
 ```
 
-**解决方案**：在迁移过程中已通过过滤处理。
+**解决方案**：在迁移过程中通过 `grep -v "SET @@GLOBAL.GTID_PURGED"` 已经处理。
 
 #### 问题：字符集转换错误
 
@@ -755,52 +756,52 @@ kubectl logs -n ${TARGET_NAMESPACE} ${TARGET_NAME}-0 -c mysql --tail=1000 | grep
 
 - **在暂存环境中测试**：始终先在非生产环境中进行测试迁移
 - **模式清理**：在生产迁移之前修复所有模式兼容性问题
-- **字符集迁移**：提前进行 utf8mb4 转换（至少提前 3-5 天）
-- **备份策略**：确保在迁移之前有最近的备份可用
+- **字符集迁移**：提前转换为 utf8mb4（至少在 3-5 天之前）
+- **备份策略**：确保在迁移之前有最近的备份
 - **维护窗口**：根据数据库大小安排足够的停机时间
-- **沟通**：通知所有利益相关者，包括应用团队和 DBA
+- **沟通**：通知所有利益相关者，包括应用程序团队和 DBA
 
 ### 迁移期间
 
-- **停止应用写入**：确保在导出/导入期间没有写入以保持一致性
+- **停止应用程序写入**：确保在导出/导入期间没有写入，以保持一致性
 - **监控进度**：定期跟踪导出/导入进度
 - **逐步验证**：在每个主要步骤后运行验证脚本
-- **记录问题**：记录遇到的任何问题以备将来参考
-- **保持源运行**：在迁移验证之前不要删除源
+- **记录问题**：记录遇到的任何问题以供将来参考
+- **保持源集群运行**：在迁移验证之前不要删除源集群
 
 ### 迁移后
 
-- **全面测试**：彻底测试应用功能
+- **全面测试**：彻底测试应用程序功能
 - **性能监控**：在 24-48 小时内监控查询性能和资源利用率
 - **优化**：运行迁移后的优化程序
-- **保持源以便回滚**：在回滚窗口期间保持源集群 24-48 小时
-- **更新文档**：更新连接字符串、运行手册和监控仪表板
+- **保持源集群以备回滚**：在回滚窗口期间保持源集群可用 24-48 小时
+- **更新文档**：更新连接字符串、操作手册和监控仪表板
 
 ## 参考
 
 ### 大小与时间估算
 
 | 数据库大小 | 导出时间 | 导入时间 | 总停机时间 |
-| ----------- | --------- | --------- | ------------ |
-| < 10GB      | 1-5 分钟  | 2-10 分钟 | 15-30 分钟   |
-| 10-50GB     | 5-20 分钟 | 10-30 分钟 | 30-60 分钟   |
-| 50-100GB    | 20-40 分钟 | 30-60 分钟 | 1-2 小时     |
-| 100-200GB   | 40-80 分钟 | 1-2 小时  | 2-4 小时     |
+| ---------- | -------- | -------- | ---------- |
+| < 10GB     | 1-5 分钟 | 2-10 分钟 | 15-30 分钟 |
+| 10-50GB    | 5-20 分钟 | 10-30 分钟 | 30-60 分钟 |
+| 50-100GB   | 20-40 分钟 | 30-60 分钟 | 1-2 小时   |
+| 100-200GB  | 40-80 分钟 | 1-2 小时 | 2-4 小时   |
 
 ### mysqldump 标志参考
 
-| 标志                     | 目的                                          |
-| ------------------------ | --------------------------------------------- |
+| 标志                     | 目的                                           |
+| ------------------------ | ---------------------------------------------- |
 | `--single-transaction`   | 使用 MVCC（InnoDB）进行一致性快照            |
-| `--quick`                | 一次检索一行（节省内存）                     |
-| `--lock-tables=false`    | 不锁定表（依赖于单一事务）                   |
-| `--set-gtid-purged=ON`   | 包含 GTID 信息                               |
-| `--routines`             | 导出存储过程和函数                           |
-| `--events`               | 导出事件                                    |
-| `--triggers`             | 导出触发器                                  |
-| `--databases`            | 指定要导出的数据库                          |
+| `--quick`                | 一次检索一行（节省内存）                      |
+| `--lock-tables=false`    | 不锁定表（依赖于单一事务）                    |
+| `--set-gtid-purged=ON`   | 包含 GTID 信息                                |
+| `--routines`             | 导出存储过程和函数                            |
+| `--events`               | 导出事件                                      |
+| `--triggers`             | 导出触发器                                    |
+| `--databases`            | 指定要导出的数据库                            |
 
-### 验证检查清单
+### 验证清单
 
 迁移后验证：
 
@@ -813,10 +814,10 @@ kubectl logs -n ${TARGET_NAMESPACE} ${TARGET_NAME}-0 -c mysql --tail=1000 | grep
 - [ ] 触发器的数量相同
 - [ ] 事件的数量相同
 - [ ] 所有 DEFINER 帐户存在
-- [ ] 所有用户已迁移
-- [ ] 所有权限已迁移
-- [ ] 应用可以连接
-- [ ] 应用功能正常
+- [ ] 所有用户迁移
+- [ ] 所有权限迁移
+- [ ] 应用程序可以连接
+- [ ] 应用程序功能正常
 
 ### 有用链接
 
@@ -826,17 +827,17 @@ kubectl logs -n ${TARGET_NAMESPACE} ${TARGET_NAME}-0 -c mysql --tail=1000 | grep
 
 ## 附录：迁移脚本参考
 
-本节提供了旨在简化 MySQL 5.7 到 8.0 迁移过程的自动化迁移脚本的详细文档。
+本节提供了旨在简化 MySQL 5.7 到 8.0 迁移过程的自动迁移脚本的详细文档。
 
 ### 概述
 
 迁移脚本提供了三步自动化方法：
 
-| 脚本                        | 目的                                | 运行时间                   | 持续时间      |
-| ----------------------------- | ------------------------------------ | ------------------------- | ------------- |
-| **00-pre-migration-check.sh** | 迁移前兼容性分析                    | 迁移前一周                 | 2-5 分钟     |
-| **01-migrate-all.sh**         | 完整迁移（数据 + 用户）             | 维护窗口期间               | 15-60 分钟   |
-| **02-verify-migration.sh**    | 全面验证                            | 迁移后                     | 5-10 分钟    |
+| 脚本                        | 目的                                | 运行时间                  | 持续时间      |
+| --------------------------- | ----------------------------------- | ------------------------- | ------------- |
+| **00-pre-migration-check.sh** | 迁移前兼容性分析                    | 迁移前一周               | 2-5 分钟     |
+| **01-migrate-all.sh**       | 完整迁移（数据 + 用户）             | 在维护窗口期间           | 15-60 分钟   |
+| **02-verify-migration.sh**   | 全面验证                            | 迁移后                   | 5-10 分钟    |
 
 ### 脚本 1：迁移前检查
 
@@ -892,7 +893,7 @@ MySQL 5.7 到 8.0 迁移前检查
 ✓ 要迁移的数据库：
    app_db customer_db reporting_db
 
-⚠ 将此行复制到您的迁移脚本中：
+⚠ 复制此行以用于迁移脚本：
 DATABASES="app_db customer_db reporting_db"
 
 >>> 检查保留关键字（MySQL 8.0）
@@ -908,7 +909,7 @@ DATABASES="app_db customer_db reporting_db"
    源集群：source.your-namespace
    要迁移的数据库：app_db customer_db reporting_db
 
-接下来的步骤：
+下一步：
    1. 修复上述发现的任何模式兼容性问题
    2. 如有需要，转换字符集
    3. 运行脚本 01-migrate-all.sh 进行迁移
@@ -918,7 +919,7 @@ DATABASES="app_db customer_db reporting_db"
 
 **目的**：将所有数据库、用户和权限从源迁移到目标。
 
-**功能**：
+**执行内容**：
 
 - 验证先决条件（两个集群、GTID、版本）
 - 使用流式迁移数据库（不需要中间存储）
@@ -943,7 +944,7 @@ DATABASES="app_db customer_db reporting_db"  # 来自迁移前检查
 **用法**：
 
 ```bash
-# 在运行之前：停止应用写入！
+# 在运行之前：停止应用程序写入！
 kubectl scale deployment <app-name> --replicas=0 -n <app-namespace>
 
 # 编辑并运行
@@ -959,7 +960,7 @@ chmod +x 01-migrate-all.sh
 MySQL 5.7 到 8.0 迁移
 ========================================
 
-⚠ 重要：确保在迁移期间停止应用写入
+⚠ 重要提示：确保在迁移期间停止应用程序写入
 
 >>> 检查先决条件
 ✓ 连接到 Kubernetes 集群
@@ -989,14 +990,14 @@ MySQL 5.7 到 8.0 迁移
 ========================================
 
 >>> 创建用户帐户
-ℹ 找到 5 个用户进行迁移
+ℹ 找到 5 个用户需要迁移
 ✓ 用户帐户已创建
 
 >>> 授予权限
 ✓ 权限已授予
 
 >>> 验证迁移的用户
-✓ 已迁移 5 个用户
+✓ 迁移了 5 个用户
 
 [... 验证 ...]
 
@@ -1012,11 +1013,11 @@ MySQL 5.7 到 8.0 迁移
 
 ✓ 迁移成功完成！
 
-接下来的步骤：
+下一步：
    1. 运行脚本 02-verify-migration.sh 进行全面验证
-   2. 更新应用连接字符串
-   3. 执行应用测试
-   4. 在源被退役之前监控 24-48 小时
+   2. 更新应用程序连接字符串
+   3. 执行应用程序测试
+   4. 在停用源之前监控 24-48 小时
 ```
 
 ### 脚本 3：全面验证
@@ -1031,7 +1032,7 @@ MySQL 5.7 到 8.0 迁移
 - 存储函数（计数）
 - 触发器（计数）
 - 事件（计数）
-- 行计数（对每个数据库的前 5 个表执行样本检查）
+- 行计数（对每个数据库前 5 个表执行样本检查）
 - 用户帐户（计数 + 列表）
 
 **配置**：
@@ -1083,10 +1084,10 @@ MySQL 5.7 到 8.0 迁移验证
 
 ✓ 所有检查通过！
 
-迁移验证成功。接下来的步骤：
-   1. 更新应用连接字符串以指向目标
-   2. 执行应用测试
-   3. 在退役源集群之前监控目标 24-48 小时
+迁移验证成功。下一步：
+   1. 更新应用程序连接字符串以指向目标
+   2. 执行应用程序测试
+   3. 在停用源之前监控目标
 ```
 
 ### 获取密码
@@ -1134,18 +1135,18 @@ kubectl exec <source-name>-pxc-0 -n <source-namespace> -- \
     mysql -uroot -p<password>
 ```
 
-### 完整工作流示例
+### 完整工作流程示例
 
 ```bash
 # ===== 迁移前一周 =====
 ./00-pre-migration-check.sh
 # → 输出显示：DATABASES="app_db customer_db reporting_db"
-# → 修复任何发现的模式问题
-# → 如有需要，转换为 utf8mb4
+# → 修复发现的任何模式问题
+# → 如有需要，提前转换为 utf8mb4
 
 # ===== 迁移当天（维护窗口） =====
 
-# 停止应用写入
+# 停止应用程序写入
 kubectl scale deployment <app-name> --replicas=0 -n <app-namespace>
 
 # 更新迁移脚本中的 DATABASES
@@ -1158,34 +1159,34 @@ vi 01-migrate-all.sh
 # 运行验证
 ./02-verify-migration.sh
 
-# 更新应用连接字符串以指向目标
+# 更新应用程序连接字符串以指向目标
 kubectl patch configmap <app-config> -n <app-namespace> --type=json \
   -p='[{"op": "replace", "path": "/data/db-host", "value":"mysql-8-target-read-write.namespace.svc.cluster.local"}]'
 
-# 重启应用
+# 重启应用程序
 kubectl scale deployment <app-name> --replicas=3 -n <app-namespace>
 
 # 等待 Pods 准备就绪
 kubectl -n <app-namespace> rollout status deployment <app-name>
 
-# 测试应用
+# 测试应用程序
 curl http://<app-service>/health
 
 # 监控 24-48 小时
 kubectl logs -n <target-namespace> mysql-8-target-0 -c mysql --tail=100 -f
 
 # ===== 成功测试后（24-48 小时后） =====
-# 退役源集群
+# 停用源集群
 kubectl delete mysql <source-name> -n <source-namespace>
 ```
 
 ### 脚本功能
 
-所有脚本均包括：
+所有脚本均包含：
 
-- ✅ **颜色编码输出**：绿色（成功）、红色（错误）、黄色（警告）、蓝色（信息）
-- ✅ **进度指示器**：显示当前步骤和总体进度
-- ✅ **错误处理**：在关键错误时退出并提供清晰消息
+- ✅ **彩色输出**：绿色（成功）、红色（错误）、黄色（警告）、蓝色（信息）
+- ✅ **进度指示器**：显示当前步骤和整体进度
+- ✅ **错误处理**：在关键错误时退出并显示清晰消息
 - ✅ **自动检测**：当 `DATABASES="ALL"` 时自动发现数据库
 - ✅ **全面检查**：在继续之前验证所有先决条件
 - ✅ **详细输出**：显示迁移和验证的确切内容
@@ -1193,15 +1194,15 @@ kubectl delete mysql <source-name> -n <source-namespace>
 
 ### 重要说明
 
-1. **不要包含系统数据库**：`DATABASES` 变量必须仅包含用户/应用数据库。不要包括：`information_schema`、`mysql`、`performance_schema`、`sys`。
+1. **不要包含系统数据库**：`DATABASES` 变量必须仅包含用户/应用程序数据库。请勿包括：`information_schema`、`mysql`、`performance_schema`、`sys`。
 
-2. **停止应用写入**：确保在迁移期间没有应用写入以保持数据一致性。
+2. **停止应用程序写入**：确保在迁移期间没有应用程序写入，以保持数据一致性。
 
-3. **保持源集群**：在应用测试和 24-48 小时的成功操作后再删除源集群。
+3. **保持源集群**：在应用程序测试和 24-48 小时成功操作后，请勿删除源集群。
 
 4. **在暂存环境中测试**：始终在非生产环境中进行测试迁移。
 
-5. **迁移后监控**：在退役源之前监控目标集群 24-48 小时。
+5. **迁移后监控**：在停用源之前监控目标集群 24-48 小时。
 
 ### 脚本兼容性
 
@@ -1213,7 +1214,7 @@ kubectl delete mysql <source-name> -n <source-namespace>
 
 ### 脚本源代码
 
-以下脚本可以直接从本文档中复制。将每个脚本保存到文件中，使其可执行并运行。
+以下脚本可以直接从本文档复制。将每个脚本保存到文件中，使其可执行并运行。
 
 #### 脚本 1：00-pre-migration-check.sh
 
@@ -1236,13 +1237,13 @@ kubectl delete mysql <source-name> -n <source-namespace>
 #   3. 运行：./00-pre-migration-check.sh
 #
 # 预期输出：
-#   - 需要修复的任何模式兼容性问题列表
-#   - 需要的任何字符集转换列表
-#   - 要迁移的数据库列表（为迁移脚本复制此内容）
+#   - 列出需要修复的任何模式兼容性问题
+#   - 列出需要的任何字符集转换
+#   - 列出要迁移的数据库（复制此内容以用于迁移脚本）
 #
 #=============================================================================
 
-set -e  # 出错时退出
+set -e  # 出现错误时退出
 
 #=============================================================================
 # 配置 - 编辑这些值
@@ -1257,7 +1258,7 @@ MYSQL_PASSWORD="your-password"
 # DATABASES="db1 db2 db3"  # 或手动指定
 DATABASES="ALL"
 
-# 颜色输出
+# 彩色输出
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
@@ -1352,7 +1353,7 @@ detect_databases() {
     print_success "要迁移的数据库："
     echo "   ${DATABASES}"
     echo ""
-    print_warning "将此行复制到您的迁移脚本中："
+    print_warning "复制此行以用于迁移脚本："
     echo -e "${GREEN}DATABASES=\"${DATABASES}\"${NC}"
 }
 
@@ -1400,7 +1401,7 @@ check_invalid_dates() {
     if [ -z "${ISSUES}" ]; then
         print_success "未发现无效日期默认值"
     else
-        print_error "发现无效日期默认值的列："
+        print_error "发现列具有无效日期默认值："
         echo "${ISSUES}" | while read line; do
             echo "   - ${line}"
         done
@@ -1431,7 +1432,7 @@ check_zerofill() {
             echo "   - ${line}"
         done
         echo ""
-        print_warning "将在迁移过程中移除 ZEROFILL"
+        print_warning "在迁移期间将移除 ZEROFILL"
         echo "要手动修复："
         echo "   ALTER TABLE products MODIFY COLUMN price DECIMAL(10,2);"
     fi
@@ -1458,7 +1459,7 @@ check_text_defaults() {
             echo "   - ${line}"
         done
         echo ""
-        print_warning "这些 DEFAULT 值必须在迁移之前移除"
+        print_warning "这些 DEFAULT 值必须在迁移之前删除"
     fi
 }
 
@@ -1483,8 +1484,8 @@ check_character_sets() {
             echo "   - ${line}"
         done
         echo ""
-        print_warning "建议在迁移之前转换为 utf8mb4"
-        echo "请参见文档中的“字符集和排序分析”部分"
+        print_warning "考虑在迁移之前转换为 utf8mb4"
+        echo "请参见文档中的 '字符集和排序分析' 部分"
     fi
 }
 
@@ -1497,7 +1498,7 @@ check_lower_case_table_names() {
     if [ "${LCTN}" = "1" ]; then
         print_warning "源集群的 lower_case_table_names=1"
         echo "   确保目标 MySQL 8.0 集群也配置为 lower_case_table_names=1"
-        echo "   此设置在 MySQL 8.0 中初始化后无法更改。"
+        echo "   此设置在 MySQL 8.0 初始化后无法更改。"
     else
         print_success "源集群的 lower_case_table_names=${LCTN}"
     fi
@@ -1512,7 +1513,7 @@ print_summary() {
     echo "   要迁移的数据库：${DATABASES}"
     echo ""
 
-    echo "接下来的步骤："
+    echo "下一步："
     echo "   1. 修复上述发现的任何模式兼容性问题"
     echo "   2. 如有需要，转换字符集"
     echo "   3. 运行脚本 01-migrate-all.sh 进行迁移"
@@ -1555,14 +1556,14 @@ main
 #=============================================================================
 #
 # 此脚本执行从 MySQL 5.7 到 8.0 的完整迁移：
-# 1. 迁移所有数据库（流式，无中间存储）
+# 1. 迁移所有数据库（流式，未使用中间存储）
 # 2. 迁移用户和权限
 # 3. 执行基本验证
 #
 # 先决条件：
-#   - 目标 MySQL 8.0 集群必须创建并准备就绪
-#   - 应该完成迁移前检查
-#   - 在迁移期间应停止应用写入
+#   - 目标 MySQL 8.0 集群必须已创建并准备就绪
+#   - 应该已完成迁移前检查
+#   - 在迁移期间应停止应用程序写入
 #
 # 用法：
 #   1. 编辑下面的配置部分
@@ -1573,7 +1574,7 @@ main
 #
 #=============================================================================
 
-set -eo pipefail # 出错时退出，并捕获管道失败
+set -eo pipefail # 出现错误时退出，并捕获管道失败
 
 #=============================================================================
 # 配置 - 编辑这些值
@@ -1587,13 +1588,13 @@ TARGET_NAME="mysql-8-target"
 TARGET_NAMESPACE="your-namespace"
 TARGET_MYSQL_PASSWORD="target-root-password"
 
-# 重要：要迁移的数据库（不要包括：information_schema、mysql、performance_schema、sys）
+# 重要提示：要迁移的数据库（请勿包括：information_schema、mysql、performance_schema、sys）
 DATABASES="db1 db2 db3" # ← 从迁移前检查输出复制
 
 # 要排除的用户（系统用户）
 EXCLUDE_USERS="'mysql.sys', 'mysql.session', 'mysql.infoschema', 'root', 'clustercheck', 'monitor', 'operator', 'xtrabackup', 'repl'"
 
-# 颜色输出
+# 彩色输出
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
@@ -1601,7 +1602,7 @@ BLUE='\033[0;34m'
 CYAN='\033[0;36m'
 NC='\033[0m' # 无颜色
 
-# 统计信息
+# 统计
 TOTAL_DATABASES=0
 MIGRATED_DATABASES=0
 FAILED_DATABASES=0
@@ -1679,7 +1680,7 @@ check_prerequisites() {
         mysql -uroot -p${SOURCE_MYSQL_PASSWORD} -N -e "SELECT @@gtid_mode" 2>/dev/null | grep -v "Warning")
 
     if [ "${GTID_MODE}" != "ON" ]; then
-        print_error "源上未启用 GTID 模式（迁移所需）"
+        print_error "源上的 GTID 模式未启用（迁移所需）"
         exit 1
     fi
     print_success "源上启用 GTID 模式"
@@ -1699,7 +1700,7 @@ migrate_databases() {
         echo ""
         print_info "正在迁移数据库 [${db_num}/${TOTAL_DATABASES}]: ${db}"
 
-        # 使用流式迁移（无中间存储）迁移
+        # 使用流式迁移（未使用中间存储）
         kubectl exec ${SOURCE_NAME}-pxc-0 -n ${SOURCE_NAMESPACE} -- \
             mysqldump -uroot -p${SOURCE_MYSQL_PASSWORD} \
             --single-transaction \
@@ -1715,8 +1716,8 @@ migrate_databases() {
             kubectl exec -i ${TARGET_NAME}-0 -n ${TARGET_NAMESPACE} -c mysql -- \
                 mysql -uroot -p${TARGET_MYSQL_PASSWORD} --init-command="SET FOREIGN_KEY_CHECKS=0;" 2>&1 | grep -v "Using a password" || true
 
-        # 注意：我们依赖于下面的 DB_EXISTS 检查来验证实际导入成功，
-        # 因为 grep -v 在未找到匹配项时返回 1（并非实际错误）
+        # 注意：我们依赖于 DB_EXISTS 检查来验证实际导入成功，
+        # 因为 grep -v 在未找到匹配时返回 1（并非实际错误）
 
         # 通过检查目标上是否存在数据库来验证迁移是否成功
         DB_EXISTS=$(kubectl exec ${TARGET_NAME}-0 -n ${TARGET_NAMESPACE} -c mysql -- \
@@ -1757,7 +1758,7 @@ migrate_users() {
             WHERE user NOT IN (${EXCLUDE_USERS});
         " 2>/dev/null | grep -v "Warning")
 
-    print_info "找到 ${USER_COUNT} 个用户进行迁移"
+    print_info "找到 ${USER_COUNT} 个用户需要迁移"
 
     # 创建用户（忽略 grep 的退出代码）
     kubectl exec ${SOURCE_NAME}-pxc-0 -n ${SOURCE_NAMESPACE} -- \
@@ -1770,7 +1771,7 @@ migrate_users() {
             mysql -uroot -p${TARGET_MYSQL_PASSWORD} 2>&1 | grep -v "Using a password" || true
 
     # 注意：我们依赖于 USER_COUNT_AFTER 检查来验证实际成功，
-    # 因为 grep -v 在未找到匹配项时返回 1（并非实际错误）
+    # 因为 grep -v 返回 1 当未找到匹配（并非实际错误）
 
     # 验证用户创建
     USER_COUNT_AFTER=$(kubectl exec ${TARGET_NAME}-0 -n ${TARGET_NAMESPACE} -c mysql -- \
@@ -1783,7 +1784,7 @@ migrate_users() {
     if [ "${USER_COUNT_AFTER}" -ge "${USER_COUNT}" ]; then
         print_success "用户帐户已创建"
     else
-        print_error "用户帐户创建失败"
+        print_error "创建用户帐户失败"
     fi
 
     print_section "授予权限"
@@ -1793,11 +1794,8 @@ migrate_users() {
         mysql -uroot -p${SOURCE_MYSQL_PASSWORD} -N -e "
             SELECT CONCAT('SHOW GRANTS FOR ''', user, '''@''', host, ''';')
             FROM mysql.user
-            WHERE user NOT IN (${EXCLUDE_USERS});
-        " 2>/dev/null | grep -v "Warning" |
-        kubectl exec -i ${TARGET_NAME}-0 -n ${TARGET_NAMESPACE} -c mysql -- \
-            mysql -uroot -
-```mdx
+            WHERE
+```sql
             WHERE user NOT IN (${EXCLUDE_USERS});
         " 2>/dev/null | grep -v "^Warning" | while read query; do
         kubectl exec ${SOURCE_NAME}-pxc-0 -n ${SOURCE_NAMESPACE} -- \
@@ -1805,14 +1803,14 @@ migrate_users() {
     done |
         kubectl exec -i ${TARGET_NAME}-0 -n ${TARGET_NAMESPACE} -c mysql -- \
             mysql -uroot -p${TARGET_MYSQL_PASSWORD} 2>&1 | grep -v "Using a password" || true
-    # 注意：grep -v 在未找到匹配时返回 1（不是实际错误）
+    # 注意：grep -v 在没有找到匹配项时返回 1（并非实际错误）
 
     print_success "权限已授予"
 
     # 刷新权限
     kubectl exec ${TARGET_NAME}-0 -n ${TARGET_NAMESPACE} -c mysql -- \
         mysql -uroot -p${TARGET_MYSQL_PASSWORD} -e "FLUSH PRIVILEGES;" 2>&1 | grep -v "Using a password" >/dev/null || true
-    # 注意：grep -v 在未找到匹配时返回 1（不是实际错误）
+    # 注意：grep -v 在没有找到匹配项时返回 1（并非实际错误）
 
     print_section "验证迁移的用户"
 
@@ -1841,7 +1839,7 @@ verify_migration() {
             " 2>/dev/null | grep -v "Warning")
 
         if [ "${DB_EXISTS}" = "1" ]; then
-            # 计数表
+            # 统计表的数量
             TABLE_COUNT=$(kubectl exec ${TARGET_NAME}-0 -n ${TARGET_NAMESPACE} -c mysql -- \
                 mysql -uroot -p${TARGET_MYSQL_PASSWORD} -N -e "
                     SELECT COUNT(*)
@@ -1871,7 +1869,7 @@ verify_migration() {
             echo "   - ${user}"
         done
     else
-        print_warning "没有迁移用户（或所有用户都被排除）"
+        print_warning "没有迁移用户（或所有用户均被排除）"
     fi
 }
 
@@ -1903,7 +1901,7 @@ print_summary() {
     else
         print_error "迁移完成时出现错误"
         echo ""
-        echo "请查看上述错误并："
+        echo "请查看上述错误并:"
         echo "   1. 检查目标集群日志: kubectl logs -n ${TARGET_NAMESPACE} ${TARGET_NAME}-0 -c mysql --tail=100"
         echo "   2. 手动验证失败的数据库"
         echo "   3. 如有必要，重新运行失败数据库的迁移"
@@ -1919,7 +1917,7 @@ print_summary() {
 main() {
     print_header "MySQL 5.7 到 8.0 迁移"
 
-    print_warning "重要：确保在迁移期间停止应用程序写入"
+    print_warning "重要提示：确保在迁移期间停止应用程序写入"
     echo ""
     sleep 2
 
@@ -1949,7 +1947,7 @@ main
 # 1. 验证所有数据库对象（表、视图、例程、触发器、事件）
 # 2. 测试视图执行
 # 3. 比较行计数
-# 4. 验证用户帐户
+# 4. 验证用户账户
 #
 # 使用方法：
 #   1. 编辑下面的配置部分
@@ -1972,12 +1970,12 @@ TARGET_NAME="mysql-8-target"
 TARGET_NAMESPACE="your-namespace"
 TARGET_MYSQL_PASSWORD="target-root-password"
 
-# 重要：迁移的数据库（不要包括：information_schema、mysql、performance_schema、sys）
+# 重要提示：迁移的数据库（不要包括：information_schema、mysql、performance_schema、sys）
 DATABASES="db1 db2 db3" # ← 与迁移脚本中使用的相同
 
-# 要排除的用户（系统用户和 MySQL MGR 用户）
+# 要排除在验证之外的用户（系统用户和 MySQL MGR 用户）
 EXCLUDE_USERS="'mysql.sys', 'mysql.session', 'mysql.infoschema', 'root', 'clustercheck', 'monitor', 'operator', 'xtrabackup', 'repl', 'exporter', 'healthchecker', 'clusterchecker', 'mysql', 'percona.telemetry', 'manage'"
-# 注意：MySQL MGR 系统用户（mysql_innodb_cluster_%，mysql_router%）在 verify_users() 中被过滤
+# 注意：MySQL MGR 系统用户（mysql_innodb_cluster_%、mysql_router%）在 verify_users() 中被过滤
 
 # 颜色输出
 RED='\033[0;31m'
@@ -2225,7 +2223,7 @@ verify_events() {
 }
 
 verify_row_counts() {
-    print_section "验证行计数（样本）"
+    print_section "验证行计数（示例）"
 
     for db in ${DATABASES}; do
         echo ""
@@ -2269,13 +2267,13 @@ verify_row_counts() {
         done
 
         if [ ${ROW_MISMATCH} -eq 0 ]; then
-            print_success "行计数: 样本检查通过"
+            print_success "行计数: 抽样检查通过"
         fi
     done
 }
 
 verify_users() {
-    print_section "验证用户帐户"
+    print_section "验证用户账户"
 
     SOURCE_USERS=$(kubectl exec ${SOURCE_NAME}-pxc-0 -n ${SOURCE_NAMESPACE} -- \
         mysql -uroot -p${SOURCE_MYSQL_PASSWORD} -N -e "
@@ -2295,7 +2293,7 @@ verify_users() {
             AND user NOT LIKE 'mysql_router%';
         " 2>/dev/null | grep -v "Warning")
 
-    check_count "${SOURCE_USERS}" "${TARGET_USERS}" "用户帐户"
+    check_count "${SOURCE_USERS}" "${TARGET_USERS}" "用户账户"
 
     # 显示迁移的用户
     if [ "${TARGET_USERS}" -gt 0 ]; then
@@ -2318,7 +2316,7 @@ verify_users() {
 test_data_integrity() {
     print_section "测试数据完整性"
 
-    print_info "执行样本数据完整性检查..."
+    print_info "执行示例数据完整性检查..."
 
     for db in ${DATABASES}; do
         # 检查目标上是否存在数据库
@@ -2354,13 +2352,13 @@ print_summary() {
         echo "   1. 更新应用程序连接字符串以指向目标"
         echo "   2. 进行应用程序测试"
         echo "   3. 监控目标集群 24-48 小时"
-        echo "   4. 在此期间保持源集群可用以进行回滚"
+        echo "   4. 在此期间保持源集群可用以便回滚"
         echo ""
         return 0
     else
         print_error "某些检查失败"
         echo ""
-        echo "请查看上述失败的检查并："
+        echo "请查看上述失败的检查并:"
         echo "   1. 检查目标集群日志: kubectl logs -n ${TARGET_NAMESPACE} ${TARGET_NAME}-0 -c mysql --tail=100"
         echo "   2. 手动验证失败的对象"
         echo "   3. 如有必要，重新运行特定数据库的迁移"
@@ -2401,39 +2399,39 @@ main
 
 ## 总结
 
-本指南提供了在 Alauda 容器平台上迁移 MySQL 5.7 到 8.0 的全面、经过测试的说明。该解决方案已在 Kubernetes 测试环境中使用 PXC 5.7.44 和 MGR 8.0.44 集群进行了验证。
+本指南提供了在 Alauda 容器平台上将 MySQL 5.7 迁移到 8.0 的全面、经过测试的说明。该解决方案已在 Kubernetes 测试环境中验证，使用 PXC 5.7.44 和 MGR 8.0.44 集群。
 
 ### 本指南涵盖的内容
 
-| 测试类别                  | 测试用例           | 验证内容                                                |
-| ------------------------ | ------------------ | ------------------------------------------------------ |
-| 基本迁移                  | 核心功能           | 表、数据、外键、索引                                    |
-| 架构兼容性                | MySQL 8.0 问题     | 保留关键字、ZEROFILL、日期默认值、TEXT 列             |
-| 数据库对象                | 所有对象类型       | 过程、函数、触发器、事件、视图                          |
-| 用户和权限迁移            | 安全性和访问       | 用户帐户、授权、身份验证插件                            |
-| 字符集迁移                | 数据完整性         | utf8mb4 转换、多语言支持                                |
-| GTID 处理                 | 复制               | MGR 目标的 GTID_PURGED 过滤                            |
+| 测试类别                | 测试用例         | 验证内容                                          |
+| ---------------------- | ---------------- | ------------------------------------------------ |
+| 基本迁移                | 核心功能         | 表、数据、外键、索引                              |
+| 模式兼容性              | MySQL 8.0 问题   | 保留关键字、ZEROFILL、日期默认值、TEXT 列       |
+| 数据库对象              | 所有对象类型     | 过程、函数、触发器、事件、视图                   |
+| 用户和权限迁移          | 安全与访问       | 用户账户、授权、身份验证插件                      |
+| 字符集迁移              | 数据完整性       | utf8mb4 转换、多语言支持                          |
+| GTID 处理               | 复制            | MGR 目标的 GTID_PURGED 过滤                      |
 
 ### 主要好处
 
 - ✅ **经过验证的方法**：在 Kubernetes 测试环境中测试
-- ✅ **全面覆盖**：迁移所有标准 MySQL 对象并进行全面验证
-- ✅ **架构兼容性**：自动检查和修复 MySQL 8.0 兼容性问题
+- ✅ **完整覆盖**：迁移所有标准 MySQL 对象并进行全面验证
+- ✅ **模式兼容性**：自动检查和修复 MySQL 8.0 兼容性问题
 - ✅ **字符集支持**：完整的 utf8mb4 迁移策略
 - ✅ **安全性**：用户和权限迁移以及 MySQL 8.0 身份验证指导
 - ✅ **性能**：针对 MySQL 8.0 特性的迁移后优化
-- ✅ **风险缓解**：详细的回滚程序和每个步骤的验证
+- ✅ **风险缓解**：详细的回滚程序和每一步的验证
 
-### 生产就绪检查表
+### 生产就绪检查清单
 
 在将本指南用于生产之前，请确保您已：
 
-- [ ] 审查 [入门](#getting-started) 部分以了解您的环境
+- [ ] 查看 [入门](#getting-started) 部分以了解您的环境
 - [ ] 在非生产环境中测试迁移过程
-- [ ] 完成 [架构兼容性分析](#step-1-schema-compatibility-analysis) 并修复所有问题
+- [ ] 完成 [模式兼容性分析](#step-1-schema-compatibility-analysis) 并修复所有问题
 - [ ] 如果使用遗留字符集，完成 [字符集迁移](#step-2-character-set-and-collation-analysis)
 - [ ] 根据数据库大小安排足够的维护窗口
-- [ ] 与所有利益相关者（应用团队、DBA、SRE）进行沟通
+- [ ] 与所有利益相关者（应用程序团队、DBA、SRE）进行沟通
 - [ ] 准备回滚计划（请参见 [灾难恢复](#disaster-recovery)）
 - [ ] 验证应用程序与 MySQL 8.0 身份验证插件的兼容性
 
@@ -2441,13 +2439,13 @@ main
 
 通过遵循这些实践，组织可以成功将其 MySQL 数据库迁移到 8.0 版本，确保：
 
-- ✅ **持续的安全支持**（MySQL 5.7 的 EOL 是 2023 年 10 月）
+- ✅ **继续获得安全支持**（MySQL 5.7 的生命周期结束于 2023 年 10 月）
 - ✅ **访问新功能**（CTE、窗口函数、直方图等）
-- ✅ **通过全面验证维护数据完整性**
-- ✅ **最小停机时间**，使用经过测试的程序
+- ✅ **通过全面验证保持数据完整性**
+- ✅ **最小停机时间**，并使用经过测试的程序
 - ✅ **如果出现问题，具备回滚能力**
 
-### 支持和故障排除
+### 支持与故障排除
 
 如果您遇到本指南未涵盖的问题：
 

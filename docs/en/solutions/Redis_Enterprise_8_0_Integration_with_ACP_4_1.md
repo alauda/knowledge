@@ -5,6 +5,7 @@ kind:
   - Solution
 ProductsVersion:
   - 4.x
+id: KB260800029
 ---
 
 # Redis Enterprise 8.0 Integration with ACP
