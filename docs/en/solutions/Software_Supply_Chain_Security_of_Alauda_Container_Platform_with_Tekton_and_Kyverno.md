@@ -789,7 +789,7 @@ $ kubectl get pipelinerun -n $NAMESPACE -w
 chains-demo-1-<xxxxx>   True        Succeeded   2m         2m
 ```
 
-### Step 4: Wait for the PipelineRun to be signed
+### Step 4: Wait for the PipelineRun to be signed {#step-4-wait-for-the-pipelinerun-to-be-signed}
 
 Wait for the PipelineRun has `chains.tekton.dev/signed: "true"` annotation.
 
@@ -1071,7 +1071,7 @@ $ kubectl patch tektonconfigs.operator.tekton.dev config --type=merge -p='{
 To regenerate and obtain the image, follow these steps:
 
 - [Chapter 1: Run the pipeline to generate the image](#step-3-run-the-pipeline-to-generate-the-image)
-- [Chapter 1: Wait for the pipeline to be signed](#step-4-wait-for-the-pipeline-to-be-signed)
+- [Chapter 1: Wait for the pipeline to be signed](#step-4-wait-for-the-pipelinerun-to-be-signed)
 - [Chapter 1: Get the image from the pipelinerun](#step-5-get-the-image-from-the-pipelinerun)
 
 ### Step 3: (Optional) Verify the builder info with cosign
@@ -1646,7 +1646,7 @@ $ kubectl get pipelinerun -n $NAMESPACE -w
 chains-demo-3-<xxxxx>   True        Succeeded   2m         2m
 ```
 
-### Step 4: Wait for the pipeline to be signed {#step-4-wait-for-the-pipeline-to-be-signed}
+### Step 4: Wait for the pipeline to be signed
 
 Wait for the PipelineRun has `chains.tekton.dev/signed: "true"` annotation.
 
@@ -3312,7 +3312,7 @@ $ kubectl patch tektonconfigs.operator.tekton.dev config --type=merge -p='{
 To regenerate and obtain the image, follow these steps:
 
 - [Chapter 1: Run the pipeline to generate the image](#step-3-run-the-pipeline-to-generate-the-image)
-- [Chapter 1: Wait for the pipeline to be signed](#step-4-wait-for-the-pipeline-to-be-signed)
+- [Chapter 1: Wait for the pipeline to be signed](#step-4-wait-for-the-pipelinerun-to-be-signed)
 
 ### Step 4: Get the rekor log index
 

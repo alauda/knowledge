@@ -783,7 +783,7 @@ $ kubectl get pipelinerun -n $NAMESPACE -w
 chains-demo-1-<xxxxx>   True        Succeeded   2m         2m
 ```
 
-### 第 4 步：等待 PipelineRun 被签名
+### 第 4 步：等待 PipelineRun 被签名 {#step-4-wait-for-the-pipelinerun-to-be-signed}
 
 等待该 PipelineRun 出现 `chains.tekton.dev/signed: "true"` 注解。
 
@@ -1063,7 +1063,7 @@ $ kubectl patch tektonconfigs.operator.tekton.dev config --type=merge -p='{
 要重新生成并获取镜像，请依次执行以下步骤：
 
 - [第 1 章：运行流水线以生成镜像](#step-3-run-the-pipeline-to-generate-the-image)
-- [第 1 章：等待流水线被签名](#step-4-wait-for-the-pipeline-to-be-signed)
+- [第 1 章：等待流水线被签名](#step-4-wait-for-the-pipelinerun-to-be-signed)
 - [第 1 章：从 pipelinerun 中获取镜像](#step-5-get-the-image-from-the-pipelinerun)
 
 ### 第 3 步：（可选）使用 cosign 验证构建者信息
@@ -1637,7 +1637,7 @@ $ kubectl get pipelinerun -n $NAMESPACE -w
 chains-demo-3-<xxxxx>   True        Succeeded   2m         2m
 ```
 
-### 第 4 步：等待流水线被签名 {#step-4-wait-for-the-pipeline-to-be-signed}
+### 第 4 步：等待流水线被签名
 
 等待该 PipelineRun 出现 `chains.tekton.dev/signed: "true"` 注解。
 
@@ -3298,7 +3298,7 @@ $ kubectl patch tektonconfigs.operator.tekton.dev config --type=merge -p='{
 要重新生成并获取镜像，请依次执行以下步骤：
 
 - [第 1 章：运行流水线以生成镜像](#step-3-run-the-pipeline-to-generate-the-image)
-- [第 1 章：等待流水线被签名](#step-4-wait-for-the-pipeline-to-be-signed)
+- [第 1 章：等待流水线被签名](#step-4-wait-for-the-pipelinerun-to-be-signed)
 
 ### 第 4 步：获取 rekor 日志索引
 
