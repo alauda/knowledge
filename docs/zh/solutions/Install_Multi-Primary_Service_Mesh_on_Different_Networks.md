@@ -1,119 +1,118 @@
 ---
 id: KB250500018
-products:
-  - Alauda Service Mesh
+products: 
+   - Alauda Service Mesh
 kind:
-  - Solution
+   - Solution
+sourceSHA: 2ddecfc3b826a970015660a1889242c353532f50620e1b85d1af72fb9325b3ab
 ---
 
-# 多主不同网络服务网格架构的安装指南
+# 多主模式跨网络服务网格架构安装指南
 
 ## 概述
 
-本指南将引导您在两个业务集群上部署 Istio 控制平面，并将两个集群配置为主集群。该解决方案采用多网络模型，不同集群之间的工作负载无法直接通信，必须通过 Istio 东西向网关路由流量。
+本指南将引导您在两个业务集群上部署 Istio 控制平面，并将两个集群都配置为主集群。该方案采用多网络模型，不同集群中的工作负载无法直接通信，必须通过 Istio 东西向网关路由流量。
 
-该架构为业务操作提供了增强的隔离性和高可用性。
+该架构为业务运行提供了更强的隔离性和高可用性。
 
-## 先决条件
+## 前提条件
 
 - 准备两个业务集群。
 - 准备以下统一存储组件：
-  - ACP Elasticsearch（用于集中存储追踪数据）。
+  - ACP Elasticsearch（用于集中存储链路追踪数据）。
   - ACP VictoriaMetrics（用于集中存储监控指标）。
-  - 为每个集群单独部署一个 ACP Redis Sentinel 实例（用于服务速率限制）。
+  - 为每个集群单独部署一个 ACP Redis 哨兵模式实例（用于服务限流）。
 - 网络：
-  - 每个集群中的 K8S API 服务器必须可以被服务网格中的其他集群访问。
-  - 每个集群中由 LoadBalancer 服务分配给东西向网关的 IP:15443 必须可以被其他集群访问。
+  - 每个集群的 K8S API server 必须能够被服务网格中的其他集群访问。
+  - 每个集群中负载均衡器服务为东西向网关分配的 IP:15443 必须能够被其他集群访问。
 
 ## 安装步骤
 
-按照顺序在两个集群上安装服务网格。安装涉及两种类型的参数：
+按照以下步骤依次在两个集群上安装服务网格。安装涉及两类参数：
 
-**全局参数**（在两个集群中保持不变）：
+**全局参数**（两个集群保持一致）：
 
-| 参数                   | 示例                                   | 描述                                        |
-| ---------------------- | -------------------------------------- | ------------------------------------------- |
-| MESH\_NAME             | multi-cluster-mesh                     | 服务网格名称                                |
-| GLOBAL\_INGRESS\_HOST  | <https://1.2.3.4/>                     | ACP 访问地址                                |
-| REGISTRY\_ADDRESS      | 1.2.3.4:4567                           | 镜像注册表地址                              |
-| ELASTICSEARCH\_CLUSTER | global                                 | Elasticsearch 部署的集群名称                |
-| ELASTICSEARCH\_URL     | <https://1.2.3.4/es_proxy>             | Elasticsearch 访问 URL                      |
-| VICTORIAMETRICS\_URL   | <https://1.2.3.4/clusters/xxx/vmselect> | VictoriaMetrics 访问 URL                    |
+| 参数                  | 示例                                  | 描述                                         |
+| --------------------- | ------------------------------------- | -------------------------------------------- |
+| MESH_NAME             | multi-cluster-mesh                    | 服务网格名称                                 |
+| GLOBAL_INGRESS_HOST   | https://1.2.3.4/                      | ACP 访问地址                                 |
+| REGISTRY_ADDRESS      | 1.2.3.4:4567                          | 镜像仓库地址                                 |
+| ELASTICSEARCH_CLUSTER | global                                | Elasticsearch 所部署的集群名称               |
+| ELASTICSEARCH_URL     | https://1.2.3.4/es_proxy              | Elasticsearch 访问 URL                       |
+| VICTORIAMETRICS_URL   | https://1.2.3.4/clusters/xxx/vmselect | VictoriaMetrics 访问 URL                     |
 
 **业务集群参数**（根据实际集群信息进行配置）：
 
-| 参数           | 示例         | 描述                                                                 |
-| --------------- | ------------ | --------------------------------------------------------------------- |
-| CLUSTER\_NAME   | cluster1     | 业务集群名称                                                           |
-| REDIS\_ADDRESS  | 1.2.3.4:4567 | Redis 访问地址                                                        |
-| REDIS\_PASSWD   | passwd       | Redis 访问密码（安装后自动存储为 Secret）                             |
+| 参数          | 示例         | 描述                                                                        |
+| ------------- | ------------ | --------------------------------------------------------------------------- |
+| CLUSTER_NAME  | cluster1     | 业务集群名称                                                                |
+| REDIS_ADDRESS | 1.2.3.4:4567 | Redis 访问地址                                                              |
+| REDIS_PASSWD  | passwd       | Redis 访问密码（安装后自动存储为 Secret）                                   |
 
-### 配置 Alauda 服务网格的 Kubernetes 集群拓扑
+
+### 为 Alauda Service Mesh 配置 Kubernetes 集群拓扑
 
 #### 节点标签配置
 
-1. 应用区域标签（集群级别）
-
+1. 应用地域标签（集群级别）
 ```bash
-# 对于 US-West 区域集群中的所有节点
+# For all nodes in US-West region cluster
 kubectl label nodes topology.kubernetes.io/region=us-west-1 --all
 ```
 
-2. 应用区域标签（可用区级别）
-
+2. 应用可用区标签（可用区级别）
 ```bash
-# 对于区域 1A 中的所有节点
+# For all nodes in Zone 1A
 kubectl label nodes topology.kubernetes.io/zone=us-west-1a --all
 ```
 
 3. 验证命令
-
 ```bash
-# 检查所有节点的标签
+# Check labels for all nodes
 kubectl get nodes -L topology.kubernetes.io/region,topology.kubernetes.io/zone
 
-# 详细标签检查
+# Detailed label inspection
 kubectl describe nodes | grep "Labels" -A 5
 ```
 
 #### 多集群配置示例
 
-| 集群角色         | 区域标签     | 区域标签     | 命令模板                                                       |
-| ---------------- | ------------ | ------------ | -------------------------------------------------------------- |
-| 主集群           | `us-east-1`  | `us-east-1a` | `kubectl label nodes topology.kubernetes.io/region=us-east-1 --all` |
-| 次集群           | `us-east-1`  | `us-east-1b` | `kubectl label nodes topology.kubernetes.io/zone=us-east-1b --all`  |
-| DR 集群          | `eu-west-1`  | `eu-west-1a` | `kubectl label nodes topology.kubernetes.io/region=eu-west-1 --all` |
+| 集群角色           | 地域标签           | 可用区标签         | 命令模板                                  |
+|--------------------|--------------------|--------------------|-------------------------------------------|
+| 主集群             | `us-east-1`        | `us-east-1a`       | `kubectl label nodes topology.kubernetes.io/region=us-east-1 --all` |
+| 从集群             | `us-east-1`        | `us-east-1b`       | `kubectl label nodes topology.kubernetes.io/zone=us-east-1b --all` |
+| 容灾集群           | `eu-west-1`        | `eu-west-1a`       | `kubectl label nodes topology.kubernetes.io/region=eu-west-1 --all` |
+
 
 #### 配置说明
-
-**标签标准**
-
+**标签规范**
 ```yaml
-# 官方 Kubernetes 标签（请勿修改键名）
-topology.kubernetes.io/region: "<cloud-region-id>"  # 例如 us-east1
-topology.kubernetes.io/zone: "<region-id>-<zone-id>" # 例如 us-east1-a
+# Official Kubernetes labels (do NOT modify key names)
+topology.kubernetes.io/region: "<cloud-region-id>"  # e.g. us-east1
+topology.kubernetes.io/zone: "<region-id>-<zone-id>" # e.g. us-east1-a
 ```
+
 
 ### 安装第一个服务网格
 
 #### 执行网格部署
 
-在设置安装参数后，在 `global` 集群上执行以下命令：
+设置好安装参数后，在 `global` 集群上执行以下命令：
 
 ```bash
-# 请设置全局参数
+# please set global arguments
 MESH_NAME=""
 REGISTRY_ADDRESS=""
 GLOBAL_INGRESS_HOST=""
 ELASTICSEARCH_CLUSTER=""
 ELASTICSEARCH_URL=""
 VICTORIAMETRICS_URL=""
-# 请设置业务集群参数
+# please set business cluster arguments
 CLUSTER_NAME=""
 REDIS_ADDRESS=""
 REDIS_PASSWD=""
 
-# 创建服务网格
+# create service mesh
 kubectl apply -f - <<EOF
 apiVersion: asm.alauda.io/v1alpha1
 kind: ServiceMesh
@@ -292,9 +291,9 @@ spec:
     address: "${REDIS_ADDRESS}"
     authType: basic
     enabled: true
-    # kind 支持: single, sentinel, cluster
+    # kind support: single, sentinel, cluster
     kind: sentinel
-    # 仅 sentinel 类型需要 masterName
+    # only sentinel kind need masterName
     masterName: mymaster
     password: "${REDIS_PASSWD}"
   istioSidecar:
@@ -323,13 +322,13 @@ EOF
 
 #### 验证部署状态
 
-在 `global` 集群上，使用以下命令检查服务网格安装的状态：
+在 `global` 集群上，使用以下命令检查服务网格的安装状态：
 
 ```bash
 kubectl -n cpaas-system get servicemesh
 ```
 
-当 `PHASE` 字段显示 `Deployed` 时，安装成功。示例输出：
+当 `PHASE` 字段显示为 `Deployed` 时，表示安装成功。输出示例：
 
 ```bash
 NAME        STATE   SYNTHESISPHASE   PHASE      VERSION   DESIREDVERSION
@@ -344,7 +343,7 @@ kubectl -n kube-system get pod | grep "istio-cni"
 kubectl -n cpaas-system get pod | grep "asm-"
 ```
 
-当所有 `STATUS` 字段显示 `Running` 时，服务网格组件已成功启动。示例输出：
+当所有 `STATUS` 字段都显示为 `Running` 时，表示服务网格组件已成功启动。输出示例：
 
 ```bash
 # kubectl -n istio-system get pod
@@ -373,24 +372,25 @@ istio-cni-node-jf584                                         1/1     Running    
 
 ### 安装第二个服务网格
 
-在第一个服务网格部署后，更新业务集群参数，并按照相同的过程部署第二个服务网格。
+第一个服务网格部署完成后，更新业务集群参数，并按照相同流程部署第二个服务网格。
 
-## 服务网格互信 TLS 安全
+## 服务网格双向 TLS 安全
 
-### Istio 身份验证和 mTLS
+### Istio 认证与 mTLS
 
-Istio 使用 **PeerAuthentication** 资源通过互信 TLS（mTLS）控制工作负载之间的安全性。通过 mTLS，Envoy sidecar 自动从 Istio 的 CA 获取证书，从而使每个服务连接加密并验证身份，无需额外配置。
+Istio 使用 **PeerAuthentication** 资源，通过双向 TLS（mTLS）控制工作负载之间的通信安全。启用 mTLS 后，Envoy sidecar 会自动从 Istio 的 CA 获取证书，使每个服务连接都被加密且身份得到验证，无需额外配置。
 
-### 默认的 PERMISSIVE 模式
 
-- 工作负载接受明文和 mTLS 加密流量。
-- Sidecar 宣布 mTLS 功能，但不拒绝明文 HTTP。
+### 默认 PERMISSIVE 模式
 
-这确保现有（非 sidecar）服务在您准备“锁定”流量为仅 mTLS 之前继续工作。
+* 工作负载同时接受明文流量和 mTLS 加密流量。
+* Sidecar 会通告 mTLS 能力，但不会拒绝普通 HTTP 流量。
 
-### 命名空间级别的 PeerAuthentication
+这可确保现有（未注入 sidecar 的）服务持续正常工作，直到您准备好将流量“锁定”为仅允许 mTLS。
 
-要对特定命名空间中的所有工作负载要求严格的 mTLS，请应用：
+### Namespace 级 PeerAuthentication
+
+要为特定 namespace 中的所有工作负载强制启用严格 mTLS，请应用：
 
 ```yaml
 apiVersion: security.istio.io/v1
@@ -403,12 +403,12 @@ spec:
     mode: STRICT
 ```
 
-- **范围：** 仅影响 `<namespace>` 中的工作负载。
-- **效果：** `<namespace>` 中的 Envoy sidecar 拒绝任何入站明文。没有 mTLS 的外部客户端将失败，直到它们移到 sidecar 后面。
+* **作用范围：** 仅影响 `<namespace>` 中的工作负载。
+* **效果：** `<namespace>` 中的 Envoy sidecar 会拒绝任何入站明文流量。`<namespace>` 之外未使用 mTLS 的客户端在接入 sidecar 之前将无法访问。
 
-### 网格级别的 PeerAuthentication
+### 网格级 PeerAuthentication
 
-要在所有地方强制执行 mTLS，请在 `istio-system` 中创建一个网格范围的策略：
+要在整个网格范围内强制启用 mTLS，请在 `istio-system` 中创建网格级策略：
 
 ```yaml
 apiVersion: security.istio.io/v1
@@ -421,8 +421,8 @@ spec:
     mode: STRICT
 ```
 
-- **范围：** 适用于所有命名空间（除非被命名空间级别或工作负载级别的策略覆盖）。
-- **效果：** 所有服务必须使用 mTLS；任何明文或非 sidecar 工作负载在整个网格中被阻止。
+* **作用范围：** 应用于所有 namespace（除非被 namespace 级或工作负载级策略覆盖）。
+* **效果：** 所有服务都必须使用 mTLS 通信；任何明文或未注入 sidecar 的工作负载都会在整个网格范围内被拦截。
 
 ## 使用 Alauda ServiceMesh 管理跨集群流量
 
@@ -431,24 +431,24 @@ spec:
 **服务身份**
 跨集群的服务必须在关键属性上保持一致：
 
-| 属性                  | 要求                             | 示例                    |
-| --------------------- | -------------------------------- | ----------------------- |
-| `metadata.name`       | 在各集群中相同                  | `product-service`       |
-| `metadata.namespace`  | 在各集群中相同                  | `global-svc`            |
-| `spec.ports`          | 端口号、名称和协议              | `port: 80`, `name: http` |
-| `spec.selector`       | 服务选择器一致性                | `app: product`          |
+| 属性                  | 要求                                  | 示例                       |
+|-----------------------|---------------------------------------|----------------------------|
+| `metadata.name`       | 跨集群保持一致                        | `product-service`          |
+| `metadata.namespace`  | 跨集群保持一致                        | `global-svc`               |
+| `spec.ports`          | 端口号、名称和协议                    | `port: 80`, `name: http`   |
+| `spec.selector`           | 服务选择器保持一致                    | `app: product`             |
 
-### 集群范围的故障转移配置
 
-#### 完整配置（适用于所有服务）
+### 集群级故障转移配置
 
+#### 完整配置（应用于所有服务）
 ```bash
 kubectl apply -f - <<EOF
 apiVersion: networking.istio.io/v1alpha3
 kind: DestinationRule
 metadata:
   name: global 
-  namespace: istio-system # 必须在此命名空间中
+  namespace: istio-system #required in this namespace
 spec:
   host: "*.cluster.local"
   trafficPolicy:
@@ -456,7 +456,7 @@ spec:
       localityLbSetting:
         enabled: true
         failover:
-          - from: region1 # 当前集群区域
+          - from: region1 #be your current cluster region 
             to: region2
     outlierDetection:
       baseEjectionTime: 600s
@@ -465,39 +465,42 @@ spec:
       maxEjectionPercent: 100
 EOF
 ```
-
 关键参数说明：
 
-| 参数                   | 值                  | 描述                                           |
-| ---------------------- | ------------------- | ---------------------------------------------- |
-| `host`                 | `*.cluster.local`    | 适用于所有集群本地服务                        |
-| `failover.from/to`     | 区域对              | 定义故障转移链序列                            |
-| `consecutive5xxErrors` | 1                   | 较高的阈值以防止过于敏感的触发               |
-| `maxEjectionPercent`   | 100                 | 限制驱逐范围以维持服务容量                    |
+| 参数                       | 值                  | 描述                                         |
+|----------------------------|---------------------|----------------------------------------------|
+| `host`                     | `*.cluster.local`   | 应用于所有集群本地服务                       |
+| `failover.from/to`         | 地域对              | 定义故障转移链的顺序                         |
+| `consecutive5xxErrors`     | 1                   | 较高的阈值可防止过于敏感的触发               |
+| `maxEjectionPercent`       | 100                  | 限制驱逐范围以维持服务容量                  |
 
-更多参数参考：
-
-- [异常检测](https://istio.io/latest/docs/reference/config/networking/destination-rule/#OutlierDetection)
-  适用于 `server` 服务。这是确保故障转移正常工作的必要条件。特别是，它配置了 sidecar 代理以了解服务的端点何时不健康，最终触发故障转移到下一个区域。
+更多参数可参考如下内容
+- [异常点检测](https://istio.io/latest/docs/reference/config/networking/destination-rule/#OutlierDetection)
+  用于 `server` 服务。这是故障转移正常
+  工作所必需的。具体来说，它让 sidecar 代理能够感知
+  某个服务的端点何时不健康，并最终触发
+  到下一个 locality 的故障转移。
 
 - [故障转移](https://istio.io/latest/docs/reference/config/networking/destination-rule/#LocalityLoadBalancerSetting-Failover)
-  策略在区域之间。这确保跨区域边界的故障转移将表现得可预测。
+  跨地域的故障转移策略。这可确保跨越地域边界的故障转移
+  行为可预测。
 
-例如，您有三个集群，每个区域如下：
 
-| 优先级 | 区域     | 详细信息                                                       |
-| ------ | -------- | ------------------------------------------------------------- |
-| 0      | `region1` | 当前集群，客户端和服务器区域匹配。                           |
-| 1      | `region2` | 不匹配，但已为 `region1`->`region2` 定义故障转移。           |
-| 2      | `region3` | 不匹配且未为 `region1`->`region3` 定义故障转移。             |
+示例：假设您有三个集群，每个集群的地域如下
 
-应用以下 DestinationRule 后，流量如下：
+优先级 | Locality | 详情
+-------- | -------- | -------
+0 | `region1` | 当前集群，客户端与服务端地域匹配。
+1 | `region2` | 不匹配，但已为 `region1`->`region2` 定义了故障转移。
+2 | `region3` | 不匹配，且未为 `region1`->`region3` 定义故障转移。
+
+应用以下 DestinationRule 后，流量如下
 
 ```mermaid
 graph TD
     subgraph Region1
         A[Client Pod] --> B(Istio Sidecar)
-        B -->|"1. 同一区域健康优先 (100%)"| C(Service)
+        B -->|"1. same region healthy first (100%)"| C(Service)
     end
 
     subgraph Region2
@@ -508,8 +511,8 @@ graph TD
         E[Service]
     end
 
-    B -->|"2. 故障转移 (region1→region2)"| D
-    B -->|"3. 第二次故障转移 (region2→region3)"| E
+    B -->|"2. failover (region1→region2)"| D
+    B -->|"3. second failover (region2→region3)"| E
 
     classDef green fill:#D5E8D4,stroke:#82B366;
     classDef yellow fill:#FFF2CC,stroke:#D6B656;
@@ -524,28 +527,28 @@ graph TD
     style Region3 fill:#f0fff0,stroke:#333
 ```
 
-内部使用 [Envoy 优先级](https://www.envoyproxy.io/docs/envoy/latest/intro/arch_overview/upstream/load_balancing/priority.html)
-来控制故障转移。
+在内部，[Envoy 优先级](https://www.envoyproxy.io/docs/envoy/latest/intro/arch_overview/upstream/load_balancing/priority.html)
+被用于控制故障转移。
 
-### 集群范围的加权分配配置
 
-#### 完整配置（适用于所有服务）
+### 集群级加权分发配置
 
+#### 完整配置（应用于所有服务）
 ```bash
 kubectl apply -f - <<EOF
 apiVersion: networking.istio.io/v1alpha3
 kind: DestinationRule
 metadata:
   name: global 
-  namespace: istio-system # 必须在此命名空间中
+  namespace: istio-system #required in this namespace
 spec:
   host: "*.cluster.local"
   trafficPolicy:
     loadBalancer:
       localityLbSetting:
         enabled: true
-        distribute:
-        - from: region1/*  # 应为当前集群区域，格式为 ${region}/*
+		distribute:
+        - from: region1/*  #shoule be your current cluster region,format like ${region}/*
           to:
             "region1/*": 70
             "region2/*": 20
@@ -557,34 +560,34 @@ spec:
       maxEjectionPercent: 100
 EOF
 ```
-
 关键参数说明：
 
-| 参数                   | 值                  | 描述                                           |
-| ---------------------- | ------------------- | ---------------------------------------------- |
-| `distribute.from/to`   | 区域对              | 定义从区域分配到哪些区域                      |
+| 参数                       | 值                  | 描述                                         |
+|----------------------------|---------------------|----------------------------------------------|
+| `distribute.from/to`         | 地域对              | 定义从某个地域分发到哪些地域                 |
 
-- [分配](https://istio.io/latest/docs/reference/config/networking/destination-rule/#LocalityLoadBalancerSetting-Distribute)
-  策略在区域之间。这确保源自“from”区域或区域的流量在一组“to”区域中分配时表现得可预测。
+- [分发](https://istio.io/latest/docs/reference/config/networking/destination-rule/#LocalityLoadBalancerSetting-Distribute)
+  跨地域的分发策略。这可确保源自 'from' 地域或可用区的流量在分发到一组 'to' 地域时
+  行为可预测。
 
-- [Envoy 加权分配](https://www.envoyproxy.io/docs/envoy/latest/intro/arch_overview/upstream/load_balancing/locality_weight.html?highlight=weight)
-  适用于 `server` 服务，如下表所示。
+- [Envoy 加权分发](https://www.envoyproxy.io/docs/envoy/latest/intro/arch_overview/upstream/load_balancing/locality_weight.html?highlight=weight)
+  用于 `server` 服务，如下表所述。
 
-例如，您有三个集群，每个区域如下：
+示例：假设您有三个集群，每个集群的地域如下
 
-| 区域      | 流量百分比 |
-| --------- | ---------- |
-| `region1` | 70         |
-| `region2` | 20         |
-| `region3` | 10         |
+地域 |  流量百分比
+------ |  ------------
+`region1` | 70
+`region2` | 20
+`region3` | 10
 
-则流量如下：
+那么流量如下
 
 ```mermaid
 graph TD
     subgraph Region1
         A[Client Pod] --> B(Istio Sidecar)
-        B -->|"权重 (70%)"| C(Service)
+        B -->|"weight (70%)"| C(Service)
     end
 
     subgraph Region2
@@ -595,8 +598,8 @@ graph TD
         E[Service]
     end
 
-    B -->|"权重 (20%)"| D
-    B -->|"权重 (10%)"| E
+    B -->|"weight (20%)"| D
+    B -->|"weight (10%)"| E
 
     classDef green fill:#D5E8D4,stroke:#82B366;
     classDef yellow fill:#FFF2CC,stroke:#D6B656;
@@ -611,15 +614,15 @@ graph TD
     style Region3 fill:#f0fff0,stroke:#333
 ```
 
-### 向服务网格添加命名空间
+### 将 Namespace 添加到服务网格
 
-在使用之前，需要向服务网格添加命名空间。
+使用前需要先将 namespace 添加到服务网格。
 
 ```shell
 kubectl label namespace my-namespace cpaas.io/serviceMesh=enabled istio.io/rev=1-22
 ```
 
-验证命名空间标签：
+验证 namespace 的标签：
 
 ```shell
 kubectl get ns my-namespace -o yaml
@@ -633,28 +636,29 @@ kind: Namespace
 metadata:
   name: my-namespace
   labels:
-    # 现有标签
+    # existing labels
     cpaas.io/serviceMesh: enabled
     istio.io/rev: 1-22
 ```
 
 **标签说明：**
 
-- `cpaas.io/serviceMesh: enabled`：表示该命名空间应由 Alauda 服务网格管理
-- `istio.io/rev: 1-22`：指定要使用的 Istio 控制平面版本（在此示例中为 1.22）
+- `cpaas.io/serviceMesh: enabled`：表示该 namespace 应由 Alauda Service Mesh 管理
+- `istio.io/rev: 1-22`：指定要使用的 Istio 控制平面修订版本（本例中为 1.22）
 
-## 卸载过程
 
-**重要提醒：** 确保在卸载之前从服务网格中删除所有微服务。
+## 卸载流程
 
-按照安装的反向顺序从每个集群中卸载服务网格。
+**重要提醒：** 卸载前请确保已从服务网格中删除所有微服务。
+
+按照与安装相反的顺序，从各集群中卸载服务网格。
 
 ### 卸载第二个服务网格
 
 在 `global` 集群上，使用以下命令卸载第二个服务网格：
 
 ```bash
-# 将 {cluster-name} 替换为第二个服务网格的集群名称
+# Replace {cluster-name} with the cluster name of the second service mesh
 kubectl -n cpaas-system delete servicemesh {cluster-name} --wait
 ```
 
@@ -663,6 +667,6 @@ kubectl -n cpaas-system delete servicemesh {cluster-name} --wait
 在 `global` 集群上，使用以下命令卸载第一个服务网格：
 
 ```bash
-# 将 {cluster-name} 替换为第一个服务网格的集群名称
+# Replace {cluster-name} with the cluster name of the first service mesh
 kubectl -n cpaas-system delete servicemesh {cluster-name} --wait
 ```
