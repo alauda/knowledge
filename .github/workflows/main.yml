@@ -59,17 +59,15 @@ jobs:
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: ./add_id.sh docs/en/solutions && ./add_id.sh docs/en/articles
 
-      - name: translate
+      # Translate, verify, and retranslate whatever came back incomplete. A single
+      # pass is not trustworthy: this model has dropped a whole section, invented
+      # a table, and rewritten link targets into the literal `URL` from its own
+      # prompt example -- none of which the build would notice. If a document is
+      # still incomplete after the retries, this step fails and nothing is
+      # committed, so a short page never reaches the site.
+      - name: Translate and verify
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        run: yarn translate -s en -t zh -g "*"
-
-      # Machine translation occasionally rewrites a link target -- it has emitted
-      # the literal `URL` copied from its own prompt example -- which then fails
-      # the build's dead-link check. Restore internal targets from English before
-      # building, using the English document as the source of truth.
-      - name: Repair machine-translated links
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        run: node scripts/check-translation-integrity.mjs --fix
+        run: node scripts/translate-verified.mjs
 
       - name: Build
         run: yarn build

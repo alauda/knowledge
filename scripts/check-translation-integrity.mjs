@@ -502,21 +502,6 @@ const planEdits = (sourceLinks, targetLinks, { label }) => {
 const relative = (file) => path.relative(repoRoot, file)
 
 // Documents already damaged by an earlier translation run. They are reported as
-// KNOWN rather than FAIL so this check can be switched on without main going red
-// over debt it did not create -- but they stay listed, and visible, until they
-// are retranslated. A file drops off this list by being fixed, never by being
-// forgotten.
-const knownDamagedFile = path.join(repoRoot, '.translation-known-damage')
-const knownDamaged = new Set(
-  fs.existsSync(knownDamagedFile)
-    ? fs
-        .readFileSync(knownDamagedFile, 'utf8')
-        .split('\n')
-        .map((line) => line.replace(/#.*$/, '').trim())
-        .filter(Boolean)
-    : [],
-)
-
 const targetFiles = (scanAll ? walk(targetDir) : changedTargetFiles()).filter((file) =>
   file.startsWith(targetDir + path.sep),
 )
@@ -529,7 +514,7 @@ if (targetFiles.length === 0) {
 
 let pass = 0
 let fail = 0
-let knownCount = 0
+const failures = []
 let repaired = 0
 
 for (const file of targetFiles.sort()) {
@@ -548,12 +533,11 @@ for (const file of targetFiles.sort()) {
   // make the damage quieter.
   const structural = structuralProblems(sourceContent, content)
   if (structural.length > 0) {
-    const known = knownDamaged.has(relative(file))
-    if (known) knownCount++
-    else fail++
-    console.log(`${known ? 'KNOWN' : 'FAIL '} ${relative(file)} does not match ${relative(sourceFile)}:`)
+    fail++
+    failures.push(relative(file))
+    console.log(`FAIL ${relative(file)} does not match ${relative(sourceFile)}:`)
     for (const problem of structural) console.log(`  ${problem}`)
-    if (!known) console.log('  translation lost or invented content -- retranslate; this is not repairable here')
+    console.log('  translation lost or invented content -- retranslate; this is not repairable here')
     continue
   }
 
@@ -624,5 +608,11 @@ for (const file of targetFiles.sort()) {
 if (FIX && repaired > 0) {
   console.log(`repaired ${repaired} reference(s) against ${SOURCE_LANG}`)
 }
-console.log(`== result: ${pass} pass / ${fail} fail${knownCount ? ` / ${knownCount} known-damaged` : ''} ==`)
+console.log(`== result: ${pass} pass / ${fail} fail ==`)
+
+// A machine translation that lost content is not repairable here, but it is
+// retryable: translate-verified.mjs reads this list and retranslates just these
+// files rather than the whole library.
+const failureList = flagValue('--failures', '')
+if (failureList) fs.writeFileSync(failureList, failures.map((f) => f + '\n').join(''))
 process.exit(fail > 0 ? 1 : 0)
