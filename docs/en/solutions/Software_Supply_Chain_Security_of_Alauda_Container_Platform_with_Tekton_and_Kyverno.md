@@ -4,6 +4,8 @@ products:
    - Alauda Container Platform
 kind:
    - Solution
+i18n:
+   disableAutoTranslation: true
 ---
 
 # Software Supply Chain Security of Alauda Container Platform with Tekton and Kyverno

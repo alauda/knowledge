@@ -706,6 +706,9 @@ let warnings = 0
 for (const sourceFile of walk(sourceDir).sort()) {
   const size = fs.statSync(sourceFile).size
   if (size <= CHUNK_THRESHOLD) continue
+  // A page that opted out is not machine-translated at all, so how doom would
+  // have chunked it is not a problem anyone can act on.
+  if (disablesAutoTranslation(fs.readFileSync(sourceFile, 'utf8'))) continue
   warnings++
   console.log(
     `WARN ${relative(sourceFile)} is ${Math.round(size / 1024)}KB -- over the ${CHUNK_THRESHOLD / 1024}KB` +

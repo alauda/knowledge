@@ -462,6 +462,20 @@ a
     'only the document over the limit is flagged',
     JSON.stringify(warned),
   )
+
+  // An opted-out page is not machine-translated, so how it would have been
+  // chunked is not something anyone can act on.
+  const optedOut = makeTree({
+    en: { 'big.md': big.replace('---\nid: KB1\n---\n', '---\nid: KB1\ni18n:\n  disableAutoTranslation: true\n---\n') },
+    zh: { 'big.md': big },
+  })
+  const quiet = check(optedOut, '--fix')
+  ok(
+    !quiet.out.split('\n').some((line) => line.startsWith('WARN')),
+    'an opted-out page is not warned about its size',
+    quiet.out,
+  )
+  fs.rmSync(optedOut, { recursive: true, force: true })
   ok(status === 0, 'the warning does not fail the run on its own', out)
   fs.rmSync(root, { recursive: true, force: true })
 }
