@@ -79,7 +79,10 @@ const walk = (dir) => {
 const changedTargetFiles = () => {
   const stdout = execFileSync(
     'git',
-    ['status', '--porcelain', '--', path.relative(repoRoot, targetDir)],
+    // -uall lists untracked files individually. Without it git collapses a new
+    // directory into one "?? dir/" entry, and a translation landing in a folder
+    // that did not exist before would skip the check entirely.
+    ['status', '--porcelain', '-uall', '--', path.relative(repoRoot, targetDir)],
     { cwd: repoRoot, encoding: 'utf8' },
   )
   const files = []
