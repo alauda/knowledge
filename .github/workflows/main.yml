@@ -69,7 +69,7 @@ jobs:
       # building, using the English document as the source of truth.
       - name: Repair machine-translated links
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        run: node scripts/check-translation-links.mjs --fix
+        run: node scripts/check-translation-integrity.mjs --fix
 
       - name: Build
         run: yarn build

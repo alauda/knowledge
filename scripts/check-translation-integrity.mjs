@@ -1,20 +1,28 @@
 #!/usr/bin/env node
 /**
- * Verify (and optionally repair) link targets in machine-translated docs.
+ * Check machine-translated docs against their English originals, and repair the
+ * damage that is safely repairable.
  *
- * `doom translate` sends each document to an LLM with the instruction to keep
- * every link target byte-identical. On very large documents the content is cut
- * into 60KB chunks and the model occasionally rewrites a target -- e.g. it once
- * emitted the literal `URL` copied straight out of the prompt's own example,
- * which then fails the rspress dead-link check at build time.
+ * `doom translate` hands each document to an LLM, cutting anything over 60KB
+ * into chunks. The model does not always come back with a translation: it has
+ * rewritten link targets, invented image markup, recited its own prompt into
+ * the prose, and -- worst, because nothing noticed -- silently dropped entire
+ * sections. Three documents in this repository were found missing roughly a
+ * third of their content, having passed every check that existed at the time.
  *
- * The English document is the ground truth: for every translated file we walk
- * the inline links of both sides in document order and compare targets. With
- * --fix, and only when both sides expose the same number of links (so the
- * positional alignment is sound), a drifted target is restored from English.
+ * Two kinds of check, because the two failures need opposite treatment:
+ *
+ *   Structure (headings, anchors, code blocks, table rows) must survive
+ *   translation untouched. When it does not, content was lost or invented and
+ *   the file is reported, never rewritten -- what is missing cannot be
+ *   reconstructed here, and repairing the rest would only hide it.
+ *
+ *   References (link targets, image srcs) are compared against English, which
+ *   is the ground truth, and with --fix a drifted target is restored or
+ *   invented markup demoted to plain text.
  *
  * Usage:
- *   node scripts/check-translation-links.mjs [--fix] [--all] [--source en] [--target zh]
+ *   node scripts/check-translation-integrity.mjs [--fix] [--all] [--source en] [--target zh]
  *
  *   (default scope)  files under docs/<target> that git reports as modified or
  *                    untracked -- i.e. the ones translate just (re)wrote
@@ -251,6 +259,77 @@ const lcsPairs = (a, b) => {
   return pairs
 }
 
+/** Number of fenced code blocks. Masking erases their content but not their count. */
+const countFences = (content) => {
+  let fence = null
+  let n = 0
+  for (const line of content.split('\n')) {
+    const m = /^\s*(`{3,}|~{3,})/.exec(line)
+    if (fence) {
+      if (m && m[1][0] === fence.char && m[1].length >= fence.length && /^\s*[`~]+\s*$/.test(line)) fence = null
+      continue
+    }
+    if (m) {
+      fence = { char: m[1][0], length: m[1].length }
+      n++
+    }
+  }
+  return n
+}
+
+/**
+ * Counts a translation must not change. Wording is the translator's business;
+ * how many sections, code blocks and table rows a document has is not.
+ *
+ * This is the part that would have caught the real damage. A run of gpt-4o-mini
+ * swallowed an entire section plus 1177 lines of YAML out of one article and
+ * nothing noticed, because the only thing the build checks is whether links
+ * resolve -- and they did. Two more articles already in the repository turned
+ * out to be missing a third of their content the same way.
+ */
+const documentStructure = (content) => {
+  const masked = maskNonProse(content)
+  const lines = masked.split('\n')
+  return {
+    anchors: (masked.match(/\{#[a-z0-9-]+\}/g) || []),
+    // Levels rather than text: the text is translated, the shape is not.
+    headingLevels: lines.flatMap((l) => {
+      const m = /^(#{1,6}) /.exec(l)
+      return m ? [m[1].length] : []
+    }),
+    tableRows: lines.filter((l) => l.trimStart().startsWith('|')).length,
+    codeBlocks: countFences(content),
+  }
+}
+
+/** Structural differences, phrased so the reader can see what went missing. */
+const structuralProblems = (source, target) => {
+  const problems = []
+  const s = documentStructure(source)
+  const t = documentStructure(target)
+
+  if (s.anchors.join('\u0000') !== t.anchors.join('\u0000')) {
+    const missing = s.anchors.filter((a) => !t.anchors.includes(a))
+    const extra = t.anchors.filter((a) => !s.anchors.includes(a))
+    problems.push(
+      `heading anchors differ (${t.anchors.length} vs ${s.anchors.length})` +
+        (missing.length ? ` -- missing ${[...new Set(missing)].slice(0, 8).join(' ')}` : '') +
+        (extra.length ? ` -- unexpected ${[...new Set(extra)].slice(0, 8).join(' ')}` : '') +
+        (!missing.length && !extra.length ? ' -- same set, different order' : ''),
+    )
+  }
+  if (s.codeBlocks !== t.codeBlocks) {
+    problems.push(`fenced code blocks ${t.codeBlocks} vs ${s.codeBlocks} -- ${Math.abs(s.codeBlocks - t.codeBlocks)} ${t.codeBlocks < s.codeBlocks ? 'lost' : 'invented'}`)
+  }
+  if (s.headingLevels.join(',') !== t.headingLevels.join(',')) {
+    problems.push(`heading outline differs (${t.headingLevels.length} headings vs ${s.headingLevels.length})`)
+  }
+  if (s.tableRows !== t.tableRows) {
+    problems.push(`table rows ${t.tableRows} vs ${s.tableRows} -- ${Math.abs(s.tableRows - t.tableRows)} ${t.tableRows < s.tableRows ? 'lost' : 'invented'}`)
+  }
+  return problems
+}
+
 /**
  * Does an image src point at a file that actually exists? This is the same
  * question rspack asks, and the reason a bogus src fails the build with
@@ -380,6 +459,22 @@ const planEdits = (sourceLinks, targetLinks, { label }) => {
 
 const relative = (file) => path.relative(repoRoot, file)
 
+// Documents already damaged by an earlier translation run. They are reported as
+// KNOWN rather than FAIL so this check can be switched on without main going red
+// over debt it did not create -- but they stay listed, and visible, until they
+// are retranslated. A file drops off this list by being fixed, never by being
+// forgotten.
+const knownDamagedFile = path.join(repoRoot, '.translation-known-damage')
+const knownDamaged = new Set(
+  fs.existsSync(knownDamagedFile)
+    ? fs
+        .readFileSync(knownDamagedFile, 'utf8')
+        .split('\n')
+        .map((line) => line.replace(/#.*$/, '').trim())
+        .filter(Boolean)
+    : [],
+)
+
 const targetFiles = (scanAll ? walk(targetDir) : changedTargetFiles()).filter((file) =>
   file.startsWith(targetDir + path.sep),
 )
@@ -392,6 +487,7 @@ if (targetFiles.length === 0) {
 
 let pass = 0
 let fail = 0
+let knownCount = 0
 let repaired = 0
 
 for (const file of targetFiles.sort()) {
@@ -402,8 +498,24 @@ for (const file of targetFiles.sort()) {
     continue
   }
 
-  const source = extractRefs(fs.readFileSync(sourceFile, 'utf8'))
+  const sourceContent = fs.readFileSync(sourceFile, 'utf8')
   let content = fs.readFileSync(file, 'utf8')
+
+  // Shape before wording. If whole sections are missing, no amount of link
+  // repair makes the document publishable, and repairing it anyway would only
+  // make the damage quieter.
+  const structural = structuralProblems(sourceContent, content)
+  if (structural.length > 0) {
+    const known = knownDamaged.has(relative(file))
+    if (known) knownCount++
+    else fail++
+    console.log(`${known ? 'KNOWN' : 'FAIL '} ${relative(file)} does not match ${relative(sourceFile)}:`)
+    for (const problem of structural) console.log(`  ${problem}`)
+    if (!known) console.log('  translation lost or invented content -- retranslate; this is not repairable here')
+    continue
+  }
+
+  const source = extractRefs(sourceContent)
   let target = extractRefs(content)
 
   const describe = (edit) => {
@@ -470,5 +582,5 @@ for (const file of targetFiles.sort()) {
 if (FIX && repaired > 0) {
   console.log(`repaired ${repaired} reference(s) against ${SOURCE_LANG}`)
 }
-console.log(`== result: ${pass} pass / ${fail} fail ==`)
+console.log(`== result: ${pass} pass / ${fail} fail${knownCount ? ` / ${knownCount} known-damaged` : ''} ==`)
 process.exit(fail > 0 ? 1 : 0)
