@@ -1,12 +1,11 @@
 ---
 kind:
-   - Solution
+  - Solution
 products:
   - Alauda Application Services
 ProductsVersion:
-   - 4.x
+  - 4.x
 id: KB260300002
-sourceSHA: 42488d5a3548fdf9f213199c719714baf2fc5c10e533ae99782ddc71a85b77e5
 ---
 
 # MySQL 5.7 到 8.0 迁移指南
@@ -15,231 +14,238 @@ sourceSHA: 42488d5a3548fdf9f213199c719714baf2fc5c10e533ae99782ddc71a85b77e5
 
 ### 挑战
 
-MySQL 5.7 已于 2023 年 10 月到达生命周期终点（EOL），组织必须升级到 MySQL 8.0 才能继续获得安全更新并利用新特性。迁移生产数据库涉及复杂的考量，包括 schema 兼容性、字符集变更、认证插件更新，以及在迁移过程中确保数据完整性。
+MySQL 5.7 于 2023 年 10 月达到生命周期结束（EOL），组织必须升级到 MySQL 8.0，以继续接收安全更新并利用新功能。迁移生产数据库涉及复杂的考虑因素，包括模式兼容性、字符集更改、身份验证插件更新以及在迁移过程中确保数据完整性。
 
 ### 解决方案
 
-本指南提供在 Alauda Container Platform (ACP) 上将 MySQL 5.7 迁移到 8.0 的全面且经过验证的操作说明。该方案采用基于 mysqldump 的迁移策略，并辅以全面校验：
+本指南提供了在 Alauda 容器平台（ACP）上将 MySQL 5.7 迁移到 8.0 的全面、经过验证的说明。该解决方案采用基于 mysqldump 的迁移策略，并进行全面验证：
 
-- **成熟可靠的方案**：已在 Alauda Container Platform (ACP v4.0+) 上使用 Alauda Database Service for MySQL 完成验证（详见 [环境信息](#environment-information)）。
-- **完整的对象覆盖**：迁移所有标准 MySQL 对象（表、视图、例程、触发器、事件、用户、授权）。
-- **Schema 兼容性**：针对 MySQL 8.0 兼容性问题的自动检查与修复。
-- **全面校验**：覆盖 9 个对象类别的校验，包括视图执行测试。
-- **风险最小化**：详细的回滚操作步骤以及每一步的校验。
+- **经过验证的方法**：在 Alauda 容器平台（ACP v4.0+）上使用 Alauda 数据库服务 for MySQL 进行验证（有关详细信息，请参见 [环境信息](#环境信息)）。
+- **完整对象覆盖**：迁移所有标准 MySQL 对象（表、视图、例程、触发器、事件、用户、权限）。
+- **模式兼容性**：自动检查和修复 MySQL 8.0 兼容性问题。
+- **全面验证**：跨 9 个对象类别进行验证，包括视图执行测试。
+- **最小风险**：详细的回滚程序和每个步骤的验证。
 
 ## 环境信息
 
-**适用版本**：ACP v4.0 或更高版本，MySQL Operator (Alauda Database Service for MySQL) v4.0 或更高版本
-**测试环境**：ACP v4.2.0 与 MySQL Operator v4.2.0
-源端：Percona XtraDB Cluster (PXC) 5.7.44
-目标端：MySQL Group Replication (MGR) 8.0.44
+**适用版本**：ACP v4.0 或更高版本，MySQL Operator（Alauda 数据库服务 for MySQL）v4.0 或更高版本  
+**测试环境**：ACP v4.2.0，MySQL Operator v4.2.0  
+源：Percona XtraDB Cluster (PXC) 5.7.44  
+目标：MySQL Group Replication (MGR) 8.0.44  
 
-## 测试与验证
+## 测试和验证
 
-本迁移方案已在 Kubernetes 环境中使用 PXC 5.7.44 与 MGR 8.0.44 集群完成**验证**。
+该迁移解决方案已在使用 PXC 5.7.44 和 MGR 8.0.44 集群的 Kubernetes 环境中**验证**。
 
 ### 已验证内容
 
-| 类别 | 已验证项 |
-|----------|----------------|
-| **基础迁移** | 表、数据行、外键、索引 |
-| **Schema 兼容性** | 保留关键字检测、ZEROFILL 处理、无效日期默认值、TEXT 列默认值 |
-| **数据库对象** | 存储过程、函数、触发器、事件、视图（含执行测试） |
-| **用户与权限** | 用户账号创建、权限迁移、认证插件兼容性 |
-| **字符集** | utf8mb4 转换、多语言支持（中文、日文、拉丁重音字符）、emoji 保留 |
-| **GTID 处理** | 针对 MGR 目标端的 GTID_PURGED 过滤、数据完整性保持 |
+| 类别                     | 验证项目                                                                                     |
+| ------------------------ | -------------------------------------------------------------------------------------------- |
+| **基本迁移**             | 表、数据行、外键、索引                                                                       |
+| **模式兼容性**          | 保留关键字检测、ZEROFILL 处理、无效日期默认值、TEXT 列默认值                               |
+| **数据库对象**          | 存储过程、函数、触发器、事件、视图（包括执行测试）                                           |
+| **用户和权限**          | 用户帐户创建、权限迁移、身份验证插件兼容性                                                  |
+| **字符集**              | utf8mb4 转换、多语言支持（中文、日文、拉丁字母重音）、表情符号保留                           |
+| **GTID 处理**           | 针对 MGR 目标的 GTID_PURGED 过滤，保持数据完整性                                            |
 
 ## 快速参考
 
 ### 关键概念
+
 - **源集群**：现有的 MySQL 5.7.44 PXC 集群。
-- **目标集群**：新建的 MySQL 8.0.44 MGR 集群。
+- **目标集群**：新的 MySQL 8.0.44 MGR 集群。
 - **GTID**：用于事务跟踪的全局事务标识符。
-- **Schema 兼容性**：MySQL 8.0 保留关键字与语法变更
-- **字符集迁移**：转换为 utf8mb4 以获得完整的 Unicode 支持
-- **DEFINER 权限**：存储例程/视图/事件/触发器的安全上下文
+- **模式兼容性**：MySQL 8.0 保留关键字和语法更改。
+- **字符集迁移**：转换为 utf8mb4 以支持完整的 Unicode。
+- **DEFINER 权限**：存储例程/视图/事件/触发器的安全上下文。
 
-### PXC 与 MGR：主要差异
+### PXC 与 MGR：关键区别
 
-| 方面 | PXC 5.7（源端） | MGR 8.0（目标端） |
-|--------|-----------------|------------------|
-| **Pod 名称模式** | `${NAME}-pxc-0` | `${NAME}-0` |
-| **容器指定** | 不需要（默认为 mysql） | 必需：`-c mysql` |
-| **主节点端点** | `${NAME}-proxysql.${NS}.svc.cluster.local:3306` | `${NAME}-read-write.${NS}.svc.cluster.local:3306` |
-| **从节点端点** | 与主节点相同（由 ProxySQL 负责路由） | `${NAME}-read-only.${NS}.svc.cluster.local:3306` |
-| **复制类型** | Galera（同步多主） | Group Replication（单主模式，从节点异步复制） |
-| **Secret 名称模式** | `${NAME}` | `mgr-${NAME}-password` |
+| 方面                     | PXC 5.7（源）                               | MGR 8.0（目标）                                       |
+| ------------------------ | ------------------------------------------- | ----------------------------------------------------- |
+| **Pod 名称模式**        | `${NAME}-pxc-0`                             | `${NAME}-0`                                           |
+| **容器说明符**          | 不需要（默认为 mysql）                       | 需要：`-c mysql`                                     |
+| **主端点**              | `${NAME}-proxysql.${NS}.svc.cluster.local:3306` | `${NAME}-read-write.${NS}.svc.cluster.local:3306`     |
+| **副本端点**            | 与主端点相同（ProxySQL 处理路由）           | `${NAME}-read-only.${NS}.svc.cluster.local:3306`      |
+| **复制类型**            | Galera（同步多主）                           | 组复制（单主模式，异步副本）                         |
+| **密钥名称模式**        | `${NAME}`                                   | `mgr-${NAME}-password`                                 |
 
-**重要：**在运行迁移命令之前，务必先通过 `kubectl get pod -n <namespace>` 确认实际的 pod 名称。
+**重要提示**：在运行迁移命令之前，请始终使用 `kubectl get pod -n <namespace>` 检查实际的 pod 名称。
 
-### 常见使用场景
+### 常见用例
 
-| 场景 | 数据库大小 | 预计停机时间 | 章节参考 |
-|----------|---------------|-------------------|------------------|
-| **小型数据库** | < 10GB | 15-30 分钟 | [迁移操作步骤](#step-4-migrate-data-users-and-privileges) |
-| **中型数据库** | 10-50GB | 30-60 分钟 | [迁移操作步骤](#step-4-migrate-data-users-and-privileges) |
-| **大型数据库** | 50-200GB | 1-2 小时 | [迁移操作步骤](#step-4-migrate-data-users-and-privileges) |
-| **Schema 问题** | 任意大小 | 修复额外需 1-2 小时 | [Schema 兼容性](#step-1-schema-compatibility-analysis) |
-| **字符集迁移** | 任意大小 | 额外需 30-60 分钟 | [字符集迁移](#step-2-character-set-and-collation-analysis) |
+| 场景                     | 数据库大小  | 预计停机时间    | 部分参考                                                       |
+| ------------------------ | ------------ | ---------------- | ------------------------------------------------------------ |
+| **小型数据库**           | < 10GB       | 15-30 分钟       | [迁移程序](#步骤-4-迁移数据-用户和权限)                     |
+| **中型数据库**           | 10-50GB      | 30-60 分钟       | [迁移程序](#步骤-4-迁移数据-用户和权限)                     |
+| **大型数据库**           | 50-200GB     | 1-2 小时         | [迁移程序](#步骤-4-迁移数据-用户和权限)                     |
+| **模式问题**             | 任何大小     | +1-2 小时修复    | [模式兼容性](#步骤-1-模式兼容性分析)                       |
+| **字符集迁移**           | 任何大小     | +30-60 分钟      | [字符集迁移](#步骤-2-字符集和排序分析)                     |
 
-## 前提条件
+## 先决条件
 
-在执行 MySQL 迁移之前，请确保具备：
+在执行 MySQL 迁移之前，请确保您具备：
 
-- ACP v4.0 或更高版本，且 MySQL Operator 为 v4.0 或更高版本（已测试版本见 [环境信息](#environment-information)）
-- 已按照 [安装指南](https://docs.alauda.io/mysql-mgr/4.2/installation.html) 部署 MySQL 插件
-- 阅读 [Alauda MySQL MGR 文档](https://docs.alauda.io/mysql-mgr/4.2/functions/01-create.html) 以了解实例创建
+- ACP v4.0 或更高版本，MySQL Operator v4.0 或更高版本（有关测试版本，请参见 [环境信息](#环境信息)）
+- 按照 [安装指南](https://docs.alauda.io/mysql-mgr/4.2/installation.html) 部署的 MySQL 插件
+- 查看 [Alauda MySQL MGR 文档](https://docs.alauda.io/mysql-mgr/4.2/functions/01-create.html) 以了解实例创建
 
-> **关于文档链接的说明**：上述链接指向 v4.2 版本的 Alauda MySQL MGR 文档。如果你运行的是更新版本的 MySQL Operator，请将 URL 路径中的 `4.2` 替换为你安装的版本（例如 `4.3`、`5.0`）。
+> **关于文档链接的说明**：上述链接指向 Alauda MySQL MGR 文档的 v4.2。如果您正在运行较新的 MySQL Operator 版本，请将 URL 路径中的 `4.2` 替换为您安装的版本（例如，`4.3`、`5.0`）。
+
 - **源集群要求**：
-  - 一个健康的 MySQL 5.7.44 PXC 集群
-  - 已启用 GTID 模式（`@@gtid_mode = ON`、`@@enforce_gtid_consistency = ON`）
-  - Root 或管理员访问凭据
+  - 健康的 MySQL 5.7.44 PXC 集群
+  - 启用 GTID 模式（`@@gtid_mode = ON`，`@@enforce_gtid_consistency = ON`）
+  - 根或管理访问凭据
 - **目标集群要求**：
-  - 在迁移*之前*新建的 MySQL 8.0.44 MGR 集群
+  - 在迁移之前创建的新 MySQL 8.0.44 MGR 集群
   - 存储容量为源数据库大小的 2-3 倍
-  - 与源端相同或更高的资源配置（CPU/内存）
-  - 本地机器到两个集群的网络连通性
+  - 与源相同或更高的资源分配（CPU/内存）
+  - 从本地机器到两个集群的网络连接
 - **迁移前任务**：
-  - 完成 [Schema 兼容性分析](#step-1-schema-compatibility-analysis) 并修复问题
-  - 如果使用旧字符集，完成 [字符集迁移](#step-2-character-set-and-collation-analysis)
-  - 确定要迁移的用户数据库（不要包含：`information_schema`、`mysql`、`performance_schema`、`sys`）
-  - 与应用团队约定维护窗口
-  - 就计划的停机时间通知相关干系人
-  - 按照 [灾难恢复](#disaster-recovery) 中的说明准备回滚方案
+  - 完成 [模式兼容性分析](#步骤-1-模式兼容性分析) 并修复问题
+  - 如果使用遗留字符集，则完成 [字符集迁移](#步骤-2-字符集和排序分析)
+  - 确定要迁移的用户数据库（不要包括：`information_schema`、`mysql`、`performance_schema`、`sys`）
+  - 与应用团队安排维护窗口
+  - 通知利益相关者计划的停机时间
+  - 准备在 [灾难恢复](#灾难恢复) 中记录的回滚计划
 
 ### 重要限制
 
 - 在导出和导入期间需要应用停机，以确保一致性。
-- 建议的最大数据库大小：200GB（更大的数据库可能需要其他方案）。
+- 推荐的最大数据库大小：200GB（较大的数据库可能需要替代方法）。
 - 源集群必须启用 GTID。
 - 目标集群必须在迁移开始之前创建。
-- 目标端的存储性能（IOPS/吞吐量）应等于或高于源端。
-- 部分 MySQL 8.0 特性（角色、Caching SHA2 密码）需要在迁移后进行配置。
+- 目标的存储性能（IOPS/吞吐量）应与源相匹配或超过源。
+- 一些 MySQL 8.0 功能（角色、缓存 SHA2 密码）需要迁移后配置。
 
-## 开始使用
+## 开始
 
-在执行迁移命令之前，先收集以下信息：
+在执行迁移命令之前，收集以下信息：
 
-### 1. 获取 MySQL Root 密码
+### 1. 获取 MySQL 根密码
 
 ```bash
-# For PXC 5.7 source
+# 对于 PXC 5.7 源
 kubectl get secret <source-name> -n <source-namespace> -o jsonpath='{.data.root}' | base64 -d
 
-# For MGR 8.0 target
+# 对于 MGR 8.0 目标
 kubectl get secret mgr-<target-name>-password -n <target-namespace> -o jsonpath='{.data.root}' | base64 -d
 ```
 
 **示例：**
+
 ```bash
-# Get source password
+# 获取源密码
 kubectl get secret source -n jpsu2-midautons -o jsonpath='{.data.root}' | base64 -d
-# Output: root123@
+# 输出：root123@
 
-# Get target password
+# 获取目标密码
 kubectl get secret mgr-target-password -n jpsu2-midautons -o jsonpath='{.data.root}' | base64 -d
-# Output: root123@
+# 输出：root123@
 ```
 
-### 2. 确认 Pod 名称
+### 2. 确定 Pod 名称
 
 ```bash
-# Check source PXC pods
+# 检查源 PXC Pods
 kubectl get pod -n <source-namespace> | grep <source-name>
-# Example output: source-pxc-0, source-pxc-1, source-pxc-2
+# 示例输出：source-pxc-0, source-pxc-1, source-pxc-2
 
-# Check target MGR pods
+# 检查目标 MGR Pods
 kubectl get pod -n <target-namespace> | grep <target-name>
-# Example output: target-0, target-1, target-2
+# 示例输出：target-0, target-1, target-2
 
-# Verify MGR container name
+# 验证 MGR 容器名称
 kubectl describe pod <target-name>-0 -n <target-namespace> | grep "Container:"
-# MGR pods have multiple containers - always use `-c mysql` for MySQL commands
+# MGR Pods 有多个容器 - 始终使用 `-c mysql` 进行 MySQL 命令
 ```
 
-### 3. 校验集群状态
+### 3. 验证集群状态
 
 ```bash
-# Check PXC source status
+# 检查 PXC 源状态
 kubectl get mysql <source-name> -n <source-namespace>
-# Expected: STATE = ready, PXCSTATE = ready
+# 预期：STATE = ready, PXCSTATE = ready
 
-# Check MGR target status
+# 检查 MGR 目标状态
 kubectl get mysql <target-name> -n <target-namespace>
-# Expected: All 3 members ready, STATUS = Running
+# 预期：所有 3 个成员准备就绪，STATUS = Running
 ```
 
 ### 4. kubectl Exec 最佳实践
 
 通过 `kubectl exec` 运行 MySQL 命令时，请遵循以下模式：
 
-**PXC 5.7（源端）：**
+**对于 PXC 5.7（源）：**
+
 ```bash
-# No container specifier needed for PXC
+# PXC 不需要容器说明符
 kubectl exec <source-name>-pxc-0 -n <namespace> -- \
   mysql -uroot -p<password> -e "SQL_HERE"
 ```
 
-**MGR 8.0（目标端）：**
+**对于 MGR 8.0（目标）：**
+
 ```bash
-# Always use -c mysql for MGR
+# 始终使用 -c mysql
 kubectl exec <target-name>-0 -n <namespace> -c mysql -- \
   mysql -uroot -p<password> -e "SQL_HERE"
 ```
 
 **重要说明：**
+
 - 始终使用参数顺序：`kubectl exec -n <namespace> <pod-name> -- <command>`
-- 在命令前使用 `--`（双短横线）将 kubectl 选项与命令分隔开
-- 多行命令使用 `\`（反斜杠）
-- 避免在 `kubectl exec` 中使用 heredoc（`<<EOF`）——它们常因 shell 引号问题而失败
-- 单条语句使用 `-e "SQL"`，多条语句使用多个 `-e`
+- 在命令前使用 `--`（双破折号）以将 kubectl 选项与命令分开
+- 使用 `\`（反斜杠）进行多行命令
+- 避免使用 heredocs（`<<EOF`）与 `kubectl exec` - 由于 shell 引号问题，它们通常会失败
+- 使用 `-e "SQL"` 进行单个语句，多个 `-e` 用于多个语句
 - 使用变量时，将 `-n <namespace>` 放在 pod 名称之前，以避免解析问题
 
 ## 执行指南
 
-本指南使用 [附录](#appendix-migration-scripts-reference) 中提供的自动化迁移脚本来简化迁移过程。
+本指南使用 [附录](#附录-迁移脚本参考) 中提供的自动化迁移脚本来简化迁移过程。
 
-### 步骤 1：Schema 兼容性分析
+### 步骤 1：模式兼容性分析
 
-在计划迁移**前一周**执行本分析。
+在计划迁移的**一周前**进行此分析。
 
-运行 `00-pre-migration-check.sh` 脚本，自动检测 schema 兼容性问题并确定要迁移的数据库。
+运行 `00-pre-migration-check.sh` 脚本以自动检测模式兼容性问题并识别要迁移的数据库。
 
 ```bash
-# Edit configuration
+# 编辑配置
 vi 00-pre-migration-check.sh
 
-# Run check
+# 运行检查
 chmod +x 00-pre-migration-check.sh
 ./00-pre-migration-check.sh
 ```
 
 该脚本将输出：
-1. 要迁移的用户数据库列表（复制其中的 `DATABASES="..."` 行以备后用）
-2. Schema 兼容性问题（保留关键字、无效日期、ZEROFILL 等）
+
+1. 要迁移的用户数据库列表（复制 `DATABASES="..."` 行以备后用）
+2. 模式兼容性问题（保留关键字、无效日期、ZEROFILL 等）
 3. 字符集分析
 
-如果脚本报告了问题，使用下面的命令进行修复。
+如果脚本报告问题，请使用以下命令进行修复。
 
-#### 修复 Schema 问题
+#### 修复模式问题
 
 ```bash
-# Fix reserved keyword columns (example)
+# 修复保留关键字列（示例）
 kubectl exec ${SOURCE_NAME}-pxc-0 -n ${SOURCE_NAMESPACE} -- \
   mysql -uroot -p${MYSQL_PASSWORD} -e "
     USE db1;
     ALTER TABLE users CHANGE COLUMN rank user_rank INT;
   "
 
-# Fix invalid date defaults (example)
+# 修复无效日期默认值（示例）
 kubectl exec ${SOURCE_NAME}-pxc-0 -n ${SOURCE_NAMESPACE} -- \
   mysql -uroot -p${MYSQL_PASSWORD} -e "
     USE db1;
     ALTER TABLE events MODIFY COLUMN created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP;
   "
 
-# Fix ZEROFILL columns (remove ZEROFILL)
+# 修复 ZEROFILL 列（移除 ZEROFILL）
 kubectl exec ${SOURCE_NAME}-pxc-0 -n ${SOURCE_NAMESPACE} -- \
   mysql -uroot -p${MYSQL_PASSWORD} -e "
     USE db1;
@@ -247,14 +253,14 @@ kubectl exec ${SOURCE_NAME}-pxc-0 -n ${SOURCE_NAMESPACE} -- \
   "
 ```
 
-### 步骤 2：字符集与排序规则分析
+### 步骤 2：字符集和排序分析
 
-`00-pre-migration-check.sh` 脚本（已在步骤 1 中运行）已检查非 utf8mb4 表。如果报告了任何“未使用 utf8mb4 的表”，请在计划迁移**前 3-5 天**完成转换。
+`00-pre-migration-check.sh` 脚本（在步骤 1 中运行）已经检查了非 utf8mb4 表。如果报告了“未使用 utf8mb4 的表”，请在计划迁移的**3-5 天前**进行转换。
 
 #### 转换为 utf8mb4
 
 ```bash
-# Convert databases to utf8mb4
+# 将数据库转换为 utf8mb4
 for db in ${DATABASES}; do
   kubectl exec ${SOURCE_NAME}-pxc-0 -n ${SOURCE_NAMESPACE} -- \
     mysql -uroot -p${MYSQL_PASSWORD} -e "
@@ -262,7 +268,7 @@ for db in ${DATABASES}; do
     "
 done
 
-# Convert tables to utf8mb4
+# 将表转换为 utf8mb4
 for db in ${DATABASES}; do
   TABLES=$(kubectl exec ${SOURCE_NAME}-pxc-0 -n ${SOURCE_NAMESPACE} -- \
     mysql -uroot -p${MYSQL_PASSWORD} -N -e "
@@ -271,7 +277,7 @@ for db in ${DATABASES}; do
     ")
 
   for table in ${TABLES}; do
-    echo "Converting ${db}.${table}..."
+    echo "正在转换 ${db}.${table}..."
     kubectl exec ${SOURCE_NAME}-pxc-0 -n ${SOURCE_NAMESPACE} -- \
       mysql -uroot -p${MYSQL_PASSWORD} ${db} -e "
         ALTER TABLE ${table} CONVERT TO CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
@@ -280,34 +286,34 @@ for db in ${DATABASES}; do
 done
 ```
 
-**重要说明**：对于带有较长 VARCHAR/TEXT 索引（>191 字符）的表，可能需要调整索引长度：
+**重要说明**：对于具有长 VARCHAR/TEXT 索引（>191 个字符）的表，您可能需要调整索引长度：
 
 ```sql
--- Example: Fix index length for utf8mb4
+-- 示例：修复 utf8mb4 的索引长度
 ALTER TABLE users DROP INDEX idx_email;
 ALTER TABLE users ADD UNIQUE INDEX idx_email (email(191));
 ```
 
 ### 步骤 3：创建目标 MySQL 8.0 实例
 
-在数据迁移阶段**开始前不久**再创建目标 MySQL 8.0 实例，以节省资源。
+在数据迁移阶段**之前不久**创建目标 MySQL 8.0 实例以节省资源。
 
 **重要**：在启动迁移脚本之前创建目标 MySQL 8.0 实例。
 
 **使用 Web 控制台：**
 
-详细说明请参考 [创建 MySQL 实例文档](https://docs.alauda.io/mysql-mgr/4.2/functions/01-create.html)（如有需要，请将 URL 中的 `4.2` 替换为你的 MySQL Operator 版本）。关键配置要点：
+请参考 [创建 MySQL 实例文档](https://docs.alauda.io/mysql-mgr/4.2/functions/01-create.html) 获取详细说明（如果需要，将 URL 中的 `4.2` 替换为您的 MySQL Operator 版本）。关键配置点：
 
 1. 选择版本 **8.0**
-2. 配置资源（由于 MySQL 8.0 的额外开销，建议内存比源集群 **+10-20%**）
-3. 将存储大小设置为源数据库大小的 **2-3 倍**
+2. 配置资源（建议比源集群多 **10-20% 内存**，以应对 MySQL 8.0 的开销）
+3. 设置存储大小为 **2-3 倍** 源数据库大小
 
 **使用命令行：**
 
 ```bash
 TARGET_NAME="mysql-8-target"
 NAMESPACE="your-namespace"
-STORAGE_SIZE="500Gi"  # Adjust based on your source DB size
+STORAGE_SIZE="500Gi"  # 根据您的源数据库大小进行调整
 
 cat << EOF | kubectl -n $NAMESPACE apply -f -
 apiVersion: middleware.alauda.io/v1
@@ -367,48 +373,42 @@ spec:
         level: info
   upgradeOption:
     autoUpgrade: false
-    crVersion: 4.2.0  # Set to your installed MySQL Operator version
+    crVersion: 4.2.0  # 设置为您安装的 MySQL Operator 版本
   version: "8.0"
 EOF
 ```
 
-**注意：**上述 YAML 使用 Alauda MySQL CRD 格式。与标准 Kubernetes 的主要差异：
-- 使用 `spec.mgr` 而不是 `spec.type`
-- `members: 1` 表示单节点（高可用请增加到 3）
-- `storageClassName` 必须与集群中可用的 StorageClass 匹配
-- 大多数 ACP 环境需要 `strictSecurityModeEnabled: true`
-- `upgradeOption.crVersion` 必须与已安装的 MySQL Operator 版本匹配；请将 `4.2.0` 更新为你的实际版本（可通过 `kubectl get mysql -A` 或 ACP Web 控制台查看）
-
-**校验目标集群：**
+**验证目标集群：**
 
 ```bash
-# Wait for cluster to be ready
+# 等待集群准备就绪
 kubectl -n $NAMESPACE get mysql $TARGET_NAME -w
 
-# Expected output:
+# 预期输出：
 # NAME             VERSION   STATE   PXCSTATE   MGRSTATE
 # mysql-8-target   8.0       Ready              ready
 ```
 
 ### 步骤 4：迁移数据、用户和权限
 
-使用 `01-migrate-all.sh` 脚本执行迁移。该脚本会：
-1. 校验前提条件（GTID、版本、连通性）
-2. 将所有指定数据库的数据从源端直接流式传输到目标端
-3. 迁移用户账号和权限（使用 `mysql_native_password` 以保证兼容性）
+使用 `01-migrate-all.sh` 脚本执行迁移。该脚本：
+
+1. 验证先决条件（GTID、版本、连接性）
+2. 直接从源流式迁移所有指定数据库的数据
+3. 迁移用户帐户和权限（使用 `mysql_native_password` 以确保兼容性）
 
 **操作步骤：**
 
-1. **停止应用写入**：将应用副本数缩容为零，以确保数据一致性。
+1. **停止应用写入**：将应用的副本缩放为零，以确保数据一致性。
 
-   **关键**：从此步骤开始直到切换阶段完成，应用必须保持停止状态（或严格只读）。此步骤之后写入源数据库的任何数据都会丢失。
+   **关键**：从此时起，应用必须保持停止（或严格只读），直到切换阶段完成。此步骤后写入源数据库的任何数据都将丢失。
 
    ```bash
    kubectl scale deployment <app-name> --replicas=0 -n <app-namespace>
    ```
 
 2. **配置脚本**：
-   编辑 `01-migrate-all.sh`，设置集群名称、namespace 以及 `DATABASES` 变量（使用步骤 1 得到的列表）。
+   编辑 `01-migrate-all.sh`，设置您的集群名称、命名空间和 `DATABASES` 变量（使用步骤 1 中的列表）。
 
 3. **运行迁移**：
    ```bash
@@ -417,33 +417,34 @@ kubectl -n $NAMESPACE get mysql $TARGET_NAME -w
    ```
 
 **重要说明：**
-- 该脚本使用**流式迁移**，因此不会为转储文件占用磁盘空间。
-- 它会自动处理 `GTID_PURGED` 过滤，以兼容 MGR。
-- 用户账号使用 `mysql_native_password` 进行迁移，以最大限度兼容现有应用。
 
+- 该脚本使用 **流式迁移**，因此不会消耗转储文件的磁盘空间。
+- 它自动处理 MGR 兼容性的 `GTID_PURGED` 过滤。
+- 用户帐户使用 `mysql_native_password` 进行迁移，以最大限度地提高与现有应用程序的兼容性。
 
-### 步骤 5：校验迁移
+### 步骤 5：验证迁移
 
-运行 `02-verify-migration.sh` 脚本，确认所有数据库对象均已成功迁移。
+运行 `02-verify-migration.sh` 脚本以确认所有数据库对象已成功迁移。
 
 ```bash
 chmod +x 02-verify-migration.sh
 ./02-verify-migration.sh
 ```
 
-该脚本会对每个数据库执行以下检查：
-1. **表**：比较源端与目标端的数量
-2. **视图**：比较数量，并测试每个视图的执行
-3. **存储过程/函数**：比较数量
-4. **触发器/事件**：比较数量
-5. **行数**：执行抽样行数检查
-6. **用户**：校验用户账号已迁移
+该脚本对每个数据库执行以下检查：
 
-**注意**：如果任何检查失败，脚本会输出红色的失败消息。在校验通过之前不要进行切换。
+1. **表**：比较源与目标的计数
+2. **视图**：比较计数并测试每个视图的执行
+3. **存储过程/函数**：比较计数
+4. **触发器/事件**：比较计数
+5. **行计数**：执行样本行计数检查
+6. **用户**：验证用户帐户是否已迁移
+
+**注意**：如果任何检查失败，脚本将输出红色失败消息。在验证通过之前，请勿继续切换。
 
 ### 步骤 6：迁移后优化
 
-迁移成功后，对目标 MySQL 8.0 实例进行优化。
+在成功迁移后优化目标 MySQL 8.0 实例。
 
 #### 1. 更新表统计信息
 
@@ -451,10 +452,10 @@ chmod +x 02-verify-migration.sh
 TARGET_NAME="mysql-8-target"
 TARGET_NAMESPACE="your-namespace"
 MYSQL_PASSWORD="your-password"
-DATABASES="db1 db2 db3"  # ← YOUR databases only (NOT: information_schema, mysql, performance_schema, sys)
+DATABASES="db1 db2 db3"  # ← 仅您的数据库（NOT: information_schema, mysql, performance_schema, sys）
 
 for db in ${DATABASES}; do
-  echo "Analyzing tables in ${db}..."
+  echo "分析 ${db} 中的表..."
   TABLES=$(kubectl exec ${TARGET_NAME}-0 -n ${TARGET_NAMESPACE} -c mysql -- \
     mysql -uroot -p${MYSQL_PASSWORD} -N -e "
       SELECT TABLE_NAME FROM information_schema.TABLES
@@ -466,16 +467,16 @@ for db in ${DATABASES}; do
       mysql -uroot -p${MYSQL_PASSWORD} ${db} -e "ANALYZE TABLE ${table};" 2>&1 | grep -v "Table"
   done
 
-  echo "  ✓ Analyzed $(echo ${TABLES} | wc -w) tables"
+  echo "  ✓ 分析了 $(echo ${TABLES} | wc -w) 个表"
 done
 ```
 
 #### 2. 创建直方图（MySQL 8.0 特性）
 
-直方图可提升非索引列的查询性能：
+直方图提高了对非索引列的查询性能：
 
 ```bash
-# Example: Create histogram on frequently filtered column
+# 示例：在经常过滤的列上创建直方图
 kubectl exec ${TARGET_NAME}-0 -n ${TARGET_NAMESPACE} -c mysql -- \
   mysql -uroot -p${MYSQL_PASSWORD} -e "
     ANALYZE TABLE db1.orders UPDATE HISTOGRAM ON customer_id, status WITH 100 BUCKETS;
@@ -488,7 +489,7 @@ kubectl exec ${TARGET_NAME}-0 -n ${TARGET_NAMESPACE} -c mysql -- \
 kubectl exec ${TARGET_NAME}-0 -n ${TARGET_NAMESPACE} -c mysql -- \
   mysql -uroot -p${MYSQL_PASSWORD} -e "
     SELECT TABLE_SCHEMA, TABLE_NAME,
-           ROUND(DATA_FREE / 1024 / 1024, 2) AS 'Fragmentation (MB)'
+           ROUND(DATA_FREE / 1024 / 1024, 2) AS '碎片 (MB)'
     FROM information_schema.TABLES
     WHERE TABLE_SCHEMA IN ('${DATABASES// /,\'','\'}')
       AND DATA_FREE > 0
@@ -496,17 +497,17 @@ kubectl exec ${TARGET_NAME}-0 -n ${TARGET_NAMESPACE} -c mysql -- \
   "
 ```
 
-如果发现明显碎片（>100MB），重建表：
+如果发现显著的碎片（>100MB），请重建表：
 
 ```sql
--- Rebuild fragmented table
+-- 重建碎片表
 OPTIMIZE TABLE db1.orders;
 ```
 
-#### 4. 建立性能基线
+#### 4. 创建性能基线
 
 ```bash
-# Record current performance metrics (table count, row count, size) to /tmp/mysql-8-baseline.txt for later comparison
+# 将当前性能指标（表计数、行计数、大小）记录到 /tmp/mysql-8-baseline.txt 以便后续比较
 kubectl exec ${TARGET_NAME}-0 -n ${TARGET_NAMESPACE} -c mysql -- \
   mysql -uroot -p${MYSQL_PASSWORD} -e "
     SELECT NOW() AS baseline_date,
@@ -522,25 +523,25 @@ kubectl exec ${TARGET_NAME}-0 -n ${TARGET_NAMESPACE} -c mysql -- \
 
 ### 步骤 7：应用切换
 
-迁移校验完成后，切换应用流量：
+在迁移验证完成后，切换应用流量：
 
-#### 1. 确认应用已停止
+#### 1. 验证应用已停止
 
-确保应用仍处于停止状态（与步骤 4 中执行的一致）。
+确保应用仍然停止（如步骤 4 中所执行）。
 
 ```bash
-# Ensure application is scaled down
+# 确保应用已缩放为零
 kubectl scale deployment <app-name> --replicas=0 -n <app-namespace>
 
-# Verify no active connections
+# 验证没有活动连接
 kubectl exec ${SOURCE_NAME}-pxc-0 -n ${SOURCE_NAMESPACE} -- \
   mysql -uroot -p${MYSQL_PASSWORD} -e "SHOW PROCESSLIST;" | grep -v "Sleep"
 ```
 
-#### 2. 更新应用连接串
+#### 2. 更新应用连接字符串
 
 ```bash
-# Update ConfigMap or environment variables
+# 更新 ConfigMap 或环境变量
 kubectl patch configmap <app-config> -n <app-namespace> --type=json \
   -p='[{"op": "replace", "path": "/data/database-host", "value":"mysql-8-target-read-write.'${TARGET_NAMESPACE}'.svc.cluster.local"}]'
 
@@ -551,88 +552,91 @@ kubectl patch configmap <app-config> -n <app-namespace> --type=json \
 #### 3. 重启应用
 
 ```bash
-# Scale up application
+# 缩放应用
 kubectl scale deployment <app-name> --replicas=<original-replica-count> -n <app-namespace>
 
-# Wait for pods to be ready
+# 等待 Pods 准备就绪
 kubectl -n <app-namespace> rollout status deployment <app-name>
 ```
 
-#### 4. 校验应用功能
+#### 4. 验证应用功能
 
 ```bash
-# Test database connectivity from application pod
+# 测试应用 Pod 的数据库连接
 kubectl exec -it <app-pod> -n <app-namespace> -- \
   mysql -h mysql-8-target-read-write.${TARGET_NAMESPACE}.svc.cluster.local \
     -uroot -p${MYSQL_PASSWORD} -e "SELECT 1 AS test;"
 
-# Check application logs for errors
+# 检查应用日志中的错误
 kubectl logs -n <app-namespace> <app-pod> --tail=100 | grep -i error
 ```
 
 ### 监控
 
-对已迁移的实例监控 24-48 小时：
+在 24-48 小时内监控迁移的实例：
 
 ```bash
-# Check MySQL 8.0 instance health
+# 检查 MySQL 8.0 实例健康状况
 kubectl -n ${TARGET_NAMESPACE} get mysql ${TARGET_NAME} -w
 
-# Monitor error logs
+# 监控错误日志
 kubectl logs -n ${TARGET_NAMESPACE} ${TARGET_NAME}-0 -c mysql --tail=100 -f
 
-# Check replication status (if applicable)
+# 检查复制状态（如果适用）
 kubectl exec ${TARGET_NAME}-0 -n ${TARGET_NAMESPACE} -c mysql -- \
   mysql -uroot -p${MYSQL_PASSWORD} -e "SHOW SLAVE STATUS\G"
 ```
 
 ## 灾难恢复
 
-### 回滚方案
+### 回滚计划
 
-如果在切换后发现严重问题：
+如果在切换后发现关键问题：
 
 ```bash
-# 1. Stop application
+# 1. 停止应用
 kubectl scale deployment <app-name> --replicas=0 -n <app-namespace>
 
-# 2. Update connection string back to source
+# 2. 将连接字符串更新回源
 kubectl patch configmap <app-config> -n <app-namespace> --type=json \
   -p='[{"op": "replace", "path": "/data/database-host", "value":"'${SOURCE_NAME}'-proxysql.'${SOURCE_NAMESPACE}'.svc.cluster.local"}]'
 
-# 3. Restart application
+# 3. 重启应用
 kubectl scale deployment <app-name> --replicas=<original-replica-count> -n <app-namespace>
 
-# 4. Verify connectivity
+# 4. 验证连接性
 kubectl exec -it <app-pod> -n <app-namespace> -- \
   mysql -h ${SOURCE_NAME}-proxysql.${SOURCE_NAMESPACE}.svc.cluster.local \
     -uroot -p${MYSQL_PASSWORD} -e "SELECT 1 AS test;"
 
-# 5. Monitor application logs
+# 5. 监控应用日志
 kubectl logs -n <app-namespace> <app-pod> --tail=100 -f
 ```
 
-### 常见问题与解决方案
+### 常见问题及解决方案
 
 #### 问题：GTID_PURGED 错误
 
 **症状：**
+
 ```text
 ERROR 3546 (HY000) at line XX: Cannot update GTID_PURGED with the Group Replication plugin running
 ```
 
-**解决方案：**已在迁移操作步骤中通过 `grep -v "SET @@GLOBAL.GTID_PURGED"` 过滤处理
+**解决方案**：在迁移过程中已通过过滤处理。
 
 #### 问题：字符集转换错误
 
 **症状：**
+
 ```text
 ERROR 1366 (HY000): Incorrect string value
 ```
 
 **解决方案：**
+
 ```bash
-# Check current character set
+# 检查当前字符集
 kubectl exec ${TARGET_NAME}-0 -n ${TARGET_NAMESPACE} -c mysql -- \
   mysql -uroot -p${MYSQL_PASSWORD} -e "
     SELECT TABLE_SCHEMA, TABLE_NAME, TABLE_COLLATION
@@ -640,7 +644,7 @@ kubectl exec ${TARGET_NAME}-0 -n ${TARGET_NAMESPACE} -c mysql -- \
     WHERE TABLE_SCHEMA = '${db}' AND TABLE_COLLATION NOT LIKE 'utf8mb4%';
   "
 
-# Convert to utf8mb4
+# 转换为 utf8mb4
 kubectl exec ${TARGET_NAME}-0 -n ${TARGET_NAMESPACE} -c mysql -- \
   mysql -uroot -p${MYSQL_PASSWORD} -e "
     ALTER DATABASE ${db} CHARACTER SET = utf8mb4 COLLATE = utf8mb4_unicode_ci;
@@ -650,13 +654,15 @@ kubectl exec ${TARGET_NAME}-0 -n ${TARGET_NAMESPACE} -c mysql -- \
 #### 问题：DEFINER 权限错误
 
 **症状：**
+
 ```text
 ERROR 1449 (HY000): The user specified as a definer ('user'@'host') does not exist
 ```
 
 **解决方案：**
+
 ```bash
-# Find all objects with missing definers
+# 查找所有缺少定义者的对象
 kubectl exec ${TARGET_NAME}-0 -n ${TARGET_NAMESPACE} -c mysql -- \
   mysql -uroot -p${MYSQL_PASSWORD} -e "
     SELECT DISTINCT DEFINER
@@ -665,23 +671,25 @@ kubectl exec ${TARGET_NAME}-0 -n ${TARGET_NAMESPACE} -c mysql -- \
       AND DEFINER NOT IN (SELECT CONCAT(user, '@', host) FROM mysql.user);
   "
 
-# Recreate missing users or update DEFINER
+# 重新创建缺失的用户或更新 DEFINER
 kubectl exec ${TARGET_NAME}-0 -n ${TARGET_NAMESPACE} -c mysql -- \
   mysql -uroot -p${MYSQL_PASSWORD} -e "
     ALTER VIEW db1.my_view SQL SECURITY INVOKER AS SELECT ...;
   "
 ```
 
-#### 问题：认证插件错误
+#### 问题：身份验证插件错误
 
 **症状：**
+
 ```text
 ERROR 2059 (HY000): Authentication plugin 'caching_sha2_password' cannot be loaded
 ```
 
 **解决方案：**
+
 ```bash
-# Update user to use mysql_native_password for compatibility
+# 更新用户以使用 mysql_native_password 以确保兼容性
 kubectl exec ${TARGET_NAME}-0 -n ${TARGET_NAMESPACE} -c mysql -- \
   mysql -uroot -p${MYSQL_PASSWORD} -e "
     ALTER USER 'app_user'@'%' IDENTIFIED WITH mysql_native_password BY 'password';
@@ -689,28 +697,28 @@ kubectl exec ${TARGET_NAME}-0 -n ${TARGET_NAMESPACE} -c mysql -- \
   "
 ```
 
-## 故障排查
+## 故障排除
 
 ### 诊断命令
 
 #### 检查迁移进度
 
 ```bash
-# Monitor migration progress (streaming mode)
+# 监控迁移进度（流式模式）
 kubectl exec ${TARGET_NAME}-0 -n ${TARGET_NAMESPACE} -c mysql -- \
   mysql -uroot -p${MYSQL_PASSWORD} -e "SHOW PROCESSLIST;"
 
-# Monitor network traffic (if migration is slow)
+# 监控网络流量（如果迁移缓慢）
 kubectl exec ${SOURCE_NAME}-pxc-0 -n ${SOURCE_NAMESPACE} -- \
   mysql -uroot -p${MYSQL_PASSWORD} -e "SHOW PROCESSLIST;"
 ```
 
-#### 校验数据完整性
+#### 验证数据完整性
 
 ```bash
-# Compare row counts for all tables
+# 比较所有表的行计数
 for db in ${DATABASES}; do
-  echo "=== Database: ${db} ==="
+  echo "=== 数据库：${db} ==="
   kubectl exec ${SOURCE_NAME}-pxc-0 -n ${SOURCE_NAMESPACE} -- \
     mysql -uroot -p${MYSQL_PASSWORD} -N -e "
       SELECT TABLE_NAME, TABLE_ROWS
@@ -727,17 +735,17 @@ for db in ${DATABASES}; do
       ORDER BY TABLE_NAME;
     " > /tmp/target_counts.txt
 
-  diff /tmp/source_counts.txt /tmp/target_counts.txt || echo "Row count differences detected!"
+  diff /tmp/source_counts.txt /tmp/target_counts.txt || echo "检测到行计数差异！"
 done
 ```
 
-#### 查看 MySQL 8.0 错误日志
+#### 检查 MySQL 8.0 错误日志
 
 ```bash
-# Real-time error monitoring
+# 实时错误监控
 kubectl logs -n ${TARGET_NAMESPACE} ${TARGET_NAME}-0 -c mysql --tail=100 -f | grep -i error
 
-# Search for specific errors
+# 搜索特定错误
 kubectl logs -n ${TARGET_NAMESPACE} ${TARGET_NAME}-0 -c mysql --tail=1000 | grep -i "definer"
 ```
 
@@ -745,174 +753,181 @@ kubectl logs -n ${TARGET_NAMESPACE} ${TARGET_NAME}-0 -c mysql --tail=1000 | grep
 
 ### 迁移前规划
 
-- **在预发环境测试**：始终先在非生产环境执行一次测试迁移
-- **Schema 清理**：在生产迁移前修复所有 schema 兼容性问题
-- **字符集迁移**：提前充分完成 utf8mb4 转换（至少提前 3-5 天）
-- **备份策略**：确保迁移前有可用的近期备份
+- **在暂存环境中测试**：始终先在非生产环境中进行测试迁移
+- **模式清理**：在生产迁移之前修复所有模式兼容性问题
+- **字符集迁移**：提前进行 utf8mb4 转换（至少提前 3-5 天）
+- **备份策略**：确保在迁移之前有最近的备份可用
 - **维护窗口**：根据数据库大小安排足够的停机时间
-- **沟通**：通知所有干系人，包括应用团队和 DBA
+- **沟通**：通知所有利益相关者，包括应用团队和 DBA
 
 ### 迁移期间
 
-- **停止应用写入**：确保导出/导入期间没有写入，以保证一致性
+- **停止应用写入**：确保在导出/导入期间没有写入以保持一致性
 - **监控进度**：定期跟踪导出/导入进度
-- **增量校验**：在每个主要步骤后运行校验脚本
-- **记录问题**：记录遇到的任何问题以供日后参考
-- **保持源端运行**：在迁移校验完成之前不要删除源端
+- **逐步验证**：在每个主要步骤后运行验证脚本
+- **记录问题**：记录遇到的任何问题以备将来参考
+- **保持源运行**：在迁移验证之前不要删除源
 
 ### 迁移后
 
 - **全面测试**：彻底测试应用功能
-- **性能监控**：监控查询性能和资源使用 24-48 小时
-- **优化**：执行迁移后优化操作步骤
-- **保留源端以备回滚**：将源集群保留 24-48 小时作为回滚窗口
-- **更新文档**：更新连接串、运维手册和监控看板
+- **性能监控**：在 24-48 小时内监控查询性能和资源利用率
+- **优化**：运行迁移后的优化程序
+- **保持源以便回滚**：在回滚窗口期间保持源集群 24-48 小时
+- **更新文档**：更新连接字符串、运行手册和监控仪表板
 
 ## 参考
 
 ### 大小与时间估算
 
 | 数据库大小 | 导出时间 | 导入时间 | 总停机时间 |
-|---------------|-------------|-------------|----------------|
-| < 10GB | 1-5 分钟 | 2-10 分钟 | 15-30 分钟 |
-| 10-50GB | 5-20 分钟 | 10-30 分钟 | 30-60 分钟 |
-| 50-100GB | 20-40 分钟 | 30-60 分钟 | 1-2 小时 |
-| 100-200GB | 40-80 分钟 | 1-2 小时 | 2-4 小时 |
+| ----------- | --------- | --------- | ------------ |
+| < 10GB      | 1-5 分钟  | 2-10 分钟 | 15-30 分钟   |
+| 10-50GB     | 5-20 分钟 | 10-30 分钟 | 30-60 分钟   |
+| 50-100GB    | 20-40 分钟 | 30-60 分钟 | 1-2 小时     |
+| 100-200GB   | 40-80 分钟 | 1-2 小时  | 2-4 小时     |
 
-### mysqldump 参数参考
+### mysqldump 标志参考
 
-| 参数 | 用途 |
-|------|---------|
-| `--single-transaction` | 使用 MVCC 获取一致性快照（InnoDB） |
-| `--quick` | 逐行读取数据（节省内存） |
-| `--lock-tables=false` | 不锁表（依赖 single-transaction） |
-| `--set-gtid-purged=ON` | 包含 GTID 信息 |
-| `--routines` | 导出存储过程和函数 |
-| `--events` | 导出事件 |
-| `--triggers` | 导出触发器 |
-| `--databases` | 指定要导出的数据库 |
+| 标志                     | 目的                                          |
+| ------------------------ | --------------------------------------------- |
+| `--single-transaction`   | 使用 MVCC（InnoDB）进行一致性快照            |
+| `--quick`                | 一次检索一行（节省内存）                     |
+| `--lock-tables=false`    | 不锁定表（依赖于单一事务）                   |
+| `--set-gtid-purged=ON`   | 包含 GTID 信息                               |
+| `--routines`             | 导出存储过程和函数                           |
+| `--events`               | 导出事件                                    |
+| `--triggers`             | 导出触发器                                  |
+| `--databases`            | 指定要导出的数据库                          |
 
-### 校验清单
+### 验证检查清单
 
-迁移后，请校验：
-- [ ] 表数量一致
-- [ ] 每张表的行数一致
-- [ ] 视图数量一致
-- [ ] 所有视图均能成功执行
-- [ ] 存储过程数量一致
-- [ ] 函数数量一致
-- [ ] 触发器数量一致
-- [ ] 事件数量一致
-- [ ] 所有 DEFINER 账号存在
+迁移后验证：
+
+- [ ] 表的数量相同
+- [ ] 每个表的行计数相同
+- [ ] 视图的数量相同
+- [ ] 所有视图成功执行
+- [ ] 存储过程的数量相同
+- [ ] 函数的数量相同
+- [ ] 触发器的数量相同
+- [ ] 事件的数量相同
+- [ ] 所有 DEFINER 帐户存在
 - [ ] 所有用户已迁移
-- [ ] 所有授权已迁移
-- [ ] 应用能够连接
+- [ ] 所有权限已迁移
+- [ ] 应用可以连接
 - [ ] 应用功能正常
 
-### 相关链接
+### 有用链接
 
-- [Alauda MySQL MGR 文档](https://docs.alauda.io/mysql-mgr/4.2/functions/01-create.html) — 如有需要，请将 URL 路径中的 `4.2` 替换为你的 MySQL Operator 版本
-- [MySQL 8.0 Release Notes](https://dev.mysql.com/doc/refman/8.0/en/mysql-nutshell.html)
+- [Alauda MySQL MGR 文档](https://docs.alauda.io/mysql-mgr/4.2/functions/01-create.html) — 如果需要，将 URL 路径中的 `4.2` 替换为您的 MySQL Operator 版本
+- [MySQL 8.0 发布说明](https://dev.mysql.com/doc/refman/8.0/en/mysql-nutshell.html)
 - [MySQL 8.0 升级指南](https://dev.mysql.com/doc/refman/8.0/en/upgrade-prerequisites.html)
 
 ## 附录：迁移脚本参考
 
-本节提供为简化 MySQL 5.7 到 8.0 迁移过程而设计的自动化迁移脚本的详细文档。
+本节提供了旨在简化 MySQL 5.7 到 8.0 迁移过程的自动化迁移脚本的详细文档。
 
 ### 概述
 
-迁移脚本提供三步自动化流程：
+迁移脚本提供了三步自动化方法：
 
-| 脚本 | 用途 | 运行时机 | 耗时 |
-|--------|---------|-------------|----------|
-| **00-pre-migration-check.sh** | 迁移前兼容性分析 | 迁移前 1 周 | 2-5 分钟 |
-| **01-migrate-all.sh** | 完整迁移（数据 + 用户） | 维护窗口期间 | 15-60 分钟 |
-| **02-verify-migration.sh** | 全面校验 | 迁移后 | 5-10 分钟 |
+| 脚本                        | 目的                                | 运行时间                   | 持续时间      |
+| ----------------------------- | ------------------------------------ | ------------------------- | ------------- |
+| **00-pre-migration-check.sh** | 迁移前兼容性分析                    | 迁移前一周                 | 2-5 分钟     |
+| **01-migrate-all.sh**         | 完整迁移（数据 + 用户）             | 维护窗口期间               | 15-60 分钟   |
+| **02-verify-migration.sh**    | 全面验证                            | 迁移后                     | 5-10 分钟    |
 
 ### 脚本 1：迁移前检查
 
-**用途：**检测 schema 兼容性问题并校验环境配置。
+**目的**：检测模式兼容性问题并验证环境设置。
 
-**检查内容：**
-- Kubernetes 集群连通性
-- 源集群的健康与状态
-- 源端已启用 GTID 模式
+**检查内容**：
+
+- Kubernetes 集群连接性
+- 源集群健康状况和状态
+- 源上启用 GTID 模式
 - 自动检测用户数据库
-- 保留关键字使用情况（RANK、GROUPS、FUNCTION 等）
+- 保留关键字使用（RANK、GROUPS、FUNCTION 等）
 - 无效日期默认值（`0000-00-00`）
-- ZEROFILL 列使用情况
-- 带 DEFAULT 值的 TEXT 列
+- ZEROFILL 列使用
+- 带有 DEFAULT 值的 TEXT 列
 - 字符集兼容性（utf8mb4）
 
-**配置：**
+**配置**：
+
 ```bash
-SOURCE_NAME="source"              # Source cluster name
-SOURCE_NAMESPACE="your-namespace" # Source namespace
-MYSQL_PASSWORD="your-password"    # Source root password
-DATABASES="ALL"                   # "ALL" to auto-detect
+SOURCE_NAME="source"              # 源集群名称
+SOURCE_NAMESPACE="your-namespace" # 源命名空间
+MYSQL_PASSWORD="your-password"    # 源根密码
+DATABASES="ALL"                   # "ALL" 自动检测
 ```
 
-**用法：**
+**用法**：
+
 ```bash
-vi 00-pre-migration-check.sh       # Edit configuration
+vi 00-pre-migration-check.sh       # 编辑配置
 chmod +x 00-pre-migration-check.sh
 ./00-pre-migration-check.sh
 ```
 
-**预期输出：**
+**预期输出**：
+
 ```text
 ========================================
-MySQL 5.7 to 8.0 Pre-Migration Check
+MySQL 5.7 到 8.0 迁移前检查
 ========================================
 
->>> Checking kubectl context
-✓ Connected to Kubernetes cluster
+>>> 检查 kubectl 上下文
+✓ 连接到 Kubernetes 集群
 
->>> Checking source cluster
-✓ Source cluster source found
-✓ Source cluster status: ready
+>>> 检查源集群
+✓ 找到源集群 source
+✓ 源集群状态：ready
 
->>> Checking GTID mode on source
-✓ GTID mode is enabled
+>>> 检查源上的 GTID 模式
+✓ GTID 模式已启用
 
->>> Detecting user databases
-✓ Databases to migrate:
+>>> 检测用户数据库
+✓ 要迁移的数据库：
    app_db customer_db reporting_db
 
-⚠ Copy this line for your migration script:
+⚠ 将此行复制到您的迁移脚本中：
 DATABASES="app_db customer_db reporting_db"
 
->>> Checking for reserved keywords (MySQL 8.0)
-✓ No reserved keyword issues found
+>>> 检查保留关键字（MySQL 8.0）
+✓ 未发现保留关键字问题
 
-[... more checks ...]
+[... 更多检查 ...]
 
 ========================================
-Pre-Migration Check Summary
+迁移前检查总结
 ========================================
 
-✓ Configuration verified:
-   Source cluster: source.your-namespace
-   Databases to migrate: app_db customer_db reporting_db
+✓ 配置已验证：
+   源集群：source.your-namespace
+   要迁移的数据库：app_db customer_db reporting_db
 
-Next steps:
-   1. Fix any schema compatibility issues found above
-   2. Convert character sets if needed
-   3. Run script 01-migrate-all.sh to perform migration
+接下来的步骤：
+   1. 修复上述发现的任何模式兼容性问题
+   2. 如有需要，转换字符集
+   3. 运行脚本 01-migrate-all.sh 进行迁移
 ```
 
 ### 脚本 2：完整迁移
 
-**用途：**将所有数据库、用户和权限从源端迁移到目标端。
+**目的**：将所有数据库、用户和权限从源迁移到目标。
 
-**功能：**
-- 校验前提条件（两个集群、GTID、版本）
-- 使用流式方式迁移数据库（无需磁盘存储）
-- 使用 `mysql_native_password` 迁移用户账号
+**功能**：
+
+- 验证先决条件（两个集群、GTID、版本）
+- 使用流式迁移数据库（不需要中间存储）
+- 使用 `mysql_native_password` 迁移用户帐户
 - 迁移所有权限和授权
-- 执行基础校验
+- 执行基本验证
 
-**配置：**
+**配置**：
+
 ```bash
 SOURCE_NAME="source"
 SOURCE_NAMESPACE="your-namespace"
@@ -922,101 +937,105 @@ TARGET_NAME="mysql-8-target"
 TARGET_NAMESPACE="your-namespace"
 TARGET_MYSQL_PASSWORD="target-root-password"
 
-DATABASES="app_db customer_db reporting_db"  # From pre-migration check
+DATABASES="app_db customer_db reporting_db"  # 来自迁移前检查
 ```
 
-**用法：**
+**用法**：
+
 ```bash
-# Before running: Stop application writes!
+# 在运行之前：停止应用写入！
 kubectl scale deployment <app-name> --replicas=0 -n <app-namespace>
 
-# Edit and run
+# 编辑并运行
 vi 01-migrate-all.sh
 chmod +x 01-migrate-all.sh
 ./01-migrate-all.sh
 ```
 
-**预期输出：**
+**预期输出**：
+
 ```text
 ========================================
-MySQL 5.7 to 8.0 Migration
+MySQL 5.7 到 8.0 迁移
 ========================================
 
-⚠ IMPORTANT: Ensure application writes are stopped during migration
+⚠ 重要：确保在迁移期间停止应用写入
 
->>> Checking prerequisites
-✓ Connected to Kubernetes cluster
-✓ Source cluster found: source
-✓ Target cluster found: mysql-8-target
-✓ Target cluster version: 8.0.44
-✓ GTID mode enabled on source
-ℹ Will migrate 3 database(s): app_db customer_db reporting_db
-
-========================================
-Migrating Databases
-========================================
-
-ℹ Migrating database [1/3]: app_db
-✓ Migrated app_db
-
-ℹ Migrating database [2/3]: customer_db
-✓ Migrated customer_db
-
-ℹ Migrating database [3/3]: reporting_db
-✓ Migrated reporting_db
-
-✓ All databases migrated successfully (3/3)
+>>> 检查先决条件
+✓ 连接到 Kubernetes 集群
+✓ 找到源集群：source
+✓ 找到目标集群：mysql-8-target
+✓ 目标集群版本：8.0.44
+✓ 源上启用 GTID 模式
+ℹ 将迁移 3 个数据库：app_db customer_db reporting_db
 
 ========================================
-Migrating Users and Privileges
+迁移数据库
 ========================================
 
->>> Creating user accounts
-ℹ Found 5 user(s) to migrate
-✓ User accounts created
+ℹ 正在迁移数据库 [1/3]：app_db
+✓ 已迁移 app_db
 
->>> Granting privileges
-✓ Privileges granted
+ℹ 正在迁移数据库 [2/3]：customer_db
+✓ 已迁移 customer_db
 
->>> Verifying migrated users
-✓ Migrated 5 user(s)
+ℹ 正在迁移数据库 [3/3]：reporting_db
+✓ 已迁移 reporting_db
 
-[... verification ...]
+✓ 所有数据库成功迁移（3/3）
 
 ========================================
-Migration Summary
+迁移用户和权限
 ========================================
 
-Source: source.your-namespace
-Target: mysql-8-target.your-namespace
-Databases migrated: 3/3
-Users migrated: 5
-Duration: 15m 32s
+>>> 创建用户帐户
+ℹ 找到 5 个用户进行迁移
+✓ 用户帐户已创建
 
-✓ Migration completed successfully!
+>>> 授予权限
+✓ 权限已授予
 
-Next steps:
-   1. Run script 02-verify-migration.sh for comprehensive verification
-   2. Update application connection strings
-   3. Perform application testing
-   4. Monitor for 24-48 hours before decommissioning source
+>>> 验证迁移的用户
+✓ 已迁移 5 个用户
+
+[... 验证 ...]
+
+========================================
+迁移总结
+========================================
+
+源：source.your-namespace
+目标：mysql-8-target.your-namespace
+迁移的数据库：3/3
+迁移的用户：5
+持续时间：15m 32s
+
+✓ 迁移成功完成！
+
+接下来的步骤：
+   1. 运行脚本 02-verify-migration.sh 进行全面验证
+   2. 更新应用连接字符串
+   3. 执行应用测试
+   4. 在源被退役之前监控 24-48 小时
 ```
 
-### 脚本 3：全面校验
+### 脚本 3：全面验证
 
-**用途：**校验所有数据库对象均已正确迁移。
+**目的**：验证所有数据库对象是否正确迁移。
 
-**校验内容：**
-- 表（数量比较）
-- 视图（数量 + 每个视图的执行测试）
-- 存储过程（数量）
-- 存储函数（数量）
-- 触发器（数量）
-- 事件（数量）
-- 行数（对每个数据库的前 5 张表进行抽样检查）
-- 用户账号（数量 + 列表）
+**验证内容**：
 
-**配置：**
+- 表（计数比较）
+- 视图（计数 + 每个视图的执行测试）
+- 存储过程（计数）
+- 存储函数（计数）
+- 触发器（计数）
+- 事件（计数）
+- 行计数（对每个数据库的前 5 个表执行样本检查）
+- 用户帐户（计数 + 列表）
+
+**配置**：
+
 ```bash
 SOURCE_NAME="source"
 SOURCE_NAMESPACE="your-namespace"
@@ -1026,80 +1045,86 @@ TARGET_NAME="mysql-8-target"
 TARGET_NAMESPACE="your-namespace"
 TARGET_MYSQL_PASSWORD="target-root-password"
 
-DATABASES="app_db customer_db reporting_db"  # Same as migration
+DATABASES="app_db customer_db reporting_db"  # 与迁移相同
 ```
 
-**用法：**
+**用法**：
+
 ```bash
 vi 02-verify-migration.sh
 chmod +x 02-verify-migration.sh
 ./02-verify-migration.sh
 ```
 
-**预期输出：**
+**预期输出**：
+
 ```text
 ========================================
-MySQL 5.7 to 8.0 Migration Verification
+MySQL 5.7 到 8.0 迁移验证
 ========================================
 
->>> Verifying Tables
+>>> 验证表
 
-Database: app_db
-✓ Tables: 15 (match)
+数据库：app_db
+✓ 表：15（匹配）
 
-Database: customer_db
-✓ Tables: 8 (match)
+数据库：customer_db
+✓ 表：8（匹配）
 
-[... more verifications ...]
+[... 更多验证 ...]
 
 ========================================
-Verification Summary
+验证总结
 ========================================
 
-Total checks: 42
-Passed: 42
-Failed: 0
+总检查：42
+通过：42
+失败：0
 
-✓ ALL CHECKS PASSED!
+✓ 所有检查通过！
 
-Migration verification successful. Next steps:
-   1. Update application connection strings to point to target
-   2. Perform application testing
-   3. Monitor target cluster for 24-48 hours
-   4. Keep source cluster available for rollback during this period
+迁移验证成功。接下来的步骤：
+   1. 更新应用连接字符串以指向目标
+   2. 执行应用测试
+   3. 在退役源集群之前监控目标 24-48 小时
 ```
 
 ### 获取密码
 
 **源集群（PXC 5.7）：**
+
 ```bash
 kubectl get secret <source-name> -n <source-namespace> -o jsonpath='{.data.root}' | base64 -d
 ```
 
 **目标集群（MGR 8.0）：**
+
 ```bash
 kubectl get secret mgr-<target-name>-password -n <target-namespace> -o jsonpath='{.data.root}' | base64 -d
 ```
 
-### 脚本故障排查
+### 故障排除脚本
 
-#### 脚本报错 "Cannot connect to Kubernetes cluster"
+#### 脚本失败，显示“无法连接到 Kubernetes 集群”
+
 ```bash
 kubectl config current-context
 kubectl cluster-info
 ```
 
-#### 脚本报错 "Source cluster not found"
+#### 脚本失败，显示“未找到源集群”
+
 ```bash
 kubectl get mysql -n <namespace>
 ```
 
 #### 特定数据库迁移失败
+
 ```bash
-# Check target logs
+# 检查目标日志
 kubectl logs -n <target-namespace> <target-name>-0 -c mysql --tail=100
 
-# Manually test single database migration
+# 手动测试单个数据库迁移
 kubectl exec <source-name>-pxc-0 -n <source-namespace> -- \
   mysqldump -uroot -p<password> --single-transaction --quick \
     --lock-tables=false --set-gtid-purged=ON --routines --events --triggers \
@@ -1112,83 +1137,83 @@ kubectl exec <source-name>-pxc-0 -n <source-namespace> -- \
 ### 完整工作流示例
 
 ```bash
-# ===== 1 WEEK BEFORE MIGRATION =====
+# ===== 迁移前一周 =====
 ./00-pre-migration-check.sh
-# → Output shows: DATABASES="app_db customer_db reporting_db"
-# → Fix any schema issues found
-# → Convert to utf8mb4 if needed
+# → 输出显示：DATABASES="app_db customer_db reporting_db"
+# → 修复任何发现的模式问题
+# → 如有需要，转换为 utf8mb4
 
-# ===== DAY OF MIGRATION (Maintenance Window) =====
+# ===== 迁移当天（维护窗口） =====
 
-# Stop application writes
+# 停止应用写入
 kubectl scale deployment <app-name> --replicas=0 -n <app-namespace>
 
-# Update migration script with DATABASES from pre-check
+# 更新迁移脚本中的 DATABASES
 vi 01-migrate-all.sh
 # DATABASES="app_db customer_db reporting_db"
 
-# Run migration
+# 运行迁移
 ./01-migrate-all.sh
 
-# Run verification
+# 运行验证
 ./02-verify-migration.sh
 
-# Update application connection string to target
+# 更新应用连接字符串以指向目标
 kubectl patch configmap <app-config> -n <app-namespace> --type=json \
   -p='[{"op": "replace", "path": "/data/db-host", "value":"mysql-8-target-read-write.namespace.svc.cluster.local"}]'
 
-# Restart application
+# 重启应用
 kubectl scale deployment <app-name> --replicas=3 -n <app-namespace>
 
-# Wait for pods ready
+# 等待 Pods 准备就绪
 kubectl -n <app-namespace> rollout status deployment <app-name>
 
-# Test application
+# 测试应用
 curl http://<app-service>/health
 
-# Monitor for 24-48 hours
+# 监控 24-48 小时
 kubectl logs -n <target-namespace> mysql-8-target-0 -c mysql --tail=100 -f
 
-# ===== AFTER SUCCESSFUL TESTING (24-48 hours later) =====
-# Decommission source cluster
+# ===== 成功测试后（24-48 小时后） =====
+# 退役源集群
 kubectl delete mysql <source-name> -n <source-namespace>
 ```
 
-### 脚本特性
+### 脚本功能
 
-所有脚本均包含：
+所有脚本均包括：
 
-- ✅ **彩色输出**：绿色（成功）、红色（错误）、黄色（警告）、蓝色（信息）
-- ✅ **进度指示**：显示当前步骤和整体进度
-- ✅ **错误处理**：遇到严重错误时退出并给出清晰的消息
+- ✅ **颜色编码输出**：绿色（成功）、红色（错误）、黄色（警告）、蓝色（信息）
+- ✅ **进度指示器**：显示当前步骤和总体进度
+- ✅ **错误处理**：在关键错误时退出并提供清晰消息
 - ✅ **自动检测**：当 `DATABASES="ALL"` 时自动发现数据库
-- ✅ **全面检查**：在继续之前校验所有前提条件
-- ✅ **详细输出**：精确展示迁移和校验的内容
-- ✅ **配置极简**：每个脚本仅需配置 4-6 个变量
+- ✅ **全面检查**：在继续之前验证所有先决条件
+- ✅ **详细输出**：显示迁移和验证的确切内容
+- ✅ **最小配置**：每个脚本仅需配置 4-6 个变量
 
 ### 重要说明
 
-1. **不要包含系统数据库**：`DATABASES` 变量必须仅包含用户/应用数据库。不要包含：`information_schema`、`mysql`、`performance_schema`、`sys`。
+1. **不要包含系统数据库**：`DATABASES` 变量必须仅包含用户/应用数据库。不要包括：`information_schema`、`mysql`、`performance_schema`、`sys`。
 
-2. **停止应用写入**：确保迁移期间没有应用写入，以保持数据一致性。
+2. **停止应用写入**：确保在迁移期间没有应用写入以保持数据一致性。
 
-3. **保留源集群**：在完成应用测试并稳定运行 24-48 小时之前，不要删除源集群。
+3. **保持源集群**：在应用测试和 24-48 小时的成功操作后再删除源集群。
 
-4. **在预发环境测试**：始终先在非生产环境执行一次测试迁移。
+4. **在暂存环境中测试**：始终在非生产环境中进行测试迁移。
 
-5. **迁移后监控**：在下线源端之前，对目标集群监控 24-48 小时。
+5. **迁移后监控**：在退役源之前监控目标集群 24-48 小时。
 
 ### 脚本兼容性
 
 - **MySQL 指南版本**：v2.5+
-- **源端**：PXC 5.7.44
-- **目标端**：MGR 8.0.44
-- **Kubernetes**：已在 Alauda Container Platform v4.2.0 上测试（兼容 v4.0+）
+- **源**：PXC 5.7.44
+- **目标**：MGR 8.0.44
+- **Kubernetes**：在 Alauda 容器平台 v4.2.0 上测试（与 v4.0+ 兼容）
 - **Shell**：Bash 4.0+
 
-### 脚本源码
+### 脚本源代码
 
-以下脚本可直接从本文档复制。将每个脚本保存为文件，赋予可执行权限后运行。
+以下脚本可以直接从本文档中复制。将每个脚本保存到文件中，使其可执行并运行。
 
 #### 脚本 1：00-pre-migration-check.sh
 
@@ -1197,50 +1222,50 @@ kubectl delete mysql <source-name> -n <source-namespace>
 ```bash
 #!/bin/bash
 #=============================================================================
-# MySQL 5.7 to 8.0 Migration - Pre-Migration Check Script
+# MySQL 5.7 到 8.0 迁移 - 迁移前检查脚本
 #=============================================================================
 #
-# This script performs all pre-migration checks and fixes:
-# 1. Schema compatibility analysis
-# 2. Character set analysis
-# 3. Database listing for migration
+# 此脚本执行所有迁移前检查和修复：
+# 1. 模式兼容性分析
+# 2. 字符集分析
+# 3. 迁移的数据库列表
 #
-# Usage:
-#   1. Edit the configuration section below
-#   2. Run: chmod +x 00-pre-migration-check.sh
-#   3. Run: ./00-pre-migration-check.sh
+# 用法：
+#   1. 编辑下面的配置部分
+#   2. 运行：chmod +x 00-pre-migration-check.sh
+#   3. 运行：./00-pre-migration-check.sh
 #
-# Expected output:
-#   - List of any schema compatibility issues that need fixing
-#   - List of any character set conversions needed
-#   - List of databases to migrate (copy this for migration script)
+# 预期输出：
+#   - 需要修复的任何模式兼容性问题列表
+#   - 需要的任何字符集转换列表
+#   - 要迁移的数据库列表（为迁移脚本复制此内容）
 #
 #=============================================================================
 
-set -e  # Exit on error
+set -e  # 出错时退出
 
 #=============================================================================
-# CONFIGURATION - EDIT THESE VALUES
+# 配置 - 编辑这些值
 #=============================================================================
 
 SOURCE_NAME="source"
 SOURCE_NAMESPACE="your-namespace"
 MYSQL_PASSWORD="your-password"
 
-# Set to "ALL" to auto-detect databases, or specify space-separated list
-# DATABASES="ALL"  # Auto-detect all user databases
-# DATABASES="db1 db2 db3"  # Or specify manually
+# 设置为 "ALL" 以自动检测数据库，或手动指定空格分隔的列表
+# DATABASES="ALL"  # 自动检测所有用户数据库
+# DATABASES="db1 db2 db3"  # 或手动指定
 DATABASES="ALL"
 
-# Color output
+# 颜色输出
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
-NC='\033[0m' # No Color
+NC='\033[0m' # 无颜色
 
 #=============================================================================
-# FUNCTIONS
+# 函数
 #=============================================================================
 
 print_header() {
@@ -1268,49 +1293,49 @@ print_error() {
 }
 
 check_kubectl_context() {
-    print_section "Checking kubectl context"
+    print_section "检查 kubectl 上下文"
 
     if ! kubectl cluster-info &>/dev/null; then
-        print_error "Cannot connect to Kubernetes cluster"
+        print_error "无法连接到 Kubernetes 集群"
         exit 1
     fi
-    print_success "Connected to Kubernetes cluster"
+    print_success "连接到 Kubernetes 集群"
 }
 
 check_source_cluster() {
-    print_section "Checking source cluster"
+    print_section "检查源集群"
 
     if ! kubectl get mysql ${SOURCE_NAME} -n ${SOURCE_NAMESPACE} &>/dev/null; then
-        print_error "Source cluster ${SOURCE_NAME} not found in namespace ${SOURCE_NAMESPACE}"
+        print_error "未找到源集群 ${SOURCE_NAME}，命名空间 ${SOURCE_NAMESPACE}"
         exit 1
     fi
-    print_success "Source cluster ${SOURCE_NAME} found"
+    print_success "找到源集群 ${SOURCE_NAME}"
 
-    # Check cluster status
+    # 检查集群状态
     STATUS=$(kubectl get mysql ${SOURCE_NAME} -n ${SOURCE_NAMESPACE} -o jsonpath='{.status.state}')
     if [ "${STATUS}" != "ready" ]; then
-        print_warning "Source cluster status: ${STATUS} (expected: ready)"
+        print_warning "源集群状态：${STATUS}（预期：ready）"
     else
-        print_success "Source cluster status: ready"
+        print_success "源集群状态：ready"
     fi
 }
 
 check_gtid_enabled() {
-    print_section "Checking GTID mode on source"
+    print_section "检查源上的 GTID 模式"
 
     GTID_MODE=$(kubectl exec ${SOURCE_NAME}-pxc-0 -n ${SOURCE_NAMESPACE} -- \
         mysql -uroot -p${MYSQL_PASSWORD} -N -e "SELECT @@gtid_mode" 2>/dev/null | grep -v "Warning")
 
     if [ "${GTID_MODE}" = "ON" ]; then
-        print_success "GTID mode is enabled"
+        print_success "GTID 模式已启用"
     else
-        print_error "GTID mode is NOT enabled (required for migration)"
+        print_error "GTID 模式未启用（迁移所需）"
         exit 1
     fi
 }
 
 detect_databases() {
-    print_section "Detecting user databases"
+    print_section "检测用户数据库"
 
     if [ "${DATABASES}" = "ALL" ]; then
         DATABASES=$(kubectl exec ${SOURCE_NAME}-pxc-0 -n ${SOURCE_NAMESPACE} -- \
@@ -1319,20 +1344,20 @@ detect_databases() {
             tr '\n' ' ' | sed 's/ $//')
 
         if [ -z "${DATABASES}" ]; then
-            print_error "No user databases found"
+            print_error "未找到用户数据库"
             exit 1
         fi
     fi
 
-    print_success "Databases to migrate:"
+    print_success "要迁移的数据库："
     echo "   ${DATABASES}"
     echo ""
-    print_warning "Copy this line for your migration script:"
+    print_warning "将此行复制到您的迁移脚本中："
     echo -e "${GREEN}DATABASES=\"${DATABASES}\"${NC}"
 }
 
 check_reserved_keywords() {
-    print_section "Checking for reserved keywords (MySQL 8.0)"
+    print_section "检查保留关键字（MySQL 8.0）"
 
     ISSUES=$(kubectl exec ${SOURCE_NAME}-pxc-0 -n ${SOURCE_NAMESPACE} -- \
         mysql -uroot -p${MYSQL_PASSWORD} -N -e "
@@ -1346,21 +1371,21 @@ check_reserved_keywords() {
         " 2>/dev/null | grep -v "Warning")
 
     if [ -z "${ISSUES}" ]; then
-        print_success "No reserved keyword issues found"
+        print_success "未发现保留关键字问题"
     else
-        print_error "Found columns using MySQL 8.0 reserved keywords:"
+        print_error "发现使用 MySQL 8.0 保留关键字的列："
         echo "${ISSUES}" | while read line; do
             echo "   - ${line}"
         done
         echo ""
-        print_warning "These columns must be renamed before migration"
-        echo "Example fix:"
+        print_warning "这些列必须在迁移之前重命名"
+        echo "示例修复："
         echo "   ALTER TABLE employees CHANGE COLUMN rank employee_rank INT;"
     fi
 }
 
 check_invalid_dates() {
-    print_section "Checking for invalid date defaults"
+    print_section "检查无效日期默认值"
 
     ISSUES=$(kubectl exec ${SOURCE_NAME}-pxc-0 -n ${SOURCE_NAMESPACE} -- \
         mysql -uroot -p${MYSQL_PASSWORD} -N -e "
@@ -1373,21 +1398,21 @@ check_invalid_dates() {
         " 2>/dev/null | grep -v "Warning")
 
     if [ -z "${ISSUES}" ]; then
-        print_success "No invalid date defaults found"
+        print_success "未发现无效日期默认值"
     else
-        print_error "Found columns with invalid date defaults:"
+        print_error "发现无效日期默认值的列："
         echo "${ISSUES}" | while read line; do
             echo "   - ${line}"
         done
         echo ""
-        print_warning "These columns must be fixed before migration"
-        echo "Example fix:"
+        print_warning "这些列必须在迁移之前修复"
+        echo "示例修复："
         echo "   ALTER TABLE events MODIFY COLUMN created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP;"
     fi
 }
 
 check_zerofill() {
-    print_section "Checking for ZEROFILL usage"
+    print_section "检查 ZEROFILL 使用情况"
 
     ISSUES=$(kubectl exec ${SOURCE_NAME}-pxc-0 -n ${SOURCE_NAMESPACE} -- \
         mysql -uroot -p${MYSQL_PASSWORD} -N -e "
@@ -1399,21 +1424,21 @@ check_zerofill() {
         " 2>/dev/null | grep -v "Warning")
 
     if [ -z "${ISSUES}" ]; then
-        print_success "No ZEROFILL usage found"
+        print_success "未发现 ZEROFILL 使用情况"
     else
-        print_warning "Found ZEROFILL columns (deprecated in MySQL 8.0):"
+        print_warning "发现 ZEROFILL 列（在 MySQL 8.0 中已弃用）："
         echo "${ISSUES}" | while read line; do
             echo "   - ${line}"
         done
         echo ""
-        print_warning "ZEROFILL will be removed during migration"
-        echo "To fix manually:"
+        print_warning "将在迁移过程中移除 ZEROFILL"
+        echo "要手动修复："
         echo "   ALTER TABLE products MODIFY COLUMN price DECIMAL(10,2);"
     fi
 }
 
 check_text_defaults() {
-    print_section "Checking for TEXT columns with DEFAULT values"
+    print_section "检查带有 DEFAULT 值的 TEXT 列"
 
     ISSUES=$(kubectl exec ${SOURCE_NAME}-pxc-0 -n ${SOURCE_NAMESPACE} -- \
         mysql -uroot -p${MYSQL_PASSWORD} -N -e "
@@ -1426,19 +1451,19 @@ check_text_defaults() {
         " 2>/dev/null | grep -v "Warning")
 
     if [ -z "${ISSUES}" ]; then
-        print_success "No TEXT columns with DEFAULT values found"
+        print_success "未发现带有 DEFAULT 值的 TEXT 列"
     else
-        print_error "Found TEXT columns with DEFAULT values (not allowed in MySQL 8.0):"
+        print_error "发现带有 DEFAULT 值的 TEXT 列（在 MySQL 8.0 中不允许）："
         echo "${ISSUES}" | while read line; do
             echo "   - ${line}"
         done
         echo ""
-        print_warning "These DEFAULT values must be removed before migration"
+        print_warning "这些 DEFAULT 值必须在迁移之前移除"
     fi
 }
 
 check_character_sets() {
-    print_section "Checking character sets"
+    print_section "检查字符集"
 
     NON_UTF8=$(kubectl exec ${SOURCE_NAME}-pxc-0 -n ${SOURCE_NAMESPACE} -- \
         mysql -uroot -p${MYSQL_PASSWORD} -N -e "
@@ -1451,55 +1476,55 @@ check_character_sets() {
         " 2>/dev/null | grep -v "Warning")
 
     if [ -z "${NON_UTF8}" ]; then
-        print_success "All tables are using utf8mb4"
+        print_success "所有表均使用 utf8mb4"
     else
-        print_warning "Found tables not using utf8mb4:"
+        print_warning "发现未使用 utf8mb4 的表："
         echo "${NON_UTF8}" | while read line; do
             echo "   - ${line}"
         done
         echo ""
-        print_warning "Consider converting to utf8mb4 before migration"
-        echo "See section 'Character Set and Collation Analysis' in the documentation"
+        print_warning "建议在迁移之前转换为 utf8mb4"
+        echo "请参见文档中的“字符集和排序分析”部分"
     fi
 }
 
 check_lower_case_table_names() {
-    print_section "Checking lower_case_table_names"
+    print_section "检查 lower_case_table_names"
 
     LCTN=$(kubectl exec ${SOURCE_NAME}-pxc-0 -n ${SOURCE_NAMESPACE} -- \
         mysql -uroot -p${MYSQL_PASSWORD} -N -e "SELECT @@lower_case_table_names" 2>/dev/null | grep -v "Warning")
 
     if [ "${LCTN}" = "1" ]; then
-        print_warning "Source cluster has lower_case_table_names=1"
-        echo "   Ensure target MySQL 8.0 cluster is also configured with lower_case_table_names=1"
-        echo "   This setting cannot be changed after initialization in MySQL 8.0."
+        print_warning "源集群的 lower_case_table_names=1"
+        echo "   确保目标 MySQL 8.0 集群也配置为 lower_case_table_names=1"
+        echo "   此设置在 MySQL 8.0 中初始化后无法更改。"
     else
-        print_success "Source cluster has lower_case_table_names=${LCTN}"
+        print_success "源集群的 lower_case_table_names=${LCTN}"
     fi
 }
 
 print_summary() {
-    print_header "Pre-Migration Check Summary"
+    print_header "迁移前检查总结"
 
     echo ""
-    print_success "Configuration verified:"
-    echo "   Source cluster: ${SOURCE_NAME}.${SOURCE_NAMESPACE}"
-    echo "   Databases to migrate: ${DATABASES}"
+    print_success "配置已验证："
+    echo "   源集群：${SOURCE_NAME}.${SOURCE_NAMESPACE}"
+    echo "   要迁移的数据库：${DATABASES}"
     echo ""
 
-    echo "Next steps:"
-    echo "   1. Fix any schema compatibility issues found above"
-    echo "   2. Convert character sets if needed"
-    echo "   3. Run script 01-migrate-all.sh to perform migration"
+    echo "接下来的步骤："
+    echo "   1. 修复上述发现的任何模式兼容性问题"
+    echo "   2. 如有需要，转换字符集"
+    echo "   3. 运行脚本 01-migrate-all.sh 进行迁移"
     echo ""
 }
 
 #=============================================================================
-# MAIN EXECUTION
+# 主执行
 #=============================================================================
 
 main() {
-    print_header "MySQL 5.7 to 8.0 Pre-Migration Check"
+    print_header "MySQL 5.7 到 8.0 迁移前检查"
 
     check_kubectl_context
     check_source_cluster
@@ -1513,7 +1538,7 @@ main() {
     check_lower_case_table_names
     print_summary
 
-    print_success "Pre-migration check completed"
+    print_success "迁移前检查完成"
 }
 
 main
@@ -1526,32 +1551,32 @@ main
 ```bash
 #!/bin/bash
 #=============================================================================
-# MySQL 5.7 to 8.0 Migration - Complete Migration Script
+# MySQL 5.7 到 8.0 迁移 - 完整迁移脚本
 #=============================================================================
 #
-# This script performs the complete migration from MySQL 5.7 to 8.0:
-# 1. Migrates all databases (streaming, no intermediate storage)
-# 2. Migrates users and privileges
-# 3. Performs basic verification
+# 此脚本执行从 MySQL 5.7 到 8.0 的完整迁移：
+# 1. 迁移所有数据库（流式，无中间存储）
+# 2. 迁移用户和权限
+# 3. 执行基本验证
 #
-# Prerequisites:
-#   - Target MySQL 8.0 cluster must be created and ready
-#   - Pre-migration check should have been completed
-#   - Application writes should be stopped during migration
+# 先决条件：
+#   - 目标 MySQL 8.0 集群必须创建并准备就绪
+#   - 应该完成迁移前检查
+#   - 在迁移期间应停止应用写入
 #
-# Usage:
-#   1. Edit the configuration section below
-#   2. Run: chmod +x 01-migrate-all.sh
-#   3. Run: ./01-migrate-all.sh
+# 用法：
+#   1. 编辑下面的配置部分
+#   2. 运行：chmod +x 01-migrate-all.sh
+#   3. 运行：./01-migrate-all.sh
 #
-# Estimated downtime: 15-60 minutes depending on database size
+# 预计停机时间：15-60 分钟，具体取决于数据库大小
 #
 #=============================================================================
 
-set -eo pipefail # Exit on error, and catch pipe failures
+set -eo pipefail # 出错时退出，并捕获管道失败
 
 #=============================================================================
-# CONFIGURATION - EDIT THESE VALUES
+# 配置 - 编辑这些值
 #=============================================================================
 
 SOURCE_NAME="source"
@@ -1562,28 +1587,28 @@ TARGET_NAME="mysql-8-target"
 TARGET_NAMESPACE="your-namespace"
 TARGET_MYSQL_PASSWORD="target-root-password"
 
-# IMPORTANT: databases to migrate (DO NOT include: information_schema, mysql, performance_schema, sys)
-DATABASES="db1 db2 db3" # ← Copy from pre-migration check output
+# 重要：要迁移的数据库（不要包括：information_schema、mysql、performance_schema、sys）
+DATABASES="db1 db2 db3" # ← 从迁移前检查输出复制
 
-# Users to exclude from migration (system users)
+# 要排除的用户（系统用户）
 EXCLUDE_USERS="'mysql.sys', 'mysql.session', 'mysql.infoschema', 'root', 'clustercheck', 'monitor', 'operator', 'xtrabackup', 'repl'"
 
-# Color output
+# 颜色输出
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 CYAN='\033[0;36m'
-NC='\033[0m' # No Color
+NC='\033[0m' # 无颜色
 
-# Statistics
+# 统计信息
 TOTAL_DATABASES=0
 MIGRATED_DATABASES=0
 FAILED_DATABASES=0
 START_TIME=$(date +%s)
 
 #=============================================================================
-# FUNCTIONS
+# 函数
 #=============================================================================
 
 print_header() {
@@ -1615,66 +1640,66 @@ print_info() {
 }
 
 check_prerequisites() {
-    print_section "Checking prerequisites"
+    print_section "检查先决条件"
 
-    # Check kubectl
+    # 检查 kubectl
     if ! kubectl cluster-info &>/dev/null; then
-        print_error "Cannot connect to Kubernetes cluster"
+        print_error "无法连接到 Kubernetes 集群"
         exit 1
     fi
-    print_success "Connected to Kubernetes cluster"
+    print_success "连接到 Kubernetes 集群"
 
-    # Check source cluster
+    # 检查源集群
     if ! kubectl get mysql ${SOURCE_NAME} -n ${SOURCE_NAMESPACE} &>/dev/null; then
-        print_error "Source cluster ${SOURCE_NAME} not found in namespace ${SOURCE_NAMESPACE}"
+        print_error "未找到源集群 ${SOURCE_NAME}，命名空间 ${SOURCE_NAMESPACE}"
         exit 1
     fi
-    print_success "Source cluster found: ${SOURCE_NAME}"
+    print_success "找到源集群：${SOURCE_NAME}"
 
-    # Check target cluster
+    # 检查目标集群
     if ! kubectl get mysql ${TARGET_NAME} -n ${TARGET_NAMESPACE} &>/dev/null; then
-        print_error "Target cluster ${TARGET_NAME} not found in namespace ${TARGET_NAMESPACE}"
-        print_error "Please create the target cluster before running migration"
+        print_error "未找到目标集群 ${TARGET_NAME}，命名空间 ${TARGET_NAMESPACE}"
+        print_error "请在运行迁移之前创建目标集群"
         exit 1
     fi
-    print_success "Target cluster found: ${TARGET_NAME}"
+    print_success "找到目标集群：${TARGET_NAME}"
 
-    # Check target is MySQL 8.0
+    # 检查目标是否为 MySQL 8.0
     TARGET_VERSION=$(kubectl exec ${TARGET_NAME}-0 -n ${TARGET_NAMESPACE} -c mysql -- \
         mysql -uroot -p${TARGET_MYSQL_PASSWORD} -N -e "SELECT VERSION();" 2>/dev/null | grep -v "Warning")
 
     if [[ ! "${TARGET_VERSION}" =~ ^8\.0\. ]]; then
-        print_error "Target cluster is not MySQL 8.0 (version: ${TARGET_VERSION})"
+        print_error "目标集群不是 MySQL 8.0（版本：${TARGET_VERSION}）"
         exit 1
     fi
-    print_success "Target cluster version: ${TARGET_VERSION}"
+    print_success "目标集群版本：${TARGET_VERSION}"
 
-    # Check GTID on source
+    # 检查源上的 GTID
     GTID_MODE=$(kubectl exec ${SOURCE_NAME}-pxc-0 -n ${SOURCE_NAMESPACE} -- \
         mysql -uroot -p${SOURCE_MYSQL_PASSWORD} -N -e "SELECT @@gtid_mode" 2>/dev/null | grep -v "Warning")
 
     if [ "${GTID_MODE}" != "ON" ]; then
-        print_error "GTID mode is not enabled on source (required for migration)"
+        print_error "源上未启用 GTID 模式（迁移所需）"
         exit 1
     fi
-    print_success "GTID mode enabled on source"
+    print_success "源上启用 GTID 模式"
 
-    # Count databases
+    # 计算数据库
     TOTAL_DATABASES=$(echo ${DATABASES} | wc -w)
-    print_info "Will migrate ${TOTAL_DATABASES} database(s): ${DATABASES}"
+    print_info "将迁移 ${TOTAL_DATABASES} 个数据库：${DATABASES}"
 }
 
 migrate_databases() {
-    print_header "Migrating Databases"
+    print_header "迁移数据库"
 
     local db_num=0
 
     for db in ${DATABASES}; do
         db_num=$((db_num + 1))
         echo ""
-        print_info "Migrating database [${db_num}/${TOTAL_DATABASES}]: ${db}"
+        print_info "正在迁移数据库 [${db_num}/${TOTAL_DATABASES}]: ${db}"
 
-        # Migrate using streaming (no intermediate storage)
+        # 使用流式迁移（无中间存储）迁移
         kubectl exec ${SOURCE_NAME}-pxc-0 -n ${SOURCE_NAMESPACE} -- \
             mysqldump -uroot -p${SOURCE_MYSQL_PASSWORD} \
             --single-transaction \
@@ -1690,10 +1715,10 @@ migrate_databases() {
             kubectl exec -i ${TARGET_NAME}-0 -n ${TARGET_NAMESPACE} -c mysql -- \
                 mysql -uroot -p${TARGET_MYSQL_PASSWORD} --init-command="SET FOREIGN_KEY_CHECKS=0;" 2>&1 | grep -v "Using a password" || true
 
-        # Note: We rely on the DB_EXISTS check below to verify actual import success,
-        # as grep -v returns 1 when no match is found (not an actual error)
+        # 注意：我们依赖于下面的 DB_EXISTS 检查来验证实际导入成功，
+        # 因为 grep -v 在未找到匹配项时返回 1（并非实际错误）
 
-        # Verify migration succeeded by checking if database exists on target
+        # 通过检查目标上是否存在数据库来验证迁移是否成功
         DB_EXISTS=$(kubectl exec ${TARGET_NAME}-0 -n ${TARGET_NAMESPACE} -c mysql -- \
             mysql -uroot -p${TARGET_MYSQL_PASSWORD} -N -e "
                 SELECT COUNT(*)
@@ -1703,28 +1728,28 @@ migrate_databases() {
 
         if [ "${DB_EXISTS}" = "1" ]; then
 
-            print_success "Migrated ${db}"
+            print_success "已迁移 ${db}"
             MIGRATED_DATABASES=$((MIGRATED_DATABASES + 1))
         else
-            print_error "Failed to migrate ${db}"
+            print_error "迁移 ${db} 失败"
             FAILED_DATABASES=$((FAILED_DATABASES + 1))
         fi
     done
 
     echo ""
     if [ ${MIGRATED_DATABASES} -eq ${TOTAL_DATABASES} ]; then
-        print_success "All databases migrated successfully (${MIGRATED_DATABASES}/${TOTAL_DATABASES})"
+        print_success "所有数据库成功迁移（${MIGRATED_DATABASES}/${TOTAL_DATABASES}）"
     else
-        print_error "Some databases failed to migrate (${MIGRATED_DATABASES}/${TOTAL_DATABASES} succeeded, ${FAILED_DATABASES} failed)"
+        print_error "某些数据库迁移失败（${MIGRATED_DATABASES}/${TOTAL_DATABASES} 成功，${FAILED_DATABASES} 失败）"
     fi
 }
 
 migrate_users() {
-    print_header "Migrating Users and Privileges"
+    print_header "迁移用户和权限"
 
-    print_section "Creating user accounts"
+    print_section "创建用户帐户"
 
-    # Stream CREATE USER statements
+    # 流式创建用户语句
     USER_COUNT=$(kubectl exec ${SOURCE_NAME}-pxc-0 -n ${SOURCE_NAMESPACE} -- \
         mysql -uroot -p${SOURCE_MYSQL_PASSWORD} -N -e "
             SELECT COUNT(*)
@@ -1732,9 +1757,9 @@ migrate_users() {
             WHERE user NOT IN (${EXCLUDE_USERS});
         " 2>/dev/null | grep -v "Warning")
 
-    print_info "Found ${USER_COUNT} user(s) to migrate"
+    print_info "找到 ${USER_COUNT} 个用户进行迁移"
 
-    # Create users (ignore grep exit code)
+    # 创建用户（忽略 grep 的退出代码）
     kubectl exec ${SOURCE_NAME}-pxc-0 -n ${SOURCE_NAMESPACE} -- \
         mysql -uroot -p${SOURCE_MYSQL_PASSWORD} -N -e "
             SELECT CONCAT('CREATE USER IF NOT EXISTS ''', user, '''@''', host, ''' IDENTIFIED WITH mysql_native_password AS ''', replace(authentication_string, '\'', '\'\''), ''';')
@@ -1744,10 +1769,10 @@ migrate_users() {
         kubectl exec -i ${TARGET_NAME}-0 -n ${TARGET_NAMESPACE} -c mysql -- \
             mysql -uroot -p${TARGET_MYSQL_PASSWORD} 2>&1 | grep -v "Using a password" || true
 
-    # Note: We rely on the USER_COUNT_AFTER check below to verify actual success,
-    # as grep -v returns 1 when no match is found (not an actual error)
+    # 注意：我们依赖于 USER_COUNT_AFTER 检查来验证实际成功，
+    # 因为 grep -v 在未找到匹配项时返回 1（并非实际错误）
 
-    # Verify user creation
+    # 验证用户创建
     USER_COUNT_AFTER=$(kubectl exec ${TARGET_NAME}-0 -n ${TARGET_NAMESPACE} -c mysql -- \
         mysql -uroot -p${TARGET_MYSQL_PASSWORD} -N -e "
             SELECT COUNT(*)
@@ -1756,18 +1781,23 @@ migrate_users() {
         " 2>/dev/null | grep -v "Warning")
 
     if [ "${USER_COUNT_AFTER}" -ge "${USER_COUNT}" ]; then
-        print_success "User accounts created"
+        print_success "用户帐户已创建"
     else
-        print_error "Failed to create user accounts"
+        print_error "用户帐户创建失败"
     fi
 
-    print_section "Granting privileges"
+    print_section "授予权限"
 
-    # Stream GRANT statements (ignore grep exit code)
+    # 流式 GRANT 语句（忽略 grep 的退出代码）
     kubectl exec ${SOURCE_NAME}-pxc-0 -n ${SOURCE_NAMESPACE} -- \
         mysql -uroot -p${SOURCE_MYSQL_PASSWORD} -N -e "
             SELECT CONCAT('SHOW GRANTS FOR ''', user, '''@''', host, ''';')
             FROM mysql.user
+            WHERE user NOT IN (${EXCLUDE_USERS});
+        " 2>/dev/null | grep -v "Warning" |
+        kubectl exec -i ${TARGET_NAME}-0 -n ${TARGET_NAMESPACE} -c mysql -- \
+            mysql -uroot -
+```mdx
             WHERE user NOT IN (${EXCLUDE_USERS});
         " 2>/dev/null | grep -v "^Warning" | while read query; do
         kubectl exec ${SOURCE_NAME}-pxc-0 -n ${SOURCE_NAMESPACE} -- \
@@ -1775,16 +1805,16 @@ migrate_users() {
     done |
         kubectl exec -i ${TARGET_NAME}-0 -n ${TARGET_NAMESPACE} -c mysql -- \
             mysql -uroot -p${TARGET_MYSQL_PASSWORD} 2>&1 | grep -v "Using a password" || true
-    # Note: grep -v returns 1 when no match is found (not an actual error)
+    # 注意：grep -v 在未找到匹配时返回 1（不是实际错误）
 
-    print_success "Privileges granted"
+    print_success "权限已授予"
 
-    # Flush privileges
+    # 刷新权限
     kubectl exec ${TARGET_NAME}-0 -n ${TARGET_NAMESPACE} -c mysql -- \
         mysql -uroot -p${TARGET_MYSQL_PASSWORD} -e "FLUSH PRIVILEGES;" 2>&1 | grep -v "Using a password" >/dev/null || true
-    # Note: grep -v returns 1 when no match is found (not an actual error)
+    # 注意：grep -v 在未找到匹配时返回 1（不是实际错误）
 
-    print_section "Verifying migrated users"
+    print_section "验证迁移的用户"
 
     MIGRATED_USERS=$(kubectl exec ${TARGET_NAME}-0 -n ${TARGET_NAMESPACE} -c mysql -- \
         mysql -uroot -p${TARGET_MYSQL_PASSWORD} -N -e "
@@ -1793,16 +1823,16 @@ migrate_users() {
             WHERE user NOT IN (${EXCLUDE_USERS});
         " 2>/dev/null | grep -v "Warning")
 
-    print_success "Migrated ${MIGRATED_USERS} user(s)"
+    print_success "迁移了 ${MIGRATED_USERS} 个用户"
 }
 
 verify_migration() {
-    print_header "Migration Verification"
+    print_header "迁移验证"
 
-    print_section "Verifying databases"
+    print_section "验证数据库"
 
     for db in ${DATABASES}; do
-        # Check if database exists
+        # 检查数据库是否存在
         DB_EXISTS=$(kubectl exec ${TARGET_NAME}-0 -n ${TARGET_NAMESPACE} -c mysql -- \
             mysql -uroot -p${TARGET_MYSQL_PASSWORD} -N -e "
                 SELECT COUNT(*)
@@ -1811,7 +1841,7 @@ verify_migration() {
             " 2>/dev/null | grep -v "Warning")
 
         if [ "${DB_EXISTS}" = "1" ]; then
-            # Count tables
+            # 计数表
             TABLE_COUNT=$(kubectl exec ${TARGET_NAME}-0 -n ${TARGET_NAMESPACE} -c mysql -- \
                 mysql -uroot -p${TARGET_MYSQL_PASSWORD} -N -e "
                     SELECT COUNT(*)
@@ -1819,13 +1849,13 @@ verify_migration() {
                     WHERE TABLE_SCHEMA = '${db}' AND TABLE_TYPE = 'BASE TABLE';
                 " 2>/dev/null | grep -v "Warning")
 
-            print_success "${db}: ${TABLE_COUNT} table(s) migrated"
+            print_success "${db}: 迁移了 ${TABLE_COUNT} 个表"
         else
-            print_error "${db}: Database not found on target"
+            print_error "${db}: 目标上未找到数据库"
         fi
     done
 
-    print_section "Verifying users"
+    print_section "验证用户"
 
     MIGRATED_USERS=$(kubectl exec ${TARGET_NAME}-0 -n ${TARGET_NAMESPACE} -c mysql -- \
         mysql -uroot -p${TARGET_MYSQL_PASSWORD} -N -e "
@@ -1836,12 +1866,12 @@ verify_migration() {
         " 2>/dev/null | grep -v "Warning")
 
     if [ -n "${MIGRATED_USERS}" ]; then
-        print_success "Migrated users:"
+        print_success "迁移的用户:"
         echo "${MIGRATED_USERS}" | while read user; do
             echo "   - ${user}"
         done
     else
-        print_warning "No users migrated (or all were excluded)"
+        print_warning "没有迁移用户（或所有用户都被排除）"
     fi
 }
 
@@ -1851,45 +1881,45 @@ print_summary() {
     local MINUTES=$((DURATION / 60))
     local SECONDS=$((DURATION % 60))
 
-    print_header "Migration Summary"
+    print_header "迁移总结"
 
     echo ""
-    echo "Source: ${SOURCE_NAME}.${SOURCE_NAMESPACE}"
-    echo "Target: ${TARGET_NAME}.${TARGET_NAMESPACE}"
-    echo "Databases migrated: ${MIGRATED_DATABASES}/${TOTAL_DATABASES}"
-    echo "Users migrated: ${MIGRATED_USERS}"
-    echo "Duration: ${MINUTES}m ${SECONDS}s"
+    echo "源: ${SOURCE_NAME}.${SOURCE_NAMESPACE}"
+    echo "目标: ${TARGET_NAME}.${TARGET_NAMESPACE}"
+    echo "迁移的数据库: ${MIGRATED_DATABASES}/${TOTAL_DATABASES}"
+    echo "迁移的用户: ${MIGRATED_USERS}"
+    echo "持续时间: ${MINUTES}m ${SECONDS}s"
     echo ""
 
     if [ ${FAILED_DATABASES} -eq 0 ] && [ ${MIGRATED_DATABASES} -eq ${TOTAL_DATABASES} ]; then
-        print_success "Migration completed successfully!"
+        print_success "迁移成功完成！"
         echo ""
-        echo "Next steps:"
-        echo "   1. Run script 02-verify-migration.sh for comprehensive verification"
-        echo "   2. Update application connection strings"
-        echo "   3. Perform application testing"
-        echo "   4. Monitor for 24-48 hours before decommissioning source"
+        echo "后续步骤:"
+        echo "   1. 运行脚本 02-verify-migration.sh 进行全面验证"
+        echo "   2. 更新应用程序连接字符串"
+        echo "   3. 进行应用程序测试"
+        echo "   4. 在停用源之前监控 24-48 小时"
         echo ""
     else
-        print_error "Migration completed with errors"
+        print_error "迁移完成时出现错误"
         echo ""
-        echo "Please review the errors above and:"
-        echo "   1. Check target cluster logs: kubectl logs -n ${TARGET_NAMESPACE} ${TARGET_NAME}-0 -c mysql --tail=100"
-        echo "   2. Verify failed databases manually"
-        echo "   3. Re-run migration for failed databases if needed"
+        echo "请查看上述错误并："
+        echo "   1. 检查目标集群日志: kubectl logs -n ${TARGET_NAMESPACE} ${TARGET_NAME}-0 -c mysql --tail=100"
+        echo "   2. 手动验证失败的数据库"
+        echo "   3. 如有必要，重新运行失败数据库的迁移"
         echo ""
         exit 1
     fi
 }
 
 #=============================================================================
-# MAIN EXECUTION
+# 主执行
 #=============================================================================
 
 main() {
-    print_header "MySQL 5.7 to 8.0 Migration"
+    print_header "MySQL 5.7 到 8.0 迁移"
 
-    print_warning "IMPORTANT: Ensure application writes are stopped during migration"
+    print_warning "重要：确保在迁移期间停止应用程序写入"
     echo ""
     sleep 2
 
@@ -1899,39 +1929,39 @@ main() {
     verify_migration
     print_summary
 
-    print_success "Migration script completed"
+    print_success "迁移脚本完成"
 }
 
 main
 ```
 
-#### 脚本 3：02-verify-migration.sh
+#### 脚本 3: 02-verify-migration.sh
 
 将此脚本保存为 `02-verify-migration.sh`：
 
 ```bash
 #!/bin/bash
 #=============================================================================
-# MySQL 5.7 to 8.0 Migration - Comprehensive Verification Script
+# MySQL 5.7 到 8.0 迁移 - 全面验证脚本
 #=============================================================================
 #
-# This script performs comprehensive verification of the migration:
-# 1. Verifies all database objects (tables, views, routines, triggers, events)
-# 2. Tests view execution
-# 3. Compares row counts
-# 4. Verifies user accounts
+# 此脚本执行迁移的全面验证：
+# 1. 验证所有数据库对象（表、视图、例程、触发器、事件）
+# 2. 测试视图执行
+# 3. 比较行计数
+# 4. 验证用户帐户
 #
-# Usage:
-#   1. Edit the configuration section below
-#   2. Run: chmod +x 02-verify-migration.sh
-#   3. Run: ./02-verify-migration.sh
+# 使用方法：
+#   1. 编辑下面的配置部分
+#   2. 运行: chmod +x 02-verify-migration.sh
+#   3. 运行: ./02-verify-migration.sh
 #
 #=============================================================================
 
-set -e # Exit on error
+set -e # 出现错误时退出
 
 #=============================================================================
-# CONFIGURATION - EDIT THESE VALUES
+# 配置 - 编辑这些值
 #=============================================================================
 
 SOURCE_NAME="source"
@@ -1942,32 +1972,32 @@ TARGET_NAME="mysql-8-target"
 TARGET_NAMESPACE="your-namespace"
 TARGET_MYSQL_PASSWORD="target-root-password"
 
-# IMPORTANT: databases that were migrated (DO NOT include: information_schema, mysql, performance_schema, sys)
-DATABASES="db1 db2 db3" # ← Same as used in migration script
+# 重要：迁移的数据库（不要包括：information_schema、mysql、performance_schema、sys）
+DATABASES="db1 db2 db3" # ← 与迁移脚本中使用的相同
 
-# Users to exclude from verification (system users and MySQL MGR users)
+# 要排除的用户（系统用户和 MySQL MGR 用户）
 EXCLUDE_USERS="'mysql.sys', 'mysql.session', 'mysql.infoschema', 'root', 'clustercheck', 'monitor', 'operator', 'xtrabackup', 'repl', 'exporter', 'healthchecker', 'clusterchecker', 'mysql', 'percona.telemetry', 'manage'"
-# Note: MySQL MGR system users (mysql_innodb_cluster_%, mysql_router%) are filtered in verify_users()
+# 注意：MySQL MGR 系统用户（mysql_innodb_cluster_%，mysql_router%）在 verify_users() 中被过滤
 
-# Color output
+# 颜色输出
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 CYAN='\033[0;36m'
-NC='\033[0m' # No Color
+NC='\033[0m' # 无颜色
 
-# Verification counters
+# 验证计数器
 TOTAL_CHECKS=0
 PASSED_CHECKS=0
 FAILED_CHECKS=0
 
-# Temp directory
+# 临时目录
 WORK_DIR="/tmp/mysql-migration-verify"
 mkdir -p ${WORK_DIR}
 
 #=============================================================================
-# FUNCTIONS
+# 函数
 #=============================================================================
 
 print_header() {
@@ -2006,22 +2036,22 @@ check_count() {
     TOTAL_CHECKS=$((TOTAL_CHECKS + 1))
 
     if [ "${source_count}" = "${target_count}" ]; then
-        print_success "${object_name}: ${target_count} (match)"
+        print_success "${object_name}: ${target_count} (匹配)"
         PASSED_CHECKS=$((PASSED_CHECKS + 1))
         return 0
     else
-        print_error "${object_name}: Source=${source_count}, Target=${target_count} (mismatch)"
+        print_error "${object_name}: 源=${source_count}, 目标=${target_count} (不匹配)"
         FAILED_CHECKS=$((FAILED_CHECKS + 1))
         return 1
     fi
 }
 
 verify_tables() {
-    print_section "Verifying Tables"
+    print_section "验证表"
 
     for db in ${DATABASES}; do
         echo ""
-        echo "Database: ${db}"
+        echo "数据库: ${db}"
 
         SOURCE_COUNT=$(kubectl exec ${SOURCE_NAME}-pxc-0 -n ${SOURCE_NAMESPACE} -- \
             mysql -uroot -p${SOURCE_MYSQL_PASSWORD} -N -e "
@@ -2037,16 +2067,16 @@ verify_tables() {
                 WHERE TABLE_SCHEMA = '${db}' AND TABLE_TYPE = 'BASE TABLE';
             " 2>/dev/null | grep -v "Warning")
 
-        check_count "${SOURCE_COUNT}" "${TARGET_COUNT}" "Tables"
+        check_count "${SOURCE_COUNT}" "${TARGET_COUNT}" "表"
     done
 }
 
 verify_views() {
-    print_section "Verifying Views"
+    print_section "验证视图"
 
     for db in ${DATABASES}; do
         echo ""
-        echo "Database: ${db}"
+        echo "数据库: ${db}"
 
         SOURCE_COUNT=$(kubectl exec ${SOURCE_NAME}-pxc-0 -n ${SOURCE_NAMESPACE} -- \
             mysql -uroot -p${SOURCE_MYSQL_PASSWORD} -N -e "
@@ -2062,8 +2092,8 @@ verify_views() {
                 WHERE TABLE_SCHEMA = '${db}';
             " 2>/dev/null | grep -v "Warning")
 
-        if check_count "${SOURCE_COUNT}" "${TARGET_COUNT}" "Views"; then
-            # Test view execution if counts match
+        if check_count "${SOURCE_COUNT}" "${TARGET_COUNT}" "视图"; then
+            # 如果计数匹配，则测试视图执行
             if [ "${TARGET_COUNT}" -gt 0 ]; then
                 VIEW_FAILED=0
                 VERIFY_TMP="${WORK_DIR}/view_verify.txt"
@@ -2077,16 +2107,16 @@ verify_views() {
                     " 2>/dev/null | grep -v "Warning" | while read view_name; do
                     if ! kubectl exec ${TARGET_NAME}-0 -n ${TARGET_NAMESPACE} -c mysql -- \
                         mysql -uroot -p${TARGET_MYSQL_PASSWORD} ${db} -e "SELECT COUNT(*) FROM \`${view_name}\`;" 2>&1 | grep -q "ERROR"; then
-                        : # view works
+                        : # 视图正常
                     else
                         echo "1" >>${VERIFY_TMP}
                     fi
                 done
 
                 if [ "$(cat ${VERIFY_TMP} | wc -l)" -eq 1 ] && [ "$(cat ${VERIFY_TMP})" = "0" ]; then
-                    print_success "All views execute successfully"
+                    print_success "所有视图执行成功"
                 else
-                    print_error "Some views failed execution"
+                    print_error "某些视图执行失败"
                 fi
 
                 rm -f ${VERIFY_TMP}
@@ -2096,11 +2126,11 @@ verify_views() {
 }
 
 verify_routines() {
-    print_section "Verifying Stored Procedures"
+    print_section "验证存储过程"
 
     for db in ${DATABASES}; do
         echo ""
-        echo "Database: ${db}"
+        echo "数据库: ${db}"
 
         SOURCE_COUNT=$(kubectl exec ${SOURCE_NAME}-pxc-0 -n ${SOURCE_NAMESPACE} -- \
             mysql -uroot -p${SOURCE_MYSQL_PASSWORD} -N -e "
@@ -2116,15 +2146,15 @@ verify_routines() {
                 WHERE ROUTINE_SCHEMA = '${db}' AND ROUTINE_TYPE = 'PROCEDURE';
             " 2>/dev/null | grep -v "Warning")
 
-        check_count "${SOURCE_COUNT}" "${TARGET_COUNT}" "Stored Procedures"
+        check_count "${SOURCE_COUNT}" "${TARGET_COUNT}" "存储过程"
     done
 
     echo ""
-    print_section "Verifying Stored Functions"
+    print_section "验证存储函数"
 
     for db in ${DATABASES}; do
         echo ""
-        echo "Database: ${db}"
+        echo "数据库: ${db}"
 
         SOURCE_COUNT=$(kubectl exec ${SOURCE_NAME}-pxc-0 -n ${SOURCE_NAMESPACE} -- \
             mysql -uroot -p${SOURCE_MYSQL_PASSWORD} -N -e "
@@ -2140,16 +2170,16 @@ verify_routines() {
                 WHERE ROUTINE_SCHEMA = '${db}' AND ROUTINE_TYPE = 'FUNCTION';
             " 2>/dev/null | grep -v "Warning")
 
-        check_count "${SOURCE_COUNT}" "${TARGET_COUNT}" "Stored Functions"
+        check_count "${SOURCE_COUNT}" "${TARGET_COUNT}" "存储函数"
     done
 }
 
 verify_triggers() {
-    print_section "Verifying Triggers"
+    print_section "验证触发器"
 
     for db in ${DATABASES}; do
         echo ""
-        echo "Database: ${db}"
+        echo "数据库: ${db}"
 
         SOURCE_COUNT=$(kubectl exec ${SOURCE_NAME}-pxc-0 -n ${SOURCE_NAMESPACE} -- \
             mysql -uroot -p${SOURCE_MYSQL_PASSWORD} -N -e "
@@ -2165,16 +2195,16 @@ verify_triggers() {
                 WHERE TRIGGER_SCHEMA = '${db}';
             " 2>/dev/null | grep -v "Warning")
 
-        check_count "${SOURCE_COUNT}" "${TARGET_COUNT}" "Triggers"
+        check_count "${SOURCE_COUNT}" "${TARGET_COUNT}" "触发器"
     done
 }
 
 verify_events() {
-    print_section "Verifying Events"
+    print_section "验证事件"
 
     for db in ${DATABASES}; do
         echo ""
-        echo "Database: ${db}"
+        echo "数据库: ${db}"
 
         SOURCE_COUNT=$(kubectl exec ${SOURCE_NAME}-pxc-0 -n ${SOURCE_NAMESPACE} -- \
             mysql -uroot -p${SOURCE_MYSQL_PASSWORD} -N -e "
@@ -2190,18 +2220,18 @@ verify_events() {
                 WHERE EVENT_SCHEMA = '${db}';
             " 2>/dev/null | grep -v "Warning")
 
-        check_count "${SOURCE_COUNT}" "${TARGET_COUNT}" "Events"
+        check_count "${SOURCE_COUNT}" "${TARGET_COUNT}" "事件"
     done
 }
 
 verify_row_counts() {
-    print_section "Verifying Row Counts (Sample)"
+    print_section "验证行计数（样本）"
 
     for db in ${DATABASES}; do
         echo ""
-        echo "Database: ${db}"
+        echo "数据库: ${db}"
 
-        # Get first 5 tables for sampling
+        # 获取前 5 个表进行抽样
         TABLES=$(kubectl exec ${SOURCE_NAME}-pxc-0 -n ${SOURCE_NAMESPACE} -- \
             mysql -uroot -p${SOURCE_MYSQL_PASSWORD} -N -e "
                 SELECT TABLE_NAME
@@ -2211,7 +2241,7 @@ verify_row_counts() {
             " 2>/dev/null | grep -v "Warning")
 
         if [ -z "${TABLES}" ]; then
-            print_warning "No tables found in ${db}"
+            print_warning "${db} 中未找到表"
             continue
         fi
 
@@ -2231,21 +2261,21 @@ verify_row_counts() {
                     WHERE TABLE_SCHEMA = '${db}' AND TABLE_NAME = '${table}';
                 " 2>/dev/null | grep -v "Warning")
 
-            # Allow small variance due to statistics
+            # 由于统计信息允许小的差异
             if [ "${SOURCE_ROWS}" != "${TARGET_ROWS}" ]; then
-                print_warning "Row count variance for ${table}: Source=${SOURCE_ROWS}, Target=${TARGET_ROWS}"
+                print_warning "${table} 的行计数差异: 源=${SOURCE_ROWS}, 目标=${TARGET_ROWS}"
                 ROW_MISMATCH=1
             fi
         done
 
         if [ ${ROW_MISMATCH} -eq 0 ]; then
-            print_success "Row counts: Sample check passed"
+            print_success "行计数: 样本检查通过"
         fi
     done
 }
 
 verify_users() {
-    print_section "Verifying User Accounts"
+    print_section "验证用户帐户"
 
     SOURCE_USERS=$(kubectl exec ${SOURCE_NAME}-pxc-0 -n ${SOURCE_NAMESPACE} -- \
         mysql -uroot -p${SOURCE_MYSQL_PASSWORD} -N -e "
@@ -2265,12 +2295,12 @@ verify_users() {
             AND user NOT LIKE 'mysql_router%';
         " 2>/dev/null | grep -v "Warning")
 
-    check_count "${SOURCE_USERS}" "${TARGET_USERS}" "User accounts"
+    check_count "${SOURCE_USERS}" "${TARGET_USERS}" "用户帐户"
 
-    # Show migrated users
+    # 显示迁移的用户
     if [ "${TARGET_USERS}" -gt 0 ]; then
         echo ""
-        print_info "Migrated users:"
+        print_info "迁移的用户:"
         kubectl exec ${TARGET_NAME}-0 -n ${TARGET_NAMESPACE} -c mysql -- \
             mysql -uroot -p${TARGET_MYSQL_PASSWORD} -N -e "
                 SELECT CONCAT(user, '@', host)
@@ -2286,12 +2316,12 @@ verify_users() {
 }
 
 test_data_integrity() {
-    print_section "Testing Data Integrity"
+    print_section "测试数据完整性"
 
-    print_info "Performing sample data integrity checks..."
+    print_info "执行样本数据完整性检查..."
 
     for db in ${DATABASES}; do
-        # Check if database exists on target
+        # 检查目标上是否存在数据库
         DB_EXISTS=$(kubectl exec ${TARGET_NAME}-0 -n ${TARGET_NAMESPACE} -c mysql -- \
             mysql -uroot -p${TARGET_MYSQL_PASSWORD} -N -e "
                 SELECT COUNT(*)
@@ -2300,40 +2330,40 @@ test_data_integrity() {
             " 2>/dev/null | grep -v "Warning")
 
         if [ "${DB_EXISTS}" = "1" ]; then
-            print_success "${db}: Database exists on target"
+            print_success "${db}: 数据库在目标上存在"
         else
-            print_error "${db}: Database NOT found on target"
+            print_error "${db}: 数据库在目标上未找到"
             FAILED_CHECKS=$((FAILED_CHECKS + 1))
         fi
     done
 }
 
 print_summary() {
-    print_header "Verification Summary"
+    print_header "验证总结"
 
     echo ""
-    echo "Total checks: ${TOTAL_CHECKS}"
-    echo -e "${GREEN}Passed: ${PASSED_CHECKS}${NC}"
-    echo -e "${RED}Failed: ${FAILED_CHECKS}${NC}"
+    echo "总检查: ${TOTAL_CHECKS}"
+    echo -e "${GREEN}通过: ${PASSED_CHECKS}${NC}"
+    echo -e "${RED}失败: ${FAILED_CHECKS}${NC}"
     echo ""
 
     if [ ${FAILED_CHECKS} -eq 0 ] && [ ${PASSED_CHECKS} -eq ${TOTAL_CHECKS} ]; then
-        print_success "ALL CHECKS PASSED!"
+        print_success "所有检查通过！"
         echo ""
-        echo "Migration verification successful. Next steps:"
-        echo "   1. Update application connection strings to point to target"
-        echo "   2. Perform application testing"
-        echo "   3. Monitor target cluster for 24-48 hours"
-        echo "   4. Keep source cluster available for rollback during this period"
+        echo "迁移验证成功。后续步骤:"
+        echo "   1. 更新应用程序连接字符串以指向目标"
+        echo "   2. 进行应用程序测试"
+        echo "   3. 监控目标集群 24-48 小时"
+        echo "   4. 在此期间保持源集群可用以进行回滚"
         echo ""
         return 0
     else
-        print_error "SOME CHECKS FAILED"
+        print_error "某些检查失败"
         echo ""
-        echo "Please review the failed checks above and:"
-        echo "   1. Check target cluster logs: kubectl logs -n ${TARGET_NAMESPACE} ${TARGET_NAME}-0 -c mysql --tail=100"
-        echo "   2. Verify failed objects manually"
-        echo "   3. Re-run migration for specific databases if needed"
+        echo "请查看上述失败的检查并："
+        echo "   1. 检查目标集群日志: kubectl logs -n ${TARGET_NAMESPACE} ${TARGET_NAME}-0 -c mysql --tail=100"
+        echo "   2. 手动验证失败的对象"
+        echo "   3. 如有必要，重新运行特定数据库的迁移"
         echo ""
         return 1
     fi
@@ -2344,14 +2374,14 @@ cleanup() {
 }
 
 #=============================================================================
-# MAIN EXECUTION
+# 主执行
 #=============================================================================
 
 main() {
-    # Trap to cleanup on exit
+    # 捕获退出时清理
     trap cleanup EXIT
 
-    print_header "MySQL 5.7 to 8.0 Migration Verification"
+    print_header "MySQL 5.7 到 8.0 迁移验证"
 
     verify_tables
     verify_views
@@ -2371,58 +2401,59 @@ main
 
 ## 总结
 
-本指南提供在 Alauda Container Platform 上将 MySQL 5.7 迁移到 8.0 的全面且经测试验证的操作说明。该方案已在 Kubernetes 测试环境中使用 PXC 5.7.44 与 MGR 8.0.44 集群完成验证。
+本指南提供了在 Alauda 容器平台上迁移 MySQL 5.7 到 8.0 的全面、经过测试的说明。该解决方案已在 Kubernetes 测试环境中使用 PXC 5.7.44 和 MGR 8.0.44 集群进行了验证。
 
 ### 本指南涵盖的内容
 
-| 测试类别 | 测试用例 | 验证内容 |
-|--------------|------------|-------------------|
-| 基础迁移 | 核心功能 | 表、数据、外键、索引 |
-| Schema 兼容性 | MySQL 8.0 问题 | 保留关键字、ZEROFILL、日期默认值、TEXT 列 |
-| 数据库对象 | 所有对象类型 | 存储过程、函数、触发器、事件、视图 |
-| 用户与权限迁移 | 安全与访问 | 用户账号、授权、认证插件 |
-| 字符集迁移 | 数据完整性 | utf8mb4 转换、多语言支持 |
-| GTID 处理 | 复制 | 针对 MGR 目标端的 GTID_PURGED 过滤 |
+| 测试类别                  | 测试用例           | 验证内容                                                |
+| ------------------------ | ------------------ | ------------------------------------------------------ |
+| 基本迁移                  | 核心功能           | 表、数据、外键、索引                                    |
+| 架构兼容性                | MySQL 8.0 问题     | 保留关键字、ZEROFILL、日期默认值、TEXT 列             |
+| 数据库对象                | 所有对象类型       | 过程、函数、触发器、事件、视图                          |
+| 用户和权限迁移            | 安全性和访问       | 用户帐户、授权、身份验证插件                            |
+| 字符集迁移                | 数据完整性         | utf8mb4 转换、多语言支持                                |
+| GTID 处理                 | 复制               | MGR 目标的 GTID_PURGED 过滤                            |
 
-### 主要收益
+### 主要好处
 
-- ✅ **成熟可靠的方案**：已在 Kubernetes 测试环境中测试
-- ✅ **完整覆盖**：迁移所有标准 MySQL 对象并进行全面校验
-- ✅ **Schema 兼容性**：针对 MySQL 8.0 兼容性问题的自动检查与修复
+- ✅ **经过验证的方法**：在 Kubernetes 测试环境中测试
+- ✅ **全面覆盖**：迁移所有标准 MySQL 对象并进行全面验证
+- ✅ **架构兼容性**：自动检查和修复 MySQL 8.0 兼容性问题
 - ✅ **字符集支持**：完整的 utf8mb4 迁移策略
-- ✅ **安全性**：用户与权限迁移，并提供 MySQL 8.0 认证指导
-- ✅ **性能**：面向 MySQL 8.0 特性的迁移后优化
-- ✅ **风险控制**：详细的回滚操作步骤以及每一步的校验
+- ✅ **安全性**：用户和权限迁移以及 MySQL 8.0 身份验证指导
+- ✅ **性能**：针对 MySQL 8.0 特性的迁移后优化
+- ✅ **风险缓解**：详细的回滚程序和每个步骤的验证
 
-### 生产就绪清单
+### 生产就绪检查表
 
-在生产环境使用本指南之前，请确保已：
+在将本指南用于生产之前，请确保您已：
 
-- [ ] 阅读 [开始使用](#getting-started) 章节以了解你的环境
-- [ ] 在非生产环境中测试过迁移操作步骤
-- [ ] 完成 [Schema 兼容性分析](#step-1-schema-compatibility-analysis) 并修复所有问题
-- [ ] 如果使用旧字符集，已完成 [字符集迁移](#step-2-character-set-and-collation-analysis)
-- [ ] 根据数据库大小安排了足够的维护窗口
-- [ ] 已与所有干系人沟通（应用团队、DBA、SRE）
-- [ ] 已准备回滚方案（见 [灾难恢复](#disaster-recovery)）
-- [ ] 已确认应用与 MySQL 8.0 认证插件的兼容性
+- [ ] 审查 [入门](#getting-started) 部分以了解您的环境
+- [ ] 在非生产环境中测试迁移过程
+- [ ] 完成 [架构兼容性分析](#step-1-schema-compatibility-analysis) 并修复所有问题
+- [ ] 如果使用遗留字符集，完成 [字符集迁移](#step-2-character-set-and-collation-analysis)
+- [ ] 根据数据库大小安排足够的维护窗口
+- [ ] 与所有利益相关者（应用团队、DBA、SRE）进行沟通
+- [ ] 准备回滚计划（请参见 [灾难恢复](#disaster-recovery)）
+- [ ] 验证应用程序与 MySQL 8.0 身份验证插件的兼容性
 
-### 本指南的交付成果
+### 本指南提供的内容
 
-通过遵循这些实践，组织可以成功地将其 MySQL 数据库迁移到 8.0 版本，并确保：
+通过遵循这些实践，组织可以成功将其 MySQL 数据库迁移到 8.0 版本，确保：
 
-- ✅ **持续的安全支持**（MySQL 5.7 已于 2023 年 10 月 EOL）
-- ✅ **可使用新特性**（CTE、窗口函数、直方图等）
-- ✅ **通过全面校验保持数据完整性**
-- ✅ **经过测试的操作步骤带来最小停机时间**
-- ✅ **出现问题时具备回滚能力**
+- ✅ **持续的安全支持**（MySQL 5.7 的 EOL 是 2023 年 10 月）
+- ✅ **访问新功能**（CTE、窗口函数、直方图等）
+- ✅ **通过全面验证维护数据完整性**
+- ✅ **最小停机时间**，使用经过测试的程序
+- ✅ **如果出现问题，具备回滚能力**
 
-### 支持与故障排查
+### 支持和故障排除
 
-如果遇到本指南未覆盖的问题：
+如果您遇到本指南未涵盖的问题：
 
-1. 查看 [故障排查](#troubleshooting) 章节了解常见问题
-2. 阅读 [重要限制](#important-limitations) 章节
-3. 确认你的环境符合 [前提条件](#prerequisites)
+1. 检查 [故障排除](#troubleshooting) 部分以获取常见问题
+2. 查看 [重要限制](#important-limitations) 部分
+3. 验证您的环境是否符合 [先决条件](#prerequisites)
 4. 遵循 [kubectl Exec 最佳实践](#getting-started) 以避免常见命令错误
-5. 查看 MySQL 错误日志：`kubectl logs -n <namespace> <pod-name> -c mysql --tail=100`
+5. 检查 MySQL 错误日志：`kubectl logs -n <namespace> <pod-name> -c mysql --tail=100`
+```
