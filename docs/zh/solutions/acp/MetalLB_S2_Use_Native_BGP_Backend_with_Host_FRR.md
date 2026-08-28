@@ -18,7 +18,6 @@ ProductsVersion:
 ## 环境
 
 - Alauda Container Platform 4.2.x、4.3.x 或 4.4.x。
-- 裸金属、非 OpenShift 集群。
 - 已安装 MetalLB 插件，并已配置 BGP 宣告。
 - 一个或多个节点上以 systemd 单元的方式运行客户自行维护的 FRR 服务。
 
