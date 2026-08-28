@@ -299,7 +299,32 @@ const documentStructure = (content) => {
     }),
     tableRows: lines.filter((l) => l.trimStart().startsWith('|')).length,
     codeBlocks: countFences(content),
+    // Volume and identifiers: what a translation that silently drops prose
+    // cannot fake. Wording is the translator's business; how much text there is,
+    // and which numbers it carries, is not.
+    proseLines: lines.filter((l) => l.trim()).length,
+    // URLs are excluded: their digits belong to the link, which is checked
+    // separately, and the two languages legitimately spell the same link
+    // differently -- [http://x](http://x) carries the number twice where the
+    // autolink <http://x> carries it once.
+    numbers: masked.replace(/<?https?:\/\/\S+/g, ' ').match(/\d+(?:\.\d+)*/g) || [],
   }
+}
+
+/** Fraction of the source's numbers (as a multiset) still present in the target. */
+const numbersKept = (source, target) => {
+  if (source.length === 0) return 1
+  const pool = new Map()
+  for (const n of target) pool.set(n, (pool.get(n) || 0) + 1)
+  let kept = 0
+  for (const n of source) {
+    const left = pool.get(n) || 0
+    if (left > 0) {
+      pool.set(n, left - 1)
+      kept++
+    }
+  }
+  return kept / source.length
 }
 
 /** Structural differences, phrased so the reader can see what went missing. */
@@ -326,6 +351,23 @@ const structuralProblems = (source, target) => {
   }
   if (s.tableRows !== t.tableRows) {
     problems.push(`table rows ${t.tableRows} vs ${s.tableRows} -- ${Math.abs(s.tableRows - t.tableRows)} ${t.tableRows < s.tableRows ? 'lost' : 'invented'}`)
+  }
+
+  // Dropped prose keeps every count above intact -- a swallowed paragraph takes
+  // no heading, no code fence and no table row with it. What it does take is
+  // volume and the digits that were in it. Both signals must fall together
+  // before this fires: Chinese legitimately merges English lines (healthy pages
+  // go as low as 0.33), and rewording legitimately loses the odd number, but no
+  // healthy page in this repository does both at once. Measured over all 401
+  // en/zh pairs: 0 of 396 healthy pages flagged, and every content-losing entry
+  // in .translation-known-damage caught.
+  const lineRatio = s.proseLines ? t.proseLines / s.proseLines : 1
+  const kept = numbersKept(s.numbers, t.numbers)
+  if (lineRatio < 0.9 && kept < 0.9) {
+    problems.push(
+      `prose volume is ${Math.round(lineRatio * 100)}% of the original and ${Math.round((1 - kept) * 100)}% of its numbers are gone` +
+        ' -- text was dropped rather than translated',
+    )
   }
   return problems
 }
