@@ -466,5 +466,59 @@ a
   fs.rmSync(root, { recursive: true, force: true })
 }
 
+// ---------------------------------------------------------------------------
+// Owning a page by hand. A source that opts out of machine translation carries
+// an i18n block its translation does not -- doom strips it from the target --
+// so a faithful hand translation is legitimately shorter as a file while being
+// the same length as a document.
+// ---------------------------------------------------------------------------
+{
+  const body = '# Title\n\nProse here.\n\n```bash\na\n```\n'
+  const root = makeTree({
+    en: { 'a.md': `---\nid: KB1\ni18n:\n  disableAutoTranslation: true\n---\n${body}` },
+    zh: { 'a.md': '---\nid: KB1\n---\n# 标题\n\n这里是正文。\n\n```bash\na\n```\n' },
+  })
+  const { status, out } = check(root, '--fix')
+  ok(status === 0, 'a hand-written translation of an opted-out page passes', out)
+  fs.rmSync(root, { recursive: true, force: true })
+}
+
+// ---------------------------------------------------------------------------
+// Below 1KB the size ratio stops carrying information -- a sentence either way
+// swings it -- and a page that small is never chunked, which is where this
+// failure mode comes from. Short pages are left to the structural counts.
+// ---------------------------------------------------------------------------
+{
+  const line = 'The controller reconciles the desired state on every change. '
+  const root = makeTree({
+    en: { 'a.md': `${FRONTMATTER}# T\n\n${line.repeat(12)}\n` },
+    zh: { 'a.md': `${FRONTMATTER}# T\n\n${line.repeat(4)}\n` },
+  })
+  const { status, out } = check(root, '--fix')
+  ok(status === 0, 'a page under 1KB is not judged on its size ratio', out)
+  ok(!out.includes("of the original's size"), 'the size floor stays silent below its minimum', out)
+  fs.rmSync(root, { recursive: true, force: true })
+}
+
+// ---------------------------------------------------------------------------
+// The same thing where the size floor does apply. i18n.additionalPrompts is
+// free-form prose that can run to several lines, it lives only in the English
+// source, and counting it as content the translation lost would fail a page
+// that is not missing a word of it.
+// ---------------------------------------------------------------------------
+{
+  const enBody = `# Title\n\n${'Every rollout writes an audit record before it begins. '.repeat(24)}\n`
+  const zhBody = `# 标题\n\n${'每次发布在开始之前都会写入一条审计记录。'.repeat(24)}\n`
+  const prompts = `  additionalPrompts: |\n${'    Keep the wording of the audit terminology exactly as the glossary has it.\n'.repeat(30)}`
+  const root = makeTree({
+    en: { 'a.md': `---\nid: KB1\ni18n:\n${prompts}---\n${enBody}` },
+    zh: { 'a.md': `---\nid: KB1\n---\n${zhBody}` },
+  })
+  const { status, out } = check(root, '--fix')
+  ok(status === 0, 'a long English-only i18n block does not fail its translation', out)
+  ok(!out.includes("of the original's size"), 'the size floor measures bodies, not files', out)
+  fs.rmSync(root, { recursive: true, force: true })
+}
+
 console.log(`== result: ${pass} pass / ${fail} fail ==`)
 process.exit(fail > 0 ? 1 : 0)

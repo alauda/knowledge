@@ -288,6 +288,12 @@ const countFences = (content) => {
   return n
 }
 
+/** The document without its leading frontmatter block. */
+const withoutFrontmatter = (content) => {
+  const match = /^---\r?\n[\s\S]*?\r?\n---\s*(?:\r?\n|$)/.exec(content)
+  return match ? content.slice(match[0].length) : content
+}
+
 /**
  * Where an unclosed fenced block opens, or -1 if every fence is paired.
  *
@@ -432,22 +438,31 @@ const structuralProblems = (source, target) => {
   // subtraction -- where the counts below only notice the loss indirectly, once
   // enough headings or tables have gone with it.
   //
-  // Measured over all 404 en/zh pairs produced by run 33160218909: the lowest
-  // healthy ratio is 0.869 (How_to_Install_and_use_Evidently) and the document
-  // whose first chunk came back a third of its length sits at 0.576, so 0.7
-  // separates them with room on both sides. Chinese and English happen to
-  // occupy comparable numbers of UTF-8 bytes, which is what makes the raw
-  // measure usable at all.
+  // Bodies, not files. Frontmatter is not translated -- only title and
+  // description are, and doom strips the i18n block from the target -- so a
+  // page that opts out of machine translation carries several lines in English
+  // that its faithful hand translation does not, and on a short page that alone
+  // is enough to look like missing content.
+  //
+  // Measured over the 403 en/zh body pairs produced by run 33160218909: the
+  // lowest healthy ratio is 0.849 and the document whose first chunk came back
+  // short sits at 0.575, so 0.7 separates them with room on both sides. Chinese
+  // and English happen to occupy comparable numbers of UTF-8 bytes, which is
+  // what makes the raw measure usable at all.
+  //
+  // Below 1KB the ratio stops meaning anything -- a sentence either way swings
+  // it -- and a page that small is never chunked, which is where this whole
+  // failure mode comes from. So short pages are left to the counts.
   //
   // It is a floor, not a substitute for the counts: the other document damaged
   // in that run kept its volume and lost its structure, and only the counts saw
   // it.
-  const sourceBytes = Buffer.byteLength(source, 'utf8')
-  const targetBytes = Buffer.byteLength(target, 'utf8')
-  if (sourceBytes > 0 && targetBytes / sourceBytes < 0.7) {
+  const sourceBytes = Buffer.byteLength(withoutFrontmatter(source), 'utf8')
+  const targetBytes = Buffer.byteLength(withoutFrontmatter(target), 'utf8')
+  if (sourceBytes >= 1024 && targetBytes / sourceBytes < 0.7) {
     problems.push(
       `the translation is ${Math.round((targetBytes / sourceBytes) * 100)}% of the original's size` +
-        ` (${targetBytes} bytes against ${sourceBytes}) -- no healthy page in this repository goes below 86%`,
+        ` (${targetBytes} bytes of body against ${sourceBytes}) -- no healthy page in this repository goes below 84%`,
     )
   }
 
