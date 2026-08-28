@@ -12,9 +12,6 @@ on:
   push:
     branches:
       - main
-      # TEMPORARY (revert before merge): lets this branch exercise the
-      # translate -> repair -> build chain, which only runs on push events.
-      - ci/repair-machine-translated-link-targets
   workflow_dispatch:
 
 jobs:
@@ -59,11 +56,11 @@ jobs:
         run: yarn --immutable
 
       - name: generate id
-        if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/ci/repair-machine-translated-link-targets')  # TEMPORARY: drop the second ref before merge
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: ./add_id.sh docs/en/solutions && ./add_id.sh docs/en/articles
 
       - name: translate
-        if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/ci/repair-machine-translated-link-targets')  # TEMPORARY: drop the second ref before merge
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: yarn translate -s en -t zh -g "*"
 
       # Machine translation occasionally rewrites a link target -- it has emitted
@@ -71,14 +68,14 @@ jobs:
       # the build's dead-link check. Restore internal targets from English before
       # building, using the English document as the source of truth.
       - name: Repair machine-translated links
-        if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/ci/repair-machine-translated-link-targets')  # TEMPORARY: drop the second ref before merge
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: node scripts/check-translation-links.mjs --fix
 
       - name: Build
         run: yarn build
 
       - name: Commit 
-        if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/ci/repair-machine-translated-link-targets')  # TEMPORARY: drop the second ref before merge
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
@@ -87,7 +84,7 @@ jobs:
           git commit -m "ci: update file from GitHub Action [skip ci]" || echo "Nothing to commit"
       
       - name: Push changes
-        if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/ci/repair-machine-translated-link-targets')  # TEMPORARY: drop the second ref before merge
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         uses: ad-m/github-push-action@master
         with:
           branch: ${{ github.ref }}
@@ -98,7 +95,7 @@ jobs:
       # model produced. Keep them for post-mortems. docs/en is included because
       # add_id.sh rewrites it earlier in the same run.
       - name: Upload generated docs on failure
-        if: failure() && github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/ci/repair-machine-translated-link-targets')  # TEMPORARY: drop the second ref before merge
+        if: failure() && github.event_name == 'push' && github.ref == 'refs/heads/main'
         uses: actions/upload-artifact@v4
         with:
           name: generated-docs-${{ github.run_id }}
