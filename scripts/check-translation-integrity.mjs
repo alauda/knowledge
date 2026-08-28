@@ -30,6 +30,8 @@
  *   --docs <dir>     check a docs tree outside this repo (implies a full scan)
  *   --failures <f>   write the failing documents to <f>, one path per line, for
  *                    translate-verified.mjs to hand back to the translator
+ *   --scores <f>     write "<deviation> <path>" for every document compared, so
+ *                    the retry loop can keep the least damaged attempt
  *
  * The missing-translation audit always covers the whole library, whatever the
  * scope above: a document translate never produced has no target file to scan,
@@ -287,6 +289,58 @@ const countFences = (content) => {
 }
 
 /**
+ * Where an unclosed fenced block opens, or -1 if every fence is paired.
+ *
+ * An unclosed fence is not cosmetic: from that line on, markdown reads prose as
+ * code, so every heading and table below it disappears from the rendered page
+ * while still sitting in the file. The counts further down would report that as
+ * lost content without saying why, which sends the reader looking for a missing
+ * section that is not missing.
+ *
+ * Both damaged documents in run 33160218909 carried one, in the mildest
+ * possible position -- a lone ``` on the last line, which is the closing half
+ * of the wrapper fence the prompt tells the model not to emit.
+ */
+const unclosedFenceLine = (content) => {
+  const lines = content.split('\n')
+  let fence = null
+  for (let i = 0; i < lines.length; i++) {
+    const m = /^\s*(`{3,}|~{3,})/.exec(lines[i])
+    if (fence) {
+      if (m && m[1][0] === fence.char && m[1].length >= fence.length && /^\s*[`~]+\s*$/.test(lines[i])) {
+        fence = null
+      }
+      continue
+    }
+    if (m) fence = { char: m[1][0], length: m[1].length, line: i }
+  }
+  return fence ? fence.line : -1
+}
+
+/**
+ * Remove a fence that opens at the end of the document with nothing after it.
+ *
+ * The model is told to return the document and no code fence wrapped around the
+ * whole answer. It sometimes emits the closing half of that wrapper anyway, as
+ * a lone ``` on the last line. A block that opens and then contains nothing at
+ * all is never something an author wrote, so deleting the line is safe in a way
+ * that no other structural repair is: it removes markup that has no content,
+ * and it cannot destroy text because there is no text after it.
+ *
+ * Returns the repaired content, or null when there is nothing of this shape to
+ * repair -- an unclosed fence with real content after it swallowed that
+ * content, and dropping the fence would silently promote a code block to prose.
+ */
+const stripOrphanTrailingFence = (content) => {
+  const open = unclosedFenceLine(content)
+  if (open === -1) return null
+  const lines = content.split('\n')
+  if (lines.slice(open + 1).some((line) => line.trim())) return null
+  lines.splice(open, 1)
+  return lines.join('\n')
+}
+
+/**
  * Counts a translation must not change. Wording is the translator's business;
  * how many sections, code blocks and table rows a document has is not.
  *
@@ -342,6 +396,17 @@ const structuralProblems = (source, target) => {
   const s = documentStructure(source)
   const t = documentStructure(target)
 
+  // First, because it explains most of what follows. Reported only when the
+  // English original is balanced: a source document that is itself unbalanced
+  // is a source bug, and blaming the translation for it would be wrong.
+  const openFence = unclosedFenceLine(target)
+  if (openFence !== -1 && unclosedFenceLine(source) === -1) {
+    problems.push(
+      `a code fence opens at line ${openFence + 1} and is never closed` +
+        ' -- everything after it is read as code, which is what the counts below are measuring',
+    )
+  }
+
   if (s.anchors.join('\u0000') !== t.anchors.join('\u0000')) {
     const missing = s.anchors.filter((a) => !t.anchors.includes(a))
     const extra = t.anchors.filter((a) => !s.anchors.includes(a))
@@ -362,6 +427,30 @@ const structuralProblems = (source, target) => {
     problems.push(`table rows ${t.tableRows} vs ${s.tableRows} -- ${Math.abs(s.tableRows - t.tableRows)} ${t.tableRows < s.tableRows ? 'lost' : 'invented'}`)
   }
 
+  // Gross volume, as an independent floor under everything above. A model that
+  // returns a fraction of the document cannot disguise this one, and it costs a
+  // subtraction -- where the counts below only notice the loss indirectly, once
+  // enough headings or tables have gone with it.
+  //
+  // Measured over all 404 en/zh pairs produced by run 33160218909: the lowest
+  // healthy ratio is 0.869 (How_to_Install_and_use_Evidently) and the document
+  // whose first chunk came back a third of its length sits at 0.576, so 0.7
+  // separates them with room on both sides. Chinese and English happen to
+  // occupy comparable numbers of UTF-8 bytes, which is what makes the raw
+  // measure usable at all.
+  //
+  // It is a floor, not a substitute for the counts: the other document damaged
+  // in that run kept its volume and lost its structure, and only the counts saw
+  // it.
+  const sourceBytes = Buffer.byteLength(source, 'utf8')
+  const targetBytes = Buffer.byteLength(target, 'utf8')
+  if (sourceBytes > 0 && targetBytes / sourceBytes < 0.7) {
+    problems.push(
+      `the translation is ${Math.round((targetBytes / sourceBytes) * 100)}% of the original's size` +
+        ` (${targetBytes} bytes against ${sourceBytes}) -- no healthy page in this repository goes below 86%`,
+    )
+  }
+
   // Dropped prose keeps every count above intact -- a swallowed paragraph takes
   // no heading, no code fence and no table row with it. What it does take is
   // volume and the digits that were in it. Both signals must fall together
@@ -379,6 +468,33 @@ const structuralProblems = (source, target) => {
     )
   }
   return problems
+}
+
+/**
+ * How far a translation has drifted from its original, as one number, where 0
+ * means nothing structural changed.
+ *
+ * Its only job is to order two attempts at the same document. Each retry is an
+ * independent sample from the translator rather than an improvement on the last
+ * one, so without a way to compare them the loop writes whichever came last --
+ * and a document that came back nearly complete on the first attempt can come
+ * back at half its length on the third. The weights say what is expensive to
+ * lose: a broken fence corrupts the whole document, a missing code block or
+ * heading is a missing section, a missing table row is a missing line.
+ */
+const deviationScore = (source, target) => {
+  const s = documentStructure(source)
+  const t = documentStructure(target)
+  const missingAnchors = s.anchors.filter((a) => !t.anchors.includes(a)).length
+  const lineRatio = s.proseLines ? t.proseLines / s.proseLines : 1
+  return (
+    (unclosedFenceLine(target) !== -1 && unclosedFenceLine(source) === -1 ? 1000 : 0) +
+    Math.abs(s.codeBlocks - t.codeBlocks) * 10 +
+    Math.abs(s.headingLevels.length - t.headingLevels.length) * 5 +
+    missingAnchors * 5 +
+    Math.abs(s.tableRows - t.tableRows) +
+    Math.round(Math.max(0, 1 - lineRatio) * 100)
+  )
 }
 
 /**
@@ -539,6 +655,10 @@ let pass = 0
 let fail = 0
 const failures = []
 let repaired = 0
+let fencesRemoved = 0
+// Document -> deviation score, written out with --scores so the retry loop can
+// keep the least damaged attempt rather than the most recent one.
+const scores = new Map()
 
 /**
  * Every source document that should have been translated, and was not.
@@ -549,6 +669,36 @@ let repaired = 0
  * with the page missing from the site. That is the shape of the outage this
  * whole script exists for, so it is checked separately and always in full.
  */
+/**
+ * Documents big enough that doom will cut them into chunks before translating.
+ *
+ * This is the one property that predicts failure in this repository. doom
+ * splits anything over 60KB (`maxChunkSize` in @alauda/doom
+ * lib/cli/translate.js) and translates each piece in a separate request, with
+ * no check that a piece came back whole. In run 33160218909 all three chunked
+ * documents failed and ten of the eleven unchunked ones passed: the 990KB page
+ * lost 88 table rows and 22 code blocks, the 130KB page came back at 58% of its
+ * size with its first chunk mostly missing, and the 84KB page came back with a
+ * stray fence. Nothing about that is visible until translation has run for two
+ * hours on main.
+ *
+ * So it is said here instead, in a second, on a pull request. It is a warning
+ * rather than a failure only because three documents are already over the line;
+ * once they are split, `warnings` can start counting towards `fail`.
+ */
+const CHUNK_THRESHOLD = 60 * 1024
+let warnings = 0
+for (const sourceFile of walk(sourceDir).sort()) {
+  const size = fs.statSync(sourceFile).size
+  if (size <= CHUNK_THRESHOLD) continue
+  warnings++
+  console.log(
+    `WARN ${relative(sourceFile)} is ${Math.round(size / 1024)}KB -- over the ${CHUNK_THRESHOLD / 1024}KB` +
+      ' limit, so it is translated in chunks, which is where every failure in this repository has come from.' +
+      ' Split it into several pages.',
+  )
+}
+
 const missingTranslations = []
 for (const sourceFile of walk(sourceDir).sort()) {
   const targetFile = path.join(targetDir, path.relative(sourceDir, sourceFile))
@@ -585,6 +735,23 @@ for (const file of targetFiles.sort()) {
 
   const sourceContent = fs.readFileSync(sourceFile, 'utf8')
   let content = fs.readFileSync(file, 'utf8')
+
+  // Before judging the shape, remove the one piece of broken markup that can be
+  // removed without guessing: a fence that opens at the very end and contains
+  // nothing. Left in place it makes the whole document unparseable and the
+  // structural check below rejects it, which is a real failure caused by a
+  // stray line rather than by a missing section.
+  if (FIX) {
+    const stripped = stripOrphanTrailingFence(content)
+    if (stripped !== null) {
+      content = stripped
+      fs.writeFileSync(file, content)
+      fencesRemoved++
+      console.log(`FIX  ${relative(file)} removed an unclosed code fence with no content after it`)
+    }
+  }
+
+  scores.set(relative(file), deviationScore(sourceContent, content))
 
   // Shape before wording. If whole sections are missing, no amount of link
   // repair makes the document publishable, and repairing it anyway would only
@@ -669,6 +836,12 @@ for (const file of targetFiles.sort()) {
 if (FIX && repaired > 0) {
   console.log(`repaired ${repaired} reference(s) against ${SOURCE_LANG}`)
 }
+if (FIX && fencesRemoved > 0) {
+  console.log(`removed ${fencesRemoved} unclosed code fence(s)`)
+}
+if (warnings > 0) {
+  console.log(`${warnings} document(s) will be translated in chunks -- see the warnings above`)
+}
 console.log(`== result: ${pass} pass / ${fail} fail ==`)
 
 // Every document that failed, whatever the reason -- content lost, links that
@@ -678,4 +851,10 @@ console.log(`== result: ${pass} pass / ${fail} fail ==`)
 // translator rather than redoing the whole library.
 const failureList = flagValue('--failures', '')
 if (failureList) fs.writeFileSync(failureList, failures.map((f) => f + '\n').join(''))
+
+// One "<score> <path>" line per document that was compared, for the retry loop.
+const scoreList = flagValue('--scores', '')
+if (scoreList) {
+  fs.writeFileSync(scoreList, [...scores].map(([file, score]) => `${score} ${file}\n`).join(''))
+}
 process.exit(fail > 0 ? 1 : 0)

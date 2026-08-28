@@ -319,5 +319,152 @@ one
   fs.rmSync(root, { recursive: true, force: true })
 }
 
+// ---------------------------------------------------------------------------
+// The orphan closing fence. Both documents damaged in run 33160218909 ended
+// with a lone ``` -- the closing half of the wrapper the prompt forbids -- and
+// for one of them that was the only thing wrong with it.
+// ---------------------------------------------------------------------------
+{
+  const body = `# T
+
+Some prose.
+
+\`\`\`bash
+a
+\`\`\`
+`
+  // The orphan arrives on its own line after a blank one, exactly as the model
+  // emits it. Repair removes that one line and leaves every other byte alone --
+  // including the blank line, which was in the document before the fence was.
+  const damaged = `${FRONTMATTER}${body}\n\`\`\`\n`
+  const expected = damaged
+    .split('\n')
+    .filter((line, i, all) => !(line === '```' && all.slice(i + 1).every((rest) => !rest.trim())))
+    .join('\n')
+  const root = makeTree({
+    en: { 'a.md': `${FRONTMATTER}${body}` },
+    zh: { 'a.md': damaged },
+  })
+  const dry = check(root)
+  ok(dry.status === 1, 'an unclosed trailing fence fails without --fix', dry.out)
+  ok(
+    dry.out.includes('is never closed'),
+    'the unclosed fence is named, not just counted',
+    dry.out,
+  )
+
+  const fixed = check(root, '--fix')
+  ok(fixed.status === 0, 'an orphan trailing fence is repaired', fixed.out)
+  ok(fixed.out.includes('removed an unclosed code fence'), 'the repair says what it removed', fixed.out)
+  ok(
+    read(root, 'zh', 'a.md') === expected,
+    'the repair removes the fence line and nothing else',
+    `${JSON.stringify(read(root, 'zh', 'a.md'))} != ${JSON.stringify(expected)}`,
+  )
+
+  const again = check(root, '--fix')
+  ok(again.status === 0 && !again.out.includes('removed an unclosed'), 'the repair is idempotent', again.out)
+  fs.rmSync(root, { recursive: true, force: true })
+}
+
+// ---------------------------------------------------------------------------
+// An unclosed fence with content after it swallowed that content. Dropping the
+// fence would silently promote a code block to prose, so it must be reported
+// and left alone.
+// ---------------------------------------------------------------------------
+{
+  const root = makeTree({
+    en: { 'a.md': `${FRONTMATTER}# T\n\nProse.\n\n\`\`\`bash\na\n\`\`\`\n\n## Section\n\nMore.\n` },
+    zh: { 'a.md': `${FRONTMATTER}# T\n\nProse.\n\n\`\`\`bash\na\n\n## Section\n\nMore.\n` },
+  })
+  const before = read(root, 'zh', 'a.md')
+  const { status, out } = check(root, '--fix')
+  ok(status === 1, 'an unclosed fence with content after it fails', out)
+  ok(!out.includes('removed an unclosed code fence'), 'a fence with content after it is not stripped', out)
+  ok(read(root, 'zh', 'a.md') === before, 'the document is left untouched', out)
+  fs.rmSync(root, { recursive: true, force: true })
+}
+
+// ---------------------------------------------------------------------------
+// The volume floor. A translation can come back at a fraction of its length
+// with every structural count intact -- same headings, same code blocks, same
+// tables -- because what it dropped was prose. The counts cannot see that; the
+// byte ratio can. Measured floor across 404 real pairs: 0.869 healthy, 0.576
+// for the document whose first chunk came back short.
+// ---------------------------------------------------------------------------
+{
+  const paragraph = 'Every deployment writes an audit record before the rollout begins. '.repeat(6)
+  const en = `${FRONTMATTER}# T\n\n${paragraph}\n\n${paragraph}\n\n${paragraph}\n\n${paragraph}\n`
+  // Same heading, same (zero) code blocks and tables, and it keeps every number
+  // there is to keep -- only the prose is a quarter of the length.
+  const zh = `${FRONTMATTER}# T\n\n${paragraph}\n`
+  const root = makeTree({ en: { 'a.md': en }, zh: { 'a.md': zh } })
+  const { status, out } = check(root, '--fix')
+  ok(status === 1, 'a translation at a fraction of its length fails', out)
+  ok(out.includes("% of the original's size"), 'the size shortfall is reported', out)
+  fs.rmSync(root, { recursive: true, force: true })
+}
+
+// ---------------------------------------------------------------------------
+// --scores is what lets the retry loop keep the best attempt rather than the
+// last one, so it has to order two versions of the same document correctly.
+// ---------------------------------------------------------------------------
+{
+  const en = `${FRONTMATTER}# T\n\n\`\`\`bash\na\n\`\`\`\n\n\`\`\`bash\nb\n\`\`\`\n\n\`\`\`bash\nc\n\`\`\`\n`
+  const root = makeTree({
+    en: { 'clean.md': en, 'near.md': en, 'far.md': en },
+    zh: {
+      'clean.md': en,
+      'near.md': `${FRONTMATTER}# T\n\n\`\`\`bash\na\n\`\`\`\n\n\`\`\`bash\nb\n\`\`\`\n`,
+      'far.md': `${FRONTMATTER}# T\n`,
+    },
+  })
+  const scoresFile = path.join(root, 'scores.txt')
+  check(root, '--scores', scoresFile)
+  const scores = new Map(
+    fs
+      .readFileSync(scoresFile, 'utf8')
+      .split('\n')
+      .filter(Boolean)
+      .map((line) => {
+        const space = line.indexOf(' ')
+        return [path.basename(line.slice(space + 1)), Number(line.slice(0, space))]
+      }),
+  )
+  ok(scores.get('clean.md') === 0, 'an undamaged document scores 0', JSON.stringify([...scores]))
+  ok(
+    scores.get('near.md') < scores.get('far.md'),
+    'the less damaged version scores lower',
+    JSON.stringify([...scores]),
+  )
+  ok(scores.size === 3, 'every compared document gets a score', JSON.stringify([...scores]))
+  fs.rmSync(root, { recursive: true, force: true })
+}
+
+// ---------------------------------------------------------------------------
+// Chunking is the single property that predicted failure in run 33160218909:
+// all three documents over doom's 60KB limit failed, ten of the eleven under it
+// passed. Saying so on a pull request costs a second; finding out on main costs
+// two hours.
+// ---------------------------------------------------------------------------
+{
+  const big = `${FRONTMATTER}# T\n\n${'Prose that has to be translated. '.repeat(2200)}\n`
+  const root = makeTree({
+    en: { 'big.md': big, 'small.md': `${FRONTMATTER}# T\n` },
+    zh: { 'big.md': big, 'small.md': `${FRONTMATTER}# T\n` },
+  })
+  const { status, out } = check(root, '--fix')
+  ok(out.includes('WARN') && out.includes('big.md'), 'an oversized source document is flagged', out)
+  ok(out.includes('translated in chunks'), 'the warning says why the size matters', out)
+  const warned = out.split('\n').filter((line) => line.startsWith('WARN'))
+  ok(
+    warned.length === 1 && warned[0].includes('big.md'),
+    'only the document over the limit is flagged',
+    JSON.stringify(warned),
+  )
+  ok(status === 0, 'the warning does not fail the run on its own', out)
+  fs.rmSync(root, { recursive: true, force: true })
+}
+
 console.log(`== result: ${pass} pass / ${fail} fail ==`)
 process.exit(fail > 0 ? 1 : 0)
