@@ -196,20 +196,127 @@ const extractLinks = (content) => {
     // slug) and external URLs are never resolved, so neither is our business;
     // both mirror normalizeLink's early returns in @rspress/core.
     if (!isInternalRouteLink(target)) continue
-    // Offset of the target inside the raw document -- `masked` preserves every
-    // offset, so the index computed here also addresses the original content.
+    // Offsets into the raw document -- `masked` preserves every offset, so the
+    // indices computed here also address the original content.
     // `![` or `[` + text + `](`, then any padding before the target itself.
     const afterOpen = match[1].length + 1 + match[2].length + 2
     const padding = /^\s*/.exec(match[0].slice(afterOpen))[0].length
     const targetStart = match.index + afterOpen + padding
     links.push({
       target,
+      text: match[2],
       start: targetStart,
       end: targetStart + target.length,
+      // The whole `[text](target)` span, needed to demote a hallucinated link.
+      linkStart: match.index,
+      linkEnd: match.index + match[0].length,
       line: content.slice(0, match.index).split('\n').length,
     })
   }
   return links
+}
+
+/**
+ * Longest common subsequence of two target lists, as index pairs. Equal targets
+ * are the anchors we trust; everything between two anchors is a gap the caller
+ * has to make a decision about.
+ */
+const lcsPairs = (a, b) => {
+  const table = Array.from({ length: a.length + 1 }, () => new Array(b.length + 1).fill(0))
+  for (let i = a.length - 1; i >= 0; i--) {
+    for (let j = b.length - 1; j >= 0; j--) {
+      table[i][j] =
+        a[i].target === b[j].target
+          ? table[i + 1][j + 1] + 1
+          : Math.max(table[i + 1][j], table[i][j + 1])
+    }
+  }
+  const pairs = []
+  let i = 0
+  let j = 0
+  while (i < a.length && j < b.length) {
+    if (a[i].target === b[j].target) {
+      pairs.push([i, j])
+      i++
+      j++
+    } else if (table[i + 1][j] >= table[i][j + 1]) i++
+    else j++
+  }
+  return pairs
+}
+
+/**
+ * Decide what to do with every translated link, English being the truth.
+ *
+ * Anchoring on the links both sides agree on leaves gaps, and each gap shape
+ * says something different about what the model did:
+ *   same count      -> it rewrote targets in place; restore them positionally.
+ *   nothing in en    -> it invented links that have no original; strip the link
+ *                       syntax and keep the text (a target we cannot source
+ *                       from English is a target we must not guess at).
+ *   fewer in zh      -> it dropped links; there is no sound place to put them
+ *                       back, so the file is left for a human.
+ * A mixed gap (some English links, but more links on the translated side) is
+ * ambiguous in the same way, and is refused too.
+ */
+const planEdits = (sourceLinks, targetLinks) => {
+  const edits = []
+  const unresolved = []
+  const anchors = [...lcsPairs(sourceLinks, targetLinks), [sourceLinks.length, targetLinks.length]]
+  let si = 0
+  let ti = 0
+
+  for (const [sEnd, tEnd] of anchors) {
+    const srcGap = sourceLinks.slice(si, sEnd)
+    const tgtGap = targetLinks.slice(ti, tEnd)
+
+    if (srcGap.length === tgtGap.length) {
+      for (const [k, link] of tgtGap.entries()) {
+        edits.push({
+          kind: 'restore',
+          start: link.start,
+          end: link.end,
+          replacement: srcGap[k].target,
+          line: link.line,
+          from: link.target,
+          to: srcGap[k].target,
+        })
+      }
+    } else if (srcGap.length === 0) {
+      for (const link of tgtGap) {
+        edits.push({
+          kind: 'demote',
+          start: link.linkStart,
+          end: link.linkEnd,
+          replacement: link.text,
+          line: link.line,
+          from: link.target,
+          to: null,
+        })
+      }
+    } else {
+      unresolved.push(
+        `${tgtGap.length} translated link(s) against ${srcGap.length} English one(s)` +
+          ` around line ${(tgtGap[0] ?? srcGap[0]).line}` +
+          ` [${tgtGap.map((l) => l.target).join(', ') || '-'}] vs [${srcGap.map((l) => l.target).join(', ')}]`,
+      )
+    }
+
+    si = sEnd + 1
+    ti = tEnd + 1
+  }
+
+  // Demoting is the one edit that removes markup rather than correcting it.
+  // A handful is a model slip; a flood means the comparison itself is off.
+  const demotions = edits.filter((edit) => edit.kind === 'demote')
+  const demotionCap = Math.max(3, Math.floor(sourceLinks.length * 0.2))
+  if (demotions.length > demotionCap) {
+    unresolved.push(
+      `${demotions.length} invented link(s) exceeds the cap of ${demotionCap} -- refusing to strip that many`,
+    )
+  }
+
+  return { edits, unresolved }
 }
 
 const relative = (file) => path.relative(repoRoot, file)
@@ -240,21 +347,26 @@ for (const file of targetFiles.sort()) {
   let content = fs.readFileSync(file, 'utf8')
   let targetLinks = extractLinks(content)
 
-  if (sourceLinks.length !== targetLinks.length) {
+  const describe = (edit) =>
+    edit.kind === 'restore'
+      ? `${relative(file)}:${edit.line} "${edit.from}" -> "${edit.to}"`
+      : `${relative(file)}:${edit.line} "${edit.from}" has no English original -- link syntax stripped, text kept`
+
+  const { edits, unresolved } = planEdits(sourceLinks, targetLinks)
+
+  // An unresolved gap makes the whole alignment suspect, so nothing is written:
+  // a partially repaired file is harder to reason about than an untouched one.
+  if (unresolved.length > 0) {
     fail++
     console.log(
-      `FAIL ${relative(file)} internal link count ${targetLinks.length} != ${sourceLinks.length} in ${relative(sourceFile)}` +
-        ' -- cannot align positionally, repair by hand',
+      `FAIL ${relative(file)} ${targetLinks.length} internal link(s) against` +
+        ` ${sourceLinks.length} in ${relative(sourceFile)} -- repair by hand:`,
     )
+    for (const problem of unresolved) console.log(`  ${problem}`)
     continue
   }
 
-  const drifted = []
-  for (let i = 0; i < sourceLinks.length; i++) {
-    if (sourceLinks[i].target !== targetLinks[i].target) drifted.push(i)
-  }
-
-  if (drifted.length === 0) {
+  if (edits.length === 0) {
     pass++
     console.log(`PASS ${relative(file)} (${sourceLinks.length} links)`)
     continue
@@ -262,37 +374,30 @@ for (const file of targetFiles.sort()) {
 
   if (!FIX) {
     fail++
-    console.log(`FAIL ${relative(file)} ${drifted.length} drifted internal link target(s):`)
-    for (const i of drifted) {
-      console.log(
-        `  ${relative(file)}:${targetLinks[i].line} got "${targetLinks[i].target}"` +
-          ` expected "${sourceLinks[i].target}" (${relative(sourceFile)}:${sourceLinks[i].line})`,
-      )
-    }
+    console.log(`FAIL ${relative(file)} ${edits.length} drifted internal link(s):`)
+    for (const edit of edits) console.log(`  ${describe(edit)}`)
     continue
   }
 
-  // Rewrite back-to-front so earlier offsets stay valid.
-  for (const i of [...drifted].reverse()) {
-    const { start, end } = targetLinks[i]
-    content = content.slice(0, start) + sourceLinks[i].target + content.slice(end)
+  // Apply back-to-front so earlier offsets stay valid.
+  for (const edit of [...edits].sort((a, b) => b.start - a.start)) {
+    content = content.slice(0, edit.start) + edit.replacement + content.slice(edit.end)
   }
   fs.writeFileSync(file, content)
-  repaired += drifted.length
+  repaired += edits.length
 
   const after = extractLinks(content)
-  const stillDrifted = sourceLinks.some((link, i) => link.target !== after[i]?.target)
-  if (stillDrifted) {
+  const converged =
+    after.length === sourceLinks.length && sourceLinks.every((link, i) => link.target === after[i].target)
+  if (!converged) {
     fail++
     console.log(`FAIL ${relative(file)} repair did not converge, inspect by hand`)
     continue
   }
 
   pass++
-  console.log(`PASS ${relative(file)} repaired ${drifted.length} link target(s):`)
-  for (const i of drifted) {
-    console.log(`  ${relative(file)}:${targetLinks[i].line} "${targetLinks[i].target}" -> "${sourceLinks[i].target}"`)
-  }
+  console.log(`PASS ${relative(file)} repaired ${edits.length} internal link(s):`)
+  for (const edit of edits) console.log(`  ${describe(edit)}`)
 }
 
 if (FIX && repaired > 0) {
