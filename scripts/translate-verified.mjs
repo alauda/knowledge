@@ -157,6 +157,9 @@ for (const file of outstanding) {
 
 if (restored.length) {
   console.log(`\nverifying the committed version of ${restored.length} document(s) that would not converge`)
+  // The attempts above left their own list here. If this run dies before it
+  // writes, reading a stale list would blame documents this pass never judged.
+  fs.rmSync(failuresFile, { force: true })
   const status = run('node', [
     'scripts/check-translation-integrity.mjs',
     '--fix',

@@ -125,7 +125,7 @@ const changedTargetFiles = () => {
  * tests. A source-language edit counts too: it can leave an existing
  * translation short of a section that was only just added.
  */
-const changedSinceTargetFiles = (ref) => {
+const changedSince = (ref) => {
   const stdout = execFileSync(
     'git',
     // --diff-filter=d drops deletions: a file that is gone cannot be read, and
@@ -135,19 +135,25 @@ const changedSinceTargetFiles = (ref) => {
     ['diff', '--name-only', '--relative', '--diff-filter=d', `${ref}...HEAD`, '--', '.'],
     { cwd: docsDir, encoding: 'utf8' },
   )
-  const files = new Set()
+  const targets = new Set()
+  const sources = new Set()
   for (const line of stdout.split('\n')) {
     if (!line.trim()) continue
     const abs = path.resolve(docsDir, line.trim())
     if (!DOC_EXTENSIONS.has(path.extname(abs))) continue
     // Either language names the same pair; the scan below is driven by targets.
-    const target = abs.startsWith(sourceDir + path.sep)
-      ? path.join(targetDir, path.relative(sourceDir, abs))
-      : abs
-    if (fs.existsSync(target)) files.add(target)
+    const fromSource = abs.startsWith(sourceDir + path.sep)
+    const source = fromSource ? abs : path.join(sourceDir, path.relative(targetDir, abs))
+    const target = fromSource ? path.join(targetDir, path.relative(sourceDir, abs)) : abs
+    sources.add(source)
+    if (fs.existsSync(target)) targets.add(target)
   }
-  return [...files]
+  return { targets: [...targets], sources }
 }
+
+// Computed once: the missing-translation audit below needs the source side of
+// the same answer, and asking git twice would just be two chances to disagree.
+const branchScope = SINCE ? changedSince(SINCE) : null
 
 /**
  * Blank out everything a markdown link must not be harvested from, keeping the
@@ -775,8 +781,10 @@ for (const sourceFile of ONLY.length ? [] : walk(sourceDir).sort()) {
     console.log(`SKIP ${relative(sourceFile)} (i18n.disableAutoTranslation)`)
     // An opted-out page is the one case where a missing translation is the
     // branch's problem: nothing downstream will write it, so it has to arrive
-    // with the source. Fall through to the failure below.
-    if (!SINCE) continue
+    // with the source. Only for a page this branch actually touched, though --
+    // failing a pull request over someone else's long-standing gap would make
+    // the check something to route around.
+    if (!branchScope || !branchScope.sources.has(sourceFile)) continue
     fail++
     failures.push(relative(targetFile))
     missingTranslations.push(relative(targetFile))
@@ -800,9 +808,24 @@ for (const sourceFile of ONLY.length ? [] : walk(sourceDir).sort()) {
 const selectTargets = () => {
   // Named files win over every other scope: the caller has already decided what
   // it wants judged, and widening that would report failures it cannot act on.
-  if (ONLY.length) return ONLY.map((file) => path.resolve(repoRoot, file))
+  if (ONLY.length) {
+    return ONLY.map((file) => {
+      const abs = path.resolve(repoRoot, file)
+      // A typo here would otherwise scan nothing and report success, which is
+      // the one answer a caller asking about specific files must never get.
+      if (!fs.existsSync(abs)) {
+        console.error(`--only ${file} does not exist`)
+        process.exit(2)
+      }
+      if (!abs.startsWith(targetDir + path.sep)) {
+        console.error(`--only ${file} is not under ${path.relative(repoRoot, targetDir)}`)
+        process.exit(2)
+      }
+      return abs
+    })
+  }
   if (scanAll) return walk(targetDir)
-  if (SINCE) return changedSinceTargetFiles(SINCE)
+  if (branchScope) return branchScope.targets
   return changedTargetFiles()
 }
 const targetFiles = selectTargets().filter((file) =>

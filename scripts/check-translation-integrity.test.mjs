@@ -664,5 +664,42 @@ a
   fs.rmSync(root, { recursive: true, force: true })
 }
 
+// ---------------------------------------------------------------------------
+// --only must not answer "nothing wrong" to a path that is not there. A typo in
+// the caller's list would otherwise scan nothing and exit 0, which is the one
+// answer a question about specific files must never get.
+// ---------------------------------------------------------------------------
+{
+  const root = makeTree({ en: { 'a.md': `${FRONTMATTER}# T\n` }, zh: { 'a.md': `${FRONTMATTER}# T\n` } })
+  const missing = check(root, '--only', path.join(root, 'zh', 'nope.md'))
+  ok(missing.status === 2, 'an --only path that does not exist is refused', missing.out)
+  ok(missing.out.includes('does not exist'), 'the refusal says which path', missing.out)
+
+  const wrongSide = check(root, '--only', path.join(root, 'en', 'a.md'))
+  ok(wrongSide.status === 2, 'an --only path outside the target tree is refused', wrongSide.out)
+  fs.rmSync(root, { recursive: true, force: true })
+}
+
+// ---------------------------------------------------------------------------
+// The branch scope judges the branch. An opted-out page that has been missing
+// its translation since long before this branch existed is somebody else's
+// problem, and failing a pull request over it would make the check something to
+// route around rather than fix.
+// ---------------------------------------------------------------------------
+{
+  const root = makeGitTree({
+    'en/owned.md': '---\nid: KB2\ni18n:\n  disableAutoTranslation: true\n---\n# Owned\n\nProse.\n',
+    'en/a.md': `${FRONTMATTER}# T\n\nProse.\n`,
+    'zh/a.md': `${FRONTMATTER}# T\n\n正文。\n`,
+  })
+  fs.writeFileSync(path.join(root, 'en', 'b.md'), `${FRONTMATTER}# B\n\nProse.\n`)
+  commitAll(root, 'an unrelated change')
+
+  const { status, out } = check(root, '--since', 'HEAD~1')
+  ok(status === 0, 'a pre-existing opted-out gap does not fail an unrelated branch', out)
+  ok(!out.includes('written by hand'), 'and it is not reported against this branch', out)
+  fs.rmSync(root, { recursive: true, force: true })
+}
+
 console.log(`== result: ${pass} pass / ${fail} fail ==`)
 process.exit(fail > 0 ? 1 : 0)

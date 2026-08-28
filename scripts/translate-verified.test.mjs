@@ -53,7 +53,7 @@ ${block('three')}`
  * It writes the same file the real one would, so the loop cannot tell them
  * apart -- TRANSLATE_CMD is the seam the loop was built with.
  */
-const makeFakeTranslator = (root, versions) => {
+const makeFakeTranslator = (root, versions, relTarget = path.join('zh', 'a.md')) => {
   const state = path.join(root, 'calls.txt')
   const fake = path.join(root, 'fake-translate.mjs')
   fs.writeFileSync(
@@ -64,7 +64,7 @@ const versions = ${JSON.stringify(versions)}
 const state = ${JSON.stringify(state)}
 const call = fs.existsSync(state) ? Number(fs.readFileSync(state, 'utf8')) : 0
 fs.writeFileSync(state, String(call + 1))
-const target = path.join(${JSON.stringify(root)}, 'zh', 'a.md')
+const target = path.join(${JSON.stringify(root)}, ${JSON.stringify(relTarget)})
 fs.mkdirSync(path.dirname(target), { recursive: true })
 fs.writeFileSync(target, versions[Math.min(call, versions.length - 1)])
 `,
@@ -93,6 +93,12 @@ const makeGitRoot = () => {
   git('config', 'user.email', 'test@example.invalid')
   git('config', 'user.name', 'test')
   return root
+}
+
+const commitAll = (root, message) => {
+  const git = (...args) => spawnSync('git', args, { cwd: root, stdio: 'pipe' })
+  git('add', '-A')
+  git('commit', '-qm', message)
 }
 
 /** Commit `content` as the translation, the way a previous green run would have. */
@@ -235,6 +241,34 @@ ${block('three')}`
   const out = `${run.stdout}${run.stderr}`
   ok(run.status === 1, 'a non-integer attempt count is refused', out)
   ok(out.includes('whole number of at least 1'), 'the refusal says what is wrong', out)
+  fs.rmSync(root, { recursive: true, force: true })
+}
+
+// ---------------------------------------------------------------------------
+// The same fallback where the document sits in a subdirectory, which is where
+// every real document sits. The restore runs git inside the file's own folder,
+// so this is the shape that has to work, not the flat one above.
+// ---------------------------------------------------------------------------
+{
+  const root = makeGitRoot()
+  fs.mkdirSync(path.join(root, 'en', 'solutions'), { recursive: true })
+  fs.writeFileSync(path.join(root, 'en', 'solutions', 'a.md'), EN)
+  fs.rmSync(path.join(root, 'en', 'a.md'))
+  const good = `${FRONTMATTER}# 标题\n\n一些足够长的正文，用来度量体积。\n\n${block('one')}\n${block('two')}\n${block('three')}`
+  fs.mkdirSync(path.join(root, 'zh', 'solutions'), { recursive: true })
+  fs.writeFileSync(path.join(root, 'zh', 'solutions', 'a.md'), good)
+  commitAll(root, 'nested translation')
+
+  const damaged = `${FRONTMATTER}# 标题\n\n短。\n\n${block('one')}`
+  const { fake } = makeFakeTranslator(root, [damaged], path.join('zh', 'solutions', 'a.md'))
+
+  const { status, out } = runLoop(root, fake, 2)
+  ok(status === 0, 'a nested document falls back to its committed translation', out)
+  ok(
+    fs.readFileSync(path.join(root, 'zh', 'solutions', 'a.md'), 'utf8') === good,
+    'the nested committed translation is what is left on disk',
+    out,
+  )
   fs.rmSync(root, { recursive: true, force: true })
 }
 
