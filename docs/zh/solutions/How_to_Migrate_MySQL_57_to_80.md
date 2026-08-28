@@ -2456,4 +2456,3 @@ main
 3. 验证您的环境是否符合 [先决条件](#prerequisites)
 4. 遵循 [kubectl Exec 最佳实践](#getting-started) 以避免常见命令错误
 5. 检查 MySQL 错误日志：`kubectl logs -n <namespace> <pod-name> -c mysql --tail=100`
-```
