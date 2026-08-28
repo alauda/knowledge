@@ -28,6 +28,12 @@
  *                    untracked -- i.e. the ones translate just (re)wrote
  *   --all            every file under docs/<target>
  *   --docs <dir>     check a docs tree outside this repo (implies a full scan)
+ *   --failures <f>   write the failing documents to <f>, one path per line, for
+ *                    translate-verified.mjs to hand back to the translator
+ *
+ * The missing-translation audit always covers the whole library, whatever the
+ * scope above: a document translate never produced has no target file to scan,
+ * so scoping by target would make exactly that failure invisible.
  *
  * Only internal route links are compared -- the exact set rspress resolves
  * against the route table and fails the build over. In-page anchors and
@@ -362,8 +368,8 @@ const structuralProblems = (source, target) => {
   // before this fires: Chinese legitimately merges English lines (healthy pages
   // go as low as 0.33), and rewording legitimately loses the odd number, but no
   // healthy page in this repository does both at once. Measured over all 401
-  // en/zh pairs: 0 of 396 healthy pages flagged, and every content-losing entry
-  // in .translation-known-damage caught.
+  // en/zh pairs at the time of writing: 396 healthy pages pass, and the five
+  // documents an earlier run damaged are all caught.
   const lineRatio = s.proseLines ? t.proseLines / s.proseLines : 1
   const kept = numbersKept(s.numbers, t.numbers)
   if (lineRatio < 0.9 && kept < 0.9) {
@@ -430,8 +436,10 @@ const planImageEdits = (targetImages, fileDir) => {
  *
  * Anchoring on the references both sides agree on leaves gaps, and each gap
  * shape says something different about what the model did:
- *   same count      -> it rewrote targets in place; restore them positionally,
- *                      but only where restoring is meaningful (see `restore`).
+ *   same count      -> it rewrote targets in place; restore them positionally.
+ *                      Position is only trustworthy inside a gap this narrow:
+ *                      the anchors on both sides of it agree, so the k-th
+ *                      unmatched target here is the k-th one there.
  *   nothing in en    -> it invented references that have no original; strip the
  *                       markup and keep the text (a target we cannot source
  *                       from English is a target we must not guess at).
@@ -504,21 +512,68 @@ const planEdits = (sourceLinks, targetLinks, { label }) => {
 
 const relative = (file) => path.relative(repoRoot, file)
 
-// Documents already damaged by an earlier translation run. They are reported as
-const targetFiles = (scanAll ? walk(targetDir) : changedTargetFiles()).filter((file) =>
-  file.startsWith(targetDir + path.sep),
-)
-
-if (targetFiles.length === 0) {
-  console.log(`no ${TARGET_LANG} documents to check (${scanAll ? 'full scan' : 'changed files only'})`)
-  console.log('== result: 0 pass / 0 fail ==')
-  process.exit(0)
+/**
+ * Does this source document opt out of machine translation? doom skips any page
+ * whose frontmatter carries `i18n.disableAutoTranslation: true` (see
+ * @alauda/doom `lib/cli/translate.js`), and a page it was told to skip must not
+ * then be reported as a missing translation.
+ *
+ * Parsed by hand rather than with a YAML library: this script has no
+ * dependencies, and one boolean nested one level deep does not justify adding
+ * one. Only the leading frontmatter block is examined.
+ */
+const disablesAutoTranslation = (content) => {
+  const match = /^---\r?\n([\s\S]*?)\r?\n---\s*(?:\r?\n|$)/.exec(content)
+  if (!match) return false
+  let inI18n = false
+  for (const raw of match[1].split('\n')) {
+    const line = raw.replace(/\r$/, '')
+    // A key at column 0 ends the previous block and starts whatever is next.
+    if (/^\S/.test(line)) inI18n = /^i18n\s*:/.test(line)
+    else if (inI18n && /^\s+disableAutoTranslation\s*:\s*true\s*$/.test(line)) return true
+  }
+  return false
 }
 
 let pass = 0
 let fail = 0
 const failures = []
 let repaired = 0
+
+/**
+ * Every source document that should have been translated, and was not.
+ *
+ * This is deliberately outside the scope rules above. The scan below is driven
+ * by the files under docs/<target>, so a document translate never produced is
+ * invisible to it -- it neither passes nor fails, and the run reports success
+ * with the page missing from the site. That is the shape of the outage this
+ * whole script exists for, so it is checked separately and always in full.
+ */
+const missingTranslations = []
+for (const sourceFile of walk(sourceDir).sort()) {
+  const targetFile = path.join(targetDir, path.relative(sourceDir, sourceFile))
+  if (fs.existsSync(targetFile)) continue
+  if (disablesAutoTranslation(fs.readFileSync(sourceFile, 'utf8'))) {
+    console.log(`SKIP ${relative(sourceFile)} (i18n.disableAutoTranslation)`)
+    continue
+  }
+  fail++
+  // Named by its expected target path: that is what the retry globs are
+  // computed from, and it is where the missing document belongs.
+  failures.push(relative(targetFile))
+  missingTranslations.push(relative(targetFile))
+  console.log(`FAIL ${relative(targetFile)} was never produced from ${relative(sourceFile)} -- retranslate`)
+}
+
+const targetFiles = (scanAll ? walk(targetDir) : changedTargetFiles()).filter((file) =>
+  file.startsWith(targetDir + path.sep),
+)
+
+if (targetFiles.length === 0 && missingTranslations.length === 0) {
+  console.log(`no ${TARGET_LANG} documents to check (${scanAll ? 'full scan' : 'changed files only'})`)
+  console.log('== result: 0 pass / 0 fail ==')
+  process.exit(0)
+}
 
 for (const file of targetFiles.sort()) {
   const sourceFile = path.join(sourceDir, path.relative(targetDir, file))
@@ -564,6 +619,7 @@ for (const file of targetFiles.sort()) {
   // a partially repaired file is harder to reason about than an untouched one.
   if (unresolved.length > 0) {
     fail++
+    failures.push(relative(file))
     console.log(
       `FAIL ${relative(file)} ${target.links.length} link(s) / ${target.images.length} image(s) against` +
         ` ${source.links.length} / ${source.images.length} in ${relative(sourceFile)} -- repair by hand:`,
@@ -580,6 +636,7 @@ for (const file of targetFiles.sort()) {
 
   if (!FIX) {
     fail++
+    failures.push(relative(file))
     console.log(`FAIL ${relative(file)} ${edits.length} drifted reference(s):`)
     for (const edit of edits) console.log(`  ${describe(edit)}`)
     continue
@@ -599,6 +656,7 @@ for (const file of targetFiles.sort()) {
     after.images.every((image) => imageResolves(image.target, path.dirname(file)))
   if (!converged) {
     fail++
+    failures.push(relative(file))
     console.log(`FAIL ${relative(file)} repair did not converge, inspect by hand`)
     continue
   }
@@ -613,9 +671,11 @@ if (FIX && repaired > 0) {
 }
 console.log(`== result: ${pass} pass / ${fail} fail ==`)
 
-// A machine translation that lost content is not repairable here, but it is
-// retryable: translate-verified.mjs reads this list and retranslates just these
-// files rather than the whole library.
+// Every document that failed, whatever the reason -- content lost, links that
+// could not be aligned, a repair that did not converge, a translation never
+// produced. None of it is fixable here, but all of it is retryable:
+// translate-verified.mjs reads this list and hands just these files back to the
+// translator rather than redoing the whole library.
 const failureList = flagValue('--failures', '')
 if (failureList) fs.writeFileSync(failureList, failures.map((f) => f + '\n').join(''))
 process.exit(fail > 0 ? 1 : 0)

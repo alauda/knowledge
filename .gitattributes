@@ -1,3 +1,8 @@
+# Normalise line endings in the repository, matching .editorconfig's
+# `end_of_line = lf`. Without this a checkout on Windows can reintroduce
+# CRLF and the next save shows up as a whole-file diff.
+* text=auto eol=lf
+
 /.yarn/**            linguist-vendored
 /.yarn/releases/*    binary
 /.yarn/plugins/**/*  binary

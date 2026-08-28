@@ -87,8 +87,9 @@ for (let attempt = 1; attempt <= ATTEMPTS; attempt++) {
   }
   outstanding = failures
   if (!failures.length) {
-    // The check failed for a reason it cannot pin on a document (a missing
-    // English source, an unreadable file). Retrying would not change it.
+    // Every document-level failure names its document, so an empty list means
+    // the check itself did not get that far -- it crashed, or could not read
+    // the tree. Retranslating would not change that.
     console.error('\nintegrity check failed without naming a document -- see the output above')
     process.exit(1)
   }

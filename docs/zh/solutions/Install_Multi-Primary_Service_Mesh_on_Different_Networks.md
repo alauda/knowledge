@@ -4,6 +4,7 @@ products:
   - Alauda Service Mesh
 kind:
   - Solution
+sourceSHA: 2ddecfc3b826a970015660a1889242c353532f50620e1b85d1af72fb9325b3ab
 ---
 
 # 多主不同网络服务网格架构的安装指南

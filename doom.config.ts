@@ -24,7 +24,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 //
 // So: describe the rules instead of illustrating them with copyable fake values,
 // put completeness first, and forbid emitting these instructions outright.
-// scripts/check-translation-links.mjs is the backstop that catches what slips.
+// scripts/check-translation-integrity.mjs is the backstop that catches what slips.
 const TRANSLATE_SYSTEM_PROMPT = `
 You are a professional technical documentation engineer. Translate the document below from <%= sourceLang %> into <%= targetLang %>, so that it reads as if the same engineer had written it in <%= targetLang %>, at the same level of precision.
 

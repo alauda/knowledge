@@ -55,6 +55,12 @@ jobs:
       - name: Install dependencies (immutable)
         run: yarn --immutable
 
+      # The integrity check is what stands between a truncated machine
+      # translation and the published site, so it is itself tested -- on every
+      # event, not just the pushes that translate.
+      - name: Test the translation integrity check
+        run: yarn test:translation
+
       - name: generate id
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: ./add_id.sh docs/en/solutions && ./add_id.sh docs/en/articles

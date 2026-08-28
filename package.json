@@ -21,6 +21,7 @@
     "serve": "doom serve",
     "translate": "doom translate",
     "check:translation": "node scripts/check-translation-integrity.mjs",
+    "test:translation": "node scripts/check-translation-integrity.test.mjs",
     "export": "doom export"
   }
 }
