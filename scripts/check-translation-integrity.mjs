@@ -30,8 +30,6 @@
  *   --docs <dir>     check a docs tree outside this repo (implies a full scan)
  *   --failures <f>   write the failing documents to <f>, one path per line, for
  *                    translate-verified.mjs to hand back to the translator
- *   --scores <f>     write "<deviation> <path>" for every document compared, so
- *                    the retry loop can keep the least damaged attempt
  *
  * The missing-translation audit always covers the whole library, whatever the
  * scope above: a document translate never produced has no target file to scan,
@@ -486,33 +484,6 @@ const structuralProblems = (source, target) => {
 }
 
 /**
- * How far a translation has drifted from its original, as one number, where 0
- * means nothing structural changed.
- *
- * Its only job is to order two attempts at the same document. Each retry is an
- * independent sample from the translator rather than an improvement on the last
- * one, so without a way to compare them the loop writes whichever came last --
- * and a document that came back nearly complete on the first attempt can come
- * back at half its length on the third. The weights say what is expensive to
- * lose: a broken fence corrupts the whole document, a missing code block or
- * heading is a missing section, a missing table row is a missing line.
- */
-const deviationScore = (source, target) => {
-  const s = documentStructure(source)
-  const t = documentStructure(target)
-  const missingAnchors = s.anchors.filter((a) => !t.anchors.includes(a)).length
-  const lineRatio = s.proseLines ? t.proseLines / s.proseLines : 1
-  return (
-    (unclosedFenceLine(target) !== -1 && unclosedFenceLine(source) === -1 ? 1000 : 0) +
-    Math.abs(s.codeBlocks - t.codeBlocks) * 10 +
-    Math.abs(s.headingLevels.length - t.headingLevels.length) * 5 +
-    missingAnchors * 5 +
-    Math.abs(s.tableRows - t.tableRows) +
-    Math.round(Math.max(0, 1 - lineRatio) * 100)
-  )
-}
-
-/**
  * Does an image src point at a file that actually exists? This is the same
  * question rspack asks, and the reason a bogus src fails the build with
  * "Module not found". Absolute srcs are served out of docs/public.
@@ -671,9 +642,6 @@ let fail = 0
 const failures = []
 let repaired = 0
 let fencesRemoved = 0
-// Document -> deviation score, written out with --scores so the retry loop can
-// keep the least damaged attempt rather than the most recent one.
-const scores = new Map()
 
 /**
  * Every source document that should have been translated, and was not.
@@ -768,8 +736,6 @@ for (const file of targetFiles.sort()) {
       console.log(`FIX  ${relative(file)} removed an unclosed code fence with no content after it`)
     }
   }
-
-  scores.set(relative(file), deviationScore(sourceContent, content))
 
   // Shape before wording. If whole sections are missing, no amount of link
   // repair makes the document publishable, and repairing it anyway would only
@@ -869,10 +835,4 @@ console.log(`== result: ${pass} pass / ${fail} fail ==`)
 // translator rather than redoing the whole library.
 const failureList = flagValue('--failures', '')
 if (failureList) fs.writeFileSync(failureList, failures.map((f) => f + '\n').join(''))
-
-// One "<score> <path>" line per document that was compared, for the retry loop.
-const scoreList = flagValue('--scores', '')
-if (scoreList) {
-  fs.writeFileSync(scoreList, [...scores].map(([file, score]) => `${score} ${file}\n`).join(''))
-}
 process.exit(fail > 0 ? 1 : 0)

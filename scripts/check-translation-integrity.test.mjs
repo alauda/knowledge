@@ -406,42 +406,6 @@ a
 }
 
 // ---------------------------------------------------------------------------
-// --scores is what lets the retry loop keep the best attempt rather than the
-// last one, so it has to order two versions of the same document correctly.
-// ---------------------------------------------------------------------------
-{
-  const en = `${FRONTMATTER}# T\n\n\`\`\`bash\na\n\`\`\`\n\n\`\`\`bash\nb\n\`\`\`\n\n\`\`\`bash\nc\n\`\`\`\n`
-  const root = makeTree({
-    en: { 'clean.md': en, 'near.md': en, 'far.md': en },
-    zh: {
-      'clean.md': en,
-      'near.md': `${FRONTMATTER}# T\n\n\`\`\`bash\na\n\`\`\`\n\n\`\`\`bash\nb\n\`\`\`\n`,
-      'far.md': `${FRONTMATTER}# T\n`,
-    },
-  })
-  const scoresFile = path.join(root, 'scores.txt')
-  check(root, '--scores', scoresFile)
-  const scores = new Map(
-    fs
-      .readFileSync(scoresFile, 'utf8')
-      .split('\n')
-      .filter(Boolean)
-      .map((line) => {
-        const space = line.indexOf(' ')
-        return [path.basename(line.slice(space + 1)), Number(line.slice(0, space))]
-      }),
-  )
-  ok(scores.get('clean.md') === 0, 'an undamaged document scores 0', JSON.stringify([...scores]))
-  ok(
-    scores.get('near.md') < scores.get('far.md'),
-    'the less damaged version scores lower',
-    JSON.stringify([...scores]),
-  )
-  ok(scores.size === 3, 'every compared document gets a score', JSON.stringify([...scores]))
-  fs.rmSync(root, { recursive: true, force: true })
-}
-
-// ---------------------------------------------------------------------------
 // Chunking is the single property that predicted failure in run 33160218909:
 // all three documents over doom's 60KB limit failed, ten of the eleven under it
 // passed. Saying so on a pull request costs a second; finding out on main costs

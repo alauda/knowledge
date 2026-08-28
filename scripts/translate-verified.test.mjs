@@ -2,16 +2,14 @@
 /**
  * Tests for translate-verified.mjs.
  *
- * The retry loop is the part of the pipeline that cannot be exercised in CI
- * without an API key and forty minutes, which is precisely why it went two
- * weeks carrying a defect nobody could see: every attempt overwrote the last,
- * so a document that came back nearly complete on attempt 1 and at half its
- * length on attempt 3 ended up on disk as the half-length one.
+ * The retry loop cannot be exercised in CI without an API key and forty
+ * minutes, so until now nothing checked it at all: whether it retries the
+ * documents that failed rather than the whole library, whether it stops as soon
+ * as one attempt verifies, whether it fails when none of them do.
  *
  * TRANSLATE_CMD exists for this. A throwaway script stands in for the
  * translator and returns a scripted sequence of versions, so the loop's real
- * behaviour -- what it retries, what it keeps, what it leaves behind when it
- * gives up -- is asserted here, on a PR, rather than discovered on main.
+ * behaviour is asserted here, on a pull request, rather than on main.
  *
  * Usage: node scripts/translate-verified.test.mjs
  */
@@ -95,26 +93,18 @@ const makeRoot = () => {
 }
 
 // ---------------------------------------------------------------------------
-// The defect this file exists for: attempts get worse, and the best one has to
-// survive. Grading is by structure, so dropping code blocks makes each version
-// measurably further from the original than the one before it.
+// Nothing is committed unless a translation verifies. The loop spends its
+// attempts and fails, which is what keeps a short page off the site.
 // ---------------------------------------------------------------------------
 {
   const root = makeRoot()
-  const best = `${FRONTMATTER}# 标题\n\n一些足够长的正文，用来度量体积。\n\n${block('one')}\n${block('two')}`
-  const worse = `${FRONTMATTER}# 标题\n\n一些足够长的正文，用来度量体积。\n\n${block('one')}`
-  const worst = `${FRONTMATTER}# 标题\n`
-  const { fake, state } = makeFakeTranslator(root, [best, worse, worst])
+  const damaged = `${FRONTMATTER}# 标题\n\n一些足够长的正文，用来度量体积。\n\n${block('one')}`
+  const { fake, state } = makeFakeTranslator(root, [damaged])
 
   const { status, out } = runLoop(root, fake)
   ok(status === 1, 'the loop fails when no attempt is complete', out)
   ok(Number(fs.readFileSync(state, 'utf8')) === 3, 'the translator is called once per attempt', out)
-  ok(out.includes('restored the best attempt'), 'the loop says it restored an earlier attempt', out)
-  ok(
-    fs.readFileSync(path.join(root, 'zh', 'a.md'), 'utf8') === best,
-    'the least damaged attempt is what stays on disk',
-    `on disk: ${JSON.stringify(fs.readFileSync(path.join(root, 'zh', 'a.md'), 'utf8').slice(0, 120))}`,
-  )
+  ok(out.includes('still incomplete after 3 attempts'), 'it names the documents it gave up on', out)
   fs.rmSync(root, { recursive: true, force: true })
 }
 
@@ -137,7 +127,6 @@ ${block('three')}`
   const { status, out } = runLoop(root, fake)
   ok(status === 0, 'the loop succeeds once an attempt verifies', out)
   ok(Number(fs.readFileSync(state, 'utf8')) === 2, 'it stops translating as soon as it passes', out)
-  ok(!out.includes('restored the best attempt'), 'nothing is restored over a passing translation', out)
   ok(
     fs.readFileSync(path.join(root, 'zh', 'a.md'), 'utf8') === good,
     'the passing translation is the one left on disk',
