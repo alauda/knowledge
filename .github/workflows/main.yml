@@ -61,6 +61,15 @@ jobs:
       - name: Test the translation integrity check
         run: yarn test:translation
 
+      # The unit tests above prove the check works; they do not look at a single
+      # document. On main that job belongs to "Translate and verify", but that
+      # step only runs on a push -- so until now a pull request could add or
+      # edit a page and nothing compared it against its English source. The
+      # branch scope does exactly that, for the pairs this branch touches.
+      - name: Check the translations this branch changes
+        if: github.event_name == 'pull_request'
+        run: node scripts/check-translation-integrity.mjs --since origin/${{ github.base_ref }}
+
       - name: generate id
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: ./add_id.sh docs/en/solutions && ./add_id.sh docs/en/articles

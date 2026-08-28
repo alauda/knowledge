@@ -7,6 +7,8 @@ kind:
 ProductsVersion:
   - 4.3.x
 id: KB260800021
+i18n:
+  disableAutoTranslation: true
 ---
 # Pipeline Policy Constraints with Tekton and Kyverno
 

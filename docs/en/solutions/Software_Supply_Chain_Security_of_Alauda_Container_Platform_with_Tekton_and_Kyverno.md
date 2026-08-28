@@ -4,6 +4,8 @@ products:
    - Alauda Container Platform
 kind:
    - Solution
+i18n:
+   disableAutoTranslation: true
 ---
 
 # Software Supply Chain Security of Alauda Container Platform with Tekton and Kyverno
@@ -92,7 +94,7 @@ The flexibility of attestation verification is demonstrated through various vali
 
 Attestation types are standardized formats for recording and verifying various aspects of container images. These attestations are typically attached to images using tools like cosign and can be verified through policy engines like Kyverno.
 
-##### SLSA provenance (Integrity attestation)
+##### SLSA provenance (Integrity attestation) {#slsa-provenance-integrity-attestation}
 
 [SLSA Provenance](https://slsa.dev/provenance/v1) is a set of incrementally adoptable guidelines for supply chain security, established by industry consensus. It includes:
 - Build process information
@@ -105,7 +107,7 @@ predicate types:
 - https://slsa.dev/provenance/v1
 - https://slsa.dev/provenance/v0.2
 
-##### SBOM (Software bill of materials)
+##### SBOM (Software bill of materials) {#sbom-software-bill-of-materials}
 
 [SBOM](https://www.ntia.gov/page/software-bill-materials) is a nested inventory for software, a list of ingredients that make up software components, including:
 - Software components
@@ -121,7 +123,7 @@ predicate types:
 - https://spdx.dev/Document
 - https://cyclonedx.org/bom
 
-##### Vulnerability scan results
+##### Vulnerability scan results {#vulnerability-scan-results}
 
 [Cosign Vulnerability Scan results](https://github.com/sigstore/cosign/blob/main/specs/COSIGN_VULN_ATTESTATION_SPEC.md) record the security assessment of the software build process, including:
 - Scanner information (name, version)
@@ -132,7 +134,7 @@ predicate types:
 predicate types:
 - https://cosign.sigstore.dev/attestation/vuln/v1
 
-##### Custom metadata
+##### Custom metadata {#custom-metadata}
 
 Custom metadata can be added as needed to support specific security requirements.
 
@@ -338,7 +340,7 @@ metadata:
 type: Opaque
 ```
 
-##### Get the signing public key
+##### Get the signing public key {#get-the-signing-public-key}
 
 > If you don't have permission, you can ask the administrator to get the public key.
 
@@ -347,7 +349,7 @@ $ export NAMESPACE=<tekton-pipelines>
 $ kubectl get secret -n $NAMESPACE signing-secrets -o jsonpath='{.data.cosign\.pub}' | base64 -d > cosign.pub
 ```
 
-##### Get the signing secret
+##### Get the signing secret {#get-the-signing-secret}
 
 ```shell
 $ export NAMESPACE=<tekton-pipelines>
@@ -407,7 +409,7 @@ $ kubectl patch tektonconfigs.operator.tekton.dev config --type=merge -p='{
 > Essentially, Tekton Operator will synchronize the Chains configuration from the `TektonConfig` resource to the `TektonChains` resource, and finally reflect in the `chains-config` ConfigMap.<br>
 > You can view the configuration by `kubectl get configmaps -n <tekton-pipelines> chains-config -o yaml`
 
-#### Registry Configuration
+#### Registry Configuration {#registry-configuration}
 
 > This process needs to be done in the namespace where the image will be built and deployed.
 
@@ -446,7 +448,7 @@ metadata:
 type: kubernetes.io/dockerconfigjson
 ```
 
-#### ServiceAccount Configuration
+#### ServiceAccount Configuration {#serviceaccount-configuration}
 
 > This process needs to be done in the namespace where the image will be built and deployed.
 
@@ -491,7 +493,7 @@ In our environment, the namespace is usually `kyverno`.
 - Used for validating images and enforcing security policies
 - Supports complex validation rules using JMESPath expressions
 
-#### Tekton Chains Type Hinting
+#### Tekton Chains Type Hinting {#tekton-chains-type-hinting}
 
 > More details about type hinting can be found in the [Tekton Chains Type Hinting](https://tekton.dev/docs/chains/slsa-provenance/#type-hinting) documentation.
 
@@ -573,7 +575,7 @@ results:
         digest: {}
   ```
 
-## Chapter 1. Enforcing Image Signature: Automated Signing and Deployment Control
+## Chapter 1. Enforcing Image Signature: Automated Signing and Deployment Control {#chapter-1-enforcing-image-signature-automated-signing-and-deployment-control}
 
 In ACP (Alauda Container Platform), you can use Tekton Chains to automatically sign the Tekton Pipeline built image, and use Kyverno to allow only signed images to be deployed.
 
@@ -587,7 +589,7 @@ Please check if the prerequisites are completed, especially about this section:
 - [ServiceAccount Configuration](#serviceaccount-configuration)
 - [Get the signing public key](#get-the-signing-public-key)
 
-### Step 2: Create a pipeline to generate the image
+### Step 2: Create a pipeline to generate the image {#step-2-create-a-pipeline-to-generate-the-image}
 
 This is a Pipeline resource, which is used to generate the image.
 
@@ -721,7 +723,7 @@ $ export NAMESPACE=<default>
 $ kubectl apply -n $NAMESPACE -f chains.demo-1.pipeline.yaml
 ```
 
-### Step 3: Run the pipeline to generate the image
+### Step 3: Run the pipeline to generate the image {#step-3-run-the-pipeline-to-generate-the-image}
 
 This is a PipelineRun resource, which is used to run the pipeline.
 
@@ -787,7 +789,7 @@ $ kubectl get pipelinerun -n $NAMESPACE -w
 chains-demo-1-<xxxxx>   True        Succeeded   2m         2m
 ```
 
-### Step 4: Wait for the PipelineRun to be signed
+### Step 4: Wait for the PipelineRun to be signed {#step-4-wait-for-the-pipelinerun-to-be-signed}
 
 Wait for the PipelineRun has `chains.tekton.dev/signed: "true"` annotation.
 
@@ -802,7 +804,7 @@ $ kubectl get pipelinerun -n $NAMESPACE $PIPELINERUN_NAME -o yaml | grep "chains
 
 Once the PipelineRun has `chains.tekton.dev/signed: "true"` annotation, means the image is signed.
 
-### Step 5: Get the image from the PipelineRun
+### Step 5: Get the image from the PipelineRun {#step-5-get-the-image-from-the-pipelinerun}
 
 ```shell
 # Get the image URI
@@ -862,7 +864,7 @@ error during command execution: no signatures found
 
 ### Step 7: Verify the signature with Kyverno
 
-#### Step 7.1: Create a Kyverno policy to allow only signed images to be deployed
+#### Step 7.1: Create a Kyverno policy to allow only signed images to be deployed {#step-71-create-a-kyverno-policy-to-allow-only-signed-images-to-be-deployed}
 
 > This step requires cluster administrator privileges.
 
@@ -1069,7 +1071,7 @@ $ kubectl patch tektonconfigs.operator.tekton.dev config --type=merge -p='{
 To regenerate and obtain the image, follow these steps:
 
 - [Chapter 1: Run the pipeline to generate the image](#step-3-run-the-pipeline-to-generate-the-image)
-- [Chapter 1: Wait for the pipeline to be signed](#step-4-wait-for-the-pipeline-to-be-signed)
+- [Chapter 1: Wait for the pipeline to be signed](#step-4-wait-for-the-pipelinerun-to-be-signed)
 - [Chapter 1: Get the image from the pipelinerun](#step-5-get-the-image-from-the-pipelinerun)
 
 ### Step 3: (Optional) Verify the builder info with cosign
@@ -1981,7 +1983,7 @@ Delete the policy.
 $ kubectl delete clusterpolicy verify-code-repository-material
 ```
 
-## Chapter 4. Preventing Deployment of Images with Critical Security Vulnerabilities
+## Chapter 4. Preventing Deployment of Images with Critical Security Vulnerabilities {#chapter-4-preventing-deployment-of-images-with-critical-security-vulnerabilities}
 
 In ACP (Alauda Container Platform), you can use Tekton Pipeline to build and scan the image for vulnerabilities.
 
@@ -2591,7 +2593,7 @@ Delete the policy.
 $ kubectl delete clusterpolicy reject-high-risk-image
 ```
 
-## Chapter 5. Base Image Allowlist Verification
+## Chapter 5. Base Image Allowlist Verification {#chapter-5-base-image-allowlist-verification}
 
 If we want to allow only specific types of base images to be deployed,
 we can save that information into the image attestation after obtaining it.
@@ -3310,7 +3312,7 @@ $ kubectl patch tektonconfigs.operator.tekton.dev config --type=merge -p='{
 To regenerate and obtain the image, follow these steps:
 
 - [Chapter 1: Run the pipeline to generate the image](#step-3-run-the-pipeline-to-generate-the-image)
-- [Chapter 1: Wait for the pipeline to be signed](#step-4-wait-for-the-pipeline-to-be-signed)
+- [Chapter 1: Wait for the pipeline to be signed](#step-4-wait-for-the-pipelinerun-to-be-signed)
 
 ### Step 4: Get the rekor log index
 

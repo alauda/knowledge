@@ -27,6 +27,9 @@
  *   (default scope)  files under docs/<target> that git reports as modified or
  *                    untracked -- i.e. the ones translate just (re)wrote
  *   --all            every file under docs/<target>
+ *   --only <file>    just this file (repeatable); overrides every other scope
+ *   --since <ref>    every pair this branch touches since <ref> -- the pull
+ *                    request scope, where nothing is modified in the worktree
  *   --docs <dir>     check a docs tree outside this repo (implies a full scan)
  *   --failures <f>   write the failing documents to <f>, one path per line, for
  *                    translate-verified.mjs to hand back to the translator
@@ -58,12 +61,19 @@ const ALL = hasFlag('--all')
 const SOURCE_LANG = flagValue('--source', 'en')
 const TARGET_LANG = flagValue('--target', 'zh')
 const DOCS_OVERRIDE = flagValue('--docs', '')
+const SINCE = flagValue('--since', '')
+// Repeatable: `--only a.md --only b.md`. Paths are as this script prints them,
+// relative to the repository root, so a caller can feed its own failure list
+// straight back in.
+const ONLY = argv.flatMap((arg, i) => (arg === '--only' && argv[i + 1] ? [argv[i + 1]] : []))
 
 const repoRoot = path.resolve(fileURLToPath(new URL('.', import.meta.url)), '..')
 // --docs points the checker at a docs tree outside the repo (used by the tests);
 // it also switches off git-based scoping, since that tree is not tracked here.
 const docsDir = DOCS_OVERRIDE ? path.resolve(DOCS_OVERRIDE) : path.join(repoRoot, 'docs')
-const scanAll = ALL || Boolean(DOCS_OVERRIDE)
+// --since brings its own scope, so it is not overridden by the full scan that
+// --docs otherwise implies; an explicit --all still wins.
+const scanAll = ALL || (Boolean(DOCS_OVERRIDE) && !SINCE)
 const sourceDir = path.join(docsDir, SOURCE_LANG)
 const targetDir = path.join(docsDir, TARGET_LANG)
 
@@ -104,6 +114,46 @@ const changedTargetFiles = () => {
   }
   return files
 }
+
+/**
+ * Target files of every pair this branch touches since <ref>.
+ *
+ * The default scope reads the working tree, which is right on main -- translate
+ * has just rewritten those files. On a pull request the tree is clean, so that
+ * scope selects nothing and the documents the branch actually changed go
+ * unchecked; the only thing running on a pull request was the check's own unit
+ * tests. A source-language edit counts too: it can leave an existing
+ * translation short of a section that was only just added.
+ */
+const changedSince = (ref) => {
+  const stdout = execFileSync(
+    'git',
+    // --diff-filter=d drops deletions: a file that is gone cannot be read, and
+    // a removed translation is translate's business, not this check's.
+    // Run inside the docs tree with --relative so the same code works whether
+    // that tree is this repository's or one --docs pointed at.
+    ['diff', '--name-only', '--relative', '--diff-filter=d', `${ref}...HEAD`, '--', '.'],
+    { cwd: docsDir, encoding: 'utf8' },
+  )
+  const targets = new Set()
+  const sources = new Set()
+  for (const line of stdout.split('\n')) {
+    if (!line.trim()) continue
+    const abs = path.resolve(docsDir, line.trim())
+    if (!DOC_EXTENSIONS.has(path.extname(abs))) continue
+    // Either language names the same pair; the scan below is driven by targets.
+    const fromSource = abs.startsWith(sourceDir + path.sep)
+    const source = fromSource ? abs : path.join(sourceDir, path.relative(targetDir, abs))
+    const target = fromSource ? path.join(targetDir, path.relative(sourceDir, abs)) : abs
+    sources.add(source)
+    if (fs.existsSync(target)) targets.add(target)
+  }
+  return { targets: [...targets], sources }
+}
+
+// Computed once: the missing-translation audit below needs the source side of
+// the same answer, and asking git twice would just be two chances to disagree.
+const branchScope = SINCE ? changedSince(SINCE) : null
 
 /**
  * Blank out everything a markdown link must not be harvested from, keeping the
@@ -286,6 +336,97 @@ const countFences = (content) => {
   return n
 }
 
+/** The document without its leading frontmatter block. */
+const withoutFrontmatter = (content) => {
+  const match = /^---\r?\n[\s\S]*?\r?\n---\s*(?:\r?\n|$)/.exec(content)
+  return match ? content.slice(match[0].length) : content
+}
+
+/**
+ * Where an unclosed fenced block opens, or -1 if every fence is paired.
+ *
+ * An unclosed fence is not cosmetic: from that line on, markdown reads prose as
+ * code, so every heading and table below it disappears from the rendered page
+ * while still sitting in the file. The counts further down would report that as
+ * lost content without saying why, which sends the reader looking for a missing
+ * section that is not missing.
+ *
+ * Both damaged documents in run 33160218909 carried one, in the mildest
+ * possible position -- a lone ``` on the last line, which is the closing half
+ * of the wrapper fence the prompt tells the model not to emit.
+ */
+const unclosedFenceLine = (content) => {
+  const lines = content.split('\n')
+  let fence = null
+  for (let i = 0; i < lines.length; i++) {
+    const m = /^\s*(`{3,}|~{3,})/.exec(lines[i])
+    if (fence) {
+      if (m && m[1][0] === fence.char && m[1].length >= fence.length && /^\s*[`~]+\s*$/.test(lines[i])) {
+        fence = null
+      }
+      continue
+    }
+    if (m) fence = { char: m[1][0], length: m[1].length, line: i }
+  }
+  return fence ? fence.line : -1
+}
+
+/**
+ * Remove a fence that opens at the end of the document with nothing after it.
+ *
+ * The model is told to return the document and no code fence wrapped around the
+ * whole answer. It sometimes emits the closing half of that wrapper anyway, as
+ * a lone ``` on the last line. A block that opens and then contains nothing at
+ * all is never something an author wrote, so deleting the line is safe in a way
+ * that no other structural repair is: it removes markup that has no content,
+ * and it cannot destroy text because there is no text after it.
+ *
+ * Returns the repaired content, or null when there is nothing of this shape to
+ * repair -- an unclosed fence with real content after it swallowed that
+ * content, and dropping the fence would silently promote a code block to prose.
+ */
+const stripOrphanTrailingFence = (content) => {
+  const open = unclosedFenceLine(content)
+  if (open === -1) return null
+  const lines = content.split('\n')
+  if (lines.slice(open + 1).some((line) => line.trim())) return null
+  lines.splice(open, 1)
+  return lines.join('\n')
+}
+
+/**
+ * Rows of every GFM table, counted the way the renderer sees them rather than
+ * by a leading pipe. Both of these are tables, and only the first one starts
+ * its lines with `|`:
+ *
+ *     | Priority | Locality |        Priority | Locality
+ *     |----------|----------|        -------- | --------
+ *     | 0        | region1  |        0        | region1
+ *
+ * Counting leading pipes scored the pipeless form as zero rows on the English
+ * side while the translation, which the model normalised to the piped form,
+ * scored the full count -- reporting invented rows for a page that had lost
+ * nothing. A table is anchored on its delimiter row instead: a line of dashes
+ * and pipes directly under a line containing a pipe. Everything contiguous
+ * after it that still carries a pipe is a row of that table.
+ */
+const DELIMITER_ROW = /^\s*\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)+\|?\s*$/
+const countTableRows = (lines) => {
+  let rows = 0
+  for (let i = 0; i < lines.length; i++) {
+    if (!DELIMITER_ROW.test(lines[i])) continue
+    if (i === 0 || !lines[i - 1].includes('|')) continue
+    rows += 2 // the header and the delimiter itself
+    let j = i + 1
+    while (j < lines.length && lines[j].includes('|') && lines[j].trim()) {
+      rows++
+      j++
+    }
+    i = j - 1
+  }
+  return rows
+}
+
 /**
  * Counts a translation must not change. Wording is the translator's business;
  * how many sections, code blocks and table rows a document has is not.
@@ -306,7 +447,7 @@ const documentStructure = (content) => {
       const m = /^(#{1,6}) /.exec(l)
       return m ? [m[1].length] : []
     }),
-    tableRows: lines.filter((l) => l.trimStart().startsWith('|')).length,
+    tableRows: countTableRows(lines),
     codeBlocks: countFences(content),
     // Volume and identifiers: what a translation that silently drops prose
     // cannot fake. Wording is the translator's business; how much text there is,
@@ -342,6 +483,17 @@ const structuralProblems = (source, target) => {
   const s = documentStructure(source)
   const t = documentStructure(target)
 
+  // First, because it explains most of what follows. Reported only when the
+  // English original is balanced: a source document that is itself unbalanced
+  // is a source bug, and blaming the translation for it would be wrong.
+  const openFence = unclosedFenceLine(target)
+  if (openFence !== -1 && unclosedFenceLine(source) === -1) {
+    problems.push(
+      `a code fence opens at line ${openFence + 1} and is never closed` +
+        ' -- everything after it is read as code, which is what the counts below are measuring',
+    )
+  }
+
   if (s.anchors.join('\u0000') !== t.anchors.join('\u0000')) {
     const missing = s.anchors.filter((a) => !t.anchors.includes(a))
     const extra = t.anchors.filter((a) => !s.anchors.includes(a))
@@ -360,6 +512,39 @@ const structuralProblems = (source, target) => {
   }
   if (s.tableRows !== t.tableRows) {
     problems.push(`table rows ${t.tableRows} vs ${s.tableRows} -- ${Math.abs(s.tableRows - t.tableRows)} ${t.tableRows < s.tableRows ? 'lost' : 'invented'}`)
+  }
+
+  // Gross volume, as an independent floor under everything above. A model that
+  // returns a fraction of the document cannot disguise this one, and it costs a
+  // subtraction -- where the counts below only notice the loss indirectly, once
+  // enough headings or tables have gone with it.
+  //
+  // Bodies, not files. Frontmatter is not translated -- only title and
+  // description are, and doom strips the i18n block from the target -- so a
+  // page that opts out of machine translation carries several lines in English
+  // that its faithful hand translation does not, and on a short page that alone
+  // is enough to look like missing content.
+  //
+  // Measured over the 403 en/zh body pairs produced by run 33160218909: the
+  // lowest healthy ratio is 0.849 and the document whose first chunk came back
+  // short sits at 0.575, so 0.7 separates them with room on both sides. Chinese
+  // and English happen to occupy comparable numbers of UTF-8 bytes, which is
+  // what makes the raw measure usable at all.
+  //
+  // Below 1KB the ratio stops meaning anything -- a sentence either way swings
+  // it -- and a page that small is never chunked, which is where this whole
+  // failure mode comes from. So short pages are left to the counts.
+  //
+  // It is a floor, not a substitute for the counts: the other document damaged
+  // in that run kept its volume and lost its structure, and only the counts saw
+  // it.
+  const sourceBytes = Buffer.byteLength(withoutFrontmatter(source), 'utf8')
+  const targetBytes = Buffer.byteLength(withoutFrontmatter(target), 'utf8')
+  if (sourceBytes >= 1024 && targetBytes / sourceBytes < 0.7) {
+    problems.push(
+      `the translation is ${Math.round((targetBytes / sourceBytes) * 100)}% of the original's size` +
+        ` (${targetBytes} bytes of body against ${sourceBytes}) -- no healthy page in this repository goes below 84%`,
+    )
   }
 
   // Dropped prose keeps every count above intact -- a swallowed paragraph takes
@@ -529,8 +714,13 @@ const disablesAutoTranslation = (content) => {
   for (const raw of match[1].split('\n')) {
     const line = raw.replace(/\r$/, '')
     // A key at column 0 ends the previous block and starts whatever is next.
-    if (/^\S/.test(line)) inI18n = /^i18n\s*:/.test(line)
-    else if (inI18n && /^\s+disableAutoTranslation\s*:\s*true\s*$/.test(line)) return true
+    if (/^\S/.test(line)) {
+      inI18n = /^i18n\s*:/.test(line)
+      // The same mapping written inline on one line. Rare, but valid YAML that
+      // doom honours, and reading it as "not opted out" would report a page as
+      // a missing translation when nothing is ever going to translate it.
+      if (inI18n && /\{[^}]*\bdisableAutoTranslation\s*:\s*true\b[^}]*\}/.test(line)) return true
+    } else if (inI18n && /^\s+disableAutoTranslation\s*:\s*true\s*$/.test(line)) return true
   }
   return false
 }
@@ -539,6 +729,7 @@ let pass = 0
 let fail = 0
 const failures = []
 let repaired = 0
+let fencesRemoved = 0
 
 /**
  * Every source document that should have been translated, and was not.
@@ -549,14 +740,63 @@ let repaired = 0
  * with the page missing from the site. That is the shape of the outage this
  * whole script exists for, so it is checked separately and always in full.
  */
+/**
+ * Documents big enough that doom will cut them into chunks before translating.
+ *
+ * This is the one property that predicts failure in this repository. doom
+ * splits anything over 60KB (`maxChunkSize` in @alauda/doom
+ * lib/cli/translate.js) and translates each piece in a separate request, with
+ * no check that a piece came back whole. In run 33160218909 all three chunked
+ * documents failed and ten of the eleven unchunked ones passed: the 990KB page
+ * lost 88 table rows and 22 code blocks, the 130KB page came back at 58% of its
+ * size with its first chunk mostly missing, and the 84KB page came back with a
+ * stray fence. Nothing about that is visible until translation has run for two
+ * hours on main.
+ *
+ * So it is said here instead, in a second, on a pull request. It is a warning
+ * rather than a failure only because three documents are already over the line;
+ * once they are split, `warnings` can start counting towards `fail`.
+ */
+const CHUNK_THRESHOLD = 60 * 1024
+let warnings = 0
+for (const sourceFile of ONLY.length ? [] : walk(sourceDir).sort()) {
+  const size = fs.statSync(sourceFile).size
+  if (size <= CHUNK_THRESHOLD) continue
+  // A page that opted out is not machine-translated at all, so how doom would
+  // have chunked it is not a problem anyone can act on.
+  if (disablesAutoTranslation(fs.readFileSync(sourceFile, 'utf8'))) continue
+  warnings++
+  console.log(
+    `WARN ${relative(sourceFile)} is ${Math.round(size / 1024)}KB -- over the ${CHUNK_THRESHOLD / 1024}KB` +
+      ' limit, so it is translated in chunks, which is where every failure in this repository has come from.' +
+      ' Split it into several pages.',
+  )
+}
+
 const missingTranslations = []
-for (const sourceFile of walk(sourceDir).sort()) {
+for (const sourceFile of ONLY.length ? [] : walk(sourceDir).sort()) {
   const targetFile = path.join(targetDir, path.relative(sourceDir, sourceFile))
   if (fs.existsSync(targetFile)) continue
   if (disablesAutoTranslation(fs.readFileSync(sourceFile, 'utf8'))) {
     console.log(`SKIP ${relative(sourceFile)} (i18n.disableAutoTranslation)`)
+    // An opted-out page is the one case where a missing translation is the
+    // branch's problem: nothing downstream will write it, so it has to arrive
+    // with the source. Only for a page this branch actually touched, though --
+    // failing a pull request over someone else's long-standing gap would make
+    // the check something to route around.
+    if (!branchScope || !branchScope.sources.has(sourceFile)) continue
+    fail++
+    failures.push(relative(targetFile))
+    missingTranslations.push(relative(targetFile))
+    console.log(
+      `FAIL ${relative(targetFile)} is missing and ${relative(sourceFile)} opts out of machine` +
+        ' translation -- nothing will produce it, so it has to be written by hand',
+    )
     continue
   }
+  // On a branch, a new English page has no translation yet and is not supposed
+  // to: translate writes it on main. Only the opted-out case above is fatal here.
+  if (SINCE) continue
   fail++
   // Named by its expected target path: that is what the retry globs are
   // computed from, and it is where the missing document belongs.
@@ -565,12 +805,42 @@ for (const sourceFile of walk(sourceDir).sort()) {
   console.log(`FAIL ${relative(targetFile)} was never produced from ${relative(sourceFile)} -- retranslate`)
 }
 
-const targetFiles = (scanAll ? walk(targetDir) : changedTargetFiles()).filter((file) =>
+const selectTargets = () => {
+  // Named files win over every other scope: the caller has already decided what
+  // it wants judged, and widening that would report failures it cannot act on.
+  if (ONLY.length) {
+    return ONLY.map((file) => {
+      const abs = path.resolve(repoRoot, file)
+      // A typo here would otherwise scan nothing and report success, which is
+      // the one answer a caller asking about specific files must never get.
+      if (!fs.existsSync(abs)) {
+        console.error(`--only ${file} does not exist`)
+        process.exit(2)
+      }
+      if (!abs.startsWith(targetDir + path.sep)) {
+        console.error(`--only ${file} is not under ${path.relative(repoRoot, targetDir)}`)
+        process.exit(2)
+      }
+      return abs
+    })
+  }
+  if (scanAll) return walk(targetDir)
+  if (branchScope) return branchScope.targets
+  return changedTargetFiles()
+}
+const targetFiles = selectTargets().filter((file) =>
   file.startsWith(targetDir + path.sep),
 )
 
 if (targetFiles.length === 0 && missingTranslations.length === 0) {
-  console.log(`no ${TARGET_LANG} documents to check (${scanAll ? 'full scan' : 'changed files only'})`)
+  const scopeName = ONLY.length
+    ? 'named files only'
+    : scanAll
+      ? 'full scan'
+      : SINCE
+        ? `changed since ${SINCE}`
+        : 'changed files only'
+  console.log(`no ${TARGET_LANG} documents to check (${scopeName})`)
   console.log('== result: 0 pass / 0 fail ==')
   process.exit(0)
 }
@@ -585,6 +855,21 @@ for (const file of targetFiles.sort()) {
 
   const sourceContent = fs.readFileSync(sourceFile, 'utf8')
   let content = fs.readFileSync(file, 'utf8')
+
+  // Before judging the shape, remove the one piece of broken markup that can be
+  // removed without guessing: a fence that opens at the very end and contains
+  // nothing. Left in place it makes the whole document unparseable and the
+  // structural check below rejects it, which is a real failure caused by a
+  // stray line rather than by a missing section.
+  if (FIX) {
+    const stripped = stripOrphanTrailingFence(content)
+    if (stripped !== null) {
+      content = stripped
+      fs.writeFileSync(file, content)
+      fencesRemoved++
+      console.log(`FIX  ${relative(file)} removed an unclosed code fence with no content after it`)
+    }
+  }
 
   // Shape before wording. If whole sections are missing, no amount of link
   // repair makes the document publishable, and repairing it anyway would only
@@ -668,6 +953,12 @@ for (const file of targetFiles.sort()) {
 
 if (FIX && repaired > 0) {
   console.log(`repaired ${repaired} reference(s) against ${SOURCE_LANG}`)
+}
+if (FIX && fencesRemoved > 0) {
+  console.log(`removed ${fencesRemoved} unclosed code fence(s)`)
+}
+if (warnings > 0) {
+  console.log(`${warnings} document(s) will be translated in chunks -- see the warnings above`)
 }
 console.log(`== result: ${pass} pass / ${fail} fail ==`)
 
