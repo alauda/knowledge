@@ -179,16 +179,20 @@ const isInternalRouteLink = (target) =>
   !target.startsWith('tel:') &&
   !/^\s*data:/i.test(target)
 
-// [text](target "optional title") -- the leading `!` marks an image, which we skip:
-// normalizeImgSrc legitimately rewrites image paths between languages.
+// [text](target "optional title"), with a leading `!` marking an image.
 const LINK_RE = /(!?)\[((?:[^[\]\\]|\\.|\[[^[\]]*\])*)\]\(\s*([^()\s]*)((?:\s+"[^"]*")?)\s*\)/g
 
-/** Internal route links of a document, in order, with offsets into the raw text. */
-const extractLinks = (content) => {
+/**
+ * Internal links and images of a document, in order, with offsets into the raw
+ * text. They are kept apart because only one of them has a stable target:
+ * normalizeImgSrc rewrites image paths between languages on purpose, so an
+ * image src that differs is expected, while a link target that differs is not.
+ */
+const extractRefs = (content) => {
   const masked = maskNonProse(content)
   const links = []
+  const images = []
   for (const match of masked.matchAll(LINK_RE)) {
-    if (match[1] === '!') continue
     const target = match[3]
     // Only internal route links are compared -- exactly the set rspress
     // resolves against the route table and fails the build over. In-page
@@ -202,18 +206,20 @@ const extractLinks = (content) => {
     const afterOpen = match[1].length + 1 + match[2].length + 2
     const padding = /^\s*/.exec(match[0].slice(afterOpen))[0].length
     const targetStart = match.index + afterOpen + padding
-    links.push({
+    const ref = {
       target,
       text: match[2],
       start: targetStart,
       end: targetStart + target.length,
-      // The whole `[text](target)` span, needed to demote a hallucinated link.
+      // The whole `[text](target)` span, needed to demote a hallucinated ref.
       linkStart: match.index,
       linkEnd: match.index + match[0].length,
       line: content.slice(0, match.index).split('\n').length,
-    })
+    }
+    if (match[1] === '!') images.push(ref)
+    else links.push(ref)
   }
-  return links
+  return { links, images }
 }
 
 /**
@@ -246,20 +252,71 @@ const lcsPairs = (a, b) => {
 }
 
 /**
- * Decide what to do with every translated link, English being the truth.
- *
- * Anchoring on the links both sides agree on leaves gaps, and each gap shape
- * says something different about what the model did:
- *   same count      -> it rewrote targets in place; restore them positionally.
- *   nothing in en    -> it invented links that have no original; strip the link
- *                       syntax and keep the text (a target we cannot source
- *                       from English is a target we must not guess at).
- *   fewer in zh      -> it dropped links; there is no sound place to put them
- *                       back, so the file is left for a human.
- * A mixed gap (some English links, but more links on the translated side) is
- * ambiguous in the same way, and is refused too.
+ * Does an image src point at a file that actually exists? This is the same
+ * question rspack asks, and the reason a bogus src fails the build with
+ * "Module not found". Absolute srcs are served out of docs/public.
  */
-const planEdits = (sourceLinks, targetLinks) => {
+const imageResolves = (src, fileDir) => {
+  const clean = src.split('#')[0].split('?')[0]
+  if (!clean) return false
+  const candidate = clean.startsWith('/')
+    ? path.join(docsDir, 'public', clean.slice(1))
+    : path.resolve(fileDir, clean)
+  return fs.existsSync(candidate)
+}
+
+/**
+ * Images cannot be aligned against English the way links are: normalizeImgSrc
+ * rewrites their paths on purpose, so the two sides legitimately disagree and
+ * there is no stable value to anchor on. Judge them on their own terms instead
+ * -- a src that resolves to a file is fine however much it differs from the
+ * English one, and a src that resolves to nothing is the model inventing markup
+ * (it copied its own prompt's `![alt](src)` example into the prose once), which
+ * is exactly what breaks the build. Demote those to their alt text.
+ */
+const planImageEdits = (targetImages, fileDir) => {
+  const edits = []
+  const unresolved = []
+
+  for (const image of targetImages) {
+    if (imageResolves(image.target, fileDir)) continue
+    edits.push({
+      kind: 'demote',
+      label: 'image',
+      start: image.linkStart,
+      end: image.linkEnd,
+      replacement: image.text,
+      line: image.line,
+      from: image.target,
+      to: null,
+    })
+  }
+
+  // Same reasoning as the link cap: a flood means the check is wrong, not the
+  // translation, and stripping markup wholesale would be worse than failing.
+  const cap = Math.max(3, Math.floor(targetImages.length * 0.2))
+  if (edits.length > cap) {
+    unresolved.push(`${edits.length} unresolvable image(s) exceeds the cap of ${cap} -- refusing to strip that many`)
+  }
+  return { edits, unresolved }
+}
+
+/**
+ * Decide what to do with every translated reference, English being the truth.
+ *
+ * Anchoring on the references both sides agree on leaves gaps, and each gap
+ * shape says something different about what the model did:
+ *   same count      -> it rewrote targets in place; restore them positionally,
+ *                      but only where restoring is meaningful (see `restore`).
+ *   nothing in en    -> it invented references that have no original; strip the
+ *                       markup and keep the text (a target we cannot source
+ *                       from English is a target we must not guess at).
+ *   fewer in zh      -> it dropped references; there is no sound place to put
+ *                       them back, so the file is left for a human.
+ * A mixed gap (some English refs, but more on the translated side) is ambiguous
+ * in the same way, and is refused too.
+ */
+const planEdits = (sourceLinks, targetLinks, { label }) => {
   const edits = []
   const unresolved = []
   const anchors = [...lcsPairs(sourceLinks, targetLinks), [sourceLinks.length, targetLinks.length]]
@@ -274,6 +331,7 @@ const planEdits = (sourceLinks, targetLinks) => {
       for (const [k, link] of tgtGap.entries()) {
         edits.push({
           kind: 'restore',
+          label,
           start: link.start,
           end: link.end,
           replacement: srcGap[k].target,
@@ -286,6 +344,7 @@ const planEdits = (sourceLinks, targetLinks) => {
       for (const link of tgtGap) {
         edits.push({
           kind: 'demote',
+          label,
           start: link.linkStart,
           end: link.linkEnd,
           replacement: link.text,
@@ -296,7 +355,7 @@ const planEdits = (sourceLinks, targetLinks) => {
       }
     } else {
       unresolved.push(
-        `${tgtGap.length} translated link(s) against ${srcGap.length} English one(s)` +
+        `${tgtGap.length} translated ${label}(s) against ${srcGap.length} English one(s)` +
           ` around line ${(tgtGap[0] ?? srcGap[0]).line}` +
           ` [${tgtGap.map((l) => l.target).join(', ') || '-'}] vs [${srcGap.map((l) => l.target).join(', ')}]`,
       )
@@ -312,7 +371,7 @@ const planEdits = (sourceLinks, targetLinks) => {
   const demotionCap = Math.max(3, Math.floor(sourceLinks.length * 0.2))
   if (demotions.length > demotionCap) {
     unresolved.push(
-      `${demotions.length} invented link(s) exceeds the cap of ${demotionCap} -- refusing to strip that many`,
+      `${demotions.length} invented ${label}(s) exceeds the cap of ${demotionCap} -- refusing to strip that many`,
     )
   }
 
@@ -343,24 +402,30 @@ for (const file of targetFiles.sort()) {
     continue
   }
 
-  const sourceLinks = extractLinks(fs.readFileSync(sourceFile, 'utf8'))
+  const source = extractRefs(fs.readFileSync(sourceFile, 'utf8'))
   let content = fs.readFileSync(file, 'utf8')
-  let targetLinks = extractLinks(content)
+  let target = extractRefs(content)
 
-  const describe = (edit) =>
-    edit.kind === 'restore'
-      ? `${relative(file)}:${edit.line} "${edit.from}" -> "${edit.to}"`
-      : `${relative(file)}:${edit.line} "${edit.from}" has no English original -- link syntax stripped, text kept`
+  const describe = (edit) => {
+    const where = `${relative(file)}:${edit.line}`
+    if (edit.kind === 'restore') return `${where} "${edit.from}" -> "${edit.to}"`
+    return edit.label === 'image'
+      ? `${where} "${edit.from}" resolves to no file -- image syntax stripped, alt text kept`
+      : `${where} "${edit.from}" has no English original -- link syntax stripped, text kept`
+  }
 
-  const { edits, unresolved } = planEdits(sourceLinks, targetLinks)
+  const linkPlan = planEdits(source.links, target.links, { label: 'link' })
+  const imagePlan = planImageEdits(target.images, path.dirname(file))
+  const edits = [...linkPlan.edits, ...imagePlan.edits]
+  const unresolved = [...linkPlan.unresolved, ...imagePlan.unresolved]
 
   // An unresolved gap makes the whole alignment suspect, so nothing is written:
   // a partially repaired file is harder to reason about than an untouched one.
   if (unresolved.length > 0) {
     fail++
     console.log(
-      `FAIL ${relative(file)} ${targetLinks.length} internal link(s) against` +
-        ` ${sourceLinks.length} in ${relative(sourceFile)} -- repair by hand:`,
+      `FAIL ${relative(file)} ${target.links.length} link(s) / ${target.images.length} image(s) against` +
+        ` ${source.links.length} / ${source.images.length} in ${relative(sourceFile)} -- repair by hand:`,
     )
     for (const problem of unresolved) console.log(`  ${problem}`)
     continue
@@ -368,13 +433,13 @@ for (const file of targetFiles.sort()) {
 
   if (edits.length === 0) {
     pass++
-    console.log(`PASS ${relative(file)} (${sourceLinks.length} links)`)
+    console.log(`PASS ${relative(file)} (${source.links.length} links, ${source.images.length} images)`)
     continue
   }
 
   if (!FIX) {
     fail++
-    console.log(`FAIL ${relative(file)} ${edits.length} drifted internal link(s):`)
+    console.log(`FAIL ${relative(file)} ${edits.length} drifted reference(s):`)
     for (const edit of edits) console.log(`  ${describe(edit)}`)
     continue
   }
@@ -386,9 +451,11 @@ for (const file of targetFiles.sort()) {
   fs.writeFileSync(file, content)
   repaired += edits.length
 
-  const after = extractLinks(content)
+  const after = extractRefs(content)
   const converged =
-    after.length === sourceLinks.length && sourceLinks.every((link, i) => link.target === after[i].target)
+    after.links.length === source.links.length &&
+    source.links.every((link, i) => link.target === after.links[i].target) &&
+    after.images.every((image) => imageResolves(image.target, path.dirname(file)))
   if (!converged) {
     fail++
     console.log(`FAIL ${relative(file)} repair did not converge, inspect by hand`)
@@ -396,12 +463,12 @@ for (const file of targetFiles.sort()) {
   }
 
   pass++
-  console.log(`PASS ${relative(file)} repaired ${edits.length} internal link(s):`)
+  console.log(`PASS ${relative(file)} repaired ${edits.length} reference(s):`)
   for (const edit of edits) console.log(`  ${describe(edit)}`)
 }
 
 if (FIX && repaired > 0) {
-  console.log(`restored ${repaired} link target(s) from ${SOURCE_LANG}`)
+  console.log(`repaired ${repaired} reference(s) against ${SOURCE_LANG}`)
 }
 console.log(`== result: ${pass} pass / ${fail} fail ==`)
 process.exit(fail > 0 ? 1 : 0)
