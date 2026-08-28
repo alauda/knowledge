@@ -18,7 +18,6 @@ This solution applies when the host FRR service and MetalLB Speakers run on the 
 ## Environment
 
 - Alauda Container Platform 4.2.x, 4.3.x, or 4.4.x.
-- A bare-metal, non-OpenShift cluster.
 - The MetalLB plugin is installed and configured for BGP advertisement.
 - A customer-managed FRR service runs on one or more nodes as a systemd unit.
 
