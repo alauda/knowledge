@@ -7,37 +7,31 @@ ProductsVersion:
   - '4.2.x,4.3.x,4.4.x'
 ---
 
-# Resolve Host FRR and MetalLB FRR Conflicts by Using the Native BGP Backend
+# Disable MetalLB FRR to Avoid Conflicts with Host FRR
 
 ## Issue
 
-On a bare-metal Alauda Container Platform cluster, a customer-managed FRR service runs as a systemd unit on the nodes and has established BGP sessions. After the MetalLB plugin is installed, the MetalLB Speaker Pods start their own FRR processes and the host's main routing table can lose BGP routes. The two FRR instances can also interfere with each other's BGP sessions.
+In an Alauda Container Platform cluster, a customer-managed FRR service runs on the nodes. After MetalLB is installed, each Speaker Pod starts the MetalLB-managed FRR container by default. Both FRR instances share the node network namespace and may conflict with each other.
 
-This solution applies when the host FRR service and MetalLB Speakers run on the same nodes.
+When MetalLB does not currently need to use BGP mode, you can first disable the MetalLB-managed FRR containers.
 
 ## Environment
 
 - Alauda Container Platform 4.2.x, 4.3.x, or 4.4.x.
-- The MetalLB plugin is installed and configured for BGP advertisement.
+- The MetalLB plugin is installed.
 - A customer-managed FRR service runs on one or more nodes as a systemd unit.
 
 ## Root Cause
 
-MetalLB Speakers use `hostNetwork: true`. With the `frr` BGP backend, each Speaker Pod also runs the MetalLB-managed `frr`, `reloader`, and `frr-metrics` containers. These processes share the node network namespace with the systemd-managed FRR service, so both FRR instances can modify the host routing table and manage overlapping BGP state.
-
-MetalLB uses the `frr` backend when `spec.bgpBackend` is not set. The MetalLB `MetalLB` custom resource supports the `native` backend, which establishes BGP sessions without deploying the MetalLB FRR containers.
+MetalLB Speakers use `hostNetwork: true`. When `spec.bgpBackend` is not set, MetalLB uses the default `frr` backend and runs the `frr`, `reloader`, and `frr-metrics` containers in each Speaker Pod. The FRR processes in these containers share the node network namespace with the host FRR service and may modify the same routing and FRR state.
 
 ## Resolution
 
-Switch MetalLB to the `native` BGP backend to disable the MetalLB-managed FRR containers.
+Use a `ResourcePatch` to set the MetalLB backend to `native`. The MetalLB Operator then regenerates the Speaker DaemonSet without the MetalLB-managed FRR containers. This solution only disables the MetalLB-managed FRR. If MetalLB also needs BGP advertisement, evaluate the appropriate backend separately first.
 
-:::warning
-The `kubectl patch` change is not guaranteed to persist. A MetalLB plugin upgrade, reinstall, or resource recreation can remove the change and restore the default `frr` backend. Recheck `spec.bgpBackend` after an upgrade and repeat Step 2 if it is no longer `native`.
-:::
+### 1. Confirm the Current MetalLB Configuration
 
-### 1. Confirm the current MetalLB backend
-
-The plugin creates a `MetalLB` resource named `metallb` in the `metallb-system` namespace by default. Run the following commands before changing it:
+The `MetalLB` resource is created in the `metallb-system` namespace with the name `metallb` by default. Run the following commands to confirm the resource name and current Speaker containers:
 
 ```bash
 kubectl -n metallb-system get metallb
@@ -47,29 +41,45 @@ kubectl -n metallb-system get daemonset speaker \
   -o jsonpath='{range .spec.template.spec.containers[*]}{.name}{"\n"}{end}'
 ```
 
-If the `bgpBackend` output is empty, the Operator uses `frr` by default. If the container list includes `frr`, the MetalLB FRR process is running in the Speaker Pod. Replace `metallb` in the commands if the resource has a different name.
+If `bgpBackend` is empty, the default `frr` backend is in use. If the container list includes `frr`, the MetalLB-managed FRR is running.
 
-### 2. Switch MetalLB to the native BGP backend
+### 2. Create a ResourcePatch to Disable MetalLB FRR
 
-The console does not expose the `spec.bgpBackend` field. A platform administrator must set it with `kubectl`:
+Create the following `ResourcePatch`. Set `release` to the release identifier of the MetalLB plugin. If the MetalLB resource has a different name, update `target.name` accordingly.
 
-```bash
-kubectl -n metallb-system patch metallb metallb \
-  --type=merge \
-  -p '{"spec":{"bgpBackend":"native"}}'
+```yaml
+apiVersion: operator.alauda.io/v1alpha1
+kind: ResourcePatch
+metadata:
+  name: metallb-disable-frr
+spec:
+  release: metallb-system/metallb
+  target:
+    apiVersion: metallb.io/v1beta1
+    kind: MetalLB
+    name: metallb
+    namespace: metallb-system
+  jsonPatch:
+    - op: add
+      path: /spec/bgpBackend
+      value: native
 ```
 
-The command should report `metallb.metallb.io/metallb patched`. The Operator then rolls the Speaker DaemonSet and removes the MetalLB-managed FRR containers. It does not stop or reconfigure the host FRR systemd service.
+```bash
+kubectl apply -f metallb-disable-frr.yaml
+```
 
-### 3. Verify the result
+After the `ResourcePatch` is applied, the Operator rolls the Speaker DaemonSet. It does not stop or reconfigure the host FRR systemd service.
 
-Wait for the Speaker rollout to complete:
+### 3. Verify That FRR Is Disabled
+
+Wait for the Speaker update to complete:
 
 ```bash
 kubectl -n metallb-system rollout status daemonset/speaker
 ```
 
-Confirm that the backend is `native` and the Speaker template no longer contains the MetalLB FRR containers:
+Confirm that MetalLB uses the `native` backend and that the Speaker has only its main container:
 
 ```bash
 kubectl -n metallb-system get metallb metallb \
@@ -79,17 +89,8 @@ kubectl -n metallb-system get daemonset speaker \
 kubectl -n metallb-system get pods -l app=metallb,component=speaker -o wide
 ```
 
-The first command must return `native`. The container list must not include `frr`, `reloader`, `frr-metrics`, or `metrics-auth-proxy-frr`. All Speaker Pods should be `Running` and `Ready`.
+The first command should return `native`. The container list should not include `frr`, `reloader`, or `frr-metrics`. All Speaker Pods should be `Running` and `Ready`.
 
-## Rollback
-
-If the native backend cannot meet the BGP requirements, restore the FRR backend:
-
-```bash
-kubectl -n metallb-system patch metallb metallb \
-  --type=merge \
-  -p '{"spec":{"bgpBackend":"frr"}}'
-kubectl -n metallb-system rollout status daemonset/speaker
-```
-
-After the rollout, confirm that the required FRR containers are present and validate the BGP sessions. Do not roll back while the original host FRR conflict is unresolved.
+:::warning
+Configuration changed through a `ResourcePatch` may be lost after a platform upgrade. Recheck `spec.bgpBackend` and the Speaker container list after an upgrade. If the backend has returned to `frr`, apply this solution again.
+:::
