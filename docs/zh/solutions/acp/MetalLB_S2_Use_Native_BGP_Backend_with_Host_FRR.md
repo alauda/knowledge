@@ -7,7 +7,7 @@ ProductsVersion:
   - '4.2.x,4.3.x,4.4.x'
 ---
 
-# 使用 Native BGP 后端解决主机 FRR 与 MetalLB FRR 冲突
+# 关闭 MetalLB FRR 以避免与主机 FRR 冲突
 
 ## 问题
 
@@ -29,10 +29,10 @@ MetalLB Speaker 使用 `hostNetwork: true`。当 BGP 后端为 `frr` 时，每�
 
 ## 解决方案
 
-将 MetalLB 切换到 `native` BGP 后端，以停用 MetalLB 管理的 FRR 容器。
+先关闭 MetalLB 自带的 FRR。只有 MetalLB 也需要使用 BGP 模式时，才考虑将 backend 切换为系统 FRR。
 
 :::warning
-通过 `kubectl patch` 修改的配置不保证在升级后保留。MetalLB 插件升级、重装或资源重建可能删除此修改并恢复默认的 `frr` 后端。升级后请重新检查 `spec.bgpBackend`；如果不再是 `native`，请重新执行步骤 2。
+通过 `kubectl patch` 修改的配置可能在平台升级后丢失。升级后请重新检查 `spec.bgpBackend`；如果不再是 `native`，请重新执行步骤 2。
 :::
 
 ### 1. 确认当前 MetalLB 后端
@@ -49,9 +49,9 @@ kubectl -n metallb-system get daemonset speaker \
 
 如果 `bgpBackend` 输出为空，表示 Operator 默认使用 `frr`。如果容器列表中包含 `frr`，表示 MetalLB FRR 进程正在 Speaker Pod 中运行。如果资源名称不同，请在后续命令中将 `metallb` 替换为实际资源名。
 
-### 2. 将 MetalLB 切换到 Native BGP 后端
+### 2. 关闭 MetalLB FRR
 
-控制台不提供 `spec.bgpBackend` 字段。平台管理员必须使用 `kubectl` 设置该字段：
+当 MetalLB 不需要使用 BGP 模式时，平台管理员可以将 backend 设置为 `native`，以停用 MetalLB 管理的 FRR 容器：
 
 ```bash
 kubectl -n metallb-system patch metallb metallb \
@@ -60,6 +60,8 @@ kubectl -n metallb-system patch metallb metallb \
 ```
 
 命令应返回 `metallb.metallb.io/metallb patched`。随后 Operator 会滚动更新 Speaker DaemonSet，并移除由 MetalLB 管理的 FRR 容器。该操作不会停止或重新配置主机上的 FRR systemd 服务。
+
+如果 MetalLB 也需要使用 BGP 模式，请不要只执行本步骤；应根据实际网络方案，进一步评估将 backend 切换为系统 FRR。
 
 ### 3. 验证结果
 
@@ -80,16 +82,3 @@ kubectl -n metallb-system get pods -l app=metallb,component=speaker -o wide
 ```
 
 第一条命令必须返回 `native`。容器列表中不得包含 `frr`、`reloader`、`frr-metrics` 或 `metrics-auth-proxy-frr`。所有 Speaker Pod 都应处于 `Running` 和 `Ready` 状态。
-
-## 回滚
-
-如果 Native 后端无法满足 BGP 要求，请恢复 FRR 后端：
-
-```bash
-kubectl -n metallb-system patch metallb metallb \
-  --type=merge \
-  -p '{"spec":{"bgpBackend":"frr"}}'
-kubectl -n metallb-system rollout status daemonset/speaker
-```
-
-滚动更新完成后，确认所需的 FRR 容器已恢复，并验证 BGP 会话。原有主机 FRR 冲突未解决时，不要回滚到 `frr`。
