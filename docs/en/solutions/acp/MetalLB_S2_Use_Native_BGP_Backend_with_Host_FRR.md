@@ -13,7 +13,7 @@ ProductsVersion:
 
 On a bare-metal Alauda Container Platform cluster, a customer-managed FRR service runs as a systemd unit on the nodes and has established BGP sessions. After the MetalLB plugin is installed, the MetalLB Speaker Pods start their own FRR processes and the host's main routing table can lose BGP routes. The two FRR instances can also interfere with each other's BGP sessions.
 
-This solution applies when the host FRR service and MetalLB Speakers run on the same nodes. It does not apply to OpenShift clusters.
+This solution applies when the host FRR service and MetalLB Speakers run on the same nodes.
 
 ## Environment
 
@@ -25,7 +25,7 @@ This solution applies when the host FRR service and MetalLB Speakers run on the 
 
 MetalLB Speakers use `hostNetwork: true`. With the `frr` BGP backend, each Speaker Pod also runs the MetalLB-managed `frr`, `reloader`, and `frr-metrics` containers. These processes share the node network namespace with the systemd-managed FRR service, so both FRR instances can modify the host routing table and manage overlapping BGP state.
 
-For non-OpenShift clusters, MetalLB uses the `frr` backend when `spec.bgpBackend` is not set. The MetalLB `MetalLB` custom resource supports the `native` backend, which establishes BGP sessions without deploying the MetalLB FRR containers.
+MetalLB uses the `frr` backend when `spec.bgpBackend` is not set. The MetalLB `MetalLB` custom resource supports the `native` backend, which establishes BGP sessions without deploying the MetalLB FRR containers.
 
 ## Resolution
 
@@ -48,7 +48,7 @@ kubectl -n metallb-system get daemonset speaker \
   -o jsonpath='{range .spec.template.spec.containers[*]}{.name}{"\n"}{end}'
 ```
 
-If the `bgpBackend` output is empty on a non-OpenShift cluster, the Operator uses `frr` by default. If the container list includes `frr`, the MetalLB FRR process is running in the Speaker Pod. Replace `metallb` in the commands if the resource has a different name.
+If the `bgpBackend` output is empty, the Operator uses `frr` by default. If the container list includes `frr`, the MetalLB FRR process is running in the Speaker Pod. Replace `metallb` in the commands if the resource has a different name.
 
 ### 2. Switch MetalLB to the native BGP backend
 

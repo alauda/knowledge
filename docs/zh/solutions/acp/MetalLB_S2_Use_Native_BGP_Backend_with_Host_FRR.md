@@ -13,7 +13,7 @@ ProductsVersion:
 
 在裸金属 Alauda Container Platform 集群中，客户自行维护的 FRR 服务以 systemd 单元的方式运行在节点上，并且已经建立 BGP 会话。安装 MetalLB 插件后，MetalLB Speaker Pod 会启动自身的 FRR 进程，可能导致主机主路由表中的 BGP 路由丢失。两套 FRR 实例还可能相互干扰 BGP 会话。
 
-当主机 FRR 服务与 MetalLB Speaker 运行在相同节点上时，适用本解决方案。本方案不适用于 OpenShift 集群。
+当主机 FRR 服务与 MetalLB Speaker 运行在相同节点上时，适用本解决方案。
 
 ## 环境
 
@@ -25,7 +25,7 @@ ProductsVersion:
 
 MetalLB Speaker 使用 `hostNetwork: true`。当 BGP 后端为 `frr` 时，每个 Speaker Pod 还会运行由 MetalLB 管理的 `frr`、`reloader` 和 `frr-metrics` 容器。这些进程与 systemd 管理的 FRR 服务共享节点网络命名空间，因此两套 FRR 实例都可能修改主机路由表并管理相互重叠的 BGP 状态。
 
-在非 OpenShift 集群中，如果未设置 `spec.bgpBackend`，MetalLB 默认使用 `frr` 后端。MetalLB 自定义资源支持 `native` 后端；该后端建立 BGP 会话时不会部署 MetalLB FRR 容器。
+如果未设置 `spec.bgpBackend`，MetalLB 默认使用 `frr` 后端。MetalLB 自定义资源支持 `native` 后端；该后端建立 BGP 会话时不会部署 MetalLB FRR 容器。
 
 ## 解决方案
 
@@ -48,7 +48,7 @@ kubectl -n metallb-system get daemonset speaker \
   -o jsonpath='{range .spec.template.spec.containers[*]}{.name}{"\n"}{end}'
 ```
 
-在非 OpenShift 集群中，如果 `bgpBackend` 输出为空，表示 Operator 默认使用 `frr`。如果容器列表中包含 `frr`，表示 MetalLB FRR 进程正在 Speaker Pod 中运行。如果资源名称不同，请在后续命令中将 `metallb` 替换为实际资源名。
+如果 `bgpBackend` 输出为空，表示 Operator 默认使用 `frr`。如果容器列表中包含 `frr`，表示 MetalLB FRR 进程正在 Speaker Pod 中运行。如果资源名称不同，请在后续命令中将 `metallb` 替换为实际资源名。
 
 ### 2. 将 MetalLB 切换到 Native BGP 后端
 
