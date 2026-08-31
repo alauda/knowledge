@@ -6,6 +6,8 @@ products:
 ProductsVersion:
   - '4.x'
 id: KB260800061
+i18n:
+  disableAutoTranslation: true
 ---
 
 # Recovering ACP Kubernetes Certificates with Kubernetes Certificates Rotator
