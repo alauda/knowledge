@@ -32,7 +32,6 @@ MetalLB uses the `frr` backend when `spec.bgpBackend` is not set. The MetalLB `M
 Switch MetalLB to the `native` BGP backend to disable the MetalLB-managed FRR containers.
 
 :::warning
-Updating the `MetalLB` resource rolls the Speaker DaemonSet and can briefly interrupt MetalLB BGP advertisements. Perform the change during a maintenance window and confirm that the Speaker rollout completes successfully.
 The `kubectl patch` change is not guaranteed to persist. A MetalLB plugin upgrade, reinstall, or resource recreation can remove the change and restore the default `frr` backend. Recheck `spec.bgpBackend` after an upgrade and repeat Step 2 if it is no longer `native`.
 :::
 
