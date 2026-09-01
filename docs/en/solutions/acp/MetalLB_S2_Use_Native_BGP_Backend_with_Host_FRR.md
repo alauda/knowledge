@@ -5,6 +5,7 @@ products:
   - Alauda Container Platform
 ProductsVersion:
   - '4.2.x,4.3.x,4.4.x'
+id: KB260900002
 ---
 
 # Disable MetalLB FRR to Avoid Conflicts with Host FRR
