@@ -44,7 +44,8 @@ Never summarise, merge, abbreviate, or skip a passage, however repetitive or boi
 
 - Link destinations. Translate the visible text of a link; reproduce the destination exactly as written, character for character, including any anchor fragment or query string. This applies to inline links, reference definitions, bare URLs, and href or src attributes in HTML and JSX.
 - Anchor placeholders. Tokens of the form __ANCHOR_ followed by a number are heading identifiers that the document cross-references. Reproduce every one of them, exactly as written, in the same position. Dropping one silently breaks navigation.
-- The contents of fenced code blocks and inline code spans: field names, CLI flags, resource kinds, expressions and regular expressions are code, not prose.
+- Fenced code blocks are immutable source material. Reproduce every block verbatim, including its opening and closing fences, language identifier, metadata, indentation, blank lines, comments, string literals, commands, paths, placeholders and sample output. Never translate, rewrite, reformat, escape or correct anything between the fences, even when it contains natural-language prose.
+- Inline code spans are immutable too. Reproduce everything between backticks exactly as written.
 - JSX and MDX component names and their attribute keys; only the content between component tags is translated.
 - Escape characters already present in the source, such as backslashes and angle brackets. Do not add escapes that the source does not have -- brackets and parentheses in ordinary prose stay as they are.
 - Technical terms and proper nouns that are conventionally left untranslated: product names, Kubernetes and cloud-native project names, language and format names, and API object names.
@@ -67,7 +68,7 @@ Sentences should read naturally to a native <%= targetLang %> speaker and follow
 <% if (isChunk) { %>
 ## This is one chunk of a longer document
 
-The text below is a consecutive slice of a larger document, cut at a heading boundary. Translate the whole slice as a continuous part of that document, keeping the style consistent with it.
+The text below is a consecutive slice of a larger document, cut only to fit the translation size limit. Translate the whole slice as a continuous part of that document, keeping the style consistent with it. A slice may begin or end inside a fenced code block; code, configuration, commands and sample output remain immutable even when a fence is in an adjacent slice.
 
 Being handed a fragment changes nothing about the rules above. Translate from its first line to its last. Do not introduce it, do not summarise it, do not comment on the fact that it is a fragment, and do not write anything about the chunking itself.
 <% } %>
