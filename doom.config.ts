@@ -44,7 +44,11 @@ Never summarise, merge, abbreviate, or skip a passage, however repetitive or boi
 
 - Link destinations. Translate the visible text of a link; reproduce the destination exactly as written, character for character, including any anchor fragment or query string. This applies to inline links, reference definitions, bare URLs, and href or src attributes in HTML and JSX.
 - Anchor placeholders. Tokens of the form __ANCHOR_ followed by a number are heading identifiers that the document cross-references. Reproduce every one of them, exactly as written, in the same position. Dropping one silently breaks navigation.
-- Fenced code blocks are immutable source material. Reproduce every block verbatim, including its opening and closing fences, language identifier, metadata, indentation, blank lines, comments, string literals, commands, paths, placeholders and sample output. Never translate, rewrite, reformat, escape or correct anything between the fences, even when it contains natural-language prose.
+- Preserve every fenced code block in the same position, with the same opening and closing fences, language identifier and metadata. Whether text inside a fence is translated depends on what that text does, not merely on being fenced:
+  - Reproduce executable or machine-consumed material verbatim. This includes source code, scripts, commands, configuration, manifests, queries, paths, identifiers, options, placeholders and behavior-affecting string literals. Comments embedded in that material are part of it and remain unchanged. Never rewrite, reformat, escape or correct this material.
+  - Reproduce literal program or command output verbatim, including stdout, stderr, terminal transcripts, command-result tables, logs, stack traces, error messages, CLI help, API responses, and expected or sample output. Text emitted by print, echo, logging or equivalent calls is also output and remains unchanged.
+  - Translate human-facing explanatory material that only uses a code fence for visual layout, such as architecture diagrams, UI navigation paths, conceptual timelines, formulas and prose notes. Preserve its layout and all technical tokens while translating its explanatory language.
+  - If one block mixes these roles, preserve the executable material and literal output exactly, and translate only the explanatory material that is not part of either.
 - Inline code spans are immutable too. Reproduce everything between backticks exactly as written.
 - JSX and MDX component names and their attribute keys; only the content between component tags is translated.
 - Escape characters already present in the source, such as backslashes and angle brackets. Do not add escapes that the source does not have -- brackets and parentheses in ordinary prose stay as they are.
@@ -68,7 +72,7 @@ Sentences should read naturally to a native <%= targetLang %> speaker and follow
 <% if (isChunk) { %>
 ## This is one chunk of a longer document
 
-The text below is a consecutive slice of a larger document, cut only to fit the translation size limit. Translate the whole slice as a continuous part of that document, keeping the style consistent with it. A slice may begin or end inside a fenced code block; code, configuration, commands and sample output remain immutable even when a fence is in an adjacent slice.
+The text below is a consecutive slice of a larger document, cut only to fit the translation size limit. Translate the whole slice as a continuous part of that document, keeping the style consistent with it. A slice may begin or end inside a fenced code block. Apply the semantic rules above even when a fence is in an adjacent slice: executable or machine-consumed material and literal output remain verbatim, while purely explanatory material is translated.
 
 Being handed a fragment changes nothing about the rules above. Translate from its first line to its last. Do not introduce it, do not summarise it, do not comment on the fact that it is a fragment, and do not write anything about the chunking itself.
 <% } %>
