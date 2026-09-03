@@ -222,6 +222,9 @@ EOF
 ```
 
 Verify standby status:
+
+Record this initial topology and replication state before continuing; it provides the baseline for the switchover and recovery checks later in this guide.
+
 ```bash
 $ kubectl -n $NAMESPACE exec $STANDBY_CLUSTER-0 -- patronictl list
 + Cluster: acid-standby (7562204126329651274) -------+-----------+----+-----------+
@@ -944,4 +947,3 @@ Key benefits achieved:
 - **Production Ready**: Battle-tested configuration patterns for enterprise workloads
 
 By following these practices, organizations can ensure their PostgreSQL databases meet stringent availability and recovery objectives while maintaining control over critical failover operations.
-
