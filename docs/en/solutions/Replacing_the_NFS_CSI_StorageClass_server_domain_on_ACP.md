@@ -5,6 +5,7 @@ products:
   - Alauda Container Platform
 ProductsVersion:
   - 4.2.x,4.3.x,4.4.x
+id: KB260900019
 ---
 
 # Switching the NFS CSI StorageClass server domain on ACP
