@@ -674,6 +674,123 @@ kubectl -n kafka-system exec my-cluster-kafka-0 -c kafka -- \
 
 The second command should print nothing.
 
+## Single-Replica (Non-HA) Deployments
+
+A one-broker Kafka on a local disk is a reasonable choice for a development environment, or for a
+log queue where the producer can buffer and a few minutes of downtime is acceptable. It is not a
+smaller version of the three-node design — the trade-off is categorical.
+
+:::danger A single-replica instance has no fault tolerance of any kind
+Replication factor 1 means every partition has exactly one copy, on one disk, on one node. If
+that node reboots, is drained, or loses its disk, the cluster is **down** and its data is
+**unreachable** for the duration — there is no second replica to serve reads and no way to
+fail over. If the disk is lost, the data is gone. Kafka's replication is the only fault
+tolerance in a local-disk deployment, and at RF=1 there is none.
+
+Decide this deliberately. Do not run a single replica because a three-node cluster looked like
+more work.
+:::
+
+### Configuration
+
+One pool, one replica, combined roles, and every replication factor set to 1 — a topic or
+internal topic that asks for more replicas than there are brokers will fail to create:
+
+```yaml
+apiVersion: kafka.strimzi.io/v1beta2
+kind: KafkaNodePool
+metadata:
+  name: kafka
+  namespace: kafka-system
+  labels:
+    strimzi.io/cluster: my-cluster
+  annotations:
+    strimzi.io/next-node-ids: "[0]"
+spec:
+  replicas: 1
+  roles:
+    - controller
+    - broker
+  storage:
+    type: persistent-claim
+    size: 5Gi
+    class: kafka-local
+    deleteClaim: false
+---
+apiVersion: kafka.strimzi.io/v1beta2
+kind: Kafka
+metadata:
+  name: my-cluster
+  namespace: kafka-system
+spec:
+  kafka:
+    version: 4.2.0
+    listeners:
+      - name: plain
+        port: 9092
+        type: internal
+        tls: false
+    config:
+      default.replication.factor: 1
+      min.insync.replicas: 1
+      offsets.topic.replication.factor: 1
+      transaction.state.log.replication.factor: 1
+      transaction.state.log.min.isr: 1
+```
+
+No `podAntiAffinity` is needed — there is only one pod. Everything else is unchanged: one
+`local` PV pinned to the node with `nodeAffinity`, pre-bound to `data-my-cluster-kafka-0` with
+`claimRef`, `Retain`, `WaitForFirstConsumer`.
+
+### The cross-binding risk moves between instances
+
+A single-replica instance has one PVC and one PV, so it cannot swap disks with itself. The risk
+does not disappear, though — **it moves to the boundary between instances**. Any number of
+single-replica Kafka instances sharing one `no-provisioner` StorageClass are all drawing from
+the same pool of unreserved PVs, and a PVC carries no notion of which instance a PV belongs to.
+
+This is the common multi-tenant shape: several small Kafka instances, one per team or per
+namespace, each on its own node's disk, all on `kafka-local`.
+
+Tested on ACP 4.3 with two single-replica instances (`s1` in namespace `kafka-s1`, `s2` in
+`kafka-s2`), each holding different data. With no `claimRef` on either PV, and `s1`'s pod
+scheduled onto `s2`'s node — the situation you get when `s1`'s usual node is cordoned, full, or
+under maintenance — `s1`'s PVC bound to **`s2`'s** PV. Nothing in Kubernetes prevents one
+tenant's claim from taking another tenant's disk.
+
+### The failure is loud here, not silent
+
+This is the one place where single-replica behaves *better* than the three-node case, and it is
+worth understanding why.
+
+Every single-replica instance runs as node ID 0, so its log directory is always `kafka-log0`. A
+broker that lands on another instance's disk therefore *does* find a `kafka-log0` — the other
+instance's — reads its `meta.properties`, sees a foreign cluster ID, and refuses to start:
+
+```
+Invalid cluster.id in /var/lib/kafka/data/kafka-log0/meta.properties.
+Expected SrBFclR9RLSygr8RwS0G1g, but read TfB1UUCaQb-a6Y-IuwQtOw
+```
+
+It crash-loops instead of formatting, and the victim's data is untouched — confirmed by
+inspecting the disk afterwards: still one `kafka-log0`, still its original size.
+
+Contrast that with the three-node case, where the brokers have *different* node IDs, so a
+displaced broker never finds its own directory, silently formats a new one, and joins the
+cluster empty. **Multi-broker cross-binding loses data quietly; single-replica cross-instance
+theft causes an outage but preserves data.**
+
+An outage is still an outage. Pre-bind every PV with `claimRef` — in a multi-tenant single-replica
+estate it matters more than anywhere else, because the PVs are interchangeable by construction
+and the tenants have no visibility of each other.
+
+### Everything else applies unchanged
+
+Verified on the same cluster: deleting the pod preserves the binding and the data; deleting the
+`Kafka` resource loses `status.clusterId` and produces the same `Invalid cluster.id` on restart,
+recovered the same way; and `claimRef` pre-binding restores the correct instance-to-disk mapping.
+Both instances came back with their own data intact (500 and 300 messages respectively).
+
 ## Day-2 Operations
 
 ### Deleting and recreating the cluster
@@ -906,8 +1023,9 @@ restored to all 1000 messages.
   (reproduced both times — brokers 1 and 2 swapped disks, two of three silently empty, topic
   1000 → 0 messages); recovery via `claimRef` (all 1000 messages restored both times); and a
   repeat of the destructive cycle with `claimRef` in place (binding held, one `kafka-log*`
-  directory per disk). Single-node/non-HA mode, node failure, and disk replacement were **not**
-  tested.
+  directory per disk). Separately, two single-replica instances were tested against each other —
+  see [Single-Replica (Non-HA) Deployments](#single-replica-non-ha-deployments). Node failure and
+  disk replacement were **not** tested.
 - **Initial binding was never name-ordered in either run.** The first run bound brokers 0/1/2 to
   PVs c/b/a; the second to c/a/b. On a fresh install this is harmless — every disk is empty —
   but it is a direct demonstration that the PVC name has no influence on which PV it gets.
