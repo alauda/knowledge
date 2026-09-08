@@ -51,6 +51,7 @@ matters here:
 | `spec.nodeAffinity` | Optional — the API server accepts a PV without it | **Required** — the API server rejects a PV without it |
 | Scheduler awareness | The scheduler does not constrain the pod to the node holding the data | The scheduler filters candidate nodes by the PV's `nodeAffinity` |
 | Result if the pod moves | kubelet resolves the same path on whatever node the pod landed on — creating it if `hostPath.type` is `DirectoryOrCreate` or unset, failing to mount if it is `Directory` and the path is absent | The pod cannot be scheduled anywhere but the node that owns the volume |
+| `fsGroup` ownership | **Not applied.** kubelet does not chown host paths, so the directory keeps whatever ownership it has | Applied — kubelet adjusts group ownership to the pod's `fsGroup` |
 
 A `hostPath` PV without `nodeAffinity` is the direct cause of failure mode 1. The pod is
 rescheduled to another node, kubelet resolves the same path on the *new* node, and Kafka
@@ -60,6 +61,20 @@ Kubernetes prevents this, because a `hostPath` PV makes no claim about which nod
 **Use `type: local` for every Kafka data volume.** The rest of this document does. Where you
 must keep `hostPath` for an existing deployment, set `spec.nodeAffinity` on those PVs
 explicitly — it is optional for `hostPath` but honored by the scheduler when present.
+
+The `fsGroup` row is the one that bites first. Kafka runs as UID 1001, and a directory created
+by kubelet for a `hostPath` volume is `root:root 0755`. Because kubelet does not apply `fsGroup`
+to host paths, the broker cannot write to it and crash-loops on startup:
+
+```
+Formatting metadata directory /var/lib/kafka/data/kafka-log0 with metadata.version 4.2-IV1.
+Error while writing meta.properties file /var/lib/kafka/data/kafka-log0:
+  java.nio.file.AccessDeniedException: /var/lib/kafka/data/kafka-log0
+```
+
+With `local` volumes this does not happen. If you are stuck on `hostPath`, either make the
+directory writable on the host (`chmod g+rwx`, group `0`) or run the pods as root, following
+[Run Kafka Pods as the Root User](./How_to_Run_Kafka_as_Root_User.md).
 
 ## How the Operator Maps Brokers to Volumes
 
@@ -118,6 +133,11 @@ mode. There is no pool or identity concept: any PV that satisfies the request is
 and the three identical Kafka PVs satisfy all three PVCs equally. Which PVC wins which PV is
 whatever order the controller happens to process them in.
 
+This was verified directly on ACP 4.3: all three broker pods were deleted simultaneously
+(`kubectl delete pod -l strimzi.io/cluster=…`). Every pod came back on its original node with
+its PVC bound to the same PV, and the test topic still held all 1000 messages with full ISR.
+Restarting brokers — together or one at a time — cannot shuffle storage.
+
 So the cross-binding is real, but it happens whenever **PVCs are created**, not when pods
 restart:
 
@@ -133,20 +153,42 @@ mapping that comes out has no relationship to the one that went in.
 
 ### What the broker does when it lands on the wrong disk
 
-Two outcomes, both worth recognizing:
+This is the part that makes the failure dangerous, and it is not what most people expect.
 
-- **Mismatched data directory.** Kafka reads `meta.properties` from the log directory, finds a
-  `node.id` that does not match its configured ID, and refuses to start. The pod crash-loops
-  with an inconsistent-node-ID error. This is loud, and it is the *safe* outcome — nothing is
-  overwritten.
-- **Empty data directory.** If the broker binds to a PV whose disk is empty, KRaft storage
-  formatting initializes it and the broker joins the cluster as an empty replica. It then
-  replicates partitions back from its peers. The cluster looks healthy while the original data
-  sits orphaned on a PV nobody is using. If this happens on more than one broker at a time, or
-  on a partition whose other replicas are already under-replicated, it is data loss.
+Kafka's log directory is named after the broker's **own** node ID:
+`log.dirs = <mountPath>/kafka-log<nodeId>`. So a broker that lands on a foreign disk does not
+read the other broker's `meta.properties` at all — it looks for its own `kafka-log<N>`,
+does not find one, and concludes the disk is fresh.
 
-In either case the recovery is to correct the bindings and restart, **never** to wipe a data
-directory to "clear the error." See [Recovering a Wrong Binding](#recovering-a-wrong-binding).
+**The common outcome is silent.** The broker formats a new, empty `kafka-log<N>` *beside* the
+orphaned directory that holds the real data, starts up reporting `1/1 Running`, and joins the
+cluster as an empty replica. Nothing logs an error. The orphaned data stays on the same disk,
+invisible to Kafka, taking up space.
+
+**The loud outcome is the exception.** A broker only crashes if it happens to keep a disk that
+already contains *its own* `kafka-log<N>` and the cluster ID has since changed — then it fails
+with `Invalid cluster.id`. A broker that swapped disks with a peer never gets that far.
+
+Measured on ACP 4.3 with three brokers, after a PVC recreation that swapped brokers 1 and 2:
+
+| Broker | Landed on | Result |
+| --- | --- | --- |
+| 0 | its own disk | `CrashLoopBackOff` — `Invalid cluster.id` |
+| 1 | broker 2's disk | `Running 1/1` — formatted an empty `kafka-log1` next to broker 2's 904K `kafka-log2` |
+| 2 | broker 1's disk | `Running 1/1` — formatted an empty `kafka-log2` next to broker 1's 904K `kafka-log1` |
+
+Two of the three brokers reported healthy. The topic's message count went from 1000 to **0**,
+while every byte of the original data was still sitting on the disks in orphaned directories.
+
+:::danger The node.id check cannot detect this
+Reading `meta.properties` from inside a broker pod does **not** find a wrong binding. Broker 1
+reads `kafka-log1/meta.properties`, which says `node.id=1` — it matches, because the broker
+wrote that file itself moments earlier. The reliable signal is **more than one `kafka-log*`
+directory on a single disk**. See [Verification](#verification).
+:::
+
+Recovery is to correct the bindings and restart, **never** to wipe a data directory to "clear
+the error." See [Recovering a Wrong Binding](#recovering-a-wrong-binding).
 
 ## Design Rules
 
@@ -493,6 +535,10 @@ Notes on this manifest:
 - **`podAntiAffinity` is `required`, not `preferred`.** Two brokers on one node would contend
   for that node's single PV, and the second would stay `Pending` — but making it explicit turns
   a confusing scheduling failure into an obvious one.
+- **Everything under `template.pod` belongs on the `KafkaNodePool`.** As soon as a pool defines
+  its own `spec.template.pod`, that template replaces `Kafka.spec.kafka.template.pod` entirely.
+  Putting a `securityContext` on the `Kafka` resource while the pool carries an `affinity` block
+  means the `securityContext` is silently dropped.
 - **`kraftMetadata: shared`** puts the KRaft metadata log on the same volume. With a single
   JBOD volume this is the only sensible setting.
 - **`class` and `selector` are effectively fixed at creation time.** Editing them later does not
@@ -523,9 +569,9 @@ kubectl apply -f kafka-cluster.yaml
 
 ## Verification
 
-Run these after the cluster reports ready. The checks below have not been executed against a
-live cluster in preparing this document — treat the expected output as the shape to look for,
-not a literal transcript.
+Run these after the cluster reports ready. The procedure and these checks were exercised on an
+ACP 4.3 cluster (operator `0.48.0`/`v4.3.3`, Kafka 4.2.0, three worker nodes); the outputs below
+are the shapes observed there.
 
 **1. Every PV is bound to the PVC it was reserved for.**
 
@@ -557,21 +603,43 @@ kubectl -n kafka-system get pod -l strimzi.io/cluster=my-cluster \
 Cross-check `my-cluster-kafka-0` against `node-1`, and so on. This is the check that catches a
 mistake in the PV generation script.
 
-**4. The broker's stored node ID matches its identity.**
+**4. Each disk holds exactly one `kafka-log*` directory.**
+
+This is the check that actually detects a wrong binding. Do not use `meta.properties` for it —
+a broker that silently reformatted writes a `node.id` that matches itself, so that file always
+agrees with the broker reading it.
 
 ```bash
-kubectl -n kafka-system exec my-cluster-kafka-0 -c kafka -- \
-  cat /var/lib/kafka/data-0/kafka-log0/meta.properties
+for i in 0 1 2; do
+  printf 'broker %s: ' "$i"
+  kubectl -n kafka-system exec my-cluster-kafka-$i -c kafka -- \
+    sh -c 'ls -1 /var/lib/kafka/data/ | tr "\n" " "; echo; du -sh /var/lib/kafka/data/kafka-log*/'
+done
 ```
 
-`node.id` must equal the number at the end of the pod name. This is the single most direct
-confirmation that a broker is on the right disk.
+Healthy output is exactly one directory per broker, named for that broker:
+
+```
+broker 0: kafka-log0     904K  /var/lib/kafka/data/kafka-log0/
+broker 1: kafka-log1     904K  /var/lib/kafka/data/kafka-log1/
+broker 2: kafka-log2     904K  /var/lib/kafka/data/kafka-log2/
+```
+
+Two directories on one disk means a broker formatted a fresh log next to someone else's data —
+a wrong binding, past or present. The small directory is the empty one it just created; the
+large one is the orphaned real data:
+
+```
+broker 1: kafka-log1 kafka-log2      56K  /var/lib/kafka/data/kafka-log1/
+                                    904K  /var/lib/kafka/data/kafka-log2/
+```
+
+Go to [Recovering a Wrong Binding](#recovering-a-wrong-binding) if you see this.
 
 :::warning This check needs a Running pod
-`kubectl exec` requires the container to be up — and the wrong-binding case this check exists to
-catch is precisely the one where the broker is crash-looping. When the pod is not `Running`, read
-the same file from the host instead: see step 2 of
-[Recovering a Wrong Binding](#recovering-a-wrong-binding).
+`kubectl exec` requires the container to be up. A broker that swapped disks *is* running, so the
+check works for the case that matters. For a crash-looping broker, read the directory from the
+host instead: see step 2 of [Recovering a Wrong Binding](#recovering-a-wrong-binding).
 :::
 
 **5. The cluster is healthy.**
@@ -589,12 +657,54 @@ The second command should print nothing.
 ### Deleting and recreating the cluster
 
 With `deleteClaim: false`, deleting the `Kafka` and `KafkaNodePool` resources leaves the PVCs
-behind. Recreating the cluster with the same cluster name, pool name, and node IDs reuses those
-PVCs unchanged, and no rebinding occurs. **Do not delete the PVCs during cleanup** — that is
-the step that used to produce the cross-binding.
+behind, and recreating the cluster reuses those PVCs unchanged with no rebinding. **Do not
+delete the PVCs during cleanup** — that is the step that produces the cross-binding.
 
 If the PVCs were deleted, the PVs go to `Released` and the pre-binding still holds the
 reservation. Follow [Recovering a Released PV](#recovering-a-released-pv) before recreating.
+
+:::danger Deleting the Kafka resource destroys the KRaft cluster ID
+Preserving the PVCs is **not sufficient**. The KRaft cluster ID lives only in
+`Kafka.status.clusterId`. Deleting the `Kafka` resource deletes that status, so the operator
+generates a brand-new random ID, and every broker then refuses to start against its retained
+disk:
+
+```
+Invalid cluster.id in /var/lib/kafka/data/kafka-log0/meta.properties.
+Expected 5jdttJxLSUOG-QJ7r__PYA, but read zUekwp_oQdSh47pToRAmcQ
+```
+
+The data is intact; the cluster simply cannot be reassembled without the original ID.
+:::
+
+**Before deleting the `Kafka` resource, record the cluster ID:**
+
+```bash
+kubectl -n kafka-system get kafka my-cluster -o jsonpath='{.status.clusterId}'
+```
+
+**To restore it after recreating**, patch the status *and* trigger a reconciliation. The status
+patch alone is not enough — the operator overwrites `status` at the end of each reconcile loop,
+and it only reads the cluster ID at the *start* of one. The annotation forces a fresh loop that
+reads the value you just restored:
+
+```bash
+CID=<the recorded cluster ID>
+kubectl -n kafka-system patch kafka my-cluster --subresource=status --type=merge \
+  -p "{\"status\":{\"clusterId\":\"$CID\"}}"
+kubectl -n kafka-system annotate kafka my-cluster recovery-trigger="$(date +%s)" --overwrite
+```
+
+Confirm the generated broker config picked it up, then restart the brokers:
+
+```bash
+kubectl -n kafka-system get cm my-cluster-kafka-0 -o jsonpath='{.data.cluster\.id}'
+kubectl -n kafka-system delete pod -l strimzi.io/cluster=my-cluster
+```
+
+If you no longer have the recorded ID, read it off a disk — it is in `cluster.id` of any
+retained `kafka-log*/meta.properties`, and it also appears in the broker's own
+`Invalid cluster.id … but read <ID>` error.
 
 ### Adding a broker
 
@@ -686,29 +796,48 @@ kubectl get pv -o custom-columns='PV:.metadata.name,STATUS:.status.phase,CLAIM:.
 
 ### Recovering a Wrong Binding
 
-Symptom: a broker crash-loops with an inconsistent node ID, or a broker is healthy but a peer's
-data is missing.
+Symptom: a disk holds more than one `kafka-log*` directory, a topic has lost messages, or a
+broker crash-loops with `Invalid cluster.id`. Note that the cluster may report `Ready=True`
+with brokers `1/1 Running` — see
+[What the broker does](#what-the-broker-does-when-it-lands-on-the-wrong-disk).
 
-1. **Stop.** Do not delete the log directory, and do not delete the PVC of the crash-looping
-   broker. The crash loop is Kafka protecting the data.
-2. Determine the true owner of each disk. On each node, read the `meta.properties` under the
-   host path:
+1. **Stop.** Do not delete any log directory, and do not delete a PVC to "reset" a broker. Every
+   byte is still on the disks; deleting is the only way to actually lose it.
+2. **Determine the true owner of each disk by directory size, not by `meta.properties`.** The
+   freshly formatted directory also carries a valid-looking `node.id`, so that file cannot tell
+   you who owns the disk. The directory holding the real data can:
 
    ```bash
    # On each Kafka node
-   find /mnt/kafka-data -name meta.properties -exec sh -c 'echo "== $1"; cat "$1"' _ {} \;
+   du -sh /mnt/kafka-data/kafka-log*/
    ```
 
-   The `node.id` in each file is the broker that owns that node's disk.
-3. Scale the node pool to 0 replicas so no broker is running.
-4. Delete the PVCs (the data is on `Retain`ed PVs and is not touched), then repair each PV's
-   `claimRef` to point at the PVC name matching the `node.id` you found in step 2, clearing the
-   stale UID as above.
-5. Scale the pool back up and re-verify with check 4 in [Verification](#verification).
+   The large directory is the real data and its `<N>` is the disk's true owner; the small one
+   (tens of KB) is the empty log a mis-bound broker just created. Cross-check with `cluster.id`
+   — the orphaned directory carries the *original* cluster ID:
 
-If a broker has already formatted an empty disk and joined the cluster, its original data is
-still on whichever PV it was displaced from. Recover by correcting the bindings as above; the
-re-replication that already happened is discarded when the broker comes back on its own disk.
+   ```bash
+   grep -H "" /mnt/kafka-data/kafka-log*/meta.properties
+   ```
+
+3. Record the original cluster ID from the orphaned directory. You will need it in step 6.
+4. Delete the `Kafka` and `KafkaNodePool` resources, then delete the PVCs. The data is on
+   `Retain`ed PVs and is not touched.
+5. Set each PV's `claimRef` to the PVC of the broker that truly owns that disk — the `<N>` from
+   step 2 — then clear the stale UID as in
+   [Recovering a Released PV](#recovering-a-released-pv). Verify all three report `Available`
+   with the intended claim before continuing.
+6. Recreate the cluster and restore the cluster ID from step 3, following
+   [Deleting and recreating the cluster](#deleting-and-recreating-the-cluster).
+7. Re-verify with check 4 in [Verification](#verification).
+
+Once each broker is back on its own disk, the empty directories left behind by the mis-bound
+brokers are inert — each broker only ever reads its own `kafka-log<N>`. Delete them only after
+the cluster is healthy and you have confirmed which is which; they are harmless apart from the
+disk space, and they are useful evidence while diagnosing.
+
+This procedure was exercised on ACP 4.3: a topic that had dropped from 1000 messages to 0 was
+restored to all 1000 with no replication from peers.
 
 ## Limitations and Open Items
 
@@ -721,7 +850,18 @@ re-replication that already happened is discarded when the broker comes back on 
   to happen before the tenant creates the Kafka instance.
 - **The ACP Kafka instance form may not expose `class` and `selector` on the node pool.** This
   has not been verified for ACP 4.3. If the form does not offer them, switch to the YAML view
-  when creating the instance, or apply the `KafkaNodePool` manifest directly.
+  when creating the instance, or apply the `KafkaNodePool` manifest directly. Note that an
+  instance created through the form uses `type: persistent-claim` (not JBOD), so its PVC names
+  have no volume-id prefix — `data-<cluster>-<pool>-<nodeId>`.
+- **Pod template settings must go on the `KafkaNodePool`, not the `Kafka` resource.** Once a
+  pool defines `spec.template.pod`, that template wins outright and
+  `Kafka.spec.kafka.template.pod` is ignored — including `securityContext`. A setting placed on
+  the `Kafka` resource silently has no effect.
+- **What was tested.** On ACP 4.3 with three nodes: simultaneous deletion of all broker pods
+  (bindings and data preserved); cluster delete and recreate with PVCs retained; deliberate
+  cross-binding via PVC recreation (reproduced, two of three brokers silently empty); and
+  recovery via `claimRef` (all 1000 messages restored). Single-node/non-HA mode was not tested.
+  Node failure and disk replacement were not tested.
 - **Kafka 2.x / ZooKeeper operator line.** The sibling `-2x` operator (Strimzi 0.25) has no
   `KafkaNodePool`: storage lives under `Kafka.spec.kafka.storage` and
   `Kafka.spec.zookeeper.storage`, PVC names are `data-<cluster>-kafka-<n>` and
