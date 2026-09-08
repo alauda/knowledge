@@ -573,6 +573,15 @@ Run these after the cluster reports ready. The procedure and these checks were e
 ACP 4.3 cluster (operator `0.48.0`/`v4.3.3`, Kafka 4.2.0, three worker nodes); the outputs below
 are the shapes observed there.
 
+:::info What the test covered
+That exercise used `hostPath` PVs with explicit `nodeAffinity`, because the test environment did
+not allow pre-creating directories on the nodes. PVC-to-PV binding, `claimRef` pre-binding,
+cluster-ID recovery, and wrong-binding recovery are identical for both volume types, so those
+results carry over. The two `local`-specific claims — that `nodeAffinity` is enforced by the API
+server, and that kubelet applies `fsGroup` — are from the Kubernetes documentation and were not
+themselves under test here. The `hostPath` `fsGroup` failure *was* observed directly.
+:::
+
 **1. Every PV is bound to the PVC it was reserved for.**
 
 ```bash
@@ -664,10 +673,10 @@ If the PVCs were deleted, the PVs go to `Released` and the pre-binding still hol
 reservation. Follow [Recovering a Released PV](#recovering-a-released-pv) before recreating.
 
 :::danger Deleting the Kafka resource destroys the KRaft cluster ID
-Preserving the PVCs is **not sufficient**. The KRaft cluster ID lives only in
-`Kafka.status.clusterId`. Deleting the `Kafka` resource deletes that status, so the operator
-generates a brand-new random ID, and every broker then refuses to start against its retained
-disk:
+Preserving the PVCs is **not sufficient**. The KRaft cluster ID lives in
+`Kafka.status.clusterId`, with each pool's `status.clusterId` as a fallback — deleting those
+resources deletes it. The operator then generates a brand-new random ID, and every broker
+refuses to start against its retained disk:
 
 ```
 Invalid cluster.id in /var/lib/kafka/data/kafka-log0/meta.properties.
@@ -837,7 +846,7 @@ the cluster is healthy and you have confirmed which is which; they are harmless 
 disk space, and they are useful evidence while diagnosing.
 
 This procedure was exercised on ACP 4.3: a topic that had dropped from 1000 messages to 0 was
-restored to all 1000 with no replication from peers.
+restored to all 1000 messages.
 
 ## Limitations and Open Items
 
