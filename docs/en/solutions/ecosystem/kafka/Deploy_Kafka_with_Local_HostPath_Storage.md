@@ -62,9 +62,19 @@ Kubernetes prevents this, because a `hostPath` PV makes no claim about which nod
 must keep `hostPath` for an existing deployment, set `spec.nodeAffinity` on those PVs
 explicitly — it is optional for `hostPath` but honored by the scheduler when present.
 
+Both differences were confirmed on ACP 4.3.
+
+The API server refuses a `local` PV that omits `nodeAffinity`, so the misconfiguration that
+lets a pod drift away from its data is simply not expressible:
+
+```
+The PersistentVolume "…" is invalid: spec.nodeAffinity:
+  Required value: Local volume requires node affinity
+```
+
 The `fsGroup` row is the one that bites first. Kafka runs as UID 1001, and a directory created
-by kubelet for a `hostPath` volume is `root:root 0755`. Because kubelet does not apply `fsGroup`
-to host paths, the broker cannot write to it and crash-loops on startup:
+for a `hostPath` volume is `root:root 0755`. Because kubelet does not apply `fsGroup` to host
+paths, the broker cannot write to it and crash-loops on startup:
 
 ```
 Formatting metadata directory /var/lib/kafka/data/kafka-log0 with metadata.version 4.2-IV1.
@@ -72,8 +82,12 @@ Error while writing meta.properties file /var/lib/kafka/data/kafka-log0:
   java.nio.file.AccessDeniedException: /var/lib/kafka/data/kafka-log0
 ```
 
-With `local` volumes this does not happen. If you are stuck on `hostPath`, either make the
-directory writable on the host (`chmod g+rwx`, group `0`) or run the pods as root, following
+With `local` volumes this does not happen. Starting from the same `root:root 0755` directory,
+kubelet adjusted it to `drwxrwsr-x` on mount and the cluster came up first time at default
+privileges — no `runAsUser` override needed.
+
+If you are stuck on `hostPath`, either make the directory writable on the host (`chmod g+rwx`,
+group `0`) or run the pods as root, following
 [Run Kafka Pods as the Root User](./How_to_Run_Kafka_as_Root_User.md).
 
 ## How the Operator Maps Brokers to Volumes
@@ -574,12 +588,11 @@ ACP 4.3 cluster (operator `0.48.0`/`v4.3.3`, Kafka 4.2.0, three worker nodes); t
 are the shapes observed there.
 
 :::info What the test covered
-That exercise used `hostPath` PVs with explicit `nodeAffinity`, because the test environment did
-not allow pre-creating directories on the nodes. PVC-to-PV binding, `claimRef` pre-binding,
-cluster-ID recovery, and wrong-binding recovery are identical for both volume types, so those
-results carry over. The two `local`-specific claims — that `nodeAffinity` is enforced by the API
-server, and that kubelet applies `fsGroup` — are from the Kubernetes documentation and were not
-themselves under test here. The `hostPath` `fsGroup` failure *was* observed directly.
+The full procedure was run twice on that cluster — once with `hostPath` PVs and once with
+`local` PVs on `/cpaas/kafka-lpv` — with identical results for binding, `claimRef` pre-binding,
+cluster-ID recovery, and wrong-binding recovery. Both `local`-specific claims in this document
+were verified directly: the API server rejects a `local` PV with no `nodeAffinity`, and kubelet
+applies `fsGroup` to `local` volumes but not to `hostPath` ones.
 :::
 
 **1. Every PV is bound to the PVC it was reserved for.**
@@ -704,10 +717,23 @@ kubectl -n kafka-system patch kafka my-cluster --subresource=status --type=merge
 kubectl -n kafka-system annotate kafka my-cluster recovery-trigger="$(date +%s)" --overwrite
 ```
 
-Confirm the generated broker config picked it up, then restart the brokers:
+This is a race against the operator, which regenerates the ID on any reconcile that starts
+before your patch lands. **Check that it took, and repeat the two commands until it does** — in
+testing it sometimes needed several attempts:
 
 ```bash
-kubectl -n kafka-system get cm my-cluster-kafka-0 -o jsonpath='{.data.cluster\.id}'
+CID=<the recorded cluster ID>
+until [ "$(kubectl -n kafka-system get cm my-cluster-kafka-0 -o jsonpath='{.data.cluster\.id}')" = "$CID" ]; do
+  kubectl -n kafka-system patch kafka my-cluster --subresource=status --type=merge \
+    -p "{\"status\":{\"clusterId\":\"$CID\"}}"
+  kubectl -n kafka-system annotate kafka my-cluster recovery-trigger="$(date +%s%N)" --overwrite
+  sleep 10
+done
+```
+
+Only once the ConfigMap shows the right ID, restart the brokers:
+
+```bash
 kubectl -n kafka-system delete pod -l strimzi.io/cluster=my-cluster
 ```
 
@@ -841,9 +867,17 @@ with brokers `1/1 Running` — see
 7. Re-verify with check 4 in [Verification](#verification).
 
 Once each broker is back on its own disk, the empty directories left behind by the mis-bound
-brokers are inert — each broker only ever reads its own `kafka-log<N>`. Delete them only after
-the cluster is healthy and you have confirmed which is which; they are harmless apart from the
-disk space, and they are useful evidence while diagnosing.
+brokers are inert — each broker only ever reads its own `kafka-log<N>`. They are useful evidence
+while diagnosing, so remove them at step 5 at the earliest, once you have written down which
+directory on each disk is the real one:
+
+```bash
+# On each node, after confirming from step 2 which kafka-log<N> is the large, real one
+rm -rf /mnt/kafka-data/kafka-log<the small, freshly formatted one>
+```
+
+Leaving them is safe; removing them restores the "exactly one directory per disk" invariant that
+makes check 4 meaningful next time.
 
 This procedure was exercised on ACP 4.3: a topic that had dropped from 1000 messages to 0 was
 restored to all 1000 messages.
@@ -866,11 +900,17 @@ restored to all 1000 messages.
   pool defines `spec.template.pod`, that template wins outright and
   `Kafka.spec.kafka.template.pod` is ignored — including `securityContext`. A setting placed on
   the `Kafka` resource silently has no effect.
-- **What was tested.** On ACP 4.3 with three nodes: simultaneous deletion of all broker pods
-  (bindings and data preserved); cluster delete and recreate with PVCs retained; deliberate
-  cross-binding via PVC recreation (reproduced, two of three brokers silently empty); and
-  recovery via `claimRef` (all 1000 messages restored). Single-node/non-HA mode was not tested.
-  Node failure and disk replacement were not tested.
+- **What was tested.** On ACP 4.3 with three nodes, run end to end with `hostPath` PVs and again
+  with `local` PVs: simultaneous deletion of all broker pods (bindings and data preserved);
+  cluster delete and recreate with PVCs retained; deliberate cross-binding via PVC recreation
+  (reproduced both times — brokers 1 and 2 swapped disks, two of three silently empty, topic
+  1000 → 0 messages); recovery via `claimRef` (all 1000 messages restored both times); and a
+  repeat of the destructive cycle with `claimRef` in place (binding held, one `kafka-log*`
+  directory per disk). Single-node/non-HA mode, node failure, and disk replacement were **not**
+  tested.
+- **Initial binding was never name-ordered in either run.** The first run bound brokers 0/1/2 to
+  PVs c/b/a; the second to c/a/b. On a fresh install this is harmless — every disk is empty —
+  but it is a direct demonstration that the PVC name has no influence on which PV it gets.
 - **Kafka 2.x / ZooKeeper operator line.** The sibling `-2x` operator (Strimzi 0.25) has no
   `KafkaNodePool`: storage lives under `Kafka.spec.kafka.storage` and
   `Kafka.spec.zookeeper.storage`, PVC names are `data-<cluster>-kafka-<n>` and
