@@ -5,6 +5,7 @@ kind:
   - Solution
 ProductsVersion:
   - 4.3
+id: KB260900024
 ---
 
 # Deploy Kafka on Node-Local Disks with Pre-Bound PersistentVolumes
