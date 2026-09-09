@@ -4,14 +4,18 @@ products:
 kind:
   - How To
 ProductsVersion:
-  - 4.3
+  - 4.1,4.2,4.3,4.4
 ---
 
 # Deploy Kafka on Node-Local Disks with Pre-Bound PersistentVolumes
 
 :::info Applicable Versions
-ACP 4.3 / Alauda Kafka Operator (Strimzi 0.48 line), Kafka 4.2.0, KRaft mode with `KafkaNodePool`.
-For the ZooKeeper-era 2.x operator line the CR shape differs; see the notes at the end.
+Alauda Streaming Service for Kafka v4.1, v4.2, v4.3, and v4.4 — KRaft mode with `KafkaNodePool`.
+Procedures were verified on v4.3. For the legacy Kafka 2.x / ZooKeeper line the CR shape differs;
+see the notes at the end.
+
+Set `spec.kafka.version` to a Kafka version your installed operator supports; the examples here
+use `4.2.0`.
 :::
 
 ## Purpose
@@ -34,7 +38,7 @@ broker-to-disk mapping deterministic and repeatable.
 
 ## Prerequisites
 
-- Alauda Kafka Operator installed and running in the target namespace.
+- Alauda Streaming Service for Kafka installed and running in the target namespace.
 - At least three worker nodes reserved for Kafka, each with a dedicated disk or directory.
 - Cluster-admin rights: `PersistentVolume` and `StorageClass` are cluster-scoped objects and
   must be created by an administrator, not by the namespace owner.
@@ -62,7 +66,7 @@ Kubernetes prevents this, because a `hostPath` PV makes no claim about which nod
 must keep `hostPath` for an existing deployment, set `spec.nodeAffinity` on those PVs
 explicitly — it is optional for `hostPath` but honored by the scheduler when present.
 
-Both differences were confirmed on ACP 4.3.
+Both differences were confirmed on v4.3.
 
 The API server refuses a `local` PV that omits `nodeAffinity`, so the misconfiguration that
 lets a pod drift away from its data is simply not expressible:
@@ -96,11 +100,11 @@ The operator derives the PVC name from the pod name, and the pod name from the c
 pool names plus the node ID. The names are fully deterministic, which is what makes
 pre-binding possible.
 
-| Object | Name | Source |
-| --- | --- | --- |
-| Pod | `<cluster>-<pool>-<nodeId>` | `KafkaPool.componentName()` |
-| PVC (single volume) | `data-<cluster>-<pool>-<nodeId>` | `VolumeUtils.createVolumePrefix()` |
-| PVC (JBOD volume) | `data-<volumeId>-<cluster>-<pool>-<nodeId>` | same, with the JBOD volume id |
+| Object | Name |
+| --- | --- |
+| Pod | `<cluster>-<pool>-<nodeId>` |
+| PVC (single volume) | `data-<cluster>-<pool>-<nodeId>` |
+| PVC (JBOD volume) | `data-<volumeId>-<cluster>-<pool>-<nodeId>` |
 
 For a cluster `my-cluster`, a pool `kafka`, node IDs 0–2, and JBOD volume id 0, the PVCs are:
 
@@ -123,10 +127,10 @@ operator line:
 - **`Kafka.spec.kafka.storage` is ignored.** Storage is configured in `KafkaNodePool.spec.storage`.
   The field still exists on the `Kafka` CRD for backward compatibility; setting it has no effect
   and produces a deprecation warning in `status.conditions`.
-- **`storage.overrides` (per-broker `class`) is ignored since Strimzi 0.46.0.** The field is
-  deprecated in the CRD and the operator does not read it. Any existing configuration that
-  relies on per-broker storage class overrides stopped taking effect on upgrade — check
-  `status.conditions` on clusters carried over from an earlier release.
+- **`storage.overrides` (per-broker `class`) is ignored.** The field is deprecated in the CRD and
+  the operator does not read it in any version covered by this document. A configuration carried
+  over from an older release that relies on per-broker storage class overrides stopped taking
+  effect on upgrade — check `status.conditions` on such clusters.
 
 `spec.storage.selector` does still work, but it applies the *same* label selector to every PVC
 in the pool, so it can narrow the pool of eligible PVs — it cannot say "broker 0 gets this
@@ -147,7 +151,7 @@ mode. There is no pool or identity concept: any PV that satisfies the request is
 and the three identical Kafka PVs satisfy all three PVCs equally. Which PVC wins which PV is
 whatever order the controller happens to process them in.
 
-This was verified directly on ACP 4.3: all three broker pods were deleted simultaneously
+This was verified directly on v4.3: all three broker pods were deleted simultaneously
 (`kubectl delete pod -l strimzi.io/cluster=…`). Every pod came back on its original node with
 its PVC bound to the same PV, and the test topic still held all 1000 messages with full ISR.
 Restarting brokers — together or one at a time — cannot shuffle storage.
@@ -183,7 +187,7 @@ invisible to Kafka, taking up space.
 already contains *its own* `kafka-log<N>` and the cluster ID has since changed — then it fails
 with `Invalid cluster.id`. A broker that swapped disks with a peer never gets that far.
 
-Measured on ACP 4.3 with three brokers, after a PVC recreation that swapped brokers 1 and 2:
+Measured on v4.3 with three brokers, after a PVC recreation that swapped brokers 1 and 2:
 
 | Broker | Landed on | Result |
 | --- | --- | --- |
@@ -584,8 +588,8 @@ kubectl apply -f kafka-cluster.yaml
 ## Verification
 
 Run these after the cluster reports ready. The procedure and these checks were exercised on an
-ACP 4.3 cluster (operator `0.48.0`/`v4.3.3`, Kafka 4.2.0, three worker nodes); the outputs below
-are the shapes observed there.
+Alauda Streaming Service for Kafka v4.3 (Kafka 4.2.0, three worker nodes); the outputs below are
+the shapes observed there.
 
 :::info What the test covered
 The full procedure was run twice on that cluster — once with `hostPath` PVs and once with
@@ -752,7 +756,7 @@ the same pool of unreserved PVs, and a PVC carries no notion of which instance a
 This is the common multi-tenant shape: several small Kafka instances, one per team or per
 namespace, each on its own node's disk, all on `kafka-local`.
 
-Tested on ACP 4.3 with two single-replica instances (`s1` in namespace `kafka-s1`, `s2` in
+Tested on v4.3 with two single-replica instances (`s1` in namespace `kafka-s1`, `s2` in
 `kafka-s2`), each holding different data. With no `claimRef` on either PV, and `s1`'s pod
 scheduled onto `s2`'s node — the situation you get when `s1`'s usual node is cordoned, full, or
 under maintenance — `s1`'s PVC bound to **`s2`'s** PV. Nothing in Kubernetes prevents one
@@ -996,7 +1000,7 @@ rm -rf /mnt/kafka-data/kafka-log<the small, freshly formatted one>
 Leaving them is safe; removing them restores the "exactly one directory per disk" invariant that
 makes check 4 meaningful next time.
 
-This procedure was exercised on ACP 4.3: a topic that had dropped from 1000 messages to 0 was
+This procedure was exercised on v4.3: a topic that had dropped from 1000 messages to 0 was
 restored to all 1000 messages.
 
 ## Limitations and Open Items
@@ -1009,7 +1013,7 @@ restored to all 1000 messages.
   tenant. On a multi-tenant ACP cluster, provisioning is a platform-administrator task that has
   to happen before the tenant creates the Kafka instance.
 - **The ACP Kafka instance form may not expose `class` and `selector` on the node pool.** This
-  has not been verified for ACP 4.3. If the form does not offer them, switch to the YAML view
+  has not been verified. If the form does not offer them, switch to the YAML view
   when creating the instance, or apply the `KafkaNodePool` manifest directly. Note that an
   instance created through the form uses `type: persistent-claim` (not JBOD), so its PVC names
   have no volume-id prefix — `data-<cluster>-<pool>-<nodeId>`.
@@ -1017,7 +1021,7 @@ restored to all 1000 messages.
   pool defines `spec.template.pod`, that template wins outright and
   `Kafka.spec.kafka.template.pod` is ignored — including `securityContext`. A setting placed on
   the `Kafka` resource silently has no effect.
-- **What was tested.** On ACP 4.3 with three nodes, run end to end with `hostPath` PVs and again
+- **What was tested.** On v4.3 with three nodes, run end to end with `hostPath` PVs and again
   with `local` PVs: simultaneous deletion of all broker pods (bindings and data preserved);
   cluster delete and recreate with PVCs retained; deliberate cross-binding via PVC recreation
   (reproduced both times — brokers 1 and 2 swapped disks, two of three silently empty, topic
@@ -1029,7 +1033,7 @@ restored to all 1000 messages.
 - **Initial binding was never name-ordered in either run.** The first run bound brokers 0/1/2 to
   PVs c/b/a; the second to c/a/b. On a fresh install this is harmless — every disk is empty —
   but it is a direct demonstration that the PVC name has no influence on which PV it gets.
-- **Kafka 2.x / ZooKeeper operator line.** The sibling `-2x` operator (Strimzi 0.25) has no
+- **Kafka 2.x / ZooKeeper line.** The legacy ZooKeeper-based line has no
   `KafkaNodePool`: storage lives under `Kafka.spec.kafka.storage` and
   `Kafka.spec.zookeeper.storage`, PVC names are `data-<cluster>-kafka-<n>` and
   `data-<cluster>-zookeeper-<n>`, and ZooKeeper needs its own three PVs. The PV-side design —
