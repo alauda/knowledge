@@ -10,418 +10,208 @@ ProductsVersion:
 # Deploy Kafka on Node-Local Disks with Pre-Bound PersistentVolumes
 
 :::info Applicable Versions
-Alauda Streaming Service for Kafka 4.3 — KRaft mode with `KafkaNodePool`.
+Alauda Streaming Service for Kafka 4.3 — KRaft mode.
 
-For the legacy Kafka 2.x / ZooKeeper line the CR shape differs; see the notes at the end.
+For the legacy Kafka 2.x / ZooKeeper line the resource shape differs; see
+[Limitations and Open Items](#limitations-and-open-items).
 :::
 
 ## Purpose
 
 Kafka is sometimes deployed onto node-local disks — bare disks, LVM volumes, or plain
-directories on the host — instead of a network storage class. This is done for throughput
-(no network hop, no replication under Kafka's own replication) and for clusters that have no
-CSI storage at all.
+directories on the host — instead of a network storage class, for throughput or because the
+cluster has no CSI storage at all.
 
-Node-local storage removes the property that every other Kubernetes workload relies on: the
-volume can no longer follow the pod. Two failures come out of that, and both have been hit in
-the field:
+Node-local storage removes the property every other Kubernetes workload relies on: the volume
+can no longer follow the pod. Left unmanaged that produces two failures, both seen in the field:
 
 1. A broker pod is rescheduled and comes up with an empty or foreign log directory.
-2. After the Kafka cluster is deleted and recreated, brokers bind to each other's disks —
-   `broker-0` ends up on the disk that holds `broker-1`'s data.
+2. After an instance is deleted and recreated, brokers bind to each other's disks.
 
-This document explains why each happens, and gives a deployment procedure that makes the
-broker-to-disk mapping deterministic and repeatable.
+This document gives a deployment procedure that makes the broker-to-disk mapping deterministic,
+then explains why each part is necessary in [Why This Design](#why-this-design).
+
+**The short version:** use `local` volumes, and reserve every PersistentVolume for a specific
+PersistentVolumeClaim with `spec.claimRef` before the claim exists.
 
 ## Prerequisites
 
-- Alauda Streaming Service for Kafka installed and running in the target namespace.
-- At least three worker nodes reserved for Kafka, each with a dedicated disk or directory.
-- Cluster-admin rights: `PersistentVolume` and `StorageClass` are cluster-scoped objects and
-  must be created by an administrator, not by the namespace owner.
+- Alauda Streaming Service for Kafka installed and running.
+- Three worker nodes for a highly available instance, each with a dedicated disk or directory.
+- Cluster-admin rights. `PersistentVolume` and `StorageClass` are cluster-scoped and must be
+  created by an administrator, not the namespace owner.
+- The ability to label the StorageClass for the target project — see Step 2. Without it, every
+  PersistentVolumeClaim is rejected by an admission webhook.
 - Node labels or a taint scheme to keep other workloads off the Kafka nodes. See
   [Schedule Kafka on Dedicated Middleware Nodes with Affinity, Taints, and Tolerations](./Kafka_Node_Placement_Affinity_Taints_Guide.md).
 
-## Use `local` Volumes, Not `hostPath`
-
-Both PV types point at a path on the host, but they behave differently in the one place that
-matters here:
-
-| | `hostPath` | `local` |
-| --- | --- | --- |
-| `spec.nodeAffinity` | Optional — the API server accepts a PV without it | **Required** — the API server rejects a PV without it |
-| Scheduler awareness | The scheduler does not constrain the pod to the node holding the data | The scheduler filters candidate nodes by the PV's `nodeAffinity` |
-| Result if the pod moves | kubelet resolves the same path on whatever node the pod landed on — creating it if `hostPath.type` is `DirectoryOrCreate` or unset, failing to mount if it is `Directory` and the path is absent | The pod cannot be scheduled anywhere but the node that owns the volume |
-| `fsGroup` ownership | **Not applied.** kubelet does not chown host paths, so the directory keeps whatever ownership it has | Applied — kubelet adjusts group ownership to the pod's `fsGroup` |
-
-A `hostPath` PV without `nodeAffinity` is the direct cause of failure mode 1. The pod is
-rescheduled to another node, kubelet resolves the same path on the *new* node, and Kafka
-starts against a directory that is empty (or that belongs to a different broker). Nothing in
-Kubernetes prevents this, because a `hostPath` PV makes no claim about which node it lives on.
-
-**Use `type: local` for every Kafka data volume.** The rest of this document does. Where you
-must keep `hostPath` for an existing deployment, set `spec.nodeAffinity` on those PVs
-explicitly — it is optional for `hostPath` but honored by the scheduler when present.
-
-Both differences were confirmed on ACP v4.3.
-
-The API server refuses a `local` PV that omits `nodeAffinity`, so the misconfiguration that
-lets a pod drift away from its data is simply not expressible:
-
-```
-The PersistentVolume "…" is invalid: spec.nodeAffinity:
-  Required value: Local volume requires node affinity
-```
-
-The `fsGroup` row is the one that bites first. Kafka runs as UID 1001, and a directory created
-for a `hostPath` volume is `root:root 0755`. Because kubelet does not apply `fsGroup` to host
-paths, the broker cannot write to it and crash-loops on startup:
-
-```
-Formatting metadata directory /var/lib/kafka/data/kafka-log0 with metadata.version 4.2-IV1.
-Error while writing meta.properties file /var/lib/kafka/data/kafka-log0:
-  java.nio.file.AccessDeniedException: /var/lib/kafka/data/kafka-log0
-```
-
-With `local` volumes this does not happen. Starting from the same `root:root 0755` directory,
-kubelet adjusted it to `drwxrwsr-x` on mount and the cluster came up first time at default
-privileges — no `runAsUser` override needed.
-
-If you are stuck on `hostPath`, either make the directory writable on the host (`chmod g+rwx`,
-group `0`) or run the pods as root, following
-[Run Kafka Pods as the Root User](./How_to_Run_Kafka_as_Root_User.md).
-
-## How the Operator Maps Brokers to Volumes
-
-The operator derives the PVC name from the pod name, and the pod name from the cluster and
-pool names plus the node ID. The names are fully deterministic, which is what makes
-pre-binding possible.
-
-| Object | Name |
-| --- | --- |
-| Pod | `<cluster>-<pool>-<nodeId>` |
-| PVC (single volume) | `data-<cluster>-<pool>-<nodeId>` |
-| PVC (JBOD volume) | `data-<volumeId>-<cluster>-<pool>-<nodeId>` |
-
-For a cluster `my-cluster`, a pool `kafka`, node IDs 0–2, and JBOD volume id 0, the PVCs are:
-
-```
-data-0-my-cluster-kafka-0
-data-0-my-cluster-kafka-1
-data-0-my-cluster-kafka-2
-```
-
-Every PVC the operator generates is fixed at `accessModes: [ReadWriteOnce]` and
-`volumeMode: Filesystem`. It takes `storageClassName` from `spec.storage.class`, its size
-request from `spec.storage.size`, and an optional `matchLabels` selector from
-`spec.storage.selector`.
-
-### What you cannot use
-
-Two options that look like they would solve per-broker volume placement have no effect in
-Alauda Streaming Service for Kafka 4.3:
-
-- **`Kafka.spec.kafka.storage` is ignored.** Storage is configured in `KafkaNodePool.spec.storage`.
-  The field still exists on the `Kafka` CRD for backward compatibility; setting it has no effect
-  and produces a deprecation warning in `status.conditions`.
-- **`storage.overrides` (per-broker `class`) is ignored.** The field is deprecated in the CRD and
-  the operator does not read it in this version. A configuration carried
-  over from an older release that relies on per-broker storage class overrides stopped taking
-  effect on upgrade — check `status.conditions` on such clusters.
-
-`spec.storage.selector` does still work, but it applies the *same* label selector to every PVC
-in the pool, so it can narrow the pool of eligible PVs — it cannot say "broker 0 gets this
-one." Per-broker placement has to be solved on the PV side.
-
-## Root Cause of the Cross-Binding Failure
-
-The report is that restarting all broker pods at once shuffles the PV bindings. The mechanism
-is close to that, but the trigger is different, and the difference determines the fix.
-
-**A bound PVC never changes its PV.** `PersistentVolumeClaim.spec.volumeName` is immutable
-once set, and the operator does not delete PVCs when pods restart, are rescheduled, or are
-rolled. Restarting all three brokers simultaneously cannot re-shuffle anything.
-
-**Binding is decided once, when the PVC is created, and it is first-come-first-serve.**
-Kubernetes matches a PVC to a PV on storage class, requested capacity, access mode, and volume
-mode. There is no pool or identity concept: any PV that satisfies the request is a candidate,
-and the three identical Kafka PVs satisfy all three PVCs equally. Which PVC wins which PV is
-whatever order the controller happens to process them in.
-
-This was verified directly on ACP v4.3: all three broker pods were deleted simultaneously
-(`kubectl delete pod -l strimzi.io/cluster=…`). Every pod came back on its original node with
-its PVC bound to the same PV, and the test topic still held all 1000 messages with full ISR.
-Restarting brokers — together or one at a time — cannot shuffle storage.
-
-So the cross-binding is real, but it happens whenever **PVCs are created**, not when pods
-restart:
-
-- The Kafka cluster is deleted and recreated (the common case — `deleteClaim: true`, or the
-  PVCs were removed manually during cleanup).
-- The namespace is deleted and recreated.
-- A PVC is deleted by hand to "reset" a broker.
-- Pod names change, so the operator creates PVCs under new names: the node pool is renamed,
-  the cluster is renamed, or node IDs are reassigned after a scale-down/scale-up cycle.
-
-In all of those, three fresh PVCs race for three Retained PVs that still hold data, and the
-mapping that comes out has no relationship to the one that went in.
-
-### What the broker does when it lands on the wrong disk
-
-This is the part that makes the failure dangerous, and it is not what most people expect.
-
-Kafka's log directory is named after the broker's **own** node ID:
-`log.dirs = <mountPath>/kafka-log<nodeId>`. So a broker that lands on a foreign disk does not
-read the other broker's `meta.properties` at all — it looks for its own `kafka-log<N>`,
-does not find one, and concludes the disk is fresh.
-
-**The common outcome is silent.** The broker formats a new, empty `kafka-log<N>` *beside* the
-orphaned directory that holds the real data, starts up reporting `1/1 Running`, and joins the
-cluster as an empty replica. Nothing logs an error. The orphaned data stays on the same disk,
-invisible to Kafka, taking up space.
-
-**The loud outcome is the exception.** A broker only crashes if it happens to keep a disk that
-already contains *its own* `kafka-log<N>` and the cluster ID has since changed — then it fails
-with `Invalid cluster.id`. A broker that swapped disks with a peer never gets that far.
-
-Measured on ACP v4.3 with three brokers, after a PVC recreation that swapped brokers 1 and 2:
-
-| Broker | Landed on | Result |
-| --- | --- | --- |
-| 0 | its own disk | `CrashLoopBackOff` — `Invalid cluster.id` |
-| 1 | broker 2's disk | `Running 1/1` — formatted an empty `kafka-log1` next to broker 2's 904K `kafka-log2` |
-| 2 | broker 1's disk | `Running 1/1` — formatted an empty `kafka-log2` next to broker 1's 904K `kafka-log1` |
-
-Two of the three brokers reported healthy. The topic's message count went from 1000 to **0**,
-while every byte of the original data was still sitting on the disks in orphaned directories.
-
-:::danger The node.id check cannot detect this
-Reading `meta.properties` from inside a broker pod does **not** find a wrong binding. Broker 1
-reads `kafka-log1/meta.properties`, which says `node.id=1` — it matches, because the broker
-wrote that file itself moments earlier. The reliable signal is **more than one `kafka-log*`
-directory on a single disk**. See [Verification](#verification).
-:::
-
-Recovery is to correct the bindings and restart, **never** to wipe a data directory to "clear
-the error." See [Recovering a Wrong Binding](#recovering-a-wrong-binding).
-
-## Design Rules
-
-The deployment below rests on five rules. Applying them individually helps; applying all five
-makes the mapping deterministic.
-
-1. **Pre-bind each PV to a named PVC** via `spec.claimRef`. This removes the race entirely: a
-   PV carrying a `claimRef` is only ever offered to that exact namespace/name.
-2. **Pin each PV to its node** via `spec.nodeAffinity`. The scheduler then places the pod on
-   the node that holds the data.
-3. **`volumeBindingMode: WaitForFirstConsumer`** on the storage class, so binding and
-   scheduling are decided together.
-4. **`persistentVolumeReclaimPolicy: Retain`** so deleting a PVC never deletes the data.
-5. **`deleteClaim: false`** on the node pool storage so removing the Kafka CR leaves the PVCs
-   in place — the reinstall then reuses the existing bindings instead of creating new ones.
-
-Rule 1 is the one that fixes the reported bug. Rules 4 and 5 are belt and braces: with both
-set, the common uninstall/reinstall path never destroys a binding in the first place.
-
-### How pre-binding works
-
-`spec.claimRef` on a PV is Kubernetes' reservation mechanism. When you set it to a
-`{namespace, name}` that does not exist yet, the PV enters `Available` and the control plane
-will only bind it to that specific claim. When the claim appears, the binder matches it
-immediately — the pre-bound PV is checked before the ordinary "find any matching volume"
-search runs, so it takes precedence and works with `WaitForFirstConsumer`.
-
-For this to bind, the PV and the PVC the operator generates must agree:
-
-| Field | PV | PVC (generated) |
-| --- | --- | --- |
-| `storageClassName` | must match | from `spec.storage.class` |
-| `accessModes` | must include `ReadWriteOnce` | always `ReadWriteOnce` |
-| `volumeMode` | must be `Filesystem` | always `Filesystem` |
-| `capacity.storage` | must be ≥ the request | from `spec.storage.size` |
-
-Omit `uid` from `claimRef`. A `claimRef` with only `namespace` and `name` is a reservation;
-the control plane fills in the UID when it binds. A `claimRef` that carries a *stale* UID —
-which is what is left behind after the PVC is deleted — matches nothing and leaves the PV
-stuck in `Released` forever.
-
 ## Procedure
 
-The example builds a three-node cluster: cluster `my-cluster`, pool `kafka` in namespace
-`kafka-system`, on nodes `node-1`, `node-2`, `node-3`, each with a disk mounted at
-`/mnt/kafka-data`. Nodes carry the label `middleware.alauda.io/dedicated=true`.
+A highly available instance has **three brokers and three controllers**, each with its own
+volume — **six PersistentVolumes in total**, two per node.
+
+Because the generated volume claim names contain a per-instance value that cannot be known in
+advance (see [How the names are derived](#how-the-names-are-derived)), the procedure has two
+phases: create the instance, read the claim names it generates, then create volumes reserved for
+exactly those names. The claims wait, `Pending`, until their volumes appear.
+
+The example uses instance `rklocal` in namespace `demo-space`, on nodes `192.168.131.66`,
+`192.168.136.224` and `192.168.138.211`.
 
 ### Step 1 — Prepare the disks
 
-On each Kafka node, mount the dedicated disk and create the directory the PV will point at.
-Do not put Kafka data on the root filesystem: a runaway log directory will take the node down
-with it.
+On each node, mount the dedicated disk and create one directory for the broker and one for the
+controller. Do not put Kafka data on the root filesystem in production: a runaway log directory
+takes the node down with it.
 
 ```bash
-# On each of node-1, node-2, node-3
-mkfs.xfs /dev/sdb
-mkdir -p /mnt/kafka-data
-echo '/dev/sdb /mnt/kafka-data xfs defaults,noatime 0 0' >> /etc/fstab
-mount /mnt/kafka-data
+# On each Kafka node
+mkdir -p /cpaas/rk-broker /cpaas/rk-controller
 ```
 
-The Kafka container runs as UID 1001. The operator sets `fsGroup: 0` on the pod by default, so
-kubelet adjusts group ownership of the mounted volume on first use and no manual `chown` is
-needed. If you have overridden the pod security context (for example following
-[Run Kafka Pods as the Root User](./How_to_Run_Kafka_as_Root_User.md)), make the host
-directory writable by the UID/GID you configured.
+Ownership does not need adjusting. Kafka runs as UID 1001, and for `local` volumes kubelet
+applies the pod's `fsGroup` to the mount, turning a `root:root 0755` directory into
+`drwxrwsr-x` automatically.
 
-:::warning Capacity is advisory for local volumes
-`capacity.storage` on a `local` PV is metadata used for matching. It is not a quota, and
-nothing stops Kafka from filling the underlying disk past it. Set it to the real usable size of
-the disk and enforce retention with `log.retention.bytes` / `log.retention.hours`.
+:::warning Capacity is advisory
+`capacity.storage` on a `local` volume is matching metadata, not a quota. Nothing stops Kafka
+from filling the underlying disk past it. Set it to the real usable size and enforce retention
+with `log.retention.bytes` / `log.retention.hours`.
 :::
 
-### Step 2 — Create the StorageClass
+### Step 2 — Create the StorageClass and grant it to the project
 
 ```yaml
 apiVersion: storage.k8s.io/v1
 kind: StorageClass
 metadata:
   name: kafka-local
+  labels:
+    # REQUIRED. Without a project grant, every PVC using this class is rejected.
+    project.cpaas.io/ALL_ALL: "true"
 provisioner: kubernetes.io/no-provisioner
 volumeBindingMode: WaitForFirstConsumer
 reclaimPolicy: Retain
 allowVolumeExpansion: false
 ```
 
-`no-provisioner` means nothing is created dynamically — the class exists only to group the PVs
-you create by hand. `allowVolumeExpansion: false` is honest: local volumes cannot be resized by
-the operator, and setting it true would make the operator attempt a resize that never
-completes. Growing a broker's disk is an offline operation on the host.
+:::danger The project label is not optional
+A StorageClass is only usable inside a project that has been granted it. Without the grant, the
+`pvc-validator.cpaas.io` admission webhook denies every claim, and the failure is indirect — no
+pods appear and the instance sits idle. The rejection is visible only in the Kafka resource's
+conditions:
 
-### Step 3 — Create the pre-bound PersistentVolumes
-
-One PV per broker, each pinned to its node and reserved for the PVC the operator will create.
-Note the PVC names follow the JBOD form `data-<volumeId>-<cluster>-<pool>-<nodeId>` used by
-the node pool in Step 4.
-
-```yaml
-apiVersion: v1
-kind: PersistentVolume
-metadata:
-  name: kafka-local-node-1
-  labels:
-    kafka.alauda.io/pool: my-cluster-kafka
-spec:
-  capacity:
-    storage: 500Gi
-  volumeMode: Filesystem
-  accessModes:
-    - ReadWriteOnce
-  persistentVolumeReclaimPolicy: Retain
-  storageClassName: kafka-local
-  # Reservation: only this PVC may ever bind to this volume.
-  # Do not set uid — the control plane fills it in on bind.
-  claimRef:
-    apiVersion: v1
-    kind: PersistentVolumeClaim
-    namespace: kafka-system
-    name: data-0-my-cluster-kafka-0
-  local:
-    path: /mnt/kafka-data
-  nodeAffinity:
-    required:
-      nodeSelectorTerms:
-        - matchExpressions:
-            - key: kubernetes.io/hostname
-              operator: In
-              values:
-                - node-1
----
-apiVersion: v1
-kind: PersistentVolume
-metadata:
-  name: kafka-local-node-2
-  labels:
-    kafka.alauda.io/pool: my-cluster-kafka
-spec:
-  capacity:
-    storage: 500Gi
-  volumeMode: Filesystem
-  accessModes:
-    - ReadWriteOnce
-  persistentVolumeReclaimPolicy: Retain
-  storageClassName: kafka-local
-  claimRef:
-    apiVersion: v1
-    kind: PersistentVolumeClaim
-    namespace: kafka-system
-    name: data-0-my-cluster-kafka-1
-  local:
-    path: /mnt/kafka-data
-  nodeAffinity:
-    required:
-      nodeSelectorTerms:
-        - matchExpressions:
-            - key: kubernetes.io/hostname
-              operator: In
-              values:
-                - node-2
----
-apiVersion: v1
-kind: PersistentVolume
-metadata:
-  name: kafka-local-node-3
-  labels:
-    kafka.alauda.io/pool: my-cluster-kafka
-spec:
-  capacity:
-    storage: 500Gi
-  volumeMode: Filesystem
-  accessModes:
-    - ReadWriteOnce
-  persistentVolumeReclaimPolicy: Retain
-  storageClassName: kafka-local
-  claimRef:
-    apiVersion: v1
-    kind: PersistentVolumeClaim
-    namespace: kafka-system
-    name: data-0-my-cluster-kafka-2
-  local:
-    path: /mnt/kafka-data
-  nodeAffinity:
-    required:
-      nodeSelectorTerms:
-        - matchExpressions:
-            - key: kubernetes.io/hostname
-              operator: In
-              values:
-                - node-3
+```
+admission webhook "pvc-validator.cpaas.io" denied the request:
+StorageClass "kafka-local" is not allowed in project "demo"
 ```
 
-Writing these by hand is where mistakes get made. Generate them instead:
+`project.cpaas.io/ALL_ALL: "true"` grants it to every project, matching how the platform's own
+storage classes are labelled. To restrict it instead, grant only the projects that need it.
+:::
+
+`no-provisioner` means nothing is created dynamically — the class exists only to group the
+volumes you create by hand. `allowVolumeExpansion: false` is honest: local volumes cannot be
+resized by the operator.
+
+### Step 3 — Create the Kafka instance
+
+Set both storage classes to `kafka-local`: `spec.storage` is the **broker** storage,
+`spec.controller.storage` is the **controller** storage. They are separate node pools with
+separate volumes.
+
+```yaml
+apiVersion: middleware.alauda.io/v1
+kind: RdsKafka
+metadata:
+  name: rklocal
+  namespace: demo-space
+spec:
+  mode: KRaft
+  version: "4.2"
+  replicas: 3
+  storage:
+    class: kafka-local
+    size: 5Gi
+    deleteClaim: false
+  resources:
+    limits:
+      cpu: "1"
+      memory: 2Gi
+    requests:
+      cpu: 200m
+      memory: 512Mi
+  controller:
+    replicas: 3
+    roles:
+      - controller
+    storage:
+      class: kafka-local
+      size: 5Gi
+      deleteClaim: false
+    resources:
+      limits:
+        cpu: 500m
+        memory: 500Mi
+      requests:
+        cpu: 500m
+        memory: 500Mi
+  config:
+    # Replication is the only fault tolerance here — the pods cannot move.
+    default.replication.factor: "3"
+    min.insync.replicas: "2"
+    offsets.topic.replication.factor: "3"
+    transaction.state.log.replication.factor: "3"
+    transaction.state.log.min.isr: "2"
+```
+
+`deleteClaim: false` keeps the claims when the instance is removed, so a reinstall reuses the
+existing bindings instead of creating new ones.
+
+### Step 4 — Read the generated claim names
+
+The instance creates its claims immediately; they stay `Pending` because no volume matches yet.
+
+```bash
+kubectl -n demo-space get pvc \
+  -o custom-columns='PVC:.metadata.name,STATUS:.status.phase,CLASS:.spec.storageClassName'
+```
+
+```
+data-rklocal-broker-a28da4-0       Pending   kafka-local
+data-rklocal-broker-a28da4-1       Pending   kafka-local
+data-rklocal-broker-a28da4-2       Pending   kafka-local
+data-rklocal-controller-a28da4-3   Pending   kafka-local
+data-rklocal-controller-a28da4-4   Pending   kafka-local
+data-rklocal-controller-a28da4-5   Pending   kafka-local
+```
+
+Note the shape: brokers take node IDs 0–2, controllers 3–5, and `a28da4` is generated per
+instance. **Copy these names exactly** — they are the input to the next step.
+
+### Step 5 — Create the pre-bound PersistentVolumes
+
+One volume per claim, each pinned to its node and reserved for exactly one claim. Generate them
+rather than typing them; this is where mistakes happen.
 
 ```bash
 #!/usr/bin/env bash
 set -euo pipefail
 
-CLUSTER=my-cluster
-POOL=kafka
-NAMESPACE=kafka-system
+NAMESPACE=demo-space
+INSTANCE=rklocal
+HASH=a28da4          # from Step 4
 SC=kafka-local
-VOLUME_ID=0
-SIZE=500Gi
-PATH_ON_HOST=/mnt/kafka-data
+SIZE=5Gi
+NODES=(192.168.131.66 192.168.136.224 192.168.138.211)
 
-# node ID -> hostname. The index is the Kafka node ID; edit this list only.
-NODES=(node-1 node-2 node-3)
-
-for id in "${!NODES[@]}"; do
-  host="${NODES[$id]}"
+emit() {   # $1=pv name  $2=host path  $3=claim name  $4=node
   cat <<YAML
 ---
 apiVersion: v1
 kind: PersistentVolume
 metadata:
-  name: ${CLUSTER}-${POOL}-${id}-local
-  labels:
-    kafka.alauda.io/pool: ${CLUSTER}-${POOL}
+  name: $1
 spec:
   capacity:
     storage: ${SIZE}
@@ -429,385 +219,222 @@ spec:
   accessModes: [ReadWriteOnce]
   persistentVolumeReclaimPolicy: Retain
   storageClassName: ${SC}
-  claimRef:
+  claimRef:                 # the reservation — no uid, the control plane fills it in
     apiVersion: v1
     kind: PersistentVolumeClaim
     namespace: ${NAMESPACE}
-    name: data-${VOLUME_ID}-${CLUSTER}-${POOL}-${id}
+    name: $3
   local:
-    path: ${PATH_ON_HOST}
+    path: $2
   nodeAffinity:
     required:
       nodeSelectorTerms:
         - matchExpressions:
             - key: kubernetes.io/hostname
               operator: In
-              values: ["${host}"]
+              values: ["$4"]
 YAML
-done
-```
+}
 
-Review the output, then apply it. Keep the script in version control alongside the Kafka
-manifests — it is the authoritative record of which broker owns which node.
-
-### Step 4 — Create the KafkaNodePool and Kafka resources
-
-```yaml
-apiVersion: kafka.strimzi.io/v1beta2
-kind: KafkaNodePool
-metadata:
-  name: kafka
-  namespace: kafka-system
-  labels:
-    strimzi.io/cluster: my-cluster
-  annotations:
-    # Pin the node IDs so PVC names stay stable across scale-down/scale-up.
-    strimzi.io/next-node-ids: "[0-2]"
-spec:
-  replicas: 3
-  roles:
-    - controller
-    - broker
-  storage:
-    type: jbod
-    volumes:
-      - id: 0
-        type: persistent-claim
-        size: 500Gi
-        class: kafka-local
-        kraftMetadata: shared
-        deleteClaim: false
-        # Optional second line of defence: only PVs carrying this label are
-        # eligible at all. Pre-binding already guarantees the mapping; this
-        # prevents an unrelated PV in the same class from being considered.
-        selector:
-          kafka.alauda.io/pool: my-cluster-kafka
-  template:
-    pod:
-      affinity:
-        nodeAffinity:
-          requiredDuringSchedulingIgnoredDuringExecution:
-            nodeSelectorTerms:
-              - matchExpressions:
-                  - key: middleware.alauda.io/dedicated
-                    operator: In
-                    values: ["true"]
-        podAntiAffinity:
-          requiredDuringSchedulingIgnoredDuringExecution:
-            # strimzi.io/name is always "<cluster>-kafka" — it is derived from the
-            # cluster name, not the pool name. It happens to read the same here
-            # because this pool is called "kafka".
-            - labelSelector:
-                matchExpressions:
-                  - key: strimzi.io/name
-                    operator: In
-                    values: ["my-cluster-kafka"]
-              topologyKey: kubernetes.io/hostname
-      tolerations:
-        - key: middleware.alauda.io/dedicated
-          operator: Equal
-          value: "true"
-          effect: NoSchedule
----
-apiVersion: kafka.strimzi.io/v1beta2
-kind: Kafka
-metadata:
-  name: my-cluster
-  namespace: kafka-system
-spec:
-  kafka:
-    version: 4.2.0
-    listeners:
-      - name: plain
-        port: 9092
-        type: internal
-        tls: false
-      - name: tls
-        port: 9093
-        type: internal
-        tls: true
-    config:
-      # Replication is the fault tolerance model here — the pods cannot move,
-      # so a lost node must be survivable by the other two.
-      default.replication.factor: 3
-      min.insync.replicas: 2
-      offsets.topic.replication.factor: 3
-      transaction.state.log.replication.factor: 3
-      transaction.state.log.min.isr: 2
-  entityOperator:
-    topicOperator: {}
-    userOperator: {}
-```
-
-Notes on this manifest:
-
-- **`metadataVersion` is omitted** so it defaults to the metadata version matching
-  `spec.kafka.version`. Set it explicitly only when performing a staged version upgrade.
-- **Replication factor 3 with `min.insync.replicas: 2` is not optional here.** The pods are
-  pinned to their nodes; a node outage takes a broker out until that node returns. Kafka's own
-  replication is the only fault tolerance in this design. A topic created with RF=1 on this
-  cluster is unavailable for the entire duration of a node outage.
-- **`podAntiAffinity` is `required`, not `preferred`.** Two brokers on one node would contend
-  for that node's single PV, and the second would stay `Pending` — but making it explicit turns
-  a confusing scheduling failure into an obvious one.
-- **Everything under `template.pod` belongs on the `KafkaNodePool`.** As soon as a pool defines
-  its own `spec.template.pod`, that template replaces `Kafka.spec.kafka.template.pod` entirely.
-  Putting a `securityContext` on the `Kafka` resource while the pool carries an `affinity` block
-  means the `securityContext` is silently dropped.
-- **`kraftMetadata: shared`** puts the KRaft metadata log on the same volume. With a single
-  JBOD volume this is the only sensible setting.
-- **`class` and `selector` are effectively fixed at creation time.** Editing them later does not
-  fail loudly — the operator detects a disallowed storage change, **ignores every storage change
-  in the pool**, keeps the previous configuration, and records a `KafkaStorage` warning on the
-  Kafka resource. Plan the storage block before the first apply, and check
-  `status.conditions` after any edit to it. Increasing `size`, and changing `deleteClaim` or
-  `kraftMetadata`, are the changes that *are* accepted.
-
-:::info Existing PVCs are never re-pointed by the operator
-Before patching a PVC, the operator restores `volumeName`, `storageClassName`, `accessModes`,
-and `selector` from the live object. Even a mistaken edit to the node pool cannot move a bound
-PVC to a different PV — the binding can only change if the PVC itself is deleted and recreated.
-:::
-
-### Step 5 — Apply in order
-
-Ordering matters only in that the PVs should exist before the operator creates the PVCs. If
-you apply the Kafka CR first, the PVCs are created and stay `Pending` until the PVs appear;
-they will then bind correctly, because a pending PVC still binds to its reserved PV. Applying
-the PVs first is cleaner:
-
-```bash
-kubectl apply -f storageclass.yaml
-kubectl apply -f kafka-local-pvs.yaml
-kubectl apply -f kafka-cluster.yaml
-```
-
-## Verification
-
-Run these after the cluster reports ready. The procedure and these checks were exercised on an
-ACP v4.3 cluster with three worker nodes, Kafka 4.2.0; the outputs below are the shapes
-observed there.
-
-:::info What the test covered
-The full procedure was run twice on that cluster — once with `hostPath` PVs and once with
-`local` PVs on `/cpaas/kafka-lpv` — with identical results for binding, `claimRef` pre-binding,
-cluster-ID recovery, and wrong-binding recovery. Both `local`-specific claims in this document
-were verified directly: the API server rejects a `local` PV with no `nodeAffinity`, and kubelet
-applies `fsGroup` to `local` volumes but not to `hostPath` ones.
-:::
-
-**1. Every PV is bound to the PVC it was reserved for.**
-
-```bash
-kubectl get pv -o custom-columns=\
-'PV:.metadata.name,STATUS:.status.phase,CLAIM:.spec.claimRef.name,'\
-'NODE:.spec.nodeAffinity.required.nodeSelectorTerms[0].matchExpressions[0].values[0],'\
-'PATH:.spec.local.path'
-```
-
-Confirm each row pairs the node hostname with the broker index you intended. A PV in
-`Available` while a PVC is `Pending` means the two do not agree on class, size, access mode, or
-volume mode.
-
-**2. Every PVC is bound.**
-
-```bash
-kubectl -n kafka-system get pvc -o custom-columns=\
-'PVC:.metadata.name,STATUS:.status.phase,VOLUME:.spec.volumeName,CLASS:.spec.storageClassName'
-```
-
-**3. Each broker pod is running on the node that owns its data.**
-
-```bash
-kubectl -n kafka-system get pod -l strimzi.io/cluster=my-cluster \
-  -o custom-columns='POD:.metadata.name,NODE:.spec.nodeName,STATUS:.status.phase'
-```
-
-Cross-check `my-cluster-kafka-0` against `node-1`, and so on. This is the check that catches a
-mistake in the PV generation script.
-
-**4. Each disk holds exactly one `kafka-log*` directory.**
-
-This is the check that actually detects a wrong binding. Do not use `meta.properties` for it —
-a broker that silently reformatted writes a `node.id` that matches itself, so that file always
-agrees with the broker reading it.
-
-```bash
 for i in 0 1 2; do
-  printf 'broker %s: ' "$i"
-  kubectl -n kafka-system exec my-cluster-kafka-$i -c kafka -- \
-    sh -c 'ls -1 /var/lib/kafka/data/ | tr "\n" " "; echo; du -sh /var/lib/kafka/data/kafka-log*/'
+  emit "rk-broker-$i" /cpaas/rk-broker \
+       "data-${INSTANCE}-broker-${HASH}-${i}" "${NODES[$i]}"
+done
+for i in 0 1 2; do
+  emit "rk-controller-$((i+3))" /cpaas/rk-controller \
+       "data-${INSTANCE}-controller-${HASH}-$((i+3))" "${NODES[$i]}"
 done
 ```
 
-Healthy output is exactly one directory per broker, named for that broker:
-
-```
-broker 0: kafka-log0     904K  /var/lib/kafka/data/kafka-log0/
-broker 1: kafka-log1     904K  /var/lib/kafka/data/kafka-log1/
-broker 2: kafka-log2     904K  /var/lib/kafka/data/kafka-log2/
-```
-
-Two directories on one disk means a broker formatted a fresh log next to someone else's data —
-a wrong binding, past or present. The small directory is the empty one it just created; the
-large one is the orphaned real data:
-
-```
-broker 1: kafka-log1 kafka-log2      56K  /var/lib/kafka/data/kafka-log1/
-                                    904K  /var/lib/kafka/data/kafka-log2/
-```
-
-Go to [Recovering a Wrong Binding](#recovering-a-wrong-binding) if you see this.
-
-:::warning This check needs a Running pod
-`kubectl exec` requires the container to be up. A broker that swapped disks *is* running, so the
-check works for the case that matters. For a crash-looping broker, read the directory from the
-host instead: see step 2 of [Recovering a Wrong Binding](#recovering-a-wrong-binding).
+:::warning Array indexing differs between shells
+`bash` indexes arrays from 0, `zsh` from 1. Run the script with `bash`, and check the generated
+output before applying — an off-by-one here silently pins the wrong broker to the wrong node.
 :::
 
-**5. The cluster is healthy.**
+Review the output, then apply it. Keep the script in version control alongside the instance
+manifest — it is the authoritative record of which broker owns which disk.
+
+### Step 6 — Verify
+
+The claims bind as soon as the volumes appear, and the pods start.
 
 ```bash
-kubectl -n kafka-system get kafka my-cluster -o jsonpath='{.status.conditions}' | jq
-kubectl -n kafka-system exec my-cluster-kafka-0 -c kafka -- \
-  bin/kafka-topics.sh --bootstrap-server localhost:9092 --describe --under-replicated-partitions
+kubectl -n demo-space get pvc \
+  -o custom-columns='PVC:.metadata.name,STATUS:.status.phase,VOLUME:.spec.volumeName'
+kubectl -n demo-space get pod -l strimzi.io/cluster=rklocal \
+  -o custom-columns='POD:.metadata.name,NODE:.spec.nodeName'
 ```
 
-The second command should print nothing.
+Each claim must be `Bound` to the volume you reserved for it, and each pod must be on that
+volume's node:
+
+```
+data-rklocal-broker-a28da4-0       Bound   rk-broker-0
+data-rklocal-broker-a28da4-1       Bound   rk-broker-1
+data-rklocal-broker-a28da4-2       Bound   rk-broker-2
+data-rklocal-controller-a28da4-3   Bound   rk-controller-3
+data-rklocal-controller-a28da4-4   Bound   rk-controller-4
+data-rklocal-controller-a28da4-5   Bound   rk-controller-5
+
+rklocal-broker-a28da4-0       192.168.131.66
+rklocal-broker-a28da4-1       192.168.136.224
+rklocal-broker-a28da4-2       192.168.138.211
+rklocal-controller-a28da4-3   192.168.131.66
+rklocal-controller-a28da4-4   192.168.136.224
+rklocal-controller-a28da4-5   192.168.138.211
+```
+
+**Then check that each disk holds exactly one log directory.** This is the check that detects a
+wrong binding, and the only one that does — see
+[Why the node.id check does not work](#why-the-nodeid-check-does-not-work).
+
+```bash
+# On each Kafka node
+ls -1 /cpaas/rk-broker/ /cpaas/rk-controller/
+du -sh /cpaas/rk-broker/kafka-log*/ /cpaas/rk-controller/kafka-log*/
+```
+
+One directory per disk, named for the node ID that owns it, is healthy. **Two directories on one
+disk** means a broker formatted a fresh log next to someone else's data — go to
+[Recovering a wrong binding](#recovering-a-wrong-binding).
+
+## Cleaning Up
+
+`Retain` is deliberate: it is what stops a deleted claim from destroying data. The cost is that
+**nothing is reclaimed automatically**, and cleanup is a manual, two-part job.
+
+Deleting the instance leaves behind:
+
+| What | Where | Reclaimed automatically? |
+| --- | --- | --- |
+| PersistentVolumeClaims | namespace | No — `deleteClaim: false` keeps them |
+| PersistentVolumes | cluster-scoped | No — `Retain` keeps them, in `Released` |
+| Kafka data | the directories on each node | **No — never touched by Kubernetes** |
+
+To decommission an instance completely, after confirming the data is no longer needed:
+
+```bash
+# 1. Remove the instance
+kubectl -n demo-space delete rdskafka rklocal
+
+# 2. Remove the claims it left behind
+kubectl -n demo-space delete pvc -l strimzi.io/cluster=rklocal
+
+# 3. Remove the volumes
+kubectl delete pv rk-broker-0 rk-broker-1 rk-broker-2 \
+                  rk-controller-3 rk-controller-4 rk-controller-5
+
+# 4. Remove the data on each node — this is the step people forget
+#    Run on every Kafka node:
+rm -rf /cpaas/rk-broker /cpaas/rk-controller
+```
+
+Step 4 is the one that matters. The disks are not freed by deleting Kubernetes objects, and a
+later instance pointed at the same paths will find another cluster's log directories waiting for
+it. If you intend to **reuse** the same disks for a new instance, clearing them first is not
+optional.
+
+To keep the data and only rebuild the instance, stop after step 1 and follow
+[Deleting and recreating an instance](#deleting-and-recreating-an-instance) instead.
 
 ## Single-Replica (Non-HA) Deployments
 
-A one-broker Kafka on a local disk is a reasonable choice for a development environment, or for a
-log queue where the producer can buffer and a few minutes of downtime is acceptable. It is not a
-smaller version of the three-node design — the trade-off is categorical.
+A one-broker instance is reasonable for a development environment, or a log queue where the
+producer can buffer and brief downtime is acceptable. It is not a smaller version of the
+three-node design — the trade-off is categorical.
 
 :::danger A single-replica instance has no fault tolerance of any kind
 Replication factor 1 means every partition has exactly one copy, on one disk, on one node. If
-that node reboots, is drained, or loses its disk, the cluster is **down** and its data is
-**unreachable** for the duration — there is no second replica to serve reads and no way to
-fail over. If the disk is lost, the data is gone. Kafka's replication is the only fault
-tolerance in a local-disk deployment, and at RF=1 there is none.
+that node reboots, is drained, or loses its disk, the instance is **down** and its data
+**unreachable** for the duration. If the disk is lost, the data is gone. Kafka's replication is
+the only fault tolerance in a local-disk deployment, and at RF=1 there is none.
 
-Decide this deliberately. Do not run a single replica because a three-node cluster looked like
-more work.
+Decide this deliberately. Do not run a single replica because three nodes looked like more work.
 :::
 
-### Configuration
-
-One pool, one replica, combined roles, and every replication factor set to 1 — a topic or
-internal topic that asks for more replicas than there are brokers will fail to create:
+Set `replicas: 1` and `controller.replicas: 1`, and every replication factor to 1 — a topic that
+asks for more replicas than there are brokers cannot be created:
 
 ```yaml
-apiVersion: kafka.strimzi.io/v1beta2
-kind: KafkaNodePool
-metadata:
-  name: kafka
-  namespace: kafka-system
-  labels:
-    strimzi.io/cluster: my-cluster
-  annotations:
-    strimzi.io/next-node-ids: "[0]"
 spec:
+  mode: KRaft
+  version: "4.2"
   replicas: 1
-  roles:
-    - controller
-    - broker
   storage:
-    type: persistent-claim
-    size: 5Gi
     class: kafka-local
+    size: 5Gi
     deleteClaim: false
----
-apiVersion: kafka.strimzi.io/v1beta2
-kind: Kafka
-metadata:
-  name: my-cluster
-  namespace: kafka-system
-spec:
-  kafka:
-    version: 4.2.0
-    listeners:
-      - name: plain
-        port: 9092
-        type: internal
-        tls: false
-    config:
-      default.replication.factor: 1
-      min.insync.replicas: 1
-      offsets.topic.replication.factor: 1
-      transaction.state.log.replication.factor: 1
-      transaction.state.log.min.isr: 1
+  controller:
+    replicas: 1
+    roles:
+      - controller
+    storage:
+      class: kafka-local
+      size: 5Gi
+      deleteClaim: false
+  config:
+    default.replication.factor: "1"
+    min.insync.replicas: "1"
+    offsets.topic.replication.factor: "1"
+    transaction.state.log.replication.factor: "1"
+    transaction.state.log.min.isr: "1"
 ```
 
-No `podAntiAffinity` is needed — there is only one pod. Everything else is unchanged: one
-`local` PV pinned to the node with `nodeAffinity`, pre-bound to `data-my-cluster-kafka-0` with
-`claimRef`, `Retain`, `WaitForFirstConsumer`.
+Everything else is unchanged — the two-phase procedure, `claimRef` reservation, `Retain`.
 
 ### The cross-binding risk moves between instances
 
-A single-replica instance has one PVC and one PV, so it cannot swap disks with itself. The risk
-does not disappear, though — **it moves to the boundary between instances**. Any number of
-single-replica Kafka instances sharing one `no-provisioner` StorageClass are all drawing from
-the same pool of unreserved PVs, and a PVC carries no notion of which instance a PV belongs to.
+A single-replica instance has one broker claim and one volume, so it cannot swap disks with
+itself. The risk does not disappear — **it moves to the boundary between instances**. Several
+single-replica instances sharing one `no-provisioner` StorageClass all draw from the same pool
+of unreserved volumes, and a claim carries no notion of which instance a volume belongs to.
 
-This is the common multi-tenant shape: several small Kafka instances, one per team or per
-namespace, each on its own node's disk, all on `kafka-local`.
+This is the common multi-tenant shape: a small instance per team or per namespace, each on its
+own node's disk, all on `kafka-local`.
 
-Tested on ACP v4.3 with two single-replica instances (`s1` in namespace `kafka-s1`, `s2` in
-`kafka-s2`), each holding different data. With no `claimRef` on either PV, and `s1`'s pod
-scheduled onto `s2`'s node — the situation you get when `s1`'s usual node is cordoned, full, or
-under maintenance — `s1`'s PVC bound to **`s2`'s** PV. Nothing in Kubernetes prevents one
-tenant's claim from taking another tenant's disk.
+Tested with two single-replica clusters holding different data. With no `claimRef` on either
+volume, and one cluster's pod scheduled onto the other's node — the situation you get when the
+usual node is cordoned, full, or under maintenance — the first cluster's claim bound the
+**second** cluster's volume. Nothing prevents one tenant's claim from taking another's disk.
 
-### The failure is loud here, not silent
+### Here the failure is loud, not silent
 
-This is the one place where single-replica behaves *better* than the three-node case, and it is
-worth understanding why.
+This is the one place single-replica behaves *better* than the multi-broker case.
 
-Every single-replica instance runs as node ID 0, so its log directory is always `kafka-log0`. A
-broker that lands on another instance's disk therefore *does* find a `kafka-log0` — the other
-instance's — reads its `meta.properties`, sees a foreign cluster ID, and refuses to start:
+Every single-replica broker is node ID 0, so its log directory is always `kafka-log0`. A broker
+landing on another instance's disk therefore *does* find a `kafka-log0` — the other instance's —
+reads its `meta.properties`, sees a foreign cluster ID, and refuses to start:
 
 ```
 Invalid cluster.id in /var/lib/kafka/data/kafka-log0/meta.properties.
 Expected SrBFclR9RLSygr8RwS0G1g, but read TfB1UUCaQb-a6Y-IuwQtOw
 ```
 
-It crash-loops instead of formatting, and the victim's data is untouched — confirmed by
-inspecting the disk afterwards: still one `kafka-log0`, still its original size.
+It crash-loops instead of formatting, and the victim's data is untouched — confirmed afterwards:
+still one `kafka-log0`, still its original size.
 
-Contrast that with the three-node case, where the brokers have *different* node IDs, so a
-displaced broker never finds its own directory, silently formats a new one, and joins the
-cluster empty. **Multi-broker cross-binding loses data quietly; single-replica cross-instance
-theft causes an outage but preserves data.**
+Contrast the multi-broker case, where brokers have *different* node IDs, so a displaced broker
+never finds its own directory, silently formats a new one, and joins empty. **Multi-broker
+cross-binding loses data quietly; single-replica cross-instance theft causes an outage but
+preserves data.**
 
-An outage is still an outage. Pre-bind every PV with `claimRef` — in a multi-tenant single-replica
-estate it matters more than anywhere else, because the PVs are interchangeable by construction
-and the tenants have no visibility of each other.
-
-### Everything else applies unchanged
-
-Verified on the same cluster: deleting the pod preserves the binding and the data; deleting the
-`Kafka` resource loses `status.clusterId` and produces the same `Invalid cluster.id` on restart,
-recovered the same way; and `claimRef` pre-binding restores the correct instance-to-disk mapping.
-Both instances came back with their own data intact (500 and 300 messages respectively).
+An outage is still an outage. Reserve every volume with `claimRef` — in a multi-tenant estate it
+matters more than anywhere else, because the volumes are interchangeable by construction and the
+tenants cannot see each other.
 
 ## Day-2 Operations
 
-### Deleting and recreating the cluster
+### Deleting and recreating an instance
 
-With `deleteClaim: false`, deleting the `Kafka` and `KafkaNodePool` resources leaves the PVCs
-behind, and recreating the cluster reuses those PVCs unchanged with no rebinding. **Do not
-delete the PVCs during cleanup** — that is the step that produces the cross-binding.
+With `deleteClaim: false`, deleting the instance leaves the claims behind, and recreating it
+reuses them with no rebinding. **Do not delete the claims during cleanup** unless you also intend
+to discard the data — that is the step that produces cross-binding.
 
-If the PVCs were deleted, the PVs go to `Released` and the pre-binding still holds the
-reservation. Follow [Recovering a Released PV](#recovering-a-released-pv) before recreating.
-
-:::danger Deleting the Kafka resource destroys the KRaft cluster ID
-Preserving the PVCs is **not sufficient**. The KRaft cluster ID lives in
-`Kafka.status.clusterId`, with each pool's `status.clusterId` as a fallback — deleting those
-resources deletes it. The operator then generates a brand-new random ID, and every broker
-refuses to start against its retained disk:
+:::danger Deleting the instance destroys the KRaft cluster ID
+Preserving the claims is **not sufficient**. The KRaft cluster ID lives in the Kafka resource's
+`status.clusterId`, with each pool's `status.clusterId` as a fallback — deleting those resources
+deletes it. A brand-new random ID is generated, and every broker then refuses to start against
+its retained disk:
 
 ```
 Invalid cluster.id in /var/lib/kafka/data/kafka-log0/meta.properties.
@@ -817,221 +444,305 @@ Expected 5jdttJxLSUOG-QJ7r__PYA, but read zUekwp_oQdSh47pToRAmcQ
 The data is intact; the cluster simply cannot be reassembled without the original ID.
 :::
 
-**Before deleting the `Kafka` resource, record the cluster ID:**
+**Before deleting, record the cluster ID:**
 
 ```bash
-kubectl -n kafka-system get kafka my-cluster -o jsonpath='{.status.clusterId}'
+kubectl -n demo-space get kafka rklocal -o jsonpath='{.status.clusterId}'
 ```
 
-**To restore it after recreating**, patch the status *and* trigger a reconciliation. The status
-patch alone is not enough — the operator overwrites `status` at the end of each reconcile loop,
-and it only reads the cluster ID at the *start* of one. The annotation forces a fresh loop that
-reads the value you just restored:
+**To restore it afterwards**, patch the status *and* trigger a reconciliation. The patch alone is
+not enough: the operator overwrites `status` at the end of each reconcile loop and only reads the
+cluster ID at the *start* of one. This is a race, so verify and repeat until it takes:
 
 ```bash
 CID=<the recorded cluster ID>
-kubectl -n kafka-system patch kafka my-cluster --subresource=status --type=merge \
-  -p "{\"status\":{\"clusterId\":\"$CID\"}}"
-kubectl -n kafka-system annotate kafka my-cluster recovery-trigger="$(date +%s)" --overwrite
-```
-
-This is a race against the operator, which regenerates the ID on any reconcile that starts
-before your patch lands. **Check that it took, and repeat the two commands until it does** — in
-testing it sometimes needed several attempts:
-
-```bash
-CID=<the recorded cluster ID>
-until [ "$(kubectl -n kafka-system get cm my-cluster-kafka-0 -o jsonpath='{.data.cluster\.id}')" = "$CID" ]; do
-  kubectl -n kafka-system patch kafka my-cluster --subresource=status --type=merge \
+until [ "$(kubectl -n demo-space get cm rklocal-broker-a28da4-0 -o jsonpath='{.data.cluster\.id}')" = "$CID" ]; do
+  kubectl -n demo-space patch kafka rklocal --subresource=status --type=merge \
     -p "{\"status\":{\"clusterId\":\"$CID\"}}"
-  kubectl -n kafka-system annotate kafka my-cluster recovery-trigger="$(date +%s%N)" --overwrite
+  kubectl -n demo-space annotate kafka rklocal recovery-trigger="$(date +%s%N)" --overwrite
   sleep 10
 done
+kubectl -n demo-space delete pod -l strimzi.io/cluster=rklocal
 ```
 
-Only once the ConfigMap shows the right ID, restart the brokers:
-
-```bash
-kubectl -n kafka-system delete pod -l strimzi.io/cluster=my-cluster
-```
-
-If you no longer have the recorded ID, read it off a disk — it is in `cluster.id` of any
-retained `kafka-log*/meta.properties`, and it also appears in the broker's own
-`Invalid cluster.id … but read <ID>` error.
-
-### Adding a broker
-
-1. Prepare the disk on the new node.
-2. Create a PV pre-bound to `data-0-my-cluster-kafka-3` with `nodeAffinity` for the new node.
-3. Set `strimzi.io/next-node-ids: "[3]"` on the node pool.
-4. Increase `spec.replicas` to 4.
-5. Rebalance partitions onto the new broker with Cruise Control or
-   `kafka-reassign-partitions.sh` — a new broker is empty and takes no traffic until you do.
+If you no longer have the ID, read it from any retained `kafka-log*/meta.properties` on the
+nodes — it also appears in the broker's own `Invalid cluster.id … but read <ID>` error.
 
 ### Replacing a failed node
 
-The broker's identity is the node ID, and its data is on the failed node's disk. Two paths:
+The broker's identity is its node ID and its data is on the failed node's disk.
 
-- **Disk survived** (node hardware failure, disk intact): move the disk to the replacement
-  node, mount it at the same path, and edit the PV's `nodeAffinity` to the new hostname. The
-  broker restarts with its data and rejoins without replication traffic.
-- **Disk lost**: delete the PVC and the PV, recreate both with the same names and the same
-  `claimRef`, and let the broker re-replicate from its peers. This is safe *only* while the
-  other two brokers hold in-sync replicas of every partition — check
-  `--under-replicated-partitions` first, and do one broker at a time.
+- **Disk survived**: move it to the replacement node, mount it at the same path, and edit the
+  volume's `nodeAffinity` to the new hostname. The broker restarts with its data and rejoins
+  without replication traffic.
+- **Disk lost**: delete the claim and the volume, recreate both with the same names and the same
+  `claimRef`, and let the broker re-replicate from its peers. Safe **only** while the other
+  brokers hold in-sync replicas of every partition — check `--under-replicated-partitions` first,
+  and do one broker at a time.
 
-### Growing a broker's disk
+### Growing a disk
 
 Local volumes cannot be expanded by the operator. Grow the filesystem on the host, then update
-`capacity.storage` on the PV to match.
+`capacity.storage` on the volume.
 
-Increasing `spec.storage.size` on the node pool *is* an accepted change, so the operator will
-attempt a PVC resize. With `allowVolumeExpansion: false` on the class it stops immediately,
-records a `PvcResizingWarning` on the Kafka resource, and continues reconciling — harmless, but
-it leaves a standing warning. Either accept the warning to keep the declared size honest, or
-leave `size` alone and treat the PV's `capacity` as the record of the real disk size. Do not
-*decrease* `size`: shrinking is a disallowed change and causes the operator to ignore the whole
-storage block.
+Increasing `spec.storage.size` is an accepted change, so a resize is attempted; with
+`allowVolumeExpansion: false` it stops immediately and records a `PvcResizingWarning`. Harmless,
+but it leaves a standing warning. Do not *decrease* the size — shrinking is rejected and causes
+the whole storage block to be ignored.
 
-Either way, the PVC's `status.capacity` will keep reporting the original size. There is no CSI
-driver and no resize path behind a `no-provisioner` class, so nothing updates it after you grow
-the host filesystem. Use `df` on the node, not `kubectl get pvc`, to read real capacity.
+Either way the claim's `status.capacity` keeps reporting the original size. There is no CSI
+driver behind a `no-provisioner` class, so nothing updates it. Use `df` on the node.
 
 ## Troubleshooting
 
-### PVC stays `Pending`
+### Nothing happens after creating the instance
 
-Compare the PVC against the PV it should bind to. The four fields that must agree are
-`storageClassName`, `accessModes`, `volumeMode`, and capacity (PV ≥ PVC request). Also check
-that the `selector` on the node pool matches labels actually present on the PV — a selector
-that matches nothing produces a permanently pending PVC with no other symptom.
+No pods, no claims, no error on the instance itself. Check the Kafka resource's conditions for an
+admission rejection:
 
 ```bash
-kubectl -n kafka-system describe pvc data-0-my-cluster-kafka-0
-kubectl describe pv kafka-local-node-1
+kubectl -n demo-space get kafka rklocal -o jsonpath='{.status.conditions[0].message}'
 ```
 
-### Pod stays `Pending` with a volume node affinity conflict
+`StorageClass "…" is not allowed in project "…"` means the StorageClass has not been granted to
+the project — see Step 2.
 
-The scheduler cannot find a node satisfying both the pod's affinity/tolerations and the PV's
-`nodeAffinity`. Usually the node label in the PV does not match the actual
-`kubernetes.io/hostname`, or the node is missing the `middleware.alauda.io/dedicated` label
-while the pod requires it.
+### A claim stays `Pending`
+
+Compare it against the volume it should bind to. Four fields must agree: `storageClassName`,
+`accessModes`, `volumeMode`, and capacity (volume ≥ claim request). Also confirm the reserved
+name matches exactly — a typo in `claimRef.name` leaves both sides waiting forever, with no other
+symptom.
 
 ```bash
-kubectl get node --show-labels | grep -E 'hostname|dedicated'
+kubectl -n demo-space describe pvc data-rklocal-broker-a28da4-0
+kubectl describe pv rk-broker-0
 ```
 
-### Recovering a Released PV
+### A pod stays `Pending` with a volume node affinity conflict
 
-A PV goes `Released` when its PVC is deleted. With `Retain` the data is intact, but the PV
-will not bind again, because its `claimRef` now carries the deleted PVC's UID.
-
-Remove **only the UID and resourceVersion**, keeping the `namespace` and `name`. That returns
-the PV to `Available` while preserving the reservation:
+The scheduler cannot find a node satisfying both the pod's constraints and the volume's
+`nodeAffinity`. Usually the hostname in the volume does not match the node's actual
+`kubernetes.io/hostname`.
 
 ```bash
-kubectl patch pv kafka-local-node-1 --type=json -p='[
+kubectl get node --show-labels | grep hostname
+```
+
+### Recovering a Released volume
+
+A volume goes `Released` when its claim is deleted. With `Retain` the data is intact, but it will
+not bind again, because its `claimRef` now carries the deleted claim's UID.
+
+Remove **only the UID and resourceVersion**, keeping namespace and name. That returns it to
+`Available` while preserving the reservation:
+
+```bash
+kubectl patch pv rk-broker-0 --type=json -p='[
   {"op": "remove", "path": "/spec/claimRef/uid"},
   {"op": "remove", "path": "/spec/claimRef/resourceVersion"}
 ]'
 ```
 
-Do **not** clear the whole `claimRef` (`--type=merge -p '{"spec":{"claimRef":null}}'`). That
-makes the PV a free agent again and reintroduces exactly the first-come-first-serve race this
-design exists to prevent.
+Do **not** clear the whole `claimRef`. That makes the volume a free agent again and reintroduces
+exactly the race this design exists to prevent.
 
-Verify all three are `Available` and still reserved before recreating the cluster:
-
-```bash
-kubectl get pv -o custom-columns='PV:.metadata.name,STATUS:.status.phase,CLAIM:.spec.claimRef.name'
-```
-
-### Recovering a Wrong Binding
+### Recovering a wrong binding
 
 Symptom: a disk holds more than one `kafka-log*` directory, a topic has lost messages, or a
-broker crash-loops with `Invalid cluster.id`. Note that the cluster may report `Ready=True`
-with brokers `1/1 Running` — see
-[What the broker does](#what-the-broker-does-when-it-lands-on-the-wrong-disk).
+broker crash-loops with `Invalid cluster.id`. The instance may report healthy with brokers
+`1/1 Running` — see [What the broker does on the wrong disk](#what-the-broker-does-on-the-wrong-disk).
 
-1. **Stop.** Do not delete any log directory, and do not delete a PVC to "reset" a broker. Every
-   byte is still on the disks; deleting is the only way to actually lose it.
-2. **Determine the true owner of each disk by directory size, not by `meta.properties`.** The
+1. **Stop.** Do not delete any log directory, and do not delete a claim to "reset" a broker.
+   Every byte is still on the disks; deleting is the only way to actually lose it.
+2. **Identify the true owner of each disk by directory size, not `meta.properties`.** The
    freshly formatted directory also carries a valid-looking `node.id`, so that file cannot tell
    you who owns the disk. The directory holding the real data can:
 
    ```bash
    # On each Kafka node
-   du -sh /mnt/kafka-data/kafka-log*/
+   du -sh /cpaas/rk-broker/kafka-log*/
+   grep -H "" /cpaas/rk-broker/kafka-log*/meta.properties
    ```
 
    The large directory is the real data and its `<N>` is the disk's true owner; the small one
-   (tens of KB) is the empty log a mis-bound broker just created. Cross-check with `cluster.id`
-   — the orphaned directory carries the *original* cluster ID:
+   (tens of KB) is the empty log a mis-bound broker created. The orphaned directory also carries
+   the *original* cluster ID.
+3. Record that original cluster ID — you need it in step 6.
+4. Delete the instance, then the claims. The data is on `Retain`ed volumes and is not touched.
+5. Set each volume's `claimRef` to the claim of the broker that truly owns that disk, then clear
+   the stale UID as above. Verify all report `Available` with the intended claim.
+6. Recreate the instance and restore the cluster ID, per
+   [Deleting and recreating an instance](#deleting-and-recreating-an-instance).
+7. Re-verify: exactly one `kafka-log*` directory per disk.
 
-   ```bash
-   grep -H "" /mnt/kafka-data/kafka-log*/meta.properties
-   ```
+Once each broker is back on its own disk, the empty directories left behind are inert — a broker
+only ever reads its own `kafka-log<N>`. Remove them at step 5, once you have written down which
+is which, to restore the "one directory per disk" invariant.
 
-3. Record the original cluster ID from the orphaned directory. You will need it in step 6.
-4. Delete the `Kafka` and `KafkaNodePool` resources, then delete the PVCs. The data is on
-   `Retain`ed PVs and is not touched.
-5. Set each PV's `claimRef` to the PVC of the broker that truly owns that disk — the `<N>` from
-   step 2 — then clear the stale UID as in
-   [Recovering a Released PV](#recovering-a-released-pv). Verify all three report `Available`
-   with the intended claim before continuing.
-6. Recreate the cluster and restore the cluster ID from step 3, following
-   [Deleting and recreating the cluster](#deleting-and-recreating-the-cluster).
-7. Re-verify with check 4 in [Verification](#verification).
+This procedure was exercised on a live cluster: a topic that had dropped from 1000 messages to 0
+was restored to all 1000 messages.
 
-Once each broker is back on its own disk, the empty directories left behind by the mis-bound
-brokers are inert — each broker only ever reads its own `kafka-log<N>`. They are useful evidence
-while diagnosing, so remove them at step 5 at the earliest, once you have written down which
-directory on each disk is the real one:
+## Why This Design
 
-```bash
-# On each node, after confirming from step 2 which kafka-log<N> is the large, real one
-rm -rf /mnt/kafka-data/kafka-log<the small, freshly formatted one>
+Everything above rests on four choices. This section explains each.
+
+### Use `local` volumes, not `hostPath`
+
+Both point at a path on the host, but they differ where it matters:
+
+| | `hostPath` | `local` |
+| --- | --- | --- |
+| `spec.nodeAffinity` | Optional — accepted without it | **Required** — the API server rejects a volume without it |
+| Scheduler awareness | Does not constrain the pod to the node holding the data | Filters candidate nodes by the volume's `nodeAffinity` |
+| If the pod moves | kubelet resolves the same path on whatever node it landed on, creating it when `type` is `DirectoryOrCreate` or unset | The pod cannot be scheduled anywhere but the node that owns the volume |
+| `fsGroup` ownership | **Not applied** — kubelet does not chown host paths | Applied — kubelet adjusts group ownership to the pod's `fsGroup` |
+
+A `hostPath` volume without `nodeAffinity` is the direct cause of failure mode 1: the pod is
+rescheduled, kubelet resolves the same path on the *new* node, and Kafka starts against a
+directory that is empty or belongs to someone else.
+
+Both differences were confirmed on ACP v4.3. The API server refuses a `local` volume that omits
+`nodeAffinity`, so the misconfiguration is not even expressible:
+
+```
+The PersistentVolume "…" is invalid: spec.nodeAffinity:
+  Required value: Local volume requires node affinity
 ```
 
-Leaving them is safe; removing them restores the "exactly one directory per disk" invariant that
-makes check 4 meaningful next time.
+The `fsGroup` row bites first. Kafka runs as UID 1001 and a `hostPath` directory is
+`root:root 0755`; because kubelet does not apply `fsGroup` to host paths, the broker cannot write
+and crash-loops:
 
-This procedure was exercised on ACP v4.3: a topic that had dropped from 1000 messages to 0 was
-restored to all 1000 messages.
+```
+Error while writing meta.properties file /var/lib/kafka/data/kafka-log0:
+  java.nio.file.AccessDeniedException: /var/lib/kafka/data/kafka-log0
+```
+
+With `local` volumes this does not happen. From the same `root:root 0755` directory, kubelet
+adjusted it to `drwxrwsr-x` on mount and the instance came up first time at default privileges.
+
+If you must keep `hostPath`, set `nodeAffinity` explicitly — it is honored when present — and
+either make the directory group-writable or run the pods as root, following
+[Run Kafka Pods as the Root User](./How_to_Run_Kafka_as_Root_User.md).
+
+### How the names are derived
+
+Volume claim names are built from the instance name, the generated pool name, and the node ID:
+
+| Object | Name |
+| --- | --- |
+| Broker pod | `<instance>-broker-<hash>-<nodeId>` |
+| Controller pod | `<instance>-controller-<hash>-<nodeId>` |
+| Claim | `data-<podName>` |
+
+Brokers take node IDs 0–2 and controllers 3–5. The `<hash>` is generated **per instance** — two
+instances observed on the same cluster carried `cb42e1` and `a28da4` — so it cannot be predicted
+before the instance exists. That is the whole reason the procedure is two-phase.
+
+Every claim is fixed at `accessModes: [ReadWriteOnce]` and `volumeMode: Filesystem`, taking its
+class and size from the storage block.
+
+### Why the fix has to be on the volume side
+
+Two options look like they would solve per-broker placement, and neither is available:
+
+- **`storage.selector` does not exist.** The instance's storage block accepts only `class`,
+  `size` and `deleteClaim`. Even on the underlying resources, a selector applies the *same* label
+  selector to every claim in a pool, so it can narrow the candidate set but cannot say "broker 0
+  gets this one."
+- **Per-broker storage class overrides are ignored.** The field is deprecated and not read.
+
+That leaves the volume side, where `spec.claimRef` reserves a volume for one specific claim.
+
+### How pre-binding works
+
+`claimRef` is the reservation mechanism. Set to a `{namespace, name}` that does not exist yet,
+the volume stays `Available` and the control plane will only ever bind it to that claim. When the
+claim appears, the pre-bound volume is matched before the ordinary "find any matching volume"
+search runs, so it takes precedence — and it works with `WaitForFirstConsumer`, which is what
+makes the two-phase procedure possible.
+
+Omit `uid`. A `claimRef` with only namespace and name is a reservation; the control plane fills
+in the UID on bind. A `claimRef` carrying a *stale* UID — what is left after a claim is deleted —
+matches nothing and leaves the volume stuck in `Released`.
+
+### Root cause of the cross-binding failure
+
+The report is that restarting all broker pods at once shuffles the bindings. The mechanism is
+close, but the trigger is different, and the difference determines the fix.
+
+**A bound claim never changes its volume.** `spec.volumeName` is immutable once set, and claims
+are not deleted when pods restart, are rescheduled, or are rolled. This was verified directly:
+all broker pods deleted simultaneously, every pod returned to its original node with its claim
+bound to the same volume, and the test topic still held all 1000 messages with full ISR.
+
+**Binding is decided once, when the claim is created, and it is first-come-first-serve.**
+Kubernetes matches on storage class, capacity, access mode and volume mode. There is no identity
+concept: any volume that satisfies the request is a candidate, and identical volumes satisfy all
+claims equally. Initial binding was never name-ordered in testing — one run bound brokers 0/1/2
+to volumes c/b/a, another to c/a/b.
+
+So cross-binding happens whenever **claims are created**, not when pods restart:
+
+- The instance is deleted and recreated with the claims removed.
+- The namespace is deleted and recreated.
+- A claim is deleted by hand to "reset" a broker.
+- Pod names change: the instance is renamed, or node IDs are reassigned after a scale cycle.
+
+In all of those, fresh claims race retained volumes that still hold data, and the mapping that
+comes out has no relationship to the one that went in.
+
+### What the broker does on the wrong disk
+
+This is what makes the failure dangerous, and it is not what most people expect.
+
+Kafka's log directory is named after the broker's **own** node ID: `<mountPath>/kafka-log<nodeId>`.
+A broker that lands on a foreign disk does not read the other broker's `meta.properties` at all —
+it looks for its own `kafka-log<N>`, does not find one, and concludes the disk is fresh.
+
+**The common outcome is silent.** It formats a new, empty `kafka-log<N>` *beside* the orphaned
+directory holding the real data, starts up reporting `1/1 Running`, and joins as an empty
+replica. Nothing logs an error.
+
+**The loud outcome is the exception.** A broker only crashes if it keeps a disk that already
+contains *its own* `kafka-log<N>` and the cluster ID has since changed.
+
+Measured with three brokers, after a claim recreation that swapped brokers 1 and 2:
+
+| Broker | Landed on | Result |
+| --- | --- | --- |
+| 0 | its own disk | `CrashLoopBackOff` — `Invalid cluster.id` |
+| 1 | broker 2's disk | `Running 1/1` — empty `kafka-log1` formatted beside broker 2's 904K `kafka-log2` |
+| 2 | broker 1's disk | `Running 1/1` — empty `kafka-log2` beside broker 1's 904K `kafka-log1` |
+
+Two of three reported healthy. The topic went from 1000 messages to **0**, while every byte of
+the original data was still on the disks in orphaned directories.
+
+#### Why the node.id check does not work
+
+Reading `meta.properties` from inside a broker pod does **not** find a wrong binding. Broker 1
+reads `kafka-log1/meta.properties`, which says `node.id=1` — it matches, because the broker wrote
+that file itself moments earlier. The reliable signal is **more than one `kafka-log*` directory
+on a single disk**, which is why Step 6 checks for that.
 
 ## Limitations and Open Items
 
-- **A pinned broker cannot fail over.** This is the design, not a defect. If a node is down,
-  that broker is down until the node returns. Availability comes from replication factor 3 and
+- **A pinned broker cannot fail over.** This is the design, not a defect. If a node is down, that
+  broker is down until it returns. Availability comes from replication factor 3 with
   `min.insync.replicas: 2`; with those, one node down is a healthy cluster. Two nodes down is an
   outage, and no storage configuration changes that.
-- **Cluster-scoped objects.** PVs and StorageClasses cannot be created by a namespace-scoped
-  tenant. On a multi-tenant ACP cluster, provisioning is a platform-administrator task that has
-  to happen before the tenant creates the Kafka instance.
-- **The ACP Kafka instance form may not expose `class` and `selector` on the node pool.** This
-  has not been verified. If the form does not offer them, switch to the YAML view
-  when creating the instance, or apply the `KafkaNodePool` manifest directly. Note that an
-  instance created through the form uses `type: persistent-claim` (not JBOD), so its PVC names
-  have no volume-id prefix — `data-<cluster>-<pool>-<nodeId>`.
-- **Pod template settings must go on the `KafkaNodePool`, not the `Kafka` resource.** Once a
-  pool defines `spec.template.pod`, that template wins outright and
-  `Kafka.spec.kafka.template.pod` is ignored — including `securityContext`. A setting placed on
-  the `Kafka` resource silently has no effect.
-- **What was tested.** On ACP v4.3 with three nodes, run end to end with `hostPath` PVs and again
-  with `local` PVs: simultaneous deletion of all broker pods (bindings and data preserved);
-  cluster delete and recreate with PVCs retained; deliberate cross-binding via PVC recreation
-  (reproduced both times — brokers 1 and 2 swapped disks, two of three silently empty, topic
-  1000 → 0 messages); recovery via `claimRef` (all 1000 messages restored both times); and a
-  repeat of the destructive cycle with `claimRef` in place (binding held, one `kafka-log*`
-  directory per disk). Separately, two single-replica instances were tested against each other —
-  see [Single-Replica (Non-HA) Deployments](#single-replica-non-ha-deployments). Node failure and
-  disk replacement were **not** tested.
-- **Initial binding was never name-ordered in either run.** The first run bound brokers 0/1/2 to
-  PVs c/b/a; the second to c/a/b. On a fresh install this is harmless — every disk is empty —
-  but it is a direct demonstration that the PVC name has no influence on which PV it gets.
-- **Kafka 2.x / ZooKeeper line.** The legacy ZooKeeper-based line has no
-  `KafkaNodePool`: storage lives under `Kafka.spec.kafka.storage` and
-  `Kafka.spec.zookeeper.storage`, PVC names are `data-<cluster>-kafka-<n>` and
-  `data-<cluster>-zookeeper-<n>`, and ZooKeeper needs its own three PVs. The PV-side design —
-  `claimRef` pre-binding plus `nodeAffinity` — is unchanged and is the part that matters.
+- **Cluster-scoped objects.** Volumes and StorageClasses cannot be created by a namespace-scoped
+  tenant, and granting a StorageClass to a project is a platform-administrator action. Both must
+  happen before the tenant creates the instance.
+- **What was tested.** On ACP v4.3 with three worker nodes: the full procedure through the
+  instance API, including the two-phase binding with claims created before their volumes, and
+  simultaneous deletion of all pods. The failure and recovery scenarios — cross-binding,
+  cluster-ID loss, wrong-binding recovery, and the single-replica cases — were exercised on the
+  underlying Kafka resources with both `hostPath` and `local` volumes; the volume-side mechanics
+  they cover are identical. Node failure and disk replacement were **not** tested.
+- **Kafka 2.x / ZooKeeper line.** The legacy ZooKeeper-based line has no separate controller
+  pool: storage lives under the broker and ZooKeeper sections, claim names are
+  `data-<cluster>-kafka-<n>` and `data-<cluster>-zookeeper-<n>`, and ZooKeeper needs its own three
+  volumes. The volume-side design — `claimRef` pre-binding plus `nodeAffinity` — is unchanged and
+  is the part that matters.
