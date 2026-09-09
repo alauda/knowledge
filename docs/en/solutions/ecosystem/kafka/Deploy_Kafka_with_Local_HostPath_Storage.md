@@ -4,18 +4,16 @@ products:
 kind:
   - How To
 ProductsVersion:
-  - 4.1,4.2,4.3,4.4
+  - 4.3
 ---
 
 # Deploy Kafka on Node-Local Disks with Pre-Bound PersistentVolumes
 
 :::info Applicable Versions
-Alauda Streaming Service for Kafka v4.1, v4.2, v4.3, and v4.4 — KRaft mode with `KafkaNodePool`.
-Procedures were verified on v4.3. For the legacy Kafka 2.x / ZooKeeper line the CR shape differs;
-see the notes at the end.
+Alauda Streaming Service for Kafka 4.3, running on Alauda Container Platform v4.1, v4.2, v4.3, or
+v4.4. KRaft mode with `KafkaNodePool`. Procedures here were verified on ACP v4.3.
 
-Set `spec.kafka.version` to a Kafka version your installed operator supports; the examples here
-use `4.2.0`.
+For the legacy Kafka 2.x / ZooKeeper line the CR shape differs; see the notes at the end.
 :::
 
 ## Purpose
@@ -66,7 +64,7 @@ Kubernetes prevents this, because a `hostPath` PV makes no claim about which nod
 must keep `hostPath` for an existing deployment, set `spec.nodeAffinity` on those PVs
 explicitly — it is optional for `hostPath` but honored by the scheduler when present.
 
-Both differences were confirmed on v4.3.
+Both differences were confirmed on ACP v4.3.
 
 The API server refuses a `local` PV that omits `nodeAffinity`, so the misconfiguration that
 lets a pod drift away from its data is simply not expressible:
@@ -121,14 +119,14 @@ request from `spec.storage.size`, and an optional `matchLabels` selector from
 
 ### What you cannot use
 
-Two options that look like they would solve per-broker volume placement do not work on this
-operator line:
+Two options that look like they would solve per-broker volume placement have no effect in
+Alauda Streaming Service for Kafka 4.3:
 
 - **`Kafka.spec.kafka.storage` is ignored.** Storage is configured in `KafkaNodePool.spec.storage`.
   The field still exists on the `Kafka` CRD for backward compatibility; setting it has no effect
   and produces a deprecation warning in `status.conditions`.
 - **`storage.overrides` (per-broker `class`) is ignored.** The field is deprecated in the CRD and
-  the operator does not read it in any version covered by this document. A configuration carried
+  the operator does not read it in this version. A configuration carried
   over from an older release that relies on per-broker storage class overrides stopped taking
   effect on upgrade — check `status.conditions` on such clusters.
 
@@ -151,7 +149,7 @@ mode. There is no pool or identity concept: any PV that satisfies the request is
 and the three identical Kafka PVs satisfy all three PVCs equally. Which PVC wins which PV is
 whatever order the controller happens to process them in.
 
-This was verified directly on v4.3: all three broker pods were deleted simultaneously
+This was verified directly on ACP v4.3: all three broker pods were deleted simultaneously
 (`kubectl delete pod -l strimzi.io/cluster=…`). Every pod came back on its original node with
 its PVC bound to the same PV, and the test topic still held all 1000 messages with full ISR.
 Restarting brokers — together or one at a time — cannot shuffle storage.
@@ -187,7 +185,7 @@ invisible to Kafka, taking up space.
 already contains *its own* `kafka-log<N>` and the cluster ID has since changed — then it fails
 with `Invalid cluster.id`. A broker that swapped disks with a peer never gets that far.
 
-Measured on v4.3 with three brokers, after a PVC recreation that swapped brokers 1 and 2:
+Measured on ACP v4.3 with three brokers, after a PVC recreation that swapped brokers 1 and 2:
 
 | Broker | Landed on | Result |
 | --- | --- | --- |
@@ -588,8 +586,8 @@ kubectl apply -f kafka-cluster.yaml
 ## Verification
 
 Run these after the cluster reports ready. The procedure and these checks were exercised on an
-Alauda Streaming Service for Kafka v4.3 (Kafka 4.2.0, three worker nodes); the outputs below are
-the shapes observed there.
+ACP v4.3 cluster with three worker nodes, Kafka 4.2.0; the outputs below are the shapes
+observed there.
 
 :::info What the test covered
 The full procedure was run twice on that cluster — once with `hostPath` PVs and once with
@@ -756,7 +754,7 @@ the same pool of unreserved PVs, and a PVC carries no notion of which instance a
 This is the common multi-tenant shape: several small Kafka instances, one per team or per
 namespace, each on its own node's disk, all on `kafka-local`.
 
-Tested on v4.3 with two single-replica instances (`s1` in namespace `kafka-s1`, `s2` in
+Tested on ACP v4.3 with two single-replica instances (`s1` in namespace `kafka-s1`, `s2` in
 `kafka-s2`), each holding different data. With no `claimRef` on either PV, and `s1`'s pod
 scheduled onto `s2`'s node — the situation you get when `s1`'s usual node is cordoned, full, or
 under maintenance — `s1`'s PVC bound to **`s2`'s** PV. Nothing in Kubernetes prevents one
@@ -1000,7 +998,7 @@ rm -rf /mnt/kafka-data/kafka-log<the small, freshly formatted one>
 Leaving them is safe; removing them restores the "exactly one directory per disk" invariant that
 makes check 4 meaningful next time.
 
-This procedure was exercised on v4.3: a topic that had dropped from 1000 messages to 0 was
+This procedure was exercised on ACP v4.3: a topic that had dropped from 1000 messages to 0 was
 restored to all 1000 messages.
 
 ## Limitations and Open Items
@@ -1021,7 +1019,7 @@ restored to all 1000 messages.
   pool defines `spec.template.pod`, that template wins outright and
   `Kafka.spec.kafka.template.pod` is ignored — including `securityContext`. A setting placed on
   the `Kafka` resource silently has no effect.
-- **What was tested.** On v4.3 with three nodes, run end to end with `hostPath` PVs and again
+- **What was tested.** On ACP v4.3 with three nodes, run end to end with `hostPath` PVs and again
   with `local` PVs: simultaneous deletion of all broker pods (bindings and data preserved);
   cluster delete and recreate with PVCs retained; deliberate cross-binding via PVC recreation
   (reproduced both times — brokers 1 and 2 swapped disks, two of three silently empty, topic
