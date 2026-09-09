@@ -2,7 +2,7 @@
 products:
   - Alauda Application Services
 kind:
-  - How To
+  - Solution
 ProductsVersion:
   - 4.3
 ---
