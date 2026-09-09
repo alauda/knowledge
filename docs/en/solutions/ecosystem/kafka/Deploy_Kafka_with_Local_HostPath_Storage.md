@@ -10,8 +10,7 @@ ProductsVersion:
 # Deploy Kafka on Node-Local Disks with Pre-Bound PersistentVolumes
 
 :::info Applicable Versions
-Alauda Streaming Service for Kafka 4.3, running on Alauda Container Platform v4.1, v4.2, v4.3, or
-v4.4. KRaft mode with `KafkaNodePool`. Procedures here were verified on ACP v4.3.
+Alauda Streaming Service for Kafka 4.3 — KRaft mode with `KafkaNodePool`.
 
 For the legacy Kafka 2.x / ZooKeeper line the CR shape differs; see the notes at the end.
 :::
