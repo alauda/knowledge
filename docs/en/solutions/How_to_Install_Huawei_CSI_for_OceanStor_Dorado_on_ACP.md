@@ -18,10 +18,10 @@ This guide walks you through installing OceanStor CSI driver For Dorado as an AC
 
 | Component | Version |
 |-----------|---------|
-| Container Platform | ACP 4.x (validated on 4.2) |
+| Container Platform | ACP 4.x (validated on 4.3) |
 | Node Operating System | Micro OS 5.5 |
 | Storage Device | OceanStor Dorado 6.1.6 |
-| OceanStor CSI driver For Dorado | v4.11.0 |
+| OceanStor CSI driver For Dorado | v4.12.1 |
 | Installation Method | Cluster plugin |
 | Validated Protocols | iSCSI, NFS |
 
