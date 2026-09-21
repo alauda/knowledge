@@ -6,34 +6,34 @@ kind:
 ProductsVersion:
   - 4.x
 id: KB260600012
-sourceSHA: 51033b0dfc73b3247dd954881c04401b0cd9d049098dfd2dec79f3db2cb441bb
+sourceSHA: e037e4dc4a827309bde048793398ee00a092cf49982ecf0bf4e426174e1c01da
 ---
 
 # 如何在 ACP 上安装和配置 OceanStor CSI 驱动程序以支持 Dorado
 
 ## 概述
 
-本指南将引导您安装 OceanStor CSI 驱动程序以支持 Dorado 作为 ACP 集群插件，并将其与 OceanStor Dorado 存储阵列集成。内容包括准备节点、部署 CSI 组件、配置存储后端、创建 StorageClass 以及通过测试 PVC 验证集成。将验证 iSCSI 和 NFS 协议。
+本指南将引导您安装 OceanStor CSI 驱动程序以支持 Dorado 作为 ACP 集群插件，并将其与 OceanStor Dorado 存储阵列集成。内容包括准备节点、部署 CSI 组件、配置存储后端、创建 StorageClass 以及通过测试 PVC 验证集成。验证了 iSCSI 和 NFS 协议。
 
 ## 环境
 
-| 组件                           | 版本                       |
-| ------------------------------ | -------------------------- |
-| 容器平台                       | ACP 4.x（在 4.2 上验证）   |
-| 节点操作系统                   | Micro OS 5.5               |
-| 存储设备                       | OceanStor Dorado 6.1.6     |
-| OceanStor CSI 驱动程序支持 Dorado | v4.11.0                    |
-| 安装方法                       | 集群插件                   |
-| 验证的协议                     | iSCSI, NFS                 |
+| 组件                           | 版本                      |
+| ------------------------------ | ------------------------- |
+| 容器平台                       | ACP 4.x（在 4.3 上验证）  |
+| 节点操作系统                   | Micro OS 5.5              |
+| 存储设备                       | OceanStor Dorado 6.1.6    |
+| OceanStor CSI 驱动程序以支持 Dorado | v4.12.1                   |
+| 安装方法                       | 集群插件                  |
+| 验证的协议                     | iSCSI, NFS                |
 
-> **注意**：该操作步骤适用于所有 ACP 4.x 版本。然而，OceanStor CSI 驱动程序支持 Dorado 和 OceanStor Dorado 版本是耦合的——在继续之前，请确认您安装的 CSI 版本在您的 Dorado 固件版本的兼容性列表中。上表中的版本是本指南验证过的版本。
+> **注意**：该操作步骤适用于所有 ACP 4.x 版本。然而，OceanStor CSI 驱动程序以支持 Dorado 和 OceanStor Dorado 版本是耦合的——在继续之前，请确认您安装的 CSI 版本在您的 Dorado 固件版本的兼容性列表中。上表中的版本是本指南验证的版本。
 
 ## 先决条件
 
 - 一个 ACP 4.x 集群，并且可以访问 `kubectl`。
 - 一个可访问的 OceanStor Dorado 阵列，以及存储管理员提供的管理地址、存储池名称和数据平面门户地址。
 - 每个集群节点（主节点和工作节点）与存储管理平面和数据平面之间的三层连接。在环境规划时确认这一点。
-- 从 Alauda Cloud Marketplace 下载的 OceanStor CSI 驱动程序插件包。
+- 从 Alauda Cloud Marketplace 下载的 OceanStor CSI 驱动程序以支持 Dorado 插件包。
 - 与 CSI 版本匹配的 eSDK 包中的 `oceanctl` 工具。
 - 安装了 `violet` CLI，并且有一个可以将插件包上传到目标业务集群的平台账户。
 
@@ -56,11 +56,11 @@ sourceSHA: 51033b0dfc73b3247dd954881c04401b0cd9d049098dfd2dec79f3db2cb441bb
 
 | 目的                     | 地址                          | 描述                                      |
 | ------------------------ | ----------------------------- | ----------------------------------------- |
-| Dorado 管理平面         | `<dorado-management-ip>:8088` | CSI 通过此地址管理存储                     |
-| iSCSI 数据平面          | `<iscsi-portal-ip>`           | iSCSI 门户，业务 IO 路径                   |
-| NFS 数据平面            | `<nfs-portal-ip>`             | NFS 门户，业务 IO 路径                     |
+| Dorado 管理平面         | `<dorado-management-ip>:8088` | CSI 通过此地址管理存储                    |
+| iSCSI 数据平面          | `<iscsi-portal-ip>`           | iSCSI 门户，业务 IO 路径                  |
+| NFS 数据平面            | `<nfs-portal-ip>`             | NFS 门户，业务 IO 路径                    |
 
-在每个节点上验证连接性：
+在每个节点上验证连接：
 
 ```shell
 ping <dorado-management-ip>
@@ -115,7 +115,7 @@ systemctl enable multipathd --now
 
 #### 1.4 配置多路径
 
-确认 `/etc/multipath.conf` 包含以下配置。如果文件不存在，请使用以下内容创建它：
+确认 `/etc/multipath.conf` 包含以下配置。如果文件不存在，请创建并填入以下内容：
 
 ```text
 defaults {
@@ -128,7 +128,7 @@ defaults {
 
 #### 2.1 从 Alauda Cloud 下载插件包
 
-使用租户账户登录 Alauda Cloud，在 Marketplace 中搜索 **OceanStor CSI 驱动程序支持 Dorado**，并下载插件包。
+使用租户账户登录 Alauda Cloud，在 Marketplace 中搜索 **OceanStor CSI 驱动程序以支持 Dorado**，并下载插件包。
 
 #### 2.2 上传插件包
 
@@ -147,7 +147,7 @@ violet push \
 
 #### 3.1 安装集群插件
 
-从平台将 **OceanStor CSI 驱动程序支持 Dorado** 集群插件安装到目标集群。
+从平台将 **OceanStor CSI 驱动程序以支持 Dorado** 集群插件安装到目标集群。
 
 #### 3.2 验证部署状态
 
@@ -155,7 +155,7 @@ violet push \
 kubectl get pod -n huawei-csi
 ```
 
-当所有 Pod 都处于 `Running` 状态时，部署成功。
+当所有 Pod 处于 `Running` 状态时，部署成功。
 
 ### 4. 配置存储后端
 
@@ -278,7 +278,7 @@ kubectl apply -f sc-nfs.yaml
 
 ### 6. 验证
 
-创建一个测试 PVC 以验证存储集成是否正常工作：
+创建一个测试 PVC，以验证存储集成是否正常工作：
 
 ```yaml
 apiVersion: v1
@@ -335,7 +335,7 @@ failed to configure the backend account. Error from server (InternalError): erro
    curl -k https://<dorado-management-ip>:8088
    ```
 
-3. 确认防火墙已打开端口 4433（见步骤 1.2）。
+3. 确认防火墙已打开 4433 端口（见步骤 1.2）。
 
 **临时解决方法：**
 
@@ -345,9 +345,9 @@ failed to configure the backend account. Error from server (InternalError): erro
 kubectl delete pod -n huawei-csi -l app=huawei-csi-controller
 ```
 
-或者，作为最后手段，暂时删除 webhook（删除后，后端创建将不再被验证）。控制器重启后，webhook 会自动恢复：
+或者，作为最后手段，临时删除 webhook（删除后，不再验证后端创建）。控制器重启后，webhook 会自动恢复：
 
-> **警告**：删除 webhook 会禁用后端配置验证。仅在非生产环境中进行故障排除时使用，并在之后立即恢复。
+> **警告**：删除 webhook 会禁用后端配置验证。仅在非生产环境中用于故障排除，并在之后立即通过重启控制器恢复。
 
 ```shell
 kubectl delete validatingwebhookconfiguration storage-backend-controller.xuanwu.huawei.io
@@ -357,7 +357,7 @@ kubectl delete pod -n huawei-csi -l app=huawei-csi-controller
 
 ### Pod 作为非根用户无法访问挂载卷（fsPermission / fsGroup 问题）
 
-当 Pod 使用 `securityContext` 指定非根用户（例如，`runAsUser: 1000`）时，可能会遇到卷目录权限不足的问题。有三种解决方案：
+当 Pod 使用 `securityContext` 指定非根用户（例如，`runAsUser: 1000`）时，可能会遇到卷目录权限不足的问题。以下是三种解决方案：
 
 **解决方案 1：在 StorageClass 中设置 fsPermission**
 
@@ -368,7 +368,7 @@ parameters:
   fsPermission: "777"
 ```
 
-> **警告**：`fsPermission: "777"` 赋予节点上的每个用户完全的读/写/执行权限。在生产环境中避免使用；更倾向于使用解决方案 2 或 3 中基于 `fsGroup` 的方法。
+> **警告**：`fsPermission: "777"` 授予节点上每个用户完全的读/写/执行权限。在生产环境中避免使用；更倾向于使用解决方案 2 或 3 中基于 `fsGroup` 的方法。
 
 **解决方案 2：在 StorageClass 中显式指定 fsType + 对 PVC 使用 ReadWriteOnce**
 
@@ -396,7 +396,7 @@ spec:
   fsGroupPolicy: File
 ```
 
-部署后，Pod 的 `securityContext.fsGroup` 生效：
+部署后，Pod 的 `securityContext.fsGroup` 将生效：
 
 ```yaml
 securityContext:
