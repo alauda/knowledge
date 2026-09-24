@@ -13,12 +13,11 @@ Before a large language model goes into production, its resistance to jailbreaks
 
 Installing garak on site is often impractical: it pulls Python packages from PyPI and detector models and datasets from Hugging Face, none of which is reachable from an isolated environment.
 
-This solution provides a prebuilt Alauda AI Workbench image with garak and all of its offline assets baked in. Once the image is in the platform Private Registry and a WorkspaceKind has been imported, users create a Workspace from the console and scan any inference service in the same cluster. Nothing is fetched from the internet at scan time, and no extra scheduling component is required.
+This solution provides a prebuilt Alauda AI Workbench image with garak and all of its offline assets baked in. Once the image is in a registry the cluster can pull from and a WorkspaceKind has been imported, users create a Workspace from the console and scan any inference service in the same cluster. Nothing is fetched from the internet at scan time, and no extra scheduling component is required.
 
 ## Environment
 
 * Alauda AI with the Alauda AI Workbench plugin installed.
-* Verified on: `aml-server` v2.8.0-beta.4, Workbench chart 2.0.0, Kubernetes v1.34.5, x86/64 CPU nodes.
 * Target: a text LLM published on the platform that exposes an OpenAI-compatible API (for example a vLLM runtime).
 * The Workspace needs CPU only. The detector models are small classifiers that run on CPU.
 * Multimodal probes (image, audio) are out of scope.
@@ -28,57 +27,23 @@ This solution provides a prebuilt Alauda AI Workbench image with garak and all o
 ### Prerequisites
 
 * The inference service to be scanned is published, and its in-cluster address is known. It has the form `http://<service>-predictor.<namespace>.svc.cluster.local`.
-* The garak Workbench image has been pushed to the platform Private Registry (the registry specified when the cluster was deployed). See [Obtaining the image](#obtaining_the_image).
-* Cluster administrator permission, to import the WorkspaceKind once. See [Importing the WorkspaceKind](#importing_the_workspacekind).
+* The garak Workbench image is available in a registry the cluster can pull from. See the Image section below.
+* Cluster administrator permission, to import the WorkspaceKind once.
 * At least 2 GB free on the Workspace volume, for the scan configuration and the reports.
 
-### Image contents
+### Image
 
-The image is built on the platform Workbench image `alauda-workbench-jupyter-datascience-cpu-py312-ubi9` and adds:
-
-| Content | Location |
-| --- | --- |
-| garak 0.17.0 and its dependencies (own venv, CPU build of PyTorch) | `/opt/app-root/garak/venv`; the `garak` command is on `PATH` |
-| Detector models and probe datasets (Hugging Face cache layout) | `/opt/app-root/garak/assets/hf` |
-| NLTK corpora | `/opt/app-root/garak/assets/nltk_data` |
-| Sample scan configuration | `/opt/app-root/garak/scan.yaml` |
-
-The image sets `HF_HUB_OFFLINE=1`, `HF_DATASETS_OFFLINE=1` and `TRANSFORMERS_OFFLINE=1`, so nothing is fetched at run time. It is 5.3 GB compressed and about 11 GB unpacked.
-
-The bundled assets come from the public `garak-llm` organization on Hugging Face: six models (NLI, refusal, toxicity and refutation detectors, plus the `atkgen` attack model) and nine datasets (package-name lists for the package-hallucination probes, and prompt sets for the system-prompt-extraction probes). They change rarely; the dataset snapshot dates are part of their names.
-
-### Obtaining the image {#obtaining_the_image}
-
-Alauda publishes the built image on Docker Hub. There is no need to build it yourself.
-
-| Item | Value |
-| --- | --- |
-| Image | `alaudadockerhub/garak-workbench:0.17.0-20260922` (the tag is the garak version plus the build date) |
-| Digest | `sha256:d1cc22470189dfe4b341f1c2507897d60399f5257ec936bcd14da4f38e99440a` |
-| Size | 5.3 GB, 8 layers |
-
-On a machine that can reach Docker Hub, pull the image and push it to the platform Private Registry:
+`alaudadockerhub/garak-workbench:0.17.0-20260922` (digest `sha256:d1cc22470189dfe4b341f1c2507897d60399f5257ec936bcd14da4f38e99440a`, 5.3 GB). Pull it and push it to a registry your cluster can reach:
 
 ```bash
 docker pull alaudadockerhub/garak-workbench:0.17.0-20260922
-docker tag  alaudadockerhub/garak-workbench:0.17.0-20260922 \
-            <private-registry>/mlops/garak-workbench:0.17.0-20260922
-docker push <private-registry>/mlops/garak-workbench:0.17.0-20260922
+docker tag  alaudadockerhub/garak-workbench:0.17.0-20260922 <registry>/garak-workbench:0.17.0-20260922
+docker push <registry>/garak-workbench:0.17.0-20260922
 ```
 
-If Docker Hub is not reachable at all, Alauda can supply the image as a tar archive, which is then handled by the customer's existing offline image import process:
+If Docker Hub is not reachable, Alauda can supply the image as a tar archive for your offline image import process.
 
-```bash
-docker load -i garak-workbench-0.17.0-20260922.tar
-docker tag  alaudadockerhub/garak-workbench:0.17.0-20260922 \
-            <private-registry>/mlops/garak-workbench:0.17.0-20260922
-docker push <private-registry>/mlops/garak-workbench:0.17.0-20260922
-```
-
-> **NOTE:**
-> The image contains no customer data, so it can go through the usual image security scanning before being admitted to the registry.
-
-### Importing the WorkspaceKind {#importing_the_workspacekind}
+### Importing the WorkspaceKind
 
 The images offered in the Workbench console come from `WorkspaceKind` resources in the cluster, so an administrator has to import a WorkspaceKind that points at the garak image. This is a one-time operation; afterwards every user can pick it when creating a Workspace.
 
@@ -192,8 +157,8 @@ spec:
                 - key: garak_version
                   value: 0.17.0
             spec:
-              # Replace with the image address in your Private Registry
-              image: <private-registry>/mlops/garak-workbench:0.17.0-20260922
+              # Replace with the image address in your registry
+              image: <registry>/garak-workbench:0.17.0-20260922
               imagePullPolicy: IfNotPresent
               ports:
                 - id: jupyterlab
@@ -542,10 +507,10 @@ Use a judge model larger than the model under test.
 
 ## Image upgrades
 
-* garak releases roughly monthly, mostly adding probes; the bundled detector models and datasets change rarely. Alauda publishes a new image tag per garak version. To upgrade: pull the new tag, push it to the Private Registry, change `image` in the WorkspaceKind and re-apply it (or add a second WorkspaceKind so both versions remain available), then have users switch their Workspace.
+* garak releases roughly monthly, mostly adding probes; the bundled detector models and datasets change rarely. Alauda publishes a new image tag per garak version. To upgrade: pull the new tag, push it to your registry, change `image` in the WorkspaceKind and re-apply it (or add a second WorkspaceKind so both versions remain available), then have users switch their Workspace.
 * Scan configurations, custom probes and past reports live on the Workspace volume and survive an image version change.
 * Probe names and configuration keys can change between garak versions, so run the smoke test after an upgrade to confirm the existing configuration still works.
 
 ## Summary
 
-garak and all of its offline assets are packaged as an Alauda AI Workbench image published by Alauda. Once the image has passed through the customer's image import process into the Private Registry, and an administrator has imported the WorkspaceKind once, users create a Workspace from the Workbench console and scan any inference service in the cluster. No internet access is needed at scan time and no task scheduling component is involved. Scan configurations and reports are kept on the Workspace volume, where they can be read in JupyterLab or downloaded for archiving; scanning a different service only takes a change of the service address and model name in `scan.yaml`.
+garak and all of its offline assets are packaged as an Alauda AI Workbench image published by Alauda. Once the image is in a registry the cluster can pull from, and an administrator has imported the WorkspaceKind once, users create a Workspace from the Workbench console and scan any inference service in the cluster. No internet access is needed at scan time and no task scheduling component is involved. Scan configurations and reports are kept on the Workspace volume, where they can be read in JupyterLab or downloaded for archiving; scanning a different service only takes a change of the service address and model name in `scan.yaml`.
