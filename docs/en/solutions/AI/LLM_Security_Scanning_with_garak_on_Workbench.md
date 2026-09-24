@@ -456,9 +456,7 @@ Use a judge model larger than the model under test.
 
 ## Image upgrades
 
-* garak releases roughly monthly, mostly adding probes; the bundled detector models and datasets change rarely. Alauda publishes a new image tag per garak version. To upgrade: pull the new tag, push it to your registry, change `image` in the WorkspaceKind and re-apply it (or add a second WorkspaceKind so both versions remain available), then have users switch their Workspace.
-* Scan configurations, custom probes and past reports live on the Workspace volume and survive an image version change.
-* Probe names and configuration keys can change between garak versions, so run the smoke test after an upgrade to confirm the existing configuration still works.
+garak adds probes with every release. Alauda can provide an image for a newer garak version on request; update `image` in the WorkspaceKind to the new address and have users switch their Workspace.
 
 ## Summary
 
