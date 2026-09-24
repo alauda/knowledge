@@ -3,6 +3,7 @@ products:
   - Alauda AI
 kind:
   - Solution
+id: KB260900038
 ---
 
 # LLM Security Scanning with garak on Alauda AI Workbench
