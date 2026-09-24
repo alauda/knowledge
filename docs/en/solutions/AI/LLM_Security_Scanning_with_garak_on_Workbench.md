@@ -213,9 +213,6 @@ Confirm the resource is present. A `WORKSPACES` count of 0 is expected at this p
 kubectl get workspacekind garak-scanner-0-17-0
 ```
 
-> **NOTE:**
-> The `workbench.alauda.io/managed` and `workbench.alauda.io/family` labels in `metadata.labels` are required by the Alauda AI console to list the WorkspaceKind. Do not remove them.
-
 ### Creating a Workspace
 
 In the Alauda AI console, switch to the User View, go to **Model Development** > **Workbench** in the left navigation, and create a Workspace.
@@ -225,9 +222,6 @@ In the Alauda AI console, switch to the User View, go to **Model Development** >
 * Pod size: select **Medium CPU** (2 cores, 12 GiB). The detector models run on CPU; too little memory aborts the scan.
 * GPU: not required.
 * Volume: the default volume is fine. The scan configuration and the reports are stored under the home directory and survive a Workspace restart or an image version change.
-
-> **NOTE:**
-> Create the Workspace from the console. If you create it with `kubectl` and omit `spec.podTemplate.podMetadata`, the Workspace list in the current console version fails to render — the field is optional in the CRD, but the console does not tolerate its absence. When creating from YAML, set `podMetadata: {labels: {}, annotations: {}}` explicitly.
 
 ### Verifying access to the inference service
 
