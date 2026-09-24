@@ -26,7 +26,7 @@ This solution provides a prebuilt Alauda AI Workbench image with garak and all o
 
 ### Prerequisites
 
-* The inference service to be scanned is published, and its in-cluster address is known. It has the form `http://<service>-predictor.<namespace>.svc.cluster.local`.
+* The base URL of an OpenAI-compatible endpoint for the model to be scanned, reachable from the Workspace. It can be the in-cluster Service address of a model published on the platform (`http://<service>-predictor.<namespace>.svc.cluster.local`), a gateway or ingress address, or any other endpoint that serves `/v1/chat/completions`. Note the API key if the endpoint requires one.
 * The garak Workbench image is available in a registry the cluster can pull from. See the Image section below.
 * Cluster administrator permission, to import the WorkspaceKind once.
 * At least 2 GB free on the Workspace volume, for the scan configuration and the reports.
@@ -219,10 +219,10 @@ In the Alauda AI console, switch to the User View, go to **Model Development** >
 
 ### Verifying access to the inference service
 
-Open the JupyterLab page of the Workspace, start a terminal (Launcher > Terminal), and run the following with the address of the service to be scanned:
+Open the JupyterLab page of the Workspace, start a terminal (Launcher > Terminal), and run the following against the endpoint to be scanned. `TARGET_URL` is the base URL, without the `/v1` suffix:
 
 ```bash
-export TARGET_URL=http://<service>-predictor.<namespace>.svc.cluster.local
+export TARGET_URL=<base-url>          # for example http://qwen3-predictor.my-ns.svc.cluster.local
 
 # list the model names, needed for the configuration below
 curl -s $TARGET_URL/v1/models
@@ -232,7 +232,7 @@ curl -s $TARGET_URL/v1/chat/completions -H 'Content-Type: application/json' \
   -d '{"model":"<model-name>","messages":[{"role":"user","content":"hello"}],"max_tokens":20}'
 ```
 
-Both commands must return JSON. Note the `id` field returned by `/v1/models`; that is the model name.
+Both commands must return JSON. Note the `id` field returned by `/v1/models`; that is the model name. Add `-H 'Authorization: Bearer <key>'` if the endpoint requires a key, and pass it to garak through `OPENAICOMPATIBLE_API_KEY` in the steps below.
 
 ### Preparing the scan configuration
 
@@ -267,7 +267,7 @@ plugins:
   generators:
     openai:
       OpenAICompatible:
-        uri: http://<service>-predictor.<namespace>.svc.cluster.local/v1/
+        uri: <base-url>/v1/  # the endpoint base URL with the /v1/ suffix, trailing slash included
         stop: []             # the default ["#", ";"] truncates code and CJK output, always clear it
         max_tokens: 256
         temperature: 0.7
@@ -284,17 +284,17 @@ reporting:
 Replace the two placeholders:
 
 1. `target_name`: the model name returned by `/v1/models`, replacing `<model-name>`.
-2. `uri`: the in-cluster address of the service, replacing `<service>` and `<namespace>`, keeping the trailing `/v1/`.
+2. `uri`: the endpoint base URL with `/v1/` appended, for example `http://qwen3-predictor.my-ns.svc.cluster.local/v1/` or `http://192.168.0.10:31795/v1/`. Keep the trailing slash.
 
 Two settings are worth understanding before changing them:
 
 * `stop: []` — garak defaults to `["#", ";"]`, which truncates code and CJK output mid-answer and makes detector verdicts unreliable. Always keep it cleared.
 * `extra_body.chat_template_kwargs.enable_thinking: false` — for models with a thinking mode, such as Qwen3, this stops the model from emitting a reasoning block before its answer. Without it the detectors count the reasoning text in their verdicts. `extra_params` entries are passed to the OpenAI client as call arguments, so server-side options have to be nested under `extra_body`.
 
-Export a non-empty API key before scanning; any value works when the service does not check it:
+Export the API key before scanning. Any value works when the endpoint does not check it, but the variable must not be empty:
 
 ```bash
-export OPENAICOMPATIBLE_API_KEY=dummy
+export OPENAICOMPATIBLE_API_KEY=<key-or-any-value>
 ```
 
 ### Smoke test
@@ -456,7 +456,7 @@ plugins:
   generators:
     rest:
       RestGenerator:
-        uri: http://my-rag-app.<namespace>.svc.cluster.local/api/v1/chat
+        uri: <app-base-url>/api/v1/chat   # the application endpoint that takes user input
         method: post
         headers:
           Content-Type: application/json
@@ -505,7 +505,7 @@ plugins:
       detector_model_type: openai.OpenAICompatible
       detector_model_name: <judge-model-name>
       detector_model_config:
-        uri: http://<judge-service>-predictor.<namespace>.svc.cluster.local/v1/
+        uri: <judge-base-url>/v1/
         stop: []
 ```
 
