@@ -41,8 +41,6 @@ docker tag  alaudadockerhub/garak-workbench:0.17.0-20260922 <registry>/garak-wor
 docker push <registry>/garak-workbench:0.17.0-20260922
 ```
 
-If Docker Hub is not reachable, Alauda can supply the image as a tar archive for your offline image import process.
-
 ### Importing the WorkspaceKind
 
 The images offered in the Workbench console come from `WorkspaceKind` resources in the cluster, so an administrator has to import a WorkspaceKind that points at the garak image. This is a one-time operation; afterwards every user can pick it when creating a Workspace.
