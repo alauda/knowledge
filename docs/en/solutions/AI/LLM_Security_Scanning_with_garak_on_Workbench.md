@@ -323,22 +323,14 @@ Each line is one probe/detector pair. `ok on 0/6` means none of the 6 responses 
 
 ### Running the scan
 
-A full scan takes a while, so run it in the background so that a disconnected terminal does not abort it:
-
 ```bash
 cd ~/garak
-nohup garak --config scan.yaml > scan.log 2>&1 &
+garak --config scan.yaml
 ```
 
-Follow the progress:
+Results appear per probe as the scan proceeds, and the run ends with `✔️ garak run complete in NNNs`. The 11 probe entries in the sample configuration expand to 21 probes and complete in about 12 minutes at 8 concurrent requests. A default full scan — without `spec` and `soft_probe_prompt_cap` — can issue tens of thousands of requests, so start with a selection of probes and widen it gradually.
 
-```bash
-tail -f ~/garak/scan.log
-```
-
-The 11 probe entries in the sample configuration expand to 21 probes and complete in about 15 minutes at 8 concurrent requests. A default full scan — without `spec` and `soft_probe_prompt_cap` — can issue tens of thousands of requests, so start with a selection of probes and widen it gradually.
-
-Short scans can also be started from a notebook cell:
+Scans can also be started from a notebook cell:
 
 ```python
 !garak --config ~/garak/scan.yaml --spec probes.dan
