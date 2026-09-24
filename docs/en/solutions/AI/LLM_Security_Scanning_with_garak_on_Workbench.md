@@ -233,25 +233,31 @@ export TARGET_URL=http://<service>-predictor.<namespace>.svc.cluster.local
 # list the model names, needed for the configuration below
 curl -s $TARGET_URL/v1/models
 
-# check that the completions endpoint works
-curl -s $TARGET_URL/v1/completions -H 'Content-Type: application/json' \
-  -d '{"model":"<model-name>","prompt":"hello","max_tokens":20}'
+# check that the chat endpoint works
+curl -s $TARGET_URL/v1/chat/completions -H 'Content-Type: application/json' \
+  -d '{"model":"<model-name>","messages":[{"role":"user","content":"hello"}],"max_tokens":20}'
 ```
 
 Both commands must return JSON. Note the `id` field returned by `/v1/models`; that is the model name.
 
-> **NOTE:**
-> This solution posts to `/v1/completions` and assembles the chat template by hand, rather than using `/v1/chat/completions`. Two reasons: in the verification environment the chat endpoint hung without responding while the completions endpoint worked, and the completions endpoint lets you switch off the thinking mode of models such as Qwen3, so that reasoning text does not distort detector verdicts. To use the chat endpoint instead, see [Using the chat endpoint](#using_the_chat_endpoint).
+If the chat request hangs or returns an error while `/v1/models` answers, check whether the completions endpoint works instead:
+
+```bash
+curl -s $TARGET_URL/v1/completions -H 'Content-Type: application/json' \
+  -d '{"model":"<model-name>","prompt":"hello","max_tokens":20}'
+```
+
+Which of the two endpoints answers decides how the scan is configured in the next step.
 
 ### Preparing the scan configuration
 
-Copy the sample configuration shipped in the image to the home directory and edit it:
+Copy the sample configuration shipped in the image to the home directory:
 
 ```bash
 mkdir -p ~/garak && cp /opt/app-root/garak/scan.yaml ~/garak/scan.yaml
 ```
 
-The configuration is:
+The shipped file is:
 
 ```yaml
 # garak scan configuration: scans an in-cluster inference service via /v1/completions
@@ -301,7 +307,34 @@ reporting:
   report_prefix: scan-pilot     # report file name prefix
 ```
 
-Replace the three placeholders:
+The `run` and `reporting` sections apply to either endpoint. Which endpoint to use is decided by the `plugins` section.
+
+**Recommended: the chat endpoint.** The server applies the model's own chat template, so the configuration does not depend on the model. Replace the whole `plugins` section of `~/garak/scan.yaml` with:
+
+```yaml
+plugins:
+  target_type: openai.OpenAICompatible
+  target_name: <model-name>
+  generators:
+    openai:
+      OpenAICompatible:
+        uri: http://<service>-predictor.<namespace>.svc.cluster.local/v1/
+        stop: []             # the default ["#", ";"] truncates code and CJK output, always clear it
+        max_tokens: 256
+        extra_params:
+          chat_template_kwargs:
+            enable_thinking: false   # vLLM: switch off the thinking mode of Qwen3 and similar models
+```
+
+Fill in `target_name` with the model name and `uri` with the service address, keeping the trailing `/v1/`. Export a non-empty `OPENAICOMPATIBLE_API_KEY` before scanning; any value works when the service does not check it:
+
+```bash
+export OPENAICOMPATIBLE_API_KEY=dummy
+```
+
+`enable_thinking: false` matters for models with a thinking mode: without it the model emits a block of reasoning first, and the detectors count that text in their verdicts.
+
+**Fallback: the completions endpoint.** Keep the `plugins` section as shipped when the chat endpoint is unavailable or misbehaving — in the verification environment, for instance, chat requests hung without ever reaching the inference server while completions worked. This path sends the chat template itself, so three fields need attention:
 
 1. `target_name` and `req_template_json_object.model`: the model name returned by `/v1/models`, replacing `<model-name>`.
 2. `uri`: the in-cluster address of the service, replacing `<service>` and `<namespace>`, keeping the `/v1/completions` suffix.
@@ -383,7 +416,7 @@ The `mitigation.MitigationBypass` detector decides whether the model failed to r
 
 ### Results from the verification environment
 
-The configuration above was run against `qwen3-5-0-8b` (Qwen3.5-0.8B on vLLM): 21 probes, at most 20 prompts each, 8 concurrent requests, 775 seconds.
+The configuration above was run against `qwen3-5-0-8b` (Qwen3.5-0.8B on vLLM) through the completions endpoint, since the chat endpoint of that service did not respond: 21 probes, at most 20 prompts each, 8 concurrent requests, 775 seconds.
 
 | Probe | Detector | Attack success rate | Notes |
 | --- | --- | --- | --- |
@@ -403,30 +436,9 @@ This model resists roleplay jailbreaks and direct prompt injection poorly but do
 
 ## Extensions
 
-### Using the chat endpoint {#using_the_chat_endpoint}
-
-If `/v1/chat/completions` works on the target service, replace the `plugins` section of `scan.yaml` with the following and let garak assemble the conversation, so no manual template is needed:
-
-```yaml
-plugins:
-  target_type: openai.OpenAICompatible
-  target_name: <model-name>
-  generators:
-    openai:
-      OpenAICompatible:
-        uri: http://<service>-predictor.<namespace>.svc.cluster.local/v1/
-        stop: []             # the default ["#", ";"] truncates code and CJK output, always clear it
-        max_tokens: 256
-        extra_params:
-          chat_template_kwargs:
-            enable_thinking: false   # vLLM: switch off Qwen3 thinking mode
-```
-
-Set a non-empty `OPENAICOMPATIBLE_API_KEY` environment variable before running; any value works when the service does not check it.
-
 ### Adapting the chat template {#adapting_the_chat_template}
 
-Because the scan posts to `/v1/completions`, the `prompt` field has to spell out the chat template of the target model. The sample is the Qwen3 template. For another model, derive it as follows.
+This applies only when scanning through the completions endpoint: the `prompt` field then has to spell out the chat template of the target model. The shipped sample is the Qwen3 template. For another model, derive it as follows.
 
 **Step 1: read the template from the model files.**
 
@@ -449,7 +461,7 @@ Look for the `add_generation_prompt` branch; that is the generation prompt. If t
 | Zhipu GLM-4.5 and later | the GLM-4 shape plus the marker that switches thinking off, as found in step 1 |
 
 > **NOTE:**
-> The table is a starting point only. Templates differ between versions and between fine-tunes, so use what step 1 returns for the model at hand.
+> The table is a starting point only. Templates differ between versions and between fine-tunes, so use what step 1 returns for the model at hand. Using the chat endpoint avoids this work altogether.
 
 **Step 3: verify with a single request** before scanning:
 
