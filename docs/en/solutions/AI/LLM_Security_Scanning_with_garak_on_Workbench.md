@@ -33,13 +33,7 @@ This solution provides a prebuilt Alauda AI Workbench image with garak and all o
 
 ### Image
 
-`alaudadockerhub/garak-workbench:0.17.0-20260922` (digest `sha256:d1cc22470189dfe4b341f1c2507897d60399f5257ec936bcd14da4f38e99440a`, 5.3 GB). Pull it and push it to a registry your cluster can reach:
-
-```bash
-docker pull alaudadockerhub/garak-workbench:0.17.0-20260922
-docker tag  alaudadockerhub/garak-workbench:0.17.0-20260922 <registry>/garak-workbench:0.17.0-20260922
-docker push <registry>/garak-workbench:0.17.0-20260922
-```
+Alauda provides the garak Workbench image: garak 0.17.0, digest `sha256:d1cc22470189dfe4b341f1c2507897d60399f5257ec936bcd14da4f38e99440a`, 5.3 GB. Push it to a registry the cluster can pull from, for example `<registry>/garak-workbench:0.17.0-20260922`, and use that address in the WorkspaceKind below.
 
 ### Importing the WorkspaceKind
 
