@@ -5,6 +5,7 @@ products:
   - Alauda Container Platform
 ProductsVersion:
   - 4.x
+id: KB260900055
 ---
 
 # How to Deploy Elasticsearch and Kibana Using Elastic Cloud on Kubernetes (ECK)
