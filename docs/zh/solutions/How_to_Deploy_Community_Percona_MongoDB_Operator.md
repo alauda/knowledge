@@ -15,7 +15,7 @@ sourceSHA: 303099030817594e33348262986ed3861e759e0dce0c1dbf85c7f5fa12869df9
 
 本指南将引导您在 Alauda 容器平台上使用上游 **community** [Percona Server for MongoDB Operator](https://github.com/percona/percona-server-mongodb-operator) 部署 MongoDB。之前捆绑的 Alauda MongoDB 插件不再通过 ACP 市场分发，因此本指南提供了使用社区版本的自助路径。
 
-**验证版本**（在 ACP 4.2 / Kubernetes 1.33 上验证；请查看上游文档以获取更新版本）：
+**验证版本**（在 ACP 4.2 / Kubernetes 1.33 和 ACP 4.4 / Kubernetes 1.35 上验证；请查看上游文档以获取更新版本）：
 
 | 组件                                 | 版本                  |
 | :---------------------------------- | :-------------------- |
@@ -106,6 +106,14 @@ done
 > 选项 B 仅镜像本地主机的架构。如果您的集群可能是 ARM64、x86_64 或混合架构，请使用选项 A 和 `skopeo copy --all` 来保留多架构标签的每个平台变体。
 
 ### 使用 ACP 集成的 Harbor 注册表
+
+如果不确定集群使用的镜像仓库地址，可以从平台读取：
+
+```bash
+kubectl -n kube-public get configmap global-info -o jsonpath='{.data.registryAddress}'
+```
+
+将该值（主机和端口）作为下面的 `REGISTRY_SERVER`，替代 `:45443` 示例。
 
 如果您要推送到随 ACP 提供的 Harbor 注册表（典型端点 `https://<acp-portal-host>:45443`），则推送凭据存储在管理集群的 Secret 中 — 它们与您的 ACP 门户登录不同：
 
@@ -338,7 +346,7 @@ EOF
 kubectl -n "$NS" get psmdb -w
 ```
 
-等待 `STATUS=ready`。在健康的存储上，集群在 ~60 秒内达到就绪状态。
+等待 `STATUS=ready`。在健康的存储上，集群约在 1–2 分钟内达到就绪状态。在 operator 生成集群 TLS Secret 并启动 Pod 期间，`STATUS` 短暂显示 `error` 或 `initializing` 属于正常现象；只有持续停留在 `error` 时才需要排查（查看 operator 日志）。
 
 ```text
 NAME       ENDPOINT                                            STATUS   AGE
@@ -383,7 +391,7 @@ kubectl -n "$NS" port-forward "svc/${CLUSTER}-mongos" 27017:27017
 
 为了清晰地设定期望：
 
-- **Alauda 验证的**功能已在代表性的 ACP 集群（ACP 4.2 / Kubernetes 1.33，operator v1.22.0）上进行了端到端测试。它们按照此处记录的方式工作。
+- **Alauda 验证的**功能已在代表性的 ACP 集群（ACP 4.2 / Kubernetes 1.33，operator v1.22.0）上进行了端到端测试。它们按照此处记录的方式工作。本指南的基础部署流程（从私有镜像仓库以命名空间范围安装 operator、分片 MongoDB `8.0.19-7` 集群达到 `ready`，以及步骤 6 的访问检查）已在 ACP 4.4 / Kubernetes 1.35、operator v1.22.0 上重新验证。
 - **未经过 Alauda 验证的**功能可能有效，但 Alauda 尚未在 ACP 上测试它们。如果您的用例依赖于它们，请将上游 Percona 文档视为权威，并在生产环境中依赖之前在您自己的环境中进行验证。
 
 ### Alauda 验证的

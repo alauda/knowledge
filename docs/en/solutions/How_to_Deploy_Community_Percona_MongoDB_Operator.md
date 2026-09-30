@@ -14,7 +14,7 @@ id: KB260400014
 
 This guide walks you through deploying MongoDB on Alauda Container Platform using the upstream **community** [Percona Server for MongoDB Operator](https://github.com/percona/percona-server-mongodb-operator). The previously-bundled Alauda MongoDB plugin is no longer distributed via the ACP marketplace, so this guide provides a self-service path using the community release.
 
-**Verified versions** (verified on ACP 4.2 / Kubernetes 1.33; check the upstream documentation for newer releases):
+**Verified versions** (verified on ACP 4.2 / Kubernetes 1.33 and ACP 4.4 / Kubernetes 1.35; check the upstream documentation for newer releases):
 
 | Component | Version |
 | :--- | :--- |
@@ -105,6 +105,14 @@ done
 > Option B mirrors only the local host's architecture. If your clusters may be ARM64, x86_64, or mixed-architecture, use Option A with `skopeo copy --all` to preserve every platform variant of multi-arch tags.
 
 ### Using the ACP-integrated Harbor registry
+
+If you are not sure which registry address your cluster uses, read it from the platform:
+
+```bash
+kubectl -n kube-public get configmap global-info -o jsonpath='{.data.registryAddress}'
+```
+
+Use that value (host and port) as `REGISTRY_SERVER` below instead of the `:45443` example.
 
 If you are pushing to the Harbor registry that ships with ACP (typical endpoint `https://<acp-portal-host>:45443`), the push credentials live in a Secret on the management cluster — they are not the same as your ACP portal login:
 
@@ -339,7 +347,7 @@ For the full Custom Resource field reference and all available options (TLS, mon
 kubectl -n "$NS" get psmdb -w
 ```
 
-Wait for `STATUS=ready`. On healthy storage, the cluster reaches ready within ~60 seconds.
+Wait for `STATUS=ready`. On healthy storage, the cluster reaches ready within about 1–2 minutes. It is normal for `STATUS` to show `error` or `initializing` briefly while the operator generates the cluster's TLS secrets and starts the pods; only a status that stays `error` needs investigation (check the operator log).
 
 ```text
 NAME       ENDPOINT                                            STATUS   AGE
@@ -384,7 +392,7 @@ This guide is scoped to a baseline deployment: install the operator, wire it to 
 
 To set expectations clearly:
 
-- **Verified by Alauda** features have been tested end-to-end on a representative ACP cluster (ACP 4.2 / Kubernetes 1.33, operator v1.22.0). They work as documented here.
+- **Verified by Alauda** features have been tested end-to-end on a representative ACP cluster (ACP 4.2 / Kubernetes 1.33, operator v1.22.0). They work as documented here. The baseline deployment in this guide (namespace-scoped operator install from a private registry, sharded MongoDB `8.0.19-7` cluster reaching `ready`, and the Step 6 access check) was re-verified on ACP 4.4 / Kubernetes 1.35 with operator v1.22.0.
 - **Not verified by Alauda** features may work, but Alauda has not tested them on ACP. If your use case depends on them, treat the upstream Percona documentation as authoritative and validate in your own environment before relying on them in production.
 
 ### Verified by Alauda
