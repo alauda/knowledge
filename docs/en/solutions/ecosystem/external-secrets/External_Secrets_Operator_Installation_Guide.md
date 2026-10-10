@@ -4,7 +4,7 @@ products:
 kind:
   - Solution
 ProductsVersion:
-  - '4.3,4.4'
+  - '4.1,4.2,4.3,4.4'
 ---
 
 <!--
@@ -44,7 +44,7 @@ You describe the sync with two resources:
 <!-- factory:auto:supported-versions BEGIN -->
 | Item | Version |
 |------|---------|
-| ACP | 4.3, 4.4 |
+| ACP | 4.1, 4.2, 4.3, 4.4 |
 | Architectures | amd64 (x86_64), arm64 |
 | Network | IPv4 |
 | External Secrets Operator (bundle) | v0.14.4 |
