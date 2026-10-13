@@ -160,42 +160,70 @@ point at the side being installed and the complete DR configuration:
 and
 [Global Cluster Disaster Recovery](https://docs.alauda.io/immutable-infra/1.0/global/disaster_recovery.html).
 
-Never reuse one bootstrap host for both sides, and never render the DCS
-credential Secret into a manifest that is applied with `kubectl apply` — create
-it separately with `kubectl create` and reference it by name.
+Never reuse one bootstrap host for both sides.
 
-### 3. Rendering the cluster resources
+### 3. Authoring the cluster manifests
 
-The delivery charts that accompany this article render the Cluster API
-resources for both sides, packaged as **`acp-delivery-charts`** (available from
-Alauda Cloud): `charts/global-dcs` for the `global` cluster and
-`charts/workload-dcs` for each workload cluster. Each side is rendered
-separately with its own values file:
+On ACP 4.3 the Cluster API resources of each cluster are authored as YAML
+manifests and applied with `kubectl`. The product documentation holds the
+complete manifests field by field — build from it rather than from copies
+circulating between projects:
 
-```bash
-helm template global charts/global-dcs   -f global-values.yaml   > global.yaml
-helm template wl-1   charts/workload-dcs -f wl-1-values.yaml     > wl-1.yaml
-```
+- **`global` cluster** — Step 4, *Configure the Provider-Specific global
+  Manifest*, of
+  [Global Cluster Installation](https://docs.alauda.io/immutable-infra/1.0/global/install.html).
+- **Disaster-recovery increments** —
+  [Optional Disaster Recovery Deployment](https://docs.alauda.io/immutable-infra/1.0/global/install.html#optional-disaster-recovery-deployment)
+  in the same guide.
+- **Each workload cluster** — the *Using YAML* section of
+  [Creating Clusters on Huawei DCS](https://docs.alauda.io/immutable-infra/1.0/create-cluster/huawei-dcs.html).
 
-Properties worth relying on:
+Delivery discipline when assembling the manifests:
 
-- **Credentials never pass through the charts.** The DCS API credential Secret
-  is created once with `kubectl create`; both charts reference it by name, and
-  workload clusters reuse the Secret created for the `global` install.
-- **Fail-fast validation.** Unknown pool names, a control plane that is not 3
-  nodes, a workload cluster named `global` or prefixed `global-`, empty required
-  values, non-CIDR networks, or a domain name in the endpoint are rejected at
-  render time instead of surfacing as half-provisioned machines.
-- **The DR block renders the disaster-recovery increments** (the shared
-  encryption provider reference and the etcd server certificate SANs); with DR
-  disabled the output is byte-identical to a non-DR render.
-- Workload clusters are managed on `global`: Kubernetes version, image tags, VM
-  template and credentials are read from what the `global` install already
-  created; a new cluster only needs its own name, endpoint VIP, CIDRs, node IPs
-  and keys.
+- **Naming is a hard requirement on both sides** — the `global`
+  [naming convention](https://docs.alauda.io/immutable-infra/1.0/global/install.html#common-prerequisites)
+  and the
+  [Workload Cluster Naming](https://docs.alauda.io/immutable-infra/1.0/create-cluster/huawei-dcs.html#workload-cluster-naming)
+  rules. A violation installs cleanly and only surfaces at the first failover,
+  when disaster recovery selects resources by the `global-` prefix.
+- **Credentials stay out of manifests.** Create the DCS API credential Secret
+  separately with `kubectl create` and reference it by name. A Secret written
+  into a manifest that is applied with `kubectl apply` records the credential
+  in its own `last-applied-configuration` annotation. Workload clusters on the
+  same DCS reference the Secret that already exists from the `global` install
+  instead of each writing the password to disk again.
+- **One manifest set per cluster.** When you derive a workload cluster's
+  manifests from another cluster's, change every name, hostname, IP and CIDR; a
+  value left over from the other cluster creates or modifies that cluster's
+  resources.
+- **Read shared values from `global`.** The placeholder table on the Huawei
+  DCS page lists, for every value, where it already lives on the `global`
+  cluster and how to read it — reuse those instead of collecting them again. A
+  new workload cluster only needs its own name, endpoint VIP, CIDRs, node IPs,
+  hostnames and SSH key.
+- **Keep the provider literals.** `PROVIDER_ID` and `NODE_IP` in the kubelet
+  configuration are replaced per machine by the DCS provider; leave them as
+  literals.
+- **Pools with pool-managed persistent disks keep `maxSurge: 0`** — see the
+  Huawei DCS page.
+- **Disaster recovery: three increments, identical on both sides** — the
+  encryption provider Secret created from one shared file, the same etcd server
+  certificate SANs, and the `dcs-import-extra-resources` ConfigMap on both
+  sides. A mismatch installs cleanly and only surfaces at the first failover
+  drill.
 
-Review the rendered output, then apply the control plane first and each node
-pool separately after checking it — not the whole directory at once.
+Check before applying — these are the mistakes that otherwise surface as
+half-provisioned machines:
+
+- The control plane has exactly 3 nodes.
+- Pod, Service and Join CIDRs overlap neither each other nor the node, VIP,
+  DCS, other-cluster or customer networks.
+- The cluster endpoint is an IP address, not a domain name.
+- No unreplaced placeholders remain, and no credential appears anywhere in the
+  manifest files.
+
+Apply the control plane first and verify it, then apply each node pool
+separately after checking it — never the whole directory at once.
 
 ### 4. Plugin installation and placement
 
@@ -257,9 +285,8 @@ Derive sizes from the product capacity pages instead of copying numbers:
    (for a consolidated `infra` pool: platform state + log storage + monitoring
    data, summed).
 
-A worked example for a small workload cluster (~20 workers) is what the default
-`values.yaml` of the delivery charts encodes; anything beyond the documented
-capacity tiers must be recalculated and validated, not extrapolated.
+Anything beyond the documented capacity tiers must be recalculated and
+validated, not extrapolated.
 
 ### 7. Acceptance
 
@@ -277,7 +304,7 @@ Accept against evidence, not against "the installer finished":
   monitor reports zero differences, and a failover drill has actually been run —
   see the
   [failover procedure](https://docs.alauda.io/immutable-infra/1.0/global/disaster_recovery.html).
-- Nothing in the archive contains plaintext credentials; rendered manifests are
+- Nothing in the archive contains plaintext credentials; applied manifests are
   archived in redacted form only.
 
 If the delivery deviates from this design, stop and resolve the deviation with
