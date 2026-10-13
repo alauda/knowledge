@@ -291,4 +291,4 @@ design stage becomes a re-installation later.
 - [Creating Clusters on Huawei DCS](https://docs.alauda.io/immutable-infra/1.0/create-cluster/huawei-dcs.html)
 - [Configure Annotations, Labels, and Taints on Nodes](https://docs.alauda.io/immutable-infra/1.0/how-to/node-configuration.html)
 - [Machine Configuration](https://docs.alauda.io/immutable-infra/1.0/machine-configuration/overview.html)
-- [Full-Stack Automation with ACP](../Full-Stack_Automation_with_ACP.markdown) — declarative cluster creation on DCS as a development/automation walkthrough; this article is the production delivery counterpart
+- *Full-Stack Automation with ACP* (in this knowledge base) — declarative cluster creation on DCS as a development/automation walkthrough; this article is the production delivery counterpart
