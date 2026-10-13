@@ -30,7 +30,7 @@ Scope and assumptions:
 - **Worker nodes are out of scope.** Workers follow the customer's actual
   machines; this guide covers creating the clusters and the platform node pools.
 - **Storage selection is out of scope** and is planned separately.
-- Traditional-OS deliveries are not covered here; see the
+- Deliveries on a non-Alauda OS are not covered here; see the
   [standard installation path](https://docs.alauda.io/container_platform/4.3/install/)
   for those.
 
@@ -135,7 +135,7 @@ authority and this guide only shows worked examples.
 ### 2. Delivery flow
 
 The flow below is the multi-cluster topology with DR. For a single-cluster
-delivery: one bootstrap host, skip the standby and etcd-sync stages, and skip
+delivery: one bootstrap node, skip the standby and etcd-sync stages, and skip
 workload-cluster creation.
 
 | Stage | Action | Pass criteria |
@@ -144,7 +144,7 @@ workload-cluster creation.
 | 2 | Freeze networks, VIPs, DNS, certificates, port policy | CIDRs do not overlap; LB backends and port matrix confirmed and tested |
 | 3 | Collect DCS facts (site, templates, API user, folders, storage, port groups) | Recorded in the value sheet |
 | 4 | Download materials with `violet` | Core package and plugin packages verified — see [Download Packages](https://docs.alauda.io/container_platform/4.3/extend/download_package.html) |
-| 5 | Provision **two** bootstrap hosts (primary + standby) | Reachable; CPU meets `x86-64-v2` |
+| 5 | Provision **two** bootstrap nodes (primary + standby) | Reachable; CPU meets `x86-64-v2` |
 | 6 | Point the platform domain at the primary VIP, install the primary `global` | Six-node verification passes |
 | 7 | Switch the platform domain to the standby VIP, install the standby `global` | Six-node verification passes |
 | 8 | Switch the platform domain back to the primary VIP, install `etcd-sync` | Zero-difference check passes; failover drill passes |
@@ -160,7 +160,7 @@ point at the side being installed and the complete DR configuration:
 and
 [Global Cluster Disaster Recovery](https://docs.alauda.io/immutable-infra/1.0/global/disaster_recovery.html).
 
-Never reuse one bootstrap host for both sides.
+Never reuse one bootstrap node for both sides.
 
 ### 3. Authoring the cluster manifests
 
