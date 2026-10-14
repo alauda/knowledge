@@ -1,0 +1,203 @@
+---
+kind:
+  - Troubleshooting
+products:
+  - Alauda Container Platform
+ProductsVersion:
+  - '4.2.x,4.3.x,4.4.x'
+---
+
+# NodeLocal DNSCache 常见现场问题的临时规避方案
+
+本文提供 NodeLocal DNSCache 三类常见现场问题的临时规避方案：
+
+- `node-cache` Pod 异常后，节点上新建或存量 Pod 的 DNS 解析受影响。
+- 健康检查端口 `8080` 冲突。
+- NodeLocal DNSCache metrics 无法被外部监控或面板采集。
+
+这些方案仅用于临时规避。插件升级、重装、平台调谐、chart 重新渲染或节点重建后，手工修改可能被覆盖。建议在变更窗口执行。
+
+## 问题 1：`node-cache` Pod 异常后节点 DNS 解析失败
+
+**现象：** NodeLocal DNSCache 生效后，新建 Pod 使用节点本地 DNS 地址作为 DNS 服务器。当某个节点上的 `node-cache` Pod 异常、被驱逐或升级重启时，该节点上 Pod 的 DNS 解析可能失败。
+
+**原因：** 插件安装任务会把 kubelet `--cluster-dns` 配置为 NodeLocal DNSCache IP。默认情况下，新建 Pod 的 `/etc/resolv.conf` 只有 NodeLocal DNSCache IP，没有 CoreDNS ClusterIP 作为辅助 DNS server。
+
+**解决方案：** 将 CoreDNS ClusterIP 配置为 kubelet 的辅助 DNS server。配置后，新建 Pod 的 `/etc/resolv.conf` 中同时包含 NodeLocal DNSCache IP 和 CoreDNS ClusterIP。
+
+先查询 CoreDNS ClusterIP：
+
+```bash
+kubectl -n kube-system get svc kube-dns
+```
+
+登录需要生效的节点，编辑 kubelet 参数文件：
+
+```bash
+vi /var/lib/kubelet/kubeadm-flags.env
+```
+
+将 kubelet 的 `--cluster-dns` 从单个 NodeLocal DNSCache IP 改为 NodeLocal DNSCache IP 和 CoreDNS ClusterIP 的组合。例如：
+
+```text
+--cluster-dns=169.254.20.10,10.96.0.10
+```
+
+其中 `169.254.20.10` 是 NodeLocal DNSCache IP，`10.96.0.10` 是 CoreDNS ClusterIP。不要删除同一行上的其他 kubelet 参数。
+
+保存后重启 kubelet：
+
+```bash
+systemctl restart kubelet
+```
+
+kubelet 的 `cluster-dns` 变更只影响新建 Pod，已有 Pod 的 `/etc/resolv.conf` 不会自动更新。需要在变更窗口内重建受影响业务 Pod，例如：
+
+```bash
+kubectl -n <namespace> rollout restart deployment/<deployment-name>
+kubectl -n <namespace> rollout status deployment/<deployment-name>
+```
+
+创建临时 Pod，确认 `/etc/resolv.conf` 中同时包含 NodeLocal DNSCache IP 和 CoreDNS ClusterIP：
+
+```bash
+kubectl run dns-check --rm -it --restart=Never --image=busybox:1.36 -- cat /etc/resolv.conf
+```
+
+预期输出包含类似内容：
+
+```text
+nameserver 169.254.20.10
+nameserver 10.96.0.10
+```
+
+配置多个 DNS server 后，NodeLocal DNSCache 异常时可以由 CoreDNS 兜底解析，但这不是无感故障切换。Alpine Linux 等使用 musl libc 的镜像通常切换较快；使用 glibc 的镜像可能会在 `ndots` 和 `search` 触发的多轮查询中反复等待超时，故障期间 DNS 解析可能变慢。
+
+如果业务对故障期间的解析耗时敏感，可在相关工作负载中降低 resolver 超时和重试次数：
+
+```yaml
+dnsConfig:
+  options:
+    - name: timeout
+      value: "1"
+    - name: attempts
+      value: "1"
+```
+
+该配置会更快放弃不可达 DNS server，但也会降低对瞬时 DNS 抖动的容忍度，建议按业务验证后使用。
+
+## 问题 2：NodeLocal DNSCache 健康检查端口占用 8080
+
+**现象：** 启用 NodeLocal DNSCache 后，节点上的业务进程、运维代理或 `hostNetwork` Pod 无法绑定 `127.0.0.1:8080` 或 `0.0.0.0:8080`。
+
+**原因：** `node-cache` Pod 使用 `hostNetwork: true`，并在节点 loopback `127.0.0.1:8080` 上暴露健康检查端点。当前插件未暴露健康检查端口参数，生成的 Corefile 和 DaemonSet 探针默认使用 `8080`。
+
+```text
+health 127.0.0.1:8080
+```
+
+```yaml
+livenessProbe:
+  httpGet:
+    host: 127.0.0.1
+    path: /health
+    port: 8080
+```
+
+**解决方案：** 同时修改 Corefile 中的 `health` 端口和 DaemonSet 探针端口，两个位置必须保持一致。
+
+设置资源变量：
+
+```bash
+NS=kube-system
+DS=node-local-dns
+CM=node-local-dns
+```
+
+编辑 ConfigMap，把 Corefile 中的健康检查端口改为未被占用的新端口，例如 `18080`：
+
+```bash
+kubectl -n "$NS" edit cm "$CM"
+```
+
+```text
+health 127.0.0.1:18080
+```
+
+编辑 DaemonSet，把 `node-cache` 容器的 `livenessProbe.httpGet.port` 改为同一个端口：
+
+```bash
+kubectl -n "$NS" edit ds "$DS"
+```
+
+```yaml
+livenessProbe:
+  httpGet:
+    host: 127.0.0.1
+    path: /health
+    port: 18080
+```
+
+等待 DaemonSet 滚动更新完成：
+
+```bash
+kubectl -n "$NS" rollout status ds "$DS"
+```
+
+如需确认节点端口监听，可登录运行 `node-cache` Pod 的节点执行：
+
+```bash
+ss -ltnp | grep ':18080'
+ss -ltnp | grep ':8080'
+```
+
+预期 `18080` 由 NodeLocal DNSCache 监听，`8080` 不再由 NodeLocal DNSCache 监听。
+
+## 问题 3：NodeLocal DNSCache metrics 无法被外部采集
+
+**现象：** 外部监控或面板无法访问 NodeLocal DNSCache metrics。
+
+**原因：** Corefile 中的 `prometheus` 指令可能绑定到了 NodeLocal DNSCache IP，例如 `169.254.20.10:9253`。如果外部监控采集路径无法访问该节点本地地址，就会拿不到指标。
+
+**解决方案：** 只修改 Corefile 中的 `prometheus` 监听地址，不修改 DNS 服务端口。
+
+设置资源变量：
+
+```bash
+NS=kube-system
+CM=node-local-dns
+DS=node-local-dns
+```
+
+编辑 ConfigMap：
+
+```bash
+kubectl -n "$NS" edit cm "$CM"
+```
+
+将 Corefile 中绑定固定 IP 的 `prometheus` 指令：
+
+```text
+prometheus 169.254.20.10:9253
+```
+
+修改为只监听端口：
+
+```text
+prometheus :9253
+```
+
+如果目标环境中的 metrics 端口不是 `9253`，保持现场端口不变，只去掉 IP 绑定。
+
+重启 DaemonSet 使配置生效：
+
+```bash
+kubectl -n "$NS" rollout restart ds "$DS"
+kubectl -n "$NS" rollout status ds "$DS"
+```
+
+确认 Corefile 已更新，并从监控采集路径验证 metrics 可访问：
+
+```bash
+kubectl -n "$NS" get cm "$CM" -o yaml | grep 'prometheus'
+```
