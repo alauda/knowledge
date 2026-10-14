@@ -23,16 +23,7 @@ For each node, the downtime mainly consists of the time to clone the disks to Ce
 
 ## Environment
 
-This solution applies to Alauda Container Platform 4.1.x. Both the primary path and the fallback path were validated end to end in the following environment:
-
-| Component | Version |
-|---|---|
-| Alauda Container Platform | 4.1.7 |
-| TopoLVM (topolvm-operator) | 4.1.5 |
-| Rook-Ceph (used for the backup) | 4.1.5 |
-| KubeVirt / CDI | 1.5.2 / 1.62.0 |
-| CNI | Kube-OVN |
-| Operating system | CentOS 7.9 → RHEL 9.6 (kernel 5.14.0-570) |
+This solution applies to Alauda Container Platform 4.1.x with TopoLVM and KubeVirt. It was validated end to end on ACP 4.1.7 by moving nodes from CentOS 7.9 to RHEL 9.6, covering both the primary path and the fallback path.
 
 ## Prerequisites
 
