@@ -68,8 +68,9 @@ You only need the MongoDB image(s) for the version(s) you intend to deploy. The 
 `skopeo` copies images directly between registries without needing a local Docker daemon and preserves multi-arch manifests.
 
 ```bash
-PRIVATE_REGISTRY="<your-private-registry>"          # e.g. registry.example.com
-skopeo login "$PRIVATE_REGISTRY"                    # if your registry needs auth
+: "${PRIVATE_REGISTRY:?export PRIVATE_REGISTRY first (see Prerequisites)}"
+REGISTRY_SERVER="${PRIVATE_REGISTRY%%/*}"            # host[:port] part of PRIVATE_REGISTRY, e.g. registry.example.com:443
+skopeo login "$REGISTRY_SERVER"                     # if your registry needs auth
 
 for img in \
   percona/percona-server-mongodb-operator:1.22.0 \
@@ -88,8 +89,8 @@ The `--all` flag copies every platform variant of multi-arch tags.
 ### Option B: docker pull / tag / push
 
 ```bash
-REGISTRY_SERVER="<your-registry-host>"               # e.g. registry.example.com:443
-PRIVATE_REGISTRY="$REGISTRY_SERVER/<your-project>"   # e.g. registry.example.com:443/middleware
+: "${PRIVATE_REGISTRY:?export PRIVATE_REGISTRY first (see Prerequisites)}"
+REGISTRY_SERVER="${PRIVATE_REGISTRY%%/*}"            # host[:port] part of PRIVATE_REGISTRY, e.g. registry.example.com:443
 docker login "$REGISTRY_SERVER"
 
 for img in \
@@ -112,7 +113,7 @@ If you are not sure which registry address your cluster uses, read it from the p
 kubectl -n kube-public get configmap global-info -o jsonpath='{.data.registryAddress}'
 ```
 
-Use that value (host and port) as `REGISTRY_SERVER` below instead of the `:45443` example.
+Use that value (host and port) instead of the `:45443` example as the host part of `PRIVATE_REGISTRY` in Prerequisites, e.g. `export PRIVATE_REGISTRY=<registryAddress>/<your-harbor-project>`.
 
 If you are pushing to the Harbor registry that ships with ACP (typical endpoint `https://<acp-portal-host>:45443`), the push credentials live in a Secret on the management cluster — they are not the same as your ACP portal login:
 
@@ -121,8 +122,9 @@ If you are pushing to the Harbor registry that ships with ACP (typical endpoint 
 REG_USER=$(kubectl -n cpaas-system get secret registry-admin -o jsonpath='{.data.username}' | base64 -d)
 REG_PASS=$(kubectl -n cpaas-system get secret registry-admin -o jsonpath='{.data.password}' | base64 -d)
 
-REGISTRY_SERVER="<acp-portal-host>:45443"            # e.g. acp.example.com:45443
-PRIVATE_REGISTRY="$REGISTRY_SERVER/<your-harbor-project>"   # e.g. acp.example.com:45443/middleware
+# PRIVATE_REGISTRY comes from Prerequisites, e.g. acp.example.com:45443/middleware
+: "${PRIVATE_REGISTRY:?export PRIVATE_REGISTRY first (see Prerequisites)}"
+REGISTRY_SERVER="${PRIVATE_REGISTRY%%/*}"            # e.g. acp.example.com:45443
 skopeo login -u "$REG_USER" -p "$REG_PASS" --tls-verify=false "$REGISTRY_SERVER"
 
 # skopeo copy invocation — note --dest-tls-verify=false for the self-signed cert
@@ -140,14 +142,14 @@ done
 
 If your private registry requires authentication (the ACP-integrated Harbor does), cluster nodes cannot pull the images without credentials. Create a `kubernetes.io/dockerconfigjson` Secret in the target namespace and you will attach it to both the operator Deployment and the cluster CR in later steps.
 
-`--docker-server` must be just the registry **host** (no project path). For ACP Harbor that is the value you assigned to `REGISTRY_SERVER` in Step 1 — for example `acp.example.com:45443`, NOT `acp.example.com:45443/middleware`.
+`--docker-server` must be just the registry **host** (no project path). That is the host part of `$PRIVATE_REGISTRY`, which the block below derives as `REGISTRY_SERVER` — for example `acp.example.com:45443`, NOT `acp.example.com:45443/middleware`.
 
-Set the three variables for your registry, then create the Secret. If you came from the ACP-Harbor section in Step 1 you already have these set; otherwise define them now:
+Set the registry credentials, then create the Secret. If you came from the ACP-Harbor section in Step 1, `REG_USER` and `REG_PASS` are already set and the block below keeps them; otherwise replace the placeholders:
 
 ```bash
-REGISTRY_SERVER="<your-registry-host>"     # e.g. registry.example.com:443 (host only — no project path)
-REG_USER="<registry-username>"
-REG_PASS="<registry-password>"
+REGISTRY_SERVER="${PRIVATE_REGISTRY%%/*}"     # host only — no project path, e.g. registry.example.com:443
+REG_USER="${REG_USER:-<registry-username>}"
+REG_PASS="${REG_PASS:-<registry-password>}"
 
 # For ACP-integrated Harbor specifically, populate REG_USER / REG_PASS from the
 # registry-admin Secret on the management cluster (see Step 1's Harbor section):
@@ -204,7 +206,7 @@ Upstream ships two operator bundles. Pick the one that matches how you plan to u
 Download the bundle you chose, rewrite the operator image to your private registry, and apply.
 
 ```bash
-PRIVATE_REGISTRY="<your-private-registry>"
+: "${PRIVATE_REGISTRY:?export PRIVATE_REGISTRY first (see Prerequisites)}"
 # Defaults to $NS from Prerequisites. Override if you want the operator in a
 # different namespace from the cluster CR (only meaningful with cw-bundle.yaml).
 OPERATOR_NS="${OPERATOR_NS:-$NS}"

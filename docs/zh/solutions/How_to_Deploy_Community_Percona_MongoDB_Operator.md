@@ -6,7 +6,7 @@ products:
 ProductsVersion:
   - '4.2,4.4'
 id: KB260400014
-sourceSHA: f95dc54a14273c77899a1ccfebd376e84b42eb141148d6634a765093b0c60377
+sourceSHA: 700e6a058c41f715a04a80dce3814f872821bce1a0c88baded431583ab50056e
 ---
 
 # 如何使用 Community Percona Operator 部署 MongoDB
@@ -69,8 +69,9 @@ ACP 集群节点通常无法直接从 `docker.io` 拉取。您必须先将 opera
 `skopeo` 可以直接在注册表之间复制镜像，而无需本地 Docker 守护进程，并保留多架构清单。
 
 ```bash
-PRIVATE_REGISTRY="<your-private-registry>"          # 例如 registry.example.com
-skopeo login "$PRIVATE_REGISTRY"                    # 如果您的注册表需要身份验证
+: "${PRIVATE_REGISTRY:?export PRIVATE_REGISTRY first (see Prerequisites)}"
+REGISTRY_SERVER="${PRIVATE_REGISTRY%%/*}"            # PRIVATE_REGISTRY 的 host[:port] 部分，例如 registry.example.com:443
+skopeo login "$REGISTRY_SERVER"                     # 如果您的注册表需要身份验证
 
 for img in \
   percona/percona-server-mongodb-operator:1.22.0 \
@@ -89,8 +90,8 @@ done
 ### 选项 B：docker pull / tag / push
 
 ```bash
-REGISTRY_SERVER="<your-registry-host>"               # 例如 registry.example.com:443
-PRIVATE_REGISTRY="$REGISTRY_SERVER/<your-project>"   # 例如 registry.example.com:443/middleware
+: "${PRIVATE_REGISTRY:?export PRIVATE_REGISTRY first (see Prerequisites)}"
+REGISTRY_SERVER="${PRIVATE_REGISTRY%%/*}"            # PRIVATE_REGISTRY 的 host[:port] 部分，例如 registry.example.com:443
 docker login "$REGISTRY_SERVER"
 
 for img in \
@@ -113,7 +114,7 @@ done
 kubectl -n kube-public get configmap global-info -o jsonpath='{.data.registryAddress}'
 ```
 
-使用该值（主机和端口）作为下面的 `REGISTRY_SERVER`，而不是 `:45443` 示例。
+使用该值（主机和端口）代替 `:45443` 示例，作为先决条件中 `PRIVATE_REGISTRY` 的主机部分，例如 `export PRIVATE_REGISTRY=<registryAddress>/<your-harbor-project>`。
 
 如果您要推送到随 ACP 提供的 Harbor 注册表（典型端点 `https://<acp-portal-host>:45443`），则推送凭据存储在管理集群的 Secret 中 — 它们与您的 ACP 门户登录不同：
 
@@ -122,8 +123,9 @@ kubectl -n kube-public get configmap global-info -o jsonpath='{.data.registryAdd
 REG_USER=$(kubectl -n cpaas-system get secret registry-admin -o jsonpath='{.data.username}' | base64 -d)
 REG_PASS=$(kubectl -n cpaas-system get secret registry-admin -o jsonpath='{.data.password}' | base64 -d)
 
-REGISTRY_SERVER="<acp-portal-host>:45443"            # 例如 acp.example.com:45443
-PRIVATE_REGISTRY="$REGISTRY_SERVER/<your-harbor-project>"   # 例如 acp.example.com:45443/middleware
+# PRIVATE_REGISTRY 来自先决条件，例如 acp.example.com:45443/middleware
+: "${PRIVATE_REGISTRY:?export PRIVATE_REGISTRY first (see Prerequisites)}"
+REGISTRY_SERVER="${PRIVATE_REGISTRY%%/*}"            # 例如 acp.example.com:45443
 skopeo login -u "$REG_USER" -p "$REG_PASS" --tls-verify=false "$REGISTRY_SERVER"
 
 # skopeo copy 调用 — 注意 --dest-tls-verify=false 用于自签名证书
@@ -141,14 +143,14 @@ done
 
 如果您的私有注册表需要身份验证（ACP 集成的 Harbor 需要），集群节点无法在没有凭据的情况下拉取镜像。在目标命名空间中创建一个 `kubernetes.io/dockerconfigjson` Secret，稍后您将把它附加到 operator 部署和集群 CR。
 
-`--docker-server` 必须仅是注册表 **主机**（没有项目路径）。对于 ACP Harbor，这就是您在步骤 1 中分配给 `REGISTRY_SERVER` 的值 — 例如 `acp.example.com:45443`，而不是 `acp.example.com:45443/middleware`。
+`--docker-server` 必须仅是注册表 **主机**（没有项目路径）。这就是 `$PRIVATE_REGISTRY` 的主机部分，下面的代码块会将其派生为 `REGISTRY_SERVER` — 例如 `acp.example.com:45443`，而不是 `acp.example.com:45443/middleware`。
 
-设置三个变量以适应您的注册表，然后创建 Secret。如果您来自步骤 1 的 ACP-Harbor 部分，您已经设置了这些；否则现在定义它们：
+设置注册表凭据，然后创建 Secret。如果您来自步骤 1 的 ACP-Harbor 部分，`REG_USER` 和 `REG_PASS` 已经设置，下面的代码块会保留它们；否则请替换占位符：
 
 ```bash
-REGISTRY_SERVER="<your-registry-host>"     # 例如 registry.example.com:443（仅主机 — 无项目路径）
-REG_USER="<registry-username>"
-REG_PASS="<registry-password>"
+REGISTRY_SERVER="${PRIVATE_REGISTRY%%/*}"     # 仅主机 — 无项目路径，例如 registry.example.com:443
+REG_USER="${REG_USER:-<registry-username>}"
+REG_PASS="${REG_PASS:-<registry-password>}"
 
 # 对于 ACP 集成的 Harbor，具体地，从管理集群的 registry-admin Secret 填充 REG_USER / REG_PASS（请参见步骤 1 的 Harbor 部分）：
 #   REG_USER=$(kubectl -n cpaas-system get secret registry-admin -o jsonpath='{.data.username}' | base64 -d)
@@ -204,7 +206,7 @@ kubectl label ns "$CLUSTER_NS" \
 下载您选择的包，将 operator 镜像重写为您的私有注册表，并应用。
 
 ```bash
-PRIVATE_REGISTRY="<your-private-registry>"
+: "${PRIVATE_REGISTRY:?export PRIVATE_REGISTRY first (see Prerequisites)}"
 # 默认使用 Prerequisites 中的 $NS。如果您希望 operator 与集群 CR 位于不同命名空间，请覆盖（仅在选择 cw-bundle.yaml 时有意义）。
 OPERATOR_NS="${OPERATOR_NS:-$NS}"
 BUNDLE="bundle.yaml"              # 如果您选择了集群范围，则为 cw-bundle.yaml
