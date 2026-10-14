@@ -4,7 +4,7 @@ kind:
 products:
   - Alauda Container Platform
 ProductsVersion:
-  - 4.x
+  - '4.2,4.4'
 id: KB260400014
 ---
 
@@ -14,7 +14,7 @@ id: KB260400014
 
 This guide walks you through deploying MongoDB on Alauda Container Platform using the upstream **community** [Percona Server for MongoDB Operator](https://github.com/percona/percona-server-mongodb-operator). The previously-bundled Alauda MongoDB plugin is no longer distributed via the ACP marketplace, so this guide provides a self-service path using the community release.
 
-**Verified versions** (verified on ACP 4.2 / Kubernetes 1.33 and ACP 4.4 / Kubernetes 1.35; check the upstream documentation for newer releases):
+**Verified versions** (fully verified on ACP 4.2 / Kubernetes 1.33; the baseline deployment only was re-verified on ACP 4.4 / Kubernetes 1.35 — see [Verified by Alauda](#verified-by-alauda) for the per-version scope; check the upstream documentation for newer releases):
 
 | Component | Version |
 | :--- | :--- |
@@ -31,7 +31,7 @@ For background on the operator's features, see:
 
 ## Prerequisites
 
-- An ACP 4.x cluster with `cluster-admin` access.
+- An ACP 4.2 or 4.4 cluster with `cluster-admin` access. Other ACP 4.x releases have not been tested; see the [Verified by Alauda](#verified-by-alauda) table for what was tested on each version.
 - `kubectl` configured against the target cluster.
 - A target namespace, a cluster name, and a `StorageClass`. Export them once and reuse them throughout the guide:
 
@@ -397,19 +397,19 @@ To set expectations clearly:
 
 ### Verified by Alauda
 
-| Area | What was tested |
-| :--- | :--- |
-| Operator install | Bundle apply via `kubectl`, image rewrite to private registry, namespaced operator (single-namespace watch) |
-| MongoDB versions | 6.0 (`6.0.27-21`), 7.0 (`7.0.30-16`), 8.0 (`8.0.19-7`) — sharded cluster reaches `ready` for each |
-| Cluster topologies | Replica set (sizes 1, 3, 5) and sharded cluster (`rs0` + `cfg` + `mongos`) |
-| Built-in user provisioning | All five operator-managed users (`userAdmin`, `databaseAdmin`, `clusterAdmin`, `clusterMonitor`, `backup`) created from `secrets.users` Secret |
-| Failover / reelection | Killing the primary triggers reelection; data and replset membership preserved |
-| Logical backup + restore | `PerconaServerMongoDBBackup` to S3-compatible MinIO; `PerconaServerMongoDBRestore` correctly rolls the database back to the backup point |
-| TLS via cert-manager | `tls.issuerConf` referencing an ACP `ClusterIssuer` (e.g. `cpaas-ca`); operator creates `Certificate` CRs, certs issued, `requireTLS` enforced, mongosh connects over TLS |
-| Smart upgrade | Patching `spec.image` from MongoDB 7.0 to 8.0 triggers a rolling restart (secondaries first, primary last); data and replset health preserved |
-| PVC resize | With `spec.enableVolumeExpansion: true` and a `StorageClass` that has `allowVolumeExpansion: true`, increasing `volumeSpec.persistentVolumeClaim.resources.requests.storage` propagates to the underlying PVCs without pod restart |
-| Replica scaling | `replsets.rs0.size` 3 → 5 (clean join + initial sync) and 5 → 3 (clean decommission) |
-| ACP private registry | Mirroring images via `skopeo copy --all` into the ACP-integrated Harbor and pulling them with an attached `imagePullSecret` |
+| Area | What was tested | ACP 4.2 | ACP 4.4 |
+| :--- | :--- | :--- | :--- |
+| Operator install | Bundle apply via `kubectl`, image rewrite to private registry, namespaced operator (single-namespace watch) | Yes | Yes (namespace-scoped `bundle.yaml` only) |
+| MongoDB versions | 6.0 (`6.0.27-21`), 7.0 (`7.0.30-16`), 8.0 (`8.0.19-7`) — sharded cluster reaches `ready` for each | Yes | 8.0 (`8.0.19-7`) only |
+| Cluster topologies | Replica set (sizes 1, 3, 5) and sharded cluster (`rs0` + `cfg` + `mongos`) | Yes | Sharded cluster (size 1 per role) only |
+| Built-in user provisioning | All five operator-managed users (`userAdmin`, `databaseAdmin`, `clusterAdmin`, `clusterMonitor`, `backup`) created from `secrets.users` Secret | Yes | Step 6 `userAdmin` login only |
+| Failover / reelection | Killing the primary triggers reelection; data and replset membership preserved | Yes | Not tested |
+| Logical backup + restore | `PerconaServerMongoDBBackup` to S3-compatible MinIO; `PerconaServerMongoDBRestore` correctly rolls the database back to the backup point | Yes | Not tested |
+| TLS via cert-manager | `tls.issuerConf` referencing an ACP `ClusterIssuer` (e.g. `cpaas-ca`); operator creates `Certificate` CRs, certs issued, `requireTLS` enforced, mongosh connects over TLS | Yes | Not tested |
+| Smart upgrade | Patching `spec.image` from MongoDB 7.0 to 8.0 triggers a rolling restart (secondaries first, primary last); data and replset health preserved | Yes | Not tested |
+| PVC resize | With `spec.enableVolumeExpansion: true` and a `StorageClass` that has `allowVolumeExpansion: true`, increasing `volumeSpec.persistentVolumeClaim.resources.requests.storage` propagates to the underlying PVCs without pod restart | Yes | Not tested |
+| Replica scaling | `replsets.rs0.size` 3 → 5 (clean join + initial sync) and 5 → 3 (clean decommission) | Yes | Not tested |
+| ACP private registry | Mirroring images via `skopeo copy --all` into the ACP-integrated Harbor and pulling them with an attached `imagePullSecret` | Yes | Yes (mirrored to and pulled from the platform registry) |
 
 ### Not verified by Alauda
 
