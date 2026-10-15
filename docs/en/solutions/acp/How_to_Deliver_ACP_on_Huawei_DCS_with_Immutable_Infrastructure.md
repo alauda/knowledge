@@ -75,8 +75,8 @@ workload cluster × N
 - Every workload cluster carries its own complete monitoring and logging stack —
   nothing aggregates into `global`.
 
-**Single cluster** — `global` doubles as the workload cluster. No DR, no
-cross-cluster management. A customer may run several such
+**Single cluster** — `global` doubles as the workload cluster. One bootstrap
+node, no DR, no cross-cluster management. A customer may run several such
 clusters that are deliberately independent of each other.
 
 #### Node pools, labels and taints
@@ -135,7 +135,8 @@ authority and this guide only shows worked examples.
 ### 2. Delivery flow
 
 The flow below is the multi-cluster topology with DR. For a single-cluster
-delivery, skip the standby and etcd-sync stages and workload-cluster creation.
+delivery: one bootstrap node, skip the standby and etcd-sync stages, and skip
+workload-cluster creation.
 
 | Stage | Action | Pass criteria |
 | ---: | --- | --- |
@@ -143,7 +144,7 @@ delivery, skip the standby and etcd-sync stages and workload-cluster creation.
 | 2 | Freeze networks, VIPs, DNS, certificates, port policy | CIDRs do not overlap; LB backends and port matrix confirmed and tested |
 | 3 | Collect DCS facts (site, templates, API user, folders, storage, port groups) | Recorded in the value sheet |
 | 4 | Download materials with `violet` | Core package and plugin packages verified — see [Download Packages](https://docs.alauda.io/container_platform/4.3/extend/download_package.html) |
-| 5 | Provision the bootstrap node — one node serves both the primary and the standby installation | Meets the bootstrap node requirements of the installation guide |
+| 5 | Provision **two** bootstrap nodes, one for the primary and one for the standby installation | Each meets the bootstrap node requirements of the installation guide |
 | 6 | Point the platform domain at the primary VIP, install the primary `global` | Six-node verification passes |
 | 7 | Switch the platform domain to the standby VIP, install the standby `global` | Six-node verification passes |
 | 8 | Switch the platform domain back to the primary VIP, install `etcd-sync` | Zero-difference check passes; failover drill passes |
@@ -158,6 +159,8 @@ point at the side being installed and the complete DR configuration:
 [Global Cluster Installation](https://docs.alauda.io/immutable-infra/1.0/global/install.html)
 and
 [Global Cluster Disaster Recovery](https://docs.alauda.io/immutable-infra/1.0/global/disaster_recovery.html).
+
+Never reuse one bootstrap node for both sides.
 
 ### 3. Authoring the cluster manifests
 
