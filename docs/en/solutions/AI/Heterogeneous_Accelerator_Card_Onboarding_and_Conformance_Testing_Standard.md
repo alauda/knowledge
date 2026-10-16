@@ -3,6 +3,7 @@ products:
   - Alauda AI
 kind:
   - Article
+id: KB261000017
 ---
 
 # Heterogeneous Accelerator Card Onboarding and Conformance Testing Standard
