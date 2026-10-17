@@ -4,7 +4,7 @@ kind:
 products:
   - Alauda Container Platform
 ProductsVersion:
-  - 4.x
+  - '4.2,4.4'
 id: KB260400014
 ---
 
@@ -14,7 +14,7 @@ id: KB260400014
 
 This guide walks you through deploying MongoDB on Alauda Container Platform using the upstream **community** [Percona Server for MongoDB Operator](https://github.com/percona/percona-server-mongodb-operator). The previously-bundled Alauda MongoDB plugin is no longer distributed via the ACP marketplace, so this guide provides a self-service path using the community release.
 
-**Verified versions** (verified on ACP 4.2 / Kubernetes 1.33 and ACP 4.4 / Kubernetes 1.35; check the upstream documentation for newer releases):
+**Verified versions** (fully verified on ACP 4.2 / Kubernetes 1.33; the baseline deployment only was re-verified on ACP 4.4 / Kubernetes 1.35 — see [Verified by Alauda](#verified-by-alauda) for the per-version scope; check the upstream documentation for newer releases):
 
 | Component | Version |
 | :--- | :--- |
@@ -31,7 +31,7 @@ For background on the operator's features, see:
 
 ## Prerequisites
 
-- An ACP 4.x cluster with `cluster-admin` access.
+- An ACP 4.2 or 4.4 cluster with `cluster-admin` access. Other ACP 4.x releases have not been tested; see the [Verified by Alauda](#verified-by-alauda) table for what was tested on each version.
 - `kubectl` configured against the target cluster.
 - A target namespace, a cluster name, and a `StorageClass`. Export them once and reuse them throughout the guide:
 
@@ -68,8 +68,9 @@ You only need the MongoDB image(s) for the version(s) you intend to deploy. The 
 `skopeo` copies images directly between registries without needing a local Docker daemon and preserves multi-arch manifests.
 
 ```bash
-PRIVATE_REGISTRY="<your-private-registry>"          # e.g. registry.example.com
-skopeo login "$PRIVATE_REGISTRY"                    # if your registry needs auth
+: "${PRIVATE_REGISTRY:?export PRIVATE_REGISTRY first (see Prerequisites)}"
+REGISTRY_SERVER="${PRIVATE_REGISTRY%%/*}"            # host[:port] part of PRIVATE_REGISTRY, e.g. registry.example.com:443
+skopeo login "$REGISTRY_SERVER"                     # if your registry needs auth
 
 for img in \
   percona/percona-server-mongodb-operator:1.22.0 \
@@ -88,8 +89,8 @@ The `--all` flag copies every platform variant of multi-arch tags.
 ### Option B: docker pull / tag / push
 
 ```bash
-REGISTRY_SERVER="<your-registry-host>"               # e.g. registry.example.com:443
-PRIVATE_REGISTRY="$REGISTRY_SERVER/<your-project>"   # e.g. registry.example.com:443/middleware
+: "${PRIVATE_REGISTRY:?export PRIVATE_REGISTRY first (see Prerequisites)}"
+REGISTRY_SERVER="${PRIVATE_REGISTRY%%/*}"            # host[:port] part of PRIVATE_REGISTRY, e.g. registry.example.com:443
 docker login "$REGISTRY_SERVER"
 
 for img in \
@@ -112,7 +113,7 @@ If you are not sure which registry address your cluster uses, read it from the p
 kubectl -n kube-public get configmap global-info -o jsonpath='{.data.registryAddress}'
 ```
 
-Use that value (host and port) as `REGISTRY_SERVER` below instead of the `:45443` example.
+Use that value (host and port) instead of the `:45443` example as the host part of `PRIVATE_REGISTRY` in Prerequisites, e.g. `export PRIVATE_REGISTRY=<registryAddress>/<your-harbor-project>`.
 
 If you are pushing to the Harbor registry that ships with ACP (typical endpoint `https://<acp-portal-host>:45443`), the push credentials live in a Secret on the management cluster — they are not the same as your ACP portal login:
 
@@ -121,8 +122,9 @@ If you are pushing to the Harbor registry that ships with ACP (typical endpoint 
 REG_USER=$(kubectl -n cpaas-system get secret registry-admin -o jsonpath='{.data.username}' | base64 -d)
 REG_PASS=$(kubectl -n cpaas-system get secret registry-admin -o jsonpath='{.data.password}' | base64 -d)
 
-REGISTRY_SERVER="<acp-portal-host>:45443"            # e.g. acp.example.com:45443
-PRIVATE_REGISTRY="$REGISTRY_SERVER/<your-harbor-project>"   # e.g. acp.example.com:45443/middleware
+# PRIVATE_REGISTRY comes from Prerequisites, e.g. acp.example.com:45443/middleware
+: "${PRIVATE_REGISTRY:?export PRIVATE_REGISTRY first (see Prerequisites)}"
+REGISTRY_SERVER="${PRIVATE_REGISTRY%%/*}"            # e.g. acp.example.com:45443
 skopeo login -u "$REG_USER" -p "$REG_PASS" --tls-verify=false "$REGISTRY_SERVER"
 
 # skopeo copy invocation — note --dest-tls-verify=false for the self-signed cert
@@ -140,14 +142,14 @@ done
 
 If your private registry requires authentication (the ACP-integrated Harbor does), cluster nodes cannot pull the images without credentials. Create a `kubernetes.io/dockerconfigjson` Secret in the target namespace and you will attach it to both the operator Deployment and the cluster CR in later steps.
 
-`--docker-server` must be just the registry **host** (no project path). For ACP Harbor that is the value you assigned to `REGISTRY_SERVER` in Step 1 — for example `acp.example.com:45443`, NOT `acp.example.com:45443/middleware`.
+`--docker-server` must be just the registry **host** (no project path). That is the host part of `$PRIVATE_REGISTRY`, which the block below derives as `REGISTRY_SERVER` — for example `acp.example.com:45443`, NOT `acp.example.com:45443/middleware`.
 
-Set the three variables for your registry, then create the Secret. If you came from the ACP-Harbor section in Step 1 you already have these set; otherwise define them now:
+Set the registry credentials, then create the Secret. If you came from the ACP-Harbor section in Step 1, `REG_USER` and `REG_PASS` are already set and the block below keeps them; otherwise replace the placeholders:
 
 ```bash
-REGISTRY_SERVER="<your-registry-host>"     # e.g. registry.example.com:443 (host only — no project path)
-REG_USER="<registry-username>"
-REG_PASS="<registry-password>"
+REGISTRY_SERVER="${PRIVATE_REGISTRY%%/*}"     # host only — no project path, e.g. registry.example.com:443
+REG_USER="${REG_USER:-<registry-username>}"
+REG_PASS="${REG_PASS:-<registry-password>}"
 
 # For ACP-integrated Harbor specifically, populate REG_USER / REG_PASS from the
 # registry-admin Secret on the management cluster (see Step 1's Harbor section):
@@ -204,7 +206,7 @@ Upstream ships two operator bundles. Pick the one that matches how you plan to u
 Download the bundle you chose, rewrite the operator image to your private registry, and apply.
 
 ```bash
-PRIVATE_REGISTRY="<your-private-registry>"
+: "${PRIVATE_REGISTRY:?export PRIVATE_REGISTRY first (see Prerequisites)}"
 # Defaults to $NS from Prerequisites. Override if you want the operator in a
 # different namespace from the cluster CR (only meaningful with cw-bundle.yaml).
 OPERATOR_NS="${OPERATOR_NS:-$NS}"
@@ -397,19 +399,19 @@ To set expectations clearly:
 
 ### Verified by Alauda
 
-| Area | What was tested |
-| :--- | :--- |
-| Operator install | Bundle apply via `kubectl`, image rewrite to private registry, namespaced operator (single-namespace watch) |
-| MongoDB versions | 6.0 (`6.0.27-21`), 7.0 (`7.0.30-16`), 8.0 (`8.0.19-7`) — sharded cluster reaches `ready` for each |
-| Cluster topologies | Replica set (sizes 1, 3, 5) and sharded cluster (`rs0` + `cfg` + `mongos`) |
-| Built-in user provisioning | All five operator-managed users (`userAdmin`, `databaseAdmin`, `clusterAdmin`, `clusterMonitor`, `backup`) created from `secrets.users` Secret |
-| Failover / reelection | Killing the primary triggers reelection; data and replset membership preserved |
-| Logical backup + restore | `PerconaServerMongoDBBackup` to S3-compatible MinIO; `PerconaServerMongoDBRestore` correctly rolls the database back to the backup point |
-| TLS via cert-manager | `tls.issuerConf` referencing an ACP `ClusterIssuer` (e.g. `cpaas-ca`); operator creates `Certificate` CRs, certs issued, `requireTLS` enforced, mongosh connects over TLS |
-| Smart upgrade | Patching `spec.image` from MongoDB 7.0 to 8.0 triggers a rolling restart (secondaries first, primary last); data and replset health preserved |
-| PVC resize | With `spec.enableVolumeExpansion: true` and a `StorageClass` that has `allowVolumeExpansion: true`, increasing `volumeSpec.persistentVolumeClaim.resources.requests.storage` propagates to the underlying PVCs without pod restart |
-| Replica scaling | `replsets.rs0.size` 3 → 5 (clean join + initial sync) and 5 → 3 (clean decommission) |
-| ACP private registry | Mirroring images via `skopeo copy --all` into the ACP-integrated Harbor and pulling them with an attached `imagePullSecret` |
+| Area | What was tested | ACP 4.2 | ACP 4.4 |
+| :--- | :--- | :--- | :--- |
+| Operator install | Bundle apply via `kubectl`, image rewrite to private registry, namespaced operator (single-namespace watch) | Yes | Yes (namespace-scoped `bundle.yaml` only) |
+| MongoDB versions | 6.0 (`6.0.27-21`), 7.0 (`7.0.30-16`), 8.0 (`8.0.19-7`) — sharded cluster reaches `ready` for each | Yes | 8.0 (`8.0.19-7`) only |
+| Cluster topologies | Replica set (sizes 1, 3, 5) and sharded cluster (`rs0` + `cfg` + `mongos`) | Yes | Sharded cluster (size 1 per role) only |
+| Built-in user provisioning | All five operator-managed users (`userAdmin`, `databaseAdmin`, `clusterAdmin`, `clusterMonitor`, `backup`) created from `secrets.users` Secret | Yes | Step 6 `userAdmin` login only |
+| Failover / reelection | Killing the primary triggers reelection; data and replset membership preserved | Yes | Not tested |
+| Logical backup + restore | `PerconaServerMongoDBBackup` to S3-compatible MinIO; `PerconaServerMongoDBRestore` correctly rolls the database back to the backup point | Yes | Not tested |
+| TLS via cert-manager | `tls.issuerConf` referencing an ACP `ClusterIssuer` (e.g. `cpaas-ca`); operator creates `Certificate` CRs, certs issued, `requireTLS` enforced, mongosh connects over TLS | Yes | Not tested |
+| Smart upgrade | Patching `spec.image` from MongoDB 7.0 to 8.0 triggers a rolling restart (secondaries first, primary last); data and replset health preserved | Yes | Not tested |
+| PVC resize | With `spec.enableVolumeExpansion: true` and a `StorageClass` that has `allowVolumeExpansion: true`, increasing `volumeSpec.persistentVolumeClaim.resources.requests.storage` propagates to the underlying PVCs without pod restart | Yes | Not tested |
+| Replica scaling | `replsets.rs0.size` 3 → 5 (clean join + initial sync) and 5 → 3 (clean decommission) | Yes | Not tested |
+| ACP private registry | Mirroring images via `skopeo copy --all` into the ACP-integrated Harbor and pulling them with an attached `imagePullSecret` | Yes | Yes (mirrored to and pulled from the platform registry) |
 
 ### Not verified by Alauda
 
