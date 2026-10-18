@@ -100,7 +100,7 @@ and DNS, and the node's data disks. The rules that keep this working:
 
 - **The standard disk set, per slot:** `/var/cpaas` as a persistent disk; `/var/lib/kubelet`,
   `/var/lib/containerd` and, on control-plane nodes, `/var/lib/etcd` as ephemeral disks. A persistent disk
-  is reattached to the VM that replaces the node, so platform state and the monitoring and log data under
+  is reattached to the VM that replaces the node, so platform state and the monitoring data under
   `/var/cpaas` survive a node replacement. Ephemeral disks are recreated empty, so a replacement
   control-plane node never carries stale etcd member data into `kubeadm join`.
 - **The split is a creation-time layout** (`ephemeralDisks[]` exists from provider `v1.0.17`). A slot can
@@ -113,6 +113,30 @@ and DNS, and the node's data disks. The rules that keep this working:
   system disk.
 - **Pod logs move onto the ephemeral containerd disk** and are lost with the VM. Logs you need to keep are
   the log stack's job, not the node's.
+- **A raw disk for TopoLVM is documented on vSphere, and only here.** The local storage system of
+  [Local storage: TopoLVM](/solutions/acp/How_to_Deliver_ACP_with_Immutable_Infrastructure.md#local-storage-topolvm)
+  needs one unformatted whole disk on every node that joins the storage cluster, next to the
+  `/var/cpaas` disk. A slot entry without `mountPath` and without `fsFormat` is attached raw and is
+  never formatted or mounted by the provider; the guest reaches it at `/dev/disk/by-capv/<name>`, and a
+  rolling update re-attaches the same VMDK and recreates the symlink
+  ([Add data disks](https://docs.alauda.io/immutable-infra/1.0/create-cluster/vmware-vsphere.html#add-data-disks)).
+  Declare it as a persistent disk — the data must survive VM replacement — in each slot of the pool
+  that runs the stateful components.
+
+```yaml
+# 30-infra-pool.yaml: per slot, in addition to the standard persistent /var/cpaas disk
+    persistentDisks:
+    - name: var-cpaas
+      sizeGiB: ${INFRA_VAR_CPAAS_SIZE_GIB}
+      mountPath: /var/cpaas
+      fsFormat: ext4
+    - name: topolvm-data
+      sizeGiB: ${INFRA_TOPOLVM_SIZE_GIB}
+```
+
+Add the entry before the pool is created: a slot rejects a reshaping of its disk lists once it is
+allocated. The disk belongs to the TopoLVM device class, so it is only needed on the nodes the storage
+cluster will use — the `infra` pool in the consolidated layout, the `log` pool in the dedicated one.
 
 #### Rollouts and immutable templates
 
@@ -229,7 +253,8 @@ The common variables (`CLUSTER_NAME`, `CONTROL_PLANE_VIP`, `CLUSTER_CIDR`, `SERV
 | `INFRA_NUM_CPUS` | vCPUs per `infra` node | `8` | [Size the clusters](/solutions/acp/How_to_Deliver_ACP_with_Immutable_Infrastructure.md#size-the-clusters) |
 | `INFRA_MEMORY_MIB` | Memory per `infra` node, MiB | `32768` | Same |
 | `INFRA_SYSTEM_DISK_GIB` | `infra` system disk, GiB | `300` | At least the template's system disk; `300` is the product's baseline example |
-| `INFRA_VAR_CPAAS_SIZE_GIB` | `infra` `/var/cpaas` (persistent), GiB | `100` | Product minimum 100, plus the log and monitoring data from [Size the clusters](/solutions/acp/How_to_Deliver_ACP_with_Immutable_Infrastructure.md#size-the-clusters) |
+| `INFRA_VAR_CPAAS_SIZE_GIB` | `infra` `/var/cpaas` (persistent), GiB | `100` | Product minimum 100, plus the monitoring data from [Size the clusters](/solutions/acp/How_to_Deliver_ACP_with_Immutable_Infrastructure.md#size-the-clusters) |
+| `INFRA_TOPOLVM_SIZE_GIB` | Raw data disk per `infra` node for TopoLVM (persistent, unformatted), GiB | `500` | Sum of the volumes the stateful components claim on one node, [Local storage: TopoLVM](/solutions/acp/How_to_Deliver_ACP_with_Immutable_Infrastructure.md#local-storage-topolvm) |
 | `INFRA_VAR_LIB_KUBELET_SIZE_GIB` | `infra` `/var/lib/kubelet` (ephemeral), GiB | `100` | Product minimum 100 |
 | `INFRA_VAR_LIB_CONTAINERD_SIZE_GIB` | `infra` `/var/lib/containerd` (ephemeral), GiB | `100` | Product minimum 100 |
 | `LOG_NODE_IP_1` | Dedicated-pool variant only: `log` node 1 IP (one variable per slot, like `INFRA_NODE_IP_<n>`) | `192.0.2.41` | IP plan |
@@ -284,6 +309,7 @@ INFRA_SYSTEM_DISK_GIB='300'
 INFRA_VAR_CPAAS_SIZE_GIB='100'
 INFRA_VAR_LIB_KUBELET_SIZE_GIB='100'
 INFRA_VAR_LIB_CONTAINERD_SIZE_GIB='100'
+INFRA_TOPOLVM_SIZE_GIB='500'
 ```
 
 Commands in this article that are not `apply_rendered` calls use the parameters directly; run them in
@@ -1316,7 +1342,9 @@ spec:
 
 `wl-prod/30-infra-pool.yaml` — the `infra` slots. The manifest shows three nodes; take the count from
 [Size the clusters](/solutions/acp/How_to_Deliver_ACP_with_Immutable_Infrastructure.md#size-the-clusters)
-and keep `replicas` in `32-infra.yaml` equal to it.
+and keep `replicas` in `32-infra.yaml` equal to it. When the delivery provides TopoLVM, add the raw
+`topolvm-data` persistent disk to every slot now, as
+[Disks](#disks) shows — a slot that is already allocated rejects a change to its disk lists.
 
 ```yaml
 apiVersion: infrastructure.cluster.x-k8s.io/v1beta1

@@ -111,8 +111,8 @@ certificates and kubeconfigs and does not change after `kubeadm init`.
 #### Persistent `/var/cpaas` is a managed data volume of the inventory
 
 Every node has a system disk for Alauda OS and **one data disk for `/var/cpaas`** (platform state;
-monitoring and logging write under it — see the common
-[reference design](/solutions/acp/How_to_Deliver_ACP_with_Immutable_Infrastructure.md#reference-design)).
+monitoring writes under it, and the log collector too once the logging stack is installed — see the
+common [reference design](/solutions/acp/How_to_Deliver_ACP_with_Immutable_Infrastructure.md#reference-design)).
 On Bare Metal the persistent disk is declared in `MachineInventory.spec.storage`, not in any Cluster
 API template ([Manage Data Disks on Bare-Metal Hosts](https://docs.alauda.io/immutable-infra/1.0/how-to/manage-bare-metal-storage.html)):
 
@@ -130,6 +130,17 @@ API template ([Manage Data Disks on Bare-Metal Hosts](https://docs.alauda.io/imm
   empty `/var/cpaas`.
 - **Formatting needs an approval.** `InitializeIfBlank` is authorized per inventory with the
   `storagectl` binary built from the same provider revision; never write the approval by hand.
+- **A disk for TopoLVM is not a managed volume.**
+  [Local storage: TopoLVM](/solutions/acp/How_to_Deliver_ACP_with_Immutable_Infrastructure.md#local-storage-topolvm)
+  needs one unformatted whole disk on every node that joins the storage cluster, in addition to the
+  `/var/cpaas` disk. Managed storage cannot provide it: it makes a whole-device XFS or ext4
+  filesystem, or adopts an existing one, and it does not create partitions or manage LVM
+  ([Step 2: Define the Managed Volumes](https://docs.alauda.io/immutable-infra/1.0/how-to/manage-bare-metal-storage.html#step-2-define-the-managed-volumes)).
+  A disk meant for TopoLVM is therefore left out of `spec.storage` — no device is selected
+  automatically, so the provider never touches it — but the provider documentation does not describe
+  that as a TopoLVM path. Do not improvise one: put the requirement into the hardware plan (one extra
+  unformatted disk per node of the logging pool) and confirm the approach with Alauda support before
+  the hosts are ordered.
 
 #### A reprovision wipes the system state
 
@@ -166,6 +177,8 @@ installed system. Every host in this article therefore uses the fail-closed fixe
 workflow: the ISO targets `/dev/elemental-install-target`, which the operator links to the system
 disk's WWN at the console before starting the installation
 ([Select a Fixed System Disk on Multi-Disk Bare-Metal Hosts](https://docs.alauda.io/immutable-infra/1.0/how-to/configure-fixed-install-disk-bare-metal.html)).
+A third disk for TopoLVM makes this gate more important, not less: pin the system disk by WWN and
+leave the TopoLVM disk undeclared, so that neither the installer nor managed storage can claim it.
 
 #### What disaster recovery adds on Bare Metal
 
@@ -2968,8 +2981,13 @@ Continue with the provider-neutral steps, keeping these Bare Metal points in min
 
 - [Install the platform plugins](/solutions/acp/How_to_Deliver_ACP_with_Immutable_Infrastructure.md#install-the-platform-plugins)
   — MetalLB in Layer-2 mode announces the ingress VIP by ARP from the `infra` (or `ingress`) nodes, so
-  the ingress VIP must be in their Layer-2 segment. Monitoring and logging write under the managed
-  `/var/cpaas` volume; their storage paths cannot be changed after installation.
+  the ingress VIP must be in their Layer-2 segment. Monitoring writes under the managed `/var/cpaas`
+  volume, and the log collector will too once the logging stack is installed
+  ([Logging](/solutions/acp/How_to_Deliver_ACP_with_Immutable_Infrastructure.md#logging)); their
+  storage paths cannot be changed after installation. Stateful platform components take their
+  PersistentVolumes from the local storage class
+  ([Local storage: TopoLVM](/solutions/acp/How_to_Deliver_ACP_with_Immutable_Infrastructure.md#local-storage-topolvm)),
+  which needs its own undeclared disk on every node of the storage cluster.
 - [Configure machines](/solutions/acp/How_to_Deliver_ACP_with_Immutable_Infrastructure.md#configure-machines)
   — every `MachineDeployment` in this article carries the `worker` role label that the default worker
   MachineConfigPool selects on; a host added later still has to pass the firmware

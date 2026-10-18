@@ -74,13 +74,21 @@ provider versions named above. Validate them in a staging environment before a p
 
 - `/var/cpaas` on every node is a pool-managed EVS disk declared in
   `HCSMachineConfigPool.spec.configs[].persistentDisks[]`. During a rolling replacement the provider
-  moves it from the old ECS to the new one, keyed by `(hostname, slot)`, so platform state,
-  monitoring data and the log collector's working data survive node replacement.
-- Kafka, Keeper and ClickHouse keep their data on PersistentVolumes of the StorageClasses in the
-  customer's storage plan, not on `/var/cpaas` (common article,
-  [Disks](/solutions/acp/How_to_Deliver_ACP_with_Immutable_Infrastructure.md#disks)). The HCS product
-  pages mention an HCS EVS CSI only as external storage and do not document its installation, so agree
-  on the StorageClass with the customer before the logging stage.
+  moves it from the old ECS to the new one, keyed by `(hostname, slot)`, so platform state and
+  monitoring data survive node replacement — and the log collector's working data once the logging
+  stack is installed
+  ([Logging](/solutions/acp/How_to_Deliver_ACP_with_Immutable_Infrastructure.md#logging)).
+- Stateful platform components take their PersistentVolumes from the local storage class, not from
+  `/var/cpaas` (common article,
+  [Local storage: TopoLVM](/solutions/acp/How_to_Deliver_ACP_with_Immutable_Infrastructure.md#local-storage-topolvm)).
+  **A raw disk for TopoLVM is not a documented HCS option.** TopoLVM needs one unformatted whole disk
+  on every node that joins the storage cluster, next to the `/var/cpaas` disk, and
+  `HCSMachineConfigPool.spec.configs[].persistentDisks[].format` defaults to `xfs` when it is omitted
+  ([Configure Machine Configuration Pool](https://docs.alauda.io/immutable-infra/1.0/create-cluster/huawei-cloud-stack.html#configure-machine-configuration-pool)).
+  The HCS provider documentation describes no way to declare a disk and leave it unformatted, so do
+  not improvise one: put the requirement into the hardware plan — one extra unformatted disk per node
+  of the logging pool — and confirm the approach with Alauda support before the ECS flavors and disks
+  are ordered.
 - Never declare `/var/cpaas` in `HCSMachineTemplate.spec.template.spec.dataVolumes[]` — data volumes
   are recreated with each ECS. Use them only for `/var/lib/etcd`, `/var/lib/kubelet` and
   `/var/lib/containerd`, and never declare the same mount path in both places.
@@ -187,7 +195,7 @@ is written in Step 5. HCS adds these variables to the same files:
 | `HCS_INFRA_AZ` | Availability zone of the `infra` pool | `az-example-1` | As `HCS_CP_AZ` |
 | `HCS_DISK_TYPE` | EVS disk type for root, data and persistent disks | `SSD` | Disk types available in the target zones |
 | `CP_CPAAS_DISK_GB` | Size of `/var/cpaas` on control plane nodes, GB | `100` | Common article sizing; `10`–`32768`; cannot be changed later |
-| `INFRA_CPAAS_DISK_GB` | Size of `/var/cpaas` on `infra` nodes, GB | `500` | Common article sizing: platform state, monitoring data and collector working data (plus Kafka and ClickHouse volumes only if their StorageClass provisions on this disk); cannot be changed later |
+| `INFRA_CPAAS_DISK_GB` | Size of `/var/cpaas` on `infra` nodes, GB | `500` | Common article sizing: platform state, monitoring data, and the collector working data of the logging stack once it is installed; cannot be changed later |
 | `CP1_HOSTNAME` | Hostname of control plane node 1 | `global-primary-cp-1` | Node naming plan; different on each DR side |
 | `CP1_IP` | IP of control plane node 1 | `192.0.2.11` | Free IP in `HCS_SUBNET_NAME` |
 | `CP2_HOSTNAME` | Hostname of control plane node 2 | `global-primary-cp-2` | Node naming plan |
@@ -1421,7 +1429,7 @@ What switches is the platform domain; each cluster is always reached by its own 
 2. On the primary bootstrap node, run [Install the global cluster](#install-the-global-cluster)
    Steps 1–9 with `global-primary.env` and `global-primary/`.
 3. On the primary, complete the common stage 8: upload the packages, enable label synchronization,
-   install Machine Configuration and configure the machines, then monitoring and logging
+   install Machine Configuration and configure the machines, then local storage and monitoring
    ([Install the platform plugins](/solutions/acp/How_to_Deliver_ACP_with_Immutable_Infrastructure.md#install-the-platform-plugins)).
 4. Point `${PLATFORM_HOST}` at `${STANDBY_CLUSTER_VIP}` and check it from the standby bootstrap node.
    Several platform resources are rendered with the domain while the standby installer runs, so it
@@ -1596,8 +1604,10 @@ region references the Secret that `global` already holds. For another project or
 `HCS_EXTERNAL_GLOBAL_DOMAIN` if they differ) there. Then run
 [Create the credential Secret](#create-the-credential-secret) with
 `KUBECONFIG_FOR_SECRET="${GLOBAL_KUBECONFIG}"`, and in a DR pair repeat it against the standby
-`global`, with the same name. `cpaas-system` is excluded from etcd synchronization, so a Secret that
-exists only on the primary is missing after a failover. The cluster
+`global`, with the same name. Create it on both sides rather than relying on replication: the
+standby's own installation needs the Secret while synchronization is not yet running, and a provider
+credential that the delivery created by hand is cheap to create twice and expensive to miss. The
+cluster
 pulls platform images from the `global` registry by default; see
 [Choose the Image Registry for a Workload Cluster](https://docs.alauda.io/immutable-infra/1.0/how-to/workload-cluster-image-registry.html)
 for a dedicated registry.

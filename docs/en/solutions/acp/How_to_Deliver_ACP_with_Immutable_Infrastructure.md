@@ -97,7 +97,7 @@ product defaults.
 | Area | Selected | Alternative | Why |
 | --- | --- | --- | --- |
 | Monitoring | **Monitoring for VictoriaMetrics** | Monitoring for Prometheus | Highly available installation and lower resource usage per the [component selection guide](https://docs.alauda.io/container_platform/4.4/observability/monitor/architecture/component_selection_suggestion.html) |
-| Log storage | **ClickHouse** | OpenSearch | Lowest resource usage per ingest unit and the highest throughput per node ([Log Component Selection Guide](https://docs.alauda.io/logging-service/4.4/architecture/component_suggestion.html)); the sizing method below is built on the ClickHouse profiles. ClickHouse does not support IPv6-only or dual-stack workload clusters — use OpenSearch there |
+| Log storage | **ClickHouse** | OpenSearch | Lowest resource usage per ingest unit and the highest throughput per node ([Log Component Selection Guide](https://docs.alauda.io/logging-service/4.4/architecture/component_suggestion.html)). ClickHouse does not support IPv6-only or dual-stack workload clusters — use OpenSearch there. The install of the log stack is deferred, see [Logging](#logging) |
 | Log buffer | **Kafka** (KRaft mode) | — | Mandatory on ACP 4.4 for both log backends: it buffers records between the collector and the storage backend |
 | Application ingress | **Alauda Build of Ingress NGINX Controller** | Envoy Gateway | Current standard path |
 | Application ingress VIP | **MetalLB** (Layer 2) | Customer's commercial load balancer | Mutually exclusive on the same VIP — an address cannot be announced by MetalLB (ARP) and forwarded by a load balancer device at the same time. With a commercial load balancer, set `IngressNginx.spec.controller.hostNetwork: true`; otherwise the controller's Service is `ClusterIP` and the load balancer has nothing to forward to |
@@ -209,21 +209,25 @@ Rules that make the layout work:
 
 Placement by cluster and layout (the pool each plugin runs on):
 
-| Cluster · layout | Ingress (MetalLB + Ingress NGINX) | Monitoring | Logging (Kafka, ClickHouse, log storage) |
+| Cluster · layout | Ingress (MetalLB + Ingress NGINX) | Monitoring | Logging |
 | --- | --- | --- | --- |
 | `global` · multi-cluster | — | `infra` | `infra` |
 | `global` · single cluster | `infra` | `infra` | `infra` |
 | Workload · consolidated | `infra` | `infra` | `infra` |
 | Workload · dedicated pools | `ingress` | `monitor` | `log` |
 
-DaemonSets that must cover every node (log collector, node exporter, CNI, CSI,
-machine configuration daemon) are not placed; they are checked for coverage in
+The logging column is the planned placement of the logging pool; the install of
+the logging stack itself is deferred, see [Logging](#logging).
+
+DaemonSets that must cover every node (node exporter, CNI, CSI, the machine
+configuration daemon, and the log collector once logging is installed) are not
+placed; they are checked for coverage in
 [DaemonSet coverage](#daemonset-coverage).
 
 #### Disks
 
-**One persistent `/var/cpaas` disk per node.** Monitoring and the log collector
-write to sub-directories under it; Alauda OS keeps node-local platform data under
+**One persistent `/var/cpaas` disk per node.** Monitoring writes to a
+sub-directory under it; Alauda OS keeps node-local platform data under
 `/var/cpaas`, and the root filesystem is read-only, so the plugin defaults under
 `/cpaas/...` are replaced by `/var/cpaas/...` everywhere in this article. Declare
 the disk with the provider's persistent-disk mechanism so that it survives node
@@ -239,19 +243,17 @@ replacement:
 | Path | Written by | Note |
 | --- | --- | --- |
 | `/var/cpaas/monitoring` | VictoriaMetrics `LocalVolume` storage | Set in the plugin installation; plan it as fixed |
-| `/var/cpaas/data/nevermore` | Log collector working data | Cannot be changed after installation |
 
-Kafka, Keeper and ClickHouse store their data on PersistentVolumes of
-`KAFKA_STORAGE_CLASS` and `CLICKHOUSE_STORAGE_CLASS`, not on a fixed node path.
-Choose StorageClasses whose volumes survive node replacement; a node-local class
-must provision under `/var/cpaas` (for example `/var/cpaas/data/clickhouse`) on
-the persistent disk.
+Components that ask for a PersistentVolume instead of a node path take it from
+the local storage system below, not from `/var/cpaas`.
 
 Capacity is the sum of the uses: a consolidated `infra` node carries platform
-state, log storage and monitoring data on one disk (see
-[Size the clusters](#size-the-clusters)). The trade-off is isolation — logs filling
-up can take the platform state with them — so compensate with log retention
-limits and capacity alerts, not only with a bigger disk.
+state, the monitoring data and — once logging is installed — the collector's
+working data on its `/var/cpaas` disk, and the volumes of the stateful components
+on its local-storage disk (see [Size the clusters](#size-the-clusters)). The
+trade-off of the consolidated layout is isolation — a component that fills a disk
+can take the platform state with it — so compensate with retention limits and
+capacity alerts, not only with a bigger disk.
 
 Pools with persistent disks roll out with `maxSurge: 0` where the provider
 requires it: a surge machine cannot take over the hostname, IP and disk slot of
@@ -261,12 +263,107 @@ the machine it replaces. The field paths differ — `KubeadmControlPlane` uses
 `MachineDeployment` block onto a `KubeadmControlPlane` leaves the control plane at
 the default surge. The provider article states which pools need it.
 
+#### Local storage: TopoLVM
+
+Stateful platform components — the log storage stack above all — ask for
+PersistentVolumes, and this design assumes no shared storage behind them. The
+selected local storage system is **TopoLVM**, delivered as the **Alauda Build of
+TopoLVM** package and operated as Local Storage in the console. It manages the
+nodes' own disks through LVM and, being topology aware, provisions each volume on
+the node where the consuming Pod is scheduled
+([Introduction](https://docs.alauda.io/container_platform/4.4/storage/storagesystem_topolvm/intro.html)).
+Application storage stays out of scope; this is the platform's own storage class.
+
+**TopoLVM is node-local, and that is a design constraint rather than a detail.**
+The product page states it plainly: use local storage only for applications that
+provide data replication and backup at the application layer, because local
+storage gives no independent data persistence guarantee when the underlying node
+fails
+([Create TopoLVM Local Storage Class](https://docs.alauda.io/container_platform/4.4/configure/storage/functions/topolvm_storageclass.html)).
+So anything whose loss would be a data loss either replicates across nodes itself
+— which is why the logging stack is deployed with three replicas on three nodes of
+the logging pool — or belongs on the persistent `/var/cpaas` disk, which the
+provider reattaches to the replacement node. TopoLVM volumes are `ReadWriteOnce`
+only, so nothing in this design may expect `ReadWriteMany`
+([Access Modes and Volume Modes](https://docs.alauda.io/container_platform/4.4/configure/storage/concepts/selection.html)).
+
+**Installation is console-driven**, per cluster, and has no documented YAML path
+([Install](https://docs.alauda.io/container_platform/4.4/storage/storagesystem_topolvm/installation.html)):
+
+1. Upload the **Alauda Container Platform Storage Essentials** and **Alauda Build
+   of TopoLVM** packages for the platform's architecture, as in
+   [Upload the packages](#upload-the-packages).
+2. In **Marketplace** > **OperatorHub**, install **Alauda Container Platform
+   Storage Essentials** with installation place **Recommended** — the namespace is
+   `acp-storage` and no other namespace is supported — installation mode
+   **Cluster**, upgrade strategy **Manual**, channel `stable`.
+3. In **Storage Management** > **Local Storage**, click **Configure Now** and
+   deploy the operator, then create the cluster by adding devices: a node with at
+   least one bare disk, a device class named after the nature of the disks (for
+   example `ssd`), and the **whole** device (for example `/dev/sdb`) — a partition
+   of a disk is rejected. Add every node of the logging pool. Enable snapshot
+   support only if the Volume Snapshot plugin is deployed on that cluster.
+4. Create the StorageClass. The product documents the console form and no YAML
+   field reference for it, so create it in the console instead of as a manifest of
+   this delivery, and record its name in the cluster file as
+   `LOCAL_STORAGE_CLASS`. The delivery standard chooses: the device class created
+   above (or **Auto-Allocated**), file system **XFS**, access mode
+   **ReadWriteOnce** (the only mode TopoLVM offers), reclaim policy **Delete** so
+   that a component which recreates its claim does not leave an orphaned volume
+   holding the node's space, and **PVC reconstruction disabled** — the product
+   requires more storage nodes than application replicas for it, which a
+   three-replica component on a three-node pool does not satisfy, and a claim
+   rebuilt on another node comes back empty.
+
+```bash
+# on the cluster
+kubectl --kubeconfig "${CLUSTER_KUBECONFIG}" get storageclass "${LOCAL_STORAGE_CLASS}" -o wide
+kubectl --kubeconfig "${CLUSTER_KUBECONFIG}" get csidrivers
+kubectl --kubeconfig "${CLUSTER_KUBECONFIG}" get csinodes \
+  -o custom-columns=NAME:.metadata.name,DRIVERS:.spec.drivers[*].name
+```
+
+The StorageClass exists, and the TopoLVM CSI driver is registered on every node
+that was added to the storage cluster.
+
+**One unformatted disk per TopoLVM node, in addition to the `/var/cpaas` disk.**
+The console accepts only a node with at least one bare disk, and only a whole
+device. A node that is to run TopoLVM therefore needs a second data disk that no
+provider mechanism has formatted — and only vSphere documents how to get one:
+
+| Provider | Unformatted data disk for TopoLVM |
+| --- | --- |
+| VMware vSphere | **Documented.** Declare the extra disk in the node slot without `mountPath` and without `fsFormat`; it is attached raw, with a symlink at `/dev/disk/by-capv/<name>` ([Add data disks](https://docs.alauda.io/immutable-infra/1.0/create-cluster/vmware-vsphere.html#add-data-disks)) |
+| Huawei DCS | **Not documented.** A pool-managed persistent disk always carries a filesystem: `format` is the filesystem used when the disk is first initialized, and the guest disk setup formats a disk that has none ([Persistent Disks in the IP Pool](https://docs.alauda.io/immutable-infra/1.0/infrastructure/huawei-dcs.html#persistent-disks-in-the-ip-pool)) |
+| Huawei Cloud Stack | **Not documented.** `HCSMachineConfigPool.spec.configs[].persistentDisks[].format` defaults to `xfs` when it is omitted ([Configure Machine Configuration Pool](https://docs.alauda.io/immutable-infra/1.0/create-cluster/huawei-cloud-stack.html#configure-machine-configuration-pool)) |
+| Bare Metal | **Not documented as a managed volume.** `MachineInventory.spec.storage` makes a whole-device XFS or ext4 filesystem or adopts an existing one, and does not create partitions or manage LVM ([Manage Data Disks on Bare-Metal Hosts](https://docs.alauda.io/immutable-infra/1.0/how-to/manage-bare-metal-storage.html#step-2-define-the-managed-volumes)). A disk meant for TopoLVM is left out of `spec.storage` so that the provider never touches it |
+
+On Huawei DCS, Huawei Cloud Stack and Bare Metal the provider documentation does
+not describe how to leave a declared disk unformatted. Do not improvise a
+mechanism: put the requirement — one unformatted whole disk per TopoLVM node,
+next to the `/var/cpaas` disk — into the hardware plan, and confirm the approach
+with Alauda support before the machines are ordered.
+
+**One prerequisite is unresolved on Alauda OS.** The TopoLVM installation page
+requires the `lvm2` package on every node of the storage cluster and tells you to
+install it with a package manager on the node. That assumes a traditional,
+mutable operating system; on Alauda OS the root filesystem is read-only, so a
+package cannot be installed on a running node. Confirm with Alauda support that
+the Alauda OS image of the delivered release provides `lvm2` and the TopoLVM node
+components before committing a delivery to TopoLVM.
+
 #### Observability
 
 Every cluster observes itself: each cluster runs the full monitoring stack and its
 own log storage, and each side of the `global` pair collects, stores and queries
-only its own data. DR replicates only etcd and excludes `cpaas-system`, so
-observability data is never copied to the standby
+only its own data. Synchronization does not change that. `etcd-sync` replicates
+etcd under a rule set of key prefixes with a maintained deny-list of platform
+objects: most objects cross, Secrets included, but each `global` side keeps its
+own plugins — `ModuleInfo` objects whose name starts with `global-` are excluded,
+apart from a few re-included by name, while a workload cluster's `ModuleInfo`
+objects do cross — and its own machine configuration, which is not synchronized at
+all. Observability data is not in etcd in the first place: it lives on the nodes'
+disks and in PersistentVolumes, so it never reaches the standby
 ([Observability Placement](https://docs.alauda.io/immutable-infra/1.0/global/disaster_recovery.html#observability-placement)).
 **Workload cluster metrics and logs are never written to either `global`
 cluster** — that data becomes unavailable when the `global` roles change.
@@ -280,9 +377,10 @@ APIs used by the console.
 If the customer needs one query point across workload clusters, the product's
 aggregation model applies instead: a dedicated workload cluster runs the
 VictoriaMetrics Center and the log storage, and the other workload clusters run
-agents that point at it — never at `global`. The manifests below implement the
-per-cluster model; the aggregation model changes only the `crossClusterDependency`
-values and the agent-only setting.
+agents that point at it — never at `global`. The monitoring manifests below
+implement the per-cluster model; the aggregation model changes only the
+`crossClusterDependency` values and the agent-only setting. For logging, see the
+deferred note in [Logging](#logging).
 
 #### Network flows and ports
 
@@ -386,9 +484,9 @@ grep -nE '\$\{[A-Za-z_][A-Za-z0-9_]*\}' /tmp/out.yaml && echo "unreplaced variab
 ```
 
 A leftover `${NAME}` means a variable is missing from the parameter files. An
-article states explicitly when a manifest contains an intentional `${...}`; the
-Keeper manifest's shell expansion `${HOSTNAME##*-}` is not a placeholder, and
-`apply_rendered` lets it pass.
+article states explicitly when a manifest contains an intentional `${...}` — a
+shell expansion inside an embedded script, for example — and `apply_rendered`
+lets an expansion that carries a modifier (such as `${NAME##*-}`) pass.
 
 #### Credentials
 
@@ -465,11 +563,8 @@ Provider articles reuse these names and add their own (for example `HOST_IP`,
 | `METALLB_MODULE_NAME` | Module name of the MetalLB cluster plugin | `<module name>` | [Look up plugin versions](#look-up-plugin-versions) |
 | `METALLB_VERSION` | MetalLB plugin version | `<version>` | [Look up plugin versions](#look-up-plugin-versions) |
 | `VICTORIAMETRICS_VERSION` | VictoriaMetrics plugin version | `<version>` | [Look up plugin versions](#look-up-plugin-versions) |
-| `LOGAGENT_VERSION` | Log Collector plugin version | `<version>` | [Look up plugin versions](#look-up-plugin-versions) |
-| `LOG_API_VERSION` | Log Essentials plugin version | `<version>` | [Look up plugin versions](#look-up-plugin-versions) |
 | `INGRESS_NGINX_CHANNEL` | Update channel of the Ingress NGINX operator | `stable` | [Look up plugin versions](#look-up-plugin-versions) |
 | `INGRESS_NGINX_CSV` | Operator version to install (`startingCSV`) | `<csv name>` | [Look up plugin versions](#look-up-plugin-versions) |
-| `CLICKHOUSE_OPERATOR_CSV` | ClickHouse operator version to install (`startingCSV`) | `<csv name>` | [Look up plugin versions](#look-up-plugin-versions) |
 
 **Cluster files** (`global-primary.env`, `global-standby.env`, `wl-<name>.env`) —
 same names, one value per cluster:
@@ -489,13 +584,7 @@ same names, one value per cluster:
 | `MONITOR_STORAGE_GI` | Monitoring storage per node, in Gi | `100` | [Size the clusters](#size-the-clusters) |
 | `MONITOR_RETENTION_DAYS` | Metrics retention in days | `7` | Customer requirement |
 | `MONITOR_STORAGE_NODES` | Node names that hold monitoring data, as a YAML list; one vmstorage replica per node | `'["wl-prod-infra-1", "wl-prod-infra-2", "wl-prod-infra-3"]'` | `kubectl get nodes -l node-role.kubernetes.io/infra` (or `.../monitor`) after the pool is up |
-| `KAFKA_STORAGE_CLASS` | StorageClass for the Kafka broker and controller volumes | `<storage class>` | Customer storage plan |
-| `KAFKA_STORAGE_SIZE` | Volume size per Kafka broker | `100Gi` | [Size the clusters](#size-the-clusters) |
-| `CLICKHOUSE_SHARDS` | ClickHouse shard count | `1` | ClickHouse profile, [Size the clusters](#size-the-clusters) |
-| `CLICKHOUSE_REPLICAS` | ClickHouse replicas per shard | `3` | ClickHouse profile, [Size the clusters](#size-the-clusters) |
-| `CLICKHOUSE_STORAGE_CLASS` | StorageClass for the ClickHouse and Keeper volumes | `<storage class>` | Customer storage plan |
-| `CLICKHOUSE_STORAGE_SIZE` | Data volume size per ClickHouse replica | `200Gi` | [Size the clusters](#size-the-clusters) |
-| `CLICKHOUSE_SERVER_IMAGE` | Server image of the ClickHouse operator; Keeper runs from it | `<registry>/middleware/clickhouse-server:<tag>` | Printed by the command in [Logging](#logging) step 3, after the operator is installed |
+| `LOCAL_STORAGE_CLASS` | Name of the TopoLVM StorageClass of this cluster, used by stateful platform components | `<storage class>` | Chosen when the StorageClass is created, [Local storage: TopoLVM](#local-storage-topolvm) |
 
 **Runtime secrets** — typed at a prompt when needed, never stored:
 
@@ -505,8 +594,6 @@ same names, one value per cluster:
 | `ACP_TOKEN` | Platform API token for `violet push` | (never stored) | Web console of the target platform, **Profile** > **API Tokens**; the account needs the `platform-admin-system` role |
 | `REGISTRY_USERNAME` | Platform registry user of a `global` side: chosen in the installation request of that side (provider articles), used again to push packages to the standby | (never stored) | Decided by the delivery; record it in the customer's credential store, not in the delivery directory |
 | `REGISTRY_PASSWORD` | Platform registry password of that `global` side, likewise | (never stored) | As above |
-| `CH_ADMIN_SHA256` | Digest of the generated ClickHouse `admin` password, filled in when `73-clickhouse.yaml` is applied | (never stored) | Computed from the Secret `cpaas-clickhouse-passwords` by the apply command in [Logging](#logging) |
-| `CH_LOGGING_SHA256` | Digest of the generated `platform-logging` password, likewise | (never stored) | As above |
 | `SECRET_VALUE` | Any credential typed for a Secret in the [credential pattern](#credentials) | (never stored) | The system that owns the credential |
 
 #### Example files
@@ -525,11 +612,8 @@ MACHINE_CONFIG_VERSION='<version>'
 METALLB_MODULE_NAME='<module name>'
 METALLB_VERSION='<version>'
 VICTORIAMETRICS_VERSION='<version>'
-LOGAGENT_VERSION='<version>'
-LOG_API_VERSION='<version>'
 INGRESS_NGINX_CHANNEL='stable'
 INGRESS_NGINX_CSV='<csv name>'
-CLICKHOUSE_OPERATOR_CSV='<csv name>'
 # CHRONY_CONF_B64 is appended by the command in "Set NTP"
 ```
 
@@ -549,13 +633,7 @@ MONITOR_SIZE='Medium'
 MONITOR_STORAGE_GI='100'
 MONITOR_RETENTION_DAYS='7'
 MONITOR_STORAGE_NODES='["wl-prod-infra-1", "wl-prod-infra-2", "wl-prod-infra-3"]'
-KAFKA_STORAGE_CLASS='<storage class>'
-KAFKA_STORAGE_SIZE='100Gi'
-CLICKHOUSE_SHARDS='1'
-CLICKHOUSE_REPLICAS='3'
-CLICKHOUSE_STORAGE_CLASS='<storage class>'
-CLICKHOUSE_STORAGE_SIZE='200Gi'
-# CLICKHOUSE_SERVER_IMAGE is appended after the ClickHouse operator is installed
+LOCAL_STORAGE_CLASS='<storage class>'
 # provider variables from the provider article follow
 ```
 
@@ -571,18 +649,18 @@ standby's.
 | ---: | --- | --- |
 | 1 | Freeze the machine inventory | Counts and specs derived as in [Size the clusters](#size-the-clusters) and signed off |
 | 2 | Freeze networks, VIPs, DNS, certificates and port approvals | No Pod, Service or join CIDR overlaps another CIDR of any cluster or any node, VIP or customer network; every VIP is an IP address; port approvals obtained per [Network flows and ports](#network-flows-and-ports) and tested |
-| 3 | Fill `site.env` and every cluster file | Every variable filled with real values (`CLICKHOUSE_SERVER_IMAGE` follows in stage 8 or 14); rendering leaves no `${NAME}` placeholder |
+| 3 | Fill `site.env` and every cluster file | Every variable filled with real values (`LOCAL_STORAGE_CLASS` follows in stage 8 or 14, when the StorageClass is created); rendering leaves no `${NAME}` placeholder |
 | 4 | Prepare the provider: facts, credentials, provider packages — see your provider article | Provider prerequisites checked off |
 | 5 | [Download the packages](#download-the-packages) with `violet` | `violet verify` passes for every package |
 | 6 | Provision **two** bootstrap nodes, one per side; never reuse one | Each meets the [bootstrap node requirements](https://docs.alauda.io/immutable-infra/1.0/global/install.html#bootstrap-host-requirements): at least 4 cores, 8 GB, 300 GB disk (x86_64), static IP |
 | 7 | Point the platform domain at the primary VIP; install the primary `global` — see your provider article | Installer reports success; all nodes `Ready`; `ClusterModule/global` healthy |
-| 8 | On the primary: upload the packages, [enable label sync](#enable-label-synchronization), install the Machine Configuration plugin and [configure machines](#configure-machines), then monitoring and logging | Pools `UPDATED=True`; plugins `Running` on `infra` |
+| 8 | On the primary: upload the packages, [enable label sync](#enable-label-synchronization), install the Machine Configuration plugin and [configure machines](#configure-machines), then [local storage](#local-storage-topolvm) and monitoring | Pools `UPDATED=True`; plugins `Running` on `infra` |
 | 9 | Switch the platform domain to the standby VIP; install the standby `global` — see your provider article | As stage 7, on the standby |
 | 10 | Repeat stage 8 on the standby with `global-standby.env` | As stage 8, on the standby |
 | 11 | Switch the platform domain back to the primary VIP; install `etcd-sync` on the standby — see your provider article | Zero missed and zero surplus keys; the standby's plugins still `Running` |
 | 12 | Decommission both bootstrap clusters after the provider handoff checks | Kubeconfigs saved; provider Secrets present on both sides |
 | 13 | Create the workload clusters from `global`, including the customer's worker pools — see your provider article | Every pool matches the plan; labels and taints present on the nodes; at least one untainted worker pool |
-| 14 | On each workload cluster: upload the operators, install the Machine Configuration plugin and configure machines, then MetalLB and Ingress NGINX, monitoring, logging | Each plugin verified on its intended pool |
+| 14 | On each workload cluster: upload the operators, install the Machine Configuration plugin and configure machines, then MetalLB and Ingress NGINX, [local storage](#local-storage-topolvm), monitoring | Each plugin verified on its intended pool |
 | 15 | [Accept the delivery](#accept-the-delivery), run the failover drill, archive | Checklist passes |
 
 Stages 7 → 9 → 11 must run in that order, and what switches is the **platform
@@ -594,8 +672,10 @@ when the domain points at a cluster that runs it
 ([Install etcd-sync](https://docs.alauda.io/immutable-infra/1.0/global/install.html#install-etcd-sync)).
 
 Each side's `global` plugins are installed while the platform domain points at
-that side (stages 8 and 10), before synchronization starts; each side's
-monitoring and logging store only that side's data. Keep the machine
+that side (stages 8 and 10), before synchronization starts, and they stay that
+side's own: the `global-` plugin objects and the machine configuration are not
+synchronized (see [Observability](#observability)). Each side's monitoring stores
+only that side's data. Keep the machine
 configuration identical on both sides (same `site.env`), so that both sides
 converge to the same node configuration whichever side is active.
 
@@ -699,12 +779,12 @@ Customer Portal:
 | MetalLB | Cluster plugin | Clusters with application ingress |
 | Alauda Build of Ingress NGINX Controller | Operator | Clusters with application ingress |
 | ACP Monitoring with VictoriaMetrics | Cluster plugin | Every cluster |
-| Alauda Streaming Service for Kafka and Alauda Container Platform Data Services RDS Framework | Operators | Every cluster (log storage) |
-| Alauda Data Services Analytical Database E1 (ClickHouse, package `clickhouse-operator`) | Operator | Every cluster (log storage) |
-| Alauda Container Platform Log Storage Management | Installed from **Cluster Plugins** ([logging installation](https://docs.alauda.io/logging-service/4.4/install/index.html)) | Every cluster |
-| Alauda Container Platform Log Collector | Cluster plugin | Every cluster |
-| Alauda Container Platform Log Essentials | Cluster plugin | `global` only |
+| Alauda Container Platform Storage Essentials | Operator | Every cluster ([local storage](#local-storage-topolvm)) |
+| Alauda Build of TopoLVM | Operator; deployed from **Storage Management** > **Local Storage** | Every cluster ([local storage](#local-storage-topolvm)) |
 | Alauda Container Platform etcd Synchronizer (`etcd-sync`) | Cluster plugin | Standby `global` (provider article) |
+
+The logging packages are not listed: the install of the logging stack is deferred
+and the new deployment scheme names its own packages — see [Logging](#logging).
 
 Verify the signatures, then move the packages to the delivery host:
 
@@ -770,7 +850,7 @@ Read the published names and versions on `global` once and record them in
 
 ```bash
 # on global
-for m in machine-config victoriametrics logagent log-api; do
+for m in machine-config victoriametrics; do
   printf '%s: ' "$m"
   kubectl --kubeconfig "${GLOBAL_KUBECONFIG}" get moduleconfigs -l cpaas.io/module-name="$m" \
     -o jsonpath='{range .items[*]}{.spec.version}{" "}{end}'; echo
@@ -780,18 +860,16 @@ kubectl --kubeconfig "${GLOBAL_KUBECONFIG}" get moduleconfigs -l cpaas.io/module
   -o jsonpath='{range .items[*]}{.spec.version}{"\t"}{.spec.config}{"\n"}{end}'
 ```
 
-For the operators installed by `Subscription` (Ingress NGINX and ClickHouse), read
-the catalog source, channel and CSV on a cluster they were uploaded to:
+For the operator installed by `Subscription` (Ingress NGINX), read the catalog
+source, channel and CSV on a cluster it was uploaded to:
 
 ```bash
 # on the workload cluster
-for p in ingress-nginx-operator clickhouse-operator; do
-  kubectl --kubeconfig "${CLUSTER_KUBECONFIG}" get packagemanifest "$p" -o json | \
-    jq -r '.status.catalogSource as $src | .status.channels[] | .name as $ch | .entries[] | [$src, $ch, .name, .version] | @tsv'
-done
+kubectl --kubeconfig "${CLUSTER_KUBECONFIG}" get packagemanifest ingress-nginx-operator -o json | \
+  jq -r '.status.catalogSource as $src | .status.channels[] | .name as $ch | .entries[] | [$src, $ch, .name, .version] | @tsv'
 ```
 
-If the catalog source is not `platform`, set `source` in `63` and `70` to it.
+If the catalog source is not `platform`, set `source` in `63` to it.
 
 #### Machine Configuration
 
@@ -1152,855 +1230,46 @@ Dedicated pools:
 
 #### Logging
 
-Every cluster is its own log storage cluster: it runs Kafka, ClickHouse and the
-Log Storage Management operator, and its collector writes to itself. Log
-Essentials is installed once on `global` (on each side of the DR pair). Follow the
-order below; the product reference is the logging service
-[Installation](https://docs.alauda.io/logging-service/4.4/install/index.html).
+**The logging stack install is deferred.** The deployment scheme of the ACP 4.4
+logging stack is being revised; this article will carry its manifests and checks
+once the new scheme is published. Until then, install the stack from the product
+documentation and plan it from the reference design above:
 
-**1. Operators.** Kafka and ClickHouse are OLM operators, uploaded with the other
-operators; their operator Pods run on the logging pool.
+- **Install** it per
+  [Logging Installation](https://docs.alauda.io/logging-service/4.4/install/index.html):
+  log storage on every storage cluster, the Log Collector on every collected
+  cluster, and Log Essentials once on `global`. That path does not change the
+  placement decisions this article already fixes — every cluster is its own log
+  storage cluster, and no workload cluster writes its logs into either `global`
+  side (see [Observability](#observability)).
+- **Plan the storage** as [Local storage: TopoLVM](#local-storage-topolvm)
+  describes. The log storage components are stateful and take their volumes from
+  the local StorageClass (`LOCAL_STORAGE_CLASS`); because a node-local volume
+  carries no persistence guarantee of its own, they are deployed with three
+  replicas on three nodes of the logging pool. The node-level collector is
+  different: it keeps its working data under `/var/cpaas/data/nevermore` on the
+  persistent `/var/cpaas` disk, that path cannot be changed after installation,
+  and the `/var/cpaas` sizing has to include it.
+- **Plan the pool placement** as
+  [Node pools, labels and taints](#node-pools-labels-and-taints) describes: the
+  logging pool is `infra` in the consolidated layout and `log` in the dedicated
+  layout. The logging components do not tolerate those taints by default — set
+  the node selector and a `NoSchedule` toleration for the pool's taint key in
+  each component's own installation parameters, never by patching the workloads
+  it generates
+  ([Planning Infra Nodes for Logging Storage](https://docs.alauda.io/logging-service/4.4/how_to/infra_nodes.html)).
+- **Size the stack** from
+  [Log Component Capacity Planning](https://docs.alauda.io/logging-service/4.4/architecture/capacity_planning.html)
+  with the customer's peak log rate and retention, and add the result to
+  [Size the clusters](#size-the-clusters).
+- **Verify** with the product's
+  [post-install verification](https://docs.alauda.io/logging-service/4.4/install/post-install-verification.html),
+  which ends with a synthetic log queried back end to end, and archive its output
+  with the other acceptance evidence.
 
-The ClickHouse operator is the package `clickhouse-operator` on channel `stable`,
-installed into the `operators` namespace, where the Keeper step below reads its
-server image
-([Installation](https://docs.alauda.io/clickhouse/4.4/installation.html)).
-
-`<cluster>/70-clickhouse-operator.yaml` — apply on the cluster:
-
-```yaml
-apiVersion: operators.coreos.com/v1alpha1
-kind: Subscription
-metadata:
-  annotations:
-    cpaas.io/target-namespaces: ""
-  name: clickhouse-operator
-  namespace: operators
-spec:
-  channel: stable
-  installPlanApproval: Manual
-  name: clickhouse-operator
-  source: platform
-  sourceNamespace: cpaas-system
-  startingCSV: ${CLICKHOUSE_OPERATOR_CSV}
-  config:
-    nodeSelector:
-      node-role.kubernetes.io/infra: ""
-    tolerations:
-      - key: node-role.kubernetes.io/infra
-        operator: Exists
-        effect: NoSchedule
-```
-
-```bash
-# on the cluster
-kubectl --kubeconfig "${CLUSTER_KUBECONFIG}" get namespace operators || \
-  kubectl --kubeconfig "${CLUSTER_KUBECONFIG}" create namespace operators
-apply_rendered wl-prod.env wl-prod/70-clickhouse-operator.yaml "${CLUSTER_KUBECONFIG}"
-PLAN=$(kubectl --kubeconfig "${CLUSTER_KUBECONFIG}" -n operators get subscription clickhouse-operator \
-  -o jsonpath='{.status.installPlanRef.name}')
-kubectl --kubeconfig "${CLUSTER_KUBECONFIG}" -n operators patch installplan "$PLAN" --type=json \
-  -p='[{"op": "replace", "path": "/spec/approved", "value": true}]'
-kubectl --kubeconfig "${CLUSTER_KUBECONFIG}" -n operators get deploy clickhouse-operator -o wide   # READY 1/1, on an infra node
-```
-
-The Kafka documentation describes only a console installation and does not name
-the packages, so the two Kafka operators remain a console step
-([Install](https://docs.alauda.io/kafka/4.3/installation.html)). On the cluster,
-in **Marketplace** > **OperatorHub**, install **Alauda Container Platform Data
-Services RDS Framework** first — Kafka 4.2.0 requires version 4.2.2 or later
-([Upgrade](https://docs.alauda.io/kafka/4.3/upgrade.html)) — and then **Alauda
-Streaming Service for Kafka**, each with upgrade strategy **Manual**, installation
-mode **Cluster**, channel **stable** and the recommended namespace. Then move the
-Kafka operator Pod to the logging pool through its `Subscription`, as the
-[Operator](https://docs.alauda.io/container_platform/4.4/extend/operator.html)
-page describes for an installed operator:
-
-```bash
-# on the cluster
-kubectl --kubeconfig "${CLUSTER_KUBECONFIG}" get subscriptions -A | grep -i kafka   # note NAMESPACE and NAME
-kubectl --kubeconfig "${CLUSTER_KUBECONFIG}" -n <namespace> patch subscription <name> --type merge -p \
-  '{"spec":{"config":{"nodeSelector":{"node-role.kubernetes.io/infra":""},"tolerations":[{"key":"node-role.kubernetes.io/infra","operator":"Exists","effect":"NoSchedule"}]}}}'
-kubectl --kubeconfig "${CLUSTER_KUBECONFIG}" get crd rdskafkas.middleware.alauda.io
-```
-
-**2. Kafka.** Create the SASL password Secret directly from a generated value —
-it is never displayed or stored elsewhere. On Alauda OS the password must be at
-least 32 characters:
-
-```bash
-# on the cluster
-kubectl --kubeconfig "${CLUSTER_KUBECONFIG}" -n cpaas-system create secret generic platform-logging-password \
-  --from-file=password=<(openssl rand -hex 16 | tr -d '\n')
-```
-
-The Kafka manifest uses the product's production values (three brokers, a
-three-member KRaft controller quorum, replication factor 3). The product manifest
-tolerates every taint so that evaluation clusters can schedule; here the
-toleration is narrowed to the logging pool. The five broker settings marked
-mandatory are required for audit batches and must not be changed.
-
-`<cluster>/71-kafka.yaml` — apply on the cluster:
-
-```yaml
-apiVersion: middleware.alauda.io/v1
-kind: RdsKafka
-metadata:
-  name: cpaas-kafka
-  namespace: cpaas-system
-spec:
-  version: 4.2.0
-  mode: KRaft
-  replicas: 3
-  upgradeOption:
-    autoUpgrade: false
-  storage:
-    class: ${KAFKA_STORAGE_CLASS}
-    size: ${KAFKA_STORAGE_SIZE}
-  resources:
-    limits:
-      cpu: "2"
-      memory: 4Gi
-    requests:
-      cpu: 200m
-      memory: 1Gi
-  config:
-    message.max.bytes: "10485760"              # mandatory
-    replica.fetch.max.bytes: "10485760"        # mandatory
-    socket.request.max.bytes: "104857600"      # mandatory
-    auto.create.topics.enable: "false"         # mandatory
-    unclean.leader.election.enable: "false"    # mandatory
-    default.replication.factor: "3"
-    min.insync.replicas: "2"
-    offsets.topic.replication.factor: "3"
-    transaction.state.log.replication.factor: "3"
-    transaction.state.log.min.isr: "2"
-    log.retention.ms: "172800000"
-    log.retention.bytes: "4928307200"
-    num.partitions: "30"
-  controller:
-    replicas: 3
-    roles: [controller]
-    storage:
-      class: ${KAFKA_STORAGE_CLASS}
-      size: 5Gi
-    resources:
-      limits:
-        cpu: "1"
-        memory: 2Gi
-      requests:
-        cpu: 200m
-        memory: 512Mi
-    template:
-      pod:
-        tolerations:
-          - key: node-role.kubernetes.io/infra
-            operator: Exists
-            effect: NoSchedule
-  kafka:
-    authorization:
-      type: simple
-    listeners:
-      plain:
-        authentication:
-          type: scram-sha-512
-    template:
-      pod:
-        tolerations:
-          - key: node-role.kubernetes.io/infra
-            operator: Exists
-            effect: NoSchedule
-  entityOperator:
-    topicOperator:
-      resources:
-        limits:
-          cpu: 500m
-          memory: 1Gi
-        requests:
-          cpu: 100m
-          memory: 256Mi
-    userOperator:
-      resources:
-        limits:
-          cpu: 500m
-          memory: 1Gi
-        requests:
-          cpu: 100m
-          memory: 256Mi
-    template:
-      pod:
-        tolerations:
-          - key: node-role.kubernetes.io/infra
-            operator: Exists
-            effect: NoSchedule
-  kafkaExporter:
-    resources:
-      limits:
-        cpu: 200m
-        memory: 256Mi
-      requests:
-        cpu: 100m
-        memory: 128Mi
-    template:
-      pod:
-        tolerations:
-          - key: node-role.kubernetes.io/infra
-            operator: Exists
-            effect: NoSchedule
----
-apiVersion: middleware.alauda.io/v1
-kind: RdsKafkaUser
-metadata:
-  name: platform-logging
-  namespace: cpaas-system
-  labels:
-    middleware.alauda.io/cluster: cpaas-kafka
-spec:
-  authentication:
-    type: scram-sha-512
-    password:
-      # read from the Secret created above, never a literal value
-      valueFrom:
-        secretKeyRef:
-          name: platform-logging-password
-          key: password
-  authorization:
-    type: simple
-    acls:
-      - resource: {type: topic, name: ALAUDA_LOG_TOPIC, patternType: literal}
-        operation: All
-        host: "*"
-      - resource: {type: topic, name: ALAUDA_EVENT_TOPIC, patternType: literal}
-        operation: All
-        host: "*"
-      - resource: {type: topic, name: ALAUDA_AUDIT_TOPIC, patternType: literal}
-        operation: All
-        host: "*"
-      - resource: {type: group, name: alauda_log, patternType: literal}
-        operation: Read
-        host: "*"
-      - resource: {type: group, name: alauda_event, patternType: literal}
-        operation: Read
-        host: "*"
-      - resource: {type: group, name: alauda_audit, patternType: literal}
-        operation: Read
-        host: "*"
-      - resource: {type: group, name: razor-, patternType: prefix}
-        operation: Read
-        host: "*"
-      - resource: {type: group, name: logforward-, patternType: prefix}
-        operation: Read
-        host: "*"
-      - resource: {type: cluster, name: kafka-cluster, patternType: literal}
-        operation: DescribeConfigs
-        host: "*"
----
-apiVersion: middleware.alauda.io/v1
-kind: RdsTopic
-metadata:
-  name: alauda-log-topic
-  namespace: cpaas-system
-  labels:
-    middleware.alauda.io/cluster: cpaas-kafka
-spec:
-  topicName: ALAUDA_LOG_TOPIC
-  partitions: 30
-  replicas: 3
-  config:
-    retention.ms: "172800000"
-    max.message.bytes: "10485760"
----
-apiVersion: middleware.alauda.io/v1
-kind: RdsTopic
-metadata:
-  name: alauda-event-topic
-  namespace: cpaas-system
-  labels:
-    middleware.alauda.io/cluster: cpaas-kafka
-spec:
-  topicName: ALAUDA_EVENT_TOPIC
-  partitions: 30
-  replicas: 3
-  config:
-    retention.ms: "172800000"
-    max.message.bytes: "10485760"
----
-apiVersion: middleware.alauda.io/v1
-kind: RdsTopic
-metadata:
-  name: alauda-audit-topic
-  namespace: cpaas-system
-  labels:
-    middleware.alauda.io/cluster: cpaas-kafka
-spec:
-  topicName: ALAUDA_AUDIT_TOPIC
-  partitions: 30
-  replicas: 3
-  config:
-    retention.ms: "172800000"
-    max.message.bytes: "10485760"
-```
-
-The product manifest exposes only tolerations for Kafka placement: they admit
-Kafka to the logging pool but do not confine it there. Check where the brokers
-land and that their volumes follow the storage plan.
-
-```bash
-# on the cluster
-apply_rendered wl-prod.env wl-prod/71-kafka.yaml "${CLUSTER_KUBECONFIG}"
-kubectl --kubeconfig "${CLUSTER_KUBECONFIG}" -n cpaas-system get rdskafka cpaas-kafka -o jsonpath='{.status.phase}{"\n"}'   # Active
-kubectl --kubeconfig "${CLUSTER_KUBECONFIG}" -n cpaas-system get pods -o wide | grep cpaas-kafka
-kubectl --kubeconfig "${CLUSTER_KUBECONFIG}" -n cpaas-system get svc cpaas-kafka-kafka-bootstrap
-```
-
-**3. ClickHouse.** The ClickHouse documentation builds the cluster the logging
-stack expects: a three-member Keeper quorum for replication, and a
-`ClickHouseInstallation` with the fixed names instance `cpaas-clickhouse`
-(Service `clickhouse-cpaas-clickhouse`), cluster `replicated`, database
-`observability` and account `platform-logging`
-([Deploy as ACP logging storage](https://docs.alauda.io/clickhouse/4.4/how_to/deploy_as_logging_storage.html)).
-Do not rename them: the connection Secret in step 5 refers to them. Keeper and
-ClickHouse keep their data on volumes of `CLICKHOUSE_STORAGE_CLASS`, one Keeper
-member and one replica per logging node.
-
-Generate the two account passwords and the inter-replica secret into Secrets.
-They are never displayed; later steps read them from there:
-
-```bash
-# on the cluster
-kubectl --kubeconfig "${CLUSTER_KUBECONFIG}" -n cpaas-system create secret generic cpaas-clickhouse-passwords \
-  --from-file=admin=<(openssl rand -hex 16 | tr -d '\n') --from-file=logging=<(openssl rand -hex 16 | tr -d '\n')
-kubectl --kubeconfig "${CLUSTER_KUBECONFIG}" -n cpaas-system create secret generic cpaas-clickhouse-cluster-secret \
-  --from-file=secret=<(openssl rand -hex 24 | tr -d '\n')
-```
-
-Keeper runs from the server image that the operator uses, so nothing extra is
-mirrored. Record that image in the cluster file once the operator runs
-([Deploy a Keeper quorum](https://docs.alauda.io/clickhouse/4.4/how_to/deploy_keeper_quorum.html)):
-
-```bash
-# on the cluster
-OP=$(kubectl --kubeconfig "${CLUSTER_KUBECONFIG}" -n operators get deploy clickhouse-operator \
-  -o jsonpath='{.spec.template.spec.containers[?(@.name=="clickhouse-operator")].image}')
-TAG=$(kubectl --kubeconfig "${CLUSTER_KUBECONFIG}" -n operators get deploy clickhouse-operator \
-  -o jsonpath='{.spec.template.spec.containers[?(@.name=="clickhouse-operator")].env[?(@.name=="CK_SERVER_IMAGE")].value}')
-# on the delivery host: record it in the cluster file
-sed -i '/^CLICKHOUSE_SERVER_IMAGE=/d' wl-prod.env
-printf "CLICKHOUSE_SERVER_IMAGE='%s'\n" "${OP%%/*}/$TAG" >> wl-prod.env
-```
-
-`<cluster>/72-keeper.yaml` — apply on the cluster. The `${HOSTNAME##*-}` in the
-container command is a shell expansion that `render` leaves alone; each member
-derives its `server_id` from its Pod ordinal:
-
-```yaml
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: keeper
-  namespace: cpaas-system
-  labels:
-    app: keeper
-data:
-  keeper_config.xml: |
-    <clickhouse>
-        <logger><level>information</level><console>1</console></logger>
-        <listen_host>0.0.0.0</listen_host>
-        <max_connections>256</max_connections>
-        <keeper_server>
-            <tcp_port>2181</tcp_port>
-            <server_id>__SERVER_ID__</server_id>
-            <log_storage_path>/var/lib/clickhouse-keeper/coordination/log</log_storage_path>
-            <snapshot_storage_path>/var/lib/clickhouse-keeper/coordination/snapshots</snapshot_storage_path>
-            <coordination_settings>
-                <operation_timeout_ms>10000</operation_timeout_ms>
-                <session_timeout_ms>30000</session_timeout_ms>
-                <raft_logs_level>information</raft_logs_level>
-            </coordination_settings>
-            <raft_configuration>
-                <server><id>1</id><hostname>keeper-0.keeper-headless</hostname><port>9234</port></server>
-                <server><id>2</id><hostname>keeper-1.keeper-headless</hostname><port>9234</port></server>
-                <server><id>3</id><hostname>keeper-2.keeper-headless</hostname><port>9234</port></server>
-            </raft_configuration>
-        </keeper_server>
-    </clickhouse>
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: keeper-headless
-  namespace: cpaas-system
-  labels:
-    app: keeper
-spec:
-  clusterIP: None
-  publishNotReadyAddresses: true
-  selector:
-    app: keeper
-  ports:
-    - name: client
-      port: 2181
-    - name: raft
-      port: 9234
----
-apiVersion: policy/v1
-kind: PodDisruptionBudget
-metadata:
-  name: keeper
-  namespace: cpaas-system
-spec:
-  maxUnavailable: 1
-  selector:
-    matchLabels:
-      app: keeper
----
-apiVersion: apps/v1
-kind: StatefulSet
-metadata:
-  name: keeper
-  namespace: cpaas-system
-  labels:
-    app: keeper
-spec:
-  serviceName: keeper-headless
-  replicas: 3
-  podManagementPolicy: Parallel
-  selector:
-    matchLabels:
-      app: keeper
-  template:
-    metadata:
-      labels:
-        app: keeper
-    spec:
-      tolerations:
-        - key: node-role.kubernetes.io/infra
-          operator: Exists
-      affinity:
-        nodeAffinity:
-          requiredDuringSchedulingIgnoredDuringExecution:
-            nodeSelectorTerms:
-              - matchExpressions:
-                  - key: node-role.kubernetes.io/infra
-                    operator: Exists
-        podAntiAffinity:
-          requiredDuringSchedulingIgnoredDuringExecution:
-            - topologyKey: kubernetes.io/hostname
-              labelSelector:
-                matchLabels:
-                  app: keeper
-      securityContext:
-        fsGroup: 101
-      containers:
-        - name: keeper
-          image: ${CLICKHOUSE_SERVER_IMAGE}
-          imagePullPolicy: IfNotPresent
-          command:
-            - /bin/sh
-            - -c
-            - >-
-              ORD=${HOSTNAME##*-};
-              sed "s/__SERVER_ID__/$((ORD+1))/" /etc/keeper-tpl/keeper_config.xml
-              > /var/lib/clickhouse-keeper/keeper_config.xml;
-              exec clickhouse-keeper --config-file=/var/lib/clickhouse-keeper/keeper_config.xml
-          ports:
-            - name: client
-              containerPort: 2181
-            - name: raft
-              containerPort: 9234
-          securityContext:
-            runAsNonRoot: true
-            runAsUser: 101
-            runAsGroup: 101
-            allowPrivilegeEscalation: false
-            capabilities:
-              drop: ["ALL"]
-            seccompProfile:
-              type: RuntimeDefault
-          resources:
-            requests:
-              cpu: 500m
-              memory: 512Mi
-            limits:
-              cpu: "2"
-              memory: 2Gi
-          readinessProbe:
-            tcpSocket:
-              port: 2181
-            initialDelaySeconds: 5
-            periodSeconds: 5
-            failureThreshold: 30
-          volumeMounts:
-            - name: config
-              mountPath: /etc/keeper-tpl
-            - name: data
-              mountPath: /var/lib/clickhouse-keeper
-      volumes:
-        - name: config
-          configMap:
-            name: keeper
-  volumeClaimTemplates:
-    - metadata:
-        name: data
-      spec:
-        accessModes:
-          - ReadWriteOnce
-        storageClassName: ${CLICKHOUSE_STORAGE_CLASS}
-        resources:
-          requests:
-            storage: 10Gi
-```
-
-A member that has lost its quorum still reports `Ready`, so check the quorum
-itself: exactly one member is `leader` with `zk_synced_followers 2`, the other two
-are `follower`.
-
-```bash
-# on the cluster
-apply_rendered wl-prod.env wl-prod/72-keeper.yaml "${CLUSTER_KUBECONFIG}"
-kubectl --kubeconfig "${CLUSTER_KUBECONFIG}" -n cpaas-system rollout status statefulset/keeper
-kubectl --kubeconfig "${CLUSTER_KUBECONFIG}" -n cpaas-system get pods -l app=keeper -o wide   # three infra nodes
-for i in 0 1 2; do
-  kubectl --kubeconfig "${CLUSTER_KUBECONFIG}" -n cpaas-system exec keeper-$i -- bash -c \
-    'exec 3<>/dev/tcp/127.0.0.1/2181; printf mntr >&3; timeout 5 cat <&3' | grep -E 'zk_server_state|zk_synced_followers'
-done
-```
-
-`<cluster>/73-clickhouse.yaml` — apply on the cluster with the command below it.
-The two `${...SHA256}` placeholders are intentional: they are filled at apply
-time with the SHA-256 digests of the generated passwords, so neither a password
-nor a digest is ever written to a file.
-
-```yaml
-apiVersion: clickhouse.altinity.com/v1
-kind: ClickHouseInstallation
-metadata:
-  name: cpaas-clickhouse
-  namespace: cpaas-system
-spec:
-  defaults:
-    templates:
-      dataVolumeClaimTemplate: data-volume
-      podTemplate: ch-pod
-      serviceTemplate: internal
-  configuration:
-    zookeeper:
-      nodes:
-        - host: keeper-0.keeper-headless.cpaas-system
-        - host: keeper-1.keeper-headless.cpaas-system
-        - host: keeper-2.keeper-headless.cpaas-system
-    clusters:
-      - name: replicated
-        secret:
-          valueFrom:
-            secretKeyRef:
-              name: cpaas-clickhouse-cluster-secret
-              key: secret
-        layout:
-          shardsCount: ${CLICKHOUSE_SHARDS}
-          replicasCount: ${CLICKHOUSE_REPLICAS}
-    users:
-      admin/password_sha256_hex: ${CH_ADMIN_SHA256}
-      admin/networks/ip:
-        - "::/0"
-      admin/access_management: "1"
-      platform-logging/password_sha256_hex: ${CH_LOGGING_SHA256}
-      platform-logging/networks/ip:
-        - "::/0"
-      platform-logging/grants/query:
-        - "GRANT ALL ON observability.*"
-        - "GRANT CLUSTER ON *.*"
-  templates:
-    serviceTemplates:
-      - name: internal
-        spec:
-          type: ClusterIP
-          ports:
-            - name: http
-              port: 8123
-            - name: tcp
-              port: 9000
-    podTemplates:
-      - name: ch-pod
-        podDistribution:
-          - type: ShardAntiAffinity
-        spec:
-          tolerations:
-            - key: node-role.kubernetes.io/infra
-              operator: Exists
-          affinity:
-            nodeAffinity:
-              requiredDuringSchedulingIgnoredDuringExecution:
-                nodeSelectorTerms:
-                  - matchExpressions:
-                      - key: node-role.kubernetes.io/infra
-                        operator: Exists
-          securityContext:
-            runAsUser: 101
-            runAsGroup: 101
-            fsGroup: 101
-            runAsNonRoot: true
-            seccompProfile:
-              type: RuntimeDefault
-          containers:
-            - name: clickhouse
-              resources:
-                requests:
-                  cpu: "2"
-                  memory: 8Gi
-                limits:
-                  cpu: "4"
-                  memory: 16Gi
-              securityContext:
-                allowPrivilegeEscalation: false
-                readOnlyRootFilesystem: true
-                capabilities:
-                  drop:
-                    - ALL
-    volumeClaimTemplates:
-      - name: data-volume
-        spec:
-          accessModes:
-            - ReadWriteOnce
-          storageClassName: ${CLICKHOUSE_STORAGE_CLASS}
-          resources:
-            requests:
-              storage: ${CLICKHOUSE_STORAGE_SIZE}
-```
-
-The pieces the logging stack depends on: the cluster secret is referenced, not
-`secret: auto`, because on ACP the operator cannot create Secrets and the Pods
-would stay in `CreateContainerConfigError`; `networks/ip` lets other Pods
-connect; the `ClusterIP` Service template replaces the default `LoadBalancer`
-Service, which in-cluster clients do not need; `GRANT CLUSTER` is needed because
-the logging schema migrations use `ON CLUSTER`. No image is set — the operator
-supplies its own.
-
-```bash
-# on the cluster
-ch_sha256() {   # SHA-256 of one generated password; nothing is printed
-  kubectl --kubeconfig "${CLUSTER_KUBECONFIG}" -n cpaas-system get secret cpaas-clickhouse-passwords \
-    -o jsonpath="{.data.$1}" | base64 -d | sha256sum | cut -d' ' -f1
-}
-render wl-prod.env wl-prod/73-clickhouse.yaml | \
-  sed -e "s/\${CH_ADMIN_SHA256}/$(ch_sha256 admin)/" -e "s/\${CH_LOGGING_SHA256}/$(ch_sha256 logging)/" | \
-  kubectl --kubeconfig "${CLUSTER_KUBECONFIG}" apply -f -
-kubectl --kubeconfig "${CLUSTER_KUBECONFIG}" -n cpaas-system get statefulset -l clickhouse.altinity.com/chi=cpaas-clickhouse \
-  -o custom-columns=NAME:.metadata.name,DESIRED:.spec.replicas,READY:.status.readyReplicas   # one StatefulSet per replica, each READY 1
-kubectl --kubeconfig "${CLUSTER_KUBECONFIG}" -n cpaas-system get chi cpaas-clickhouse                           # STATUS Completed
-kubectl --kubeconfig "${CLUSTER_KUBECONFIG}" -n cpaas-system get pods -l clickhouse.altinity.com/chi=cpaas-clickhouse -o wide   # one replica per infra node
-```
-
-Then create the `observability` database, which must exist before the storage
-operator runs, and prove that `platform-logging` can run the `ON CLUSTER` DDL the
-schema migrations use. The helper passes the password to `clickhouse-client` over
-standard input, so it never appears in a command line or an audit log:
-
-```bash
-# on the cluster
-ch() {   # ch <admin|logging> <query> — runs clickhouse-client in the first replica
-  local user=admin; [ "$1" = logging ] && user=platform-logging
-  kubectl --kubeconfig "${CLUSTER_KUBECONFIG}" -n cpaas-system get secret cpaas-clickhouse-passwords \
-    -o jsonpath="{.data.$1}" | base64 -d | \
-  kubectl --kubeconfig "${CLUSTER_KUBECONFIG}" -n cpaas-system exec -i chi-cpaas-clickhouse-replicated-0-0-0 -c clickhouse -- \
-    bash -c 'read -r p; exec clickhouse-client -u "$1" --password "$p" -q "$2"' ch "$user" "$2"
-}
-ch admin "CREATE DATABASE IF NOT EXISTS observability ON CLUSTER 'replicated'"
-ch admin "SELECT cluster, shard_num, replica_num, host_name FROM system.clusters WHERE cluster = 'replicated'"
-ch logging "CREATE TABLE observability.probe ON CLUSTER 'replicated' (ts DateTime) ENGINE = ReplicatedMergeTree('/clickhouse/tables/{shard}/observability/probe', '{replica}') ORDER BY ts"
-ch logging "DROP TABLE observability.probe ON CLUSTER 'replicated'"
-```
-
-The cluster query returns one row per replica. A `KEEPER_EXCEPTION` means the
-Keeper quorum is not serving; `Not enough privileges` names a grant missing from
-`73`. Fix the cause and repeat the command — nothing else needs to change
-([Step 4: create the database](https://docs.alauda.io/clickhouse/4.4/how_to/deploy_as_logging_storage.html#step-4-create-the-database)).
-
-**4. Log Storage Management.** The logging documentation describes only a console
-installation for this operator, so it remains a console step. In **Marketplace** >
-**Cluster Plugins**, select the cluster, install **Alauda Container Platform Log
-Storage Management**, and in the advanced configuration set the node selector
-`node-role.kubernetes.io/infra` (empty value) and a `NoSchedule` toleration for the
-key `node-role.kubernetes.io/infra`. The ingest and query workloads it derives
-inherit this placement
-([Planning Infra Nodes for Logging Storage](https://docs.alauda.io/logging-service/4.4/how_to/infra_nodes.html)).
-
-```bash
-# on the cluster
-kubectl --kubeconfig "${CLUSTER_KUBECONFIG}" -n cpaas-system get deployment log-storage-operator -o wide   # READY 1/1
-```
-
-**5. Connection Secrets.** The operator reads two Secrets by their fixed names.
-They contain credentials, so they are created, not applied; both passwords are
-read from the Secrets generated in steps 2 and 3. The ClickHouse password is the
-plain-text value, not the digest.
-
-```bash
-# on the cluster
-kubectl --kubeconfig "${CLUSTER_KUBECONFIG}" -n cpaas-system create secret generic platform-default-mq-conn \
-  --from-literal=bootstrap=cpaas-kafka-kafka-bootstrap.cpaas-system.svc:9092 \
-  --from-literal=kafkaClusterName=cpaas-kafka \
-  --from-literal=username=platform-logging \
-  --from-file=password=<(kubectl --kubeconfig "${CLUSTER_KUBECONFIG}" -n cpaas-system \
-      get secret platform-logging-password -o jsonpath='{.data.password}' | base64 -d) \
-  --from-literal=sasl_mechanism=SCRAM-SHA-512 \
-  --from-literal=topics.log=ALAUDA_LOG_TOPIC \
-  --from-literal=topics.event=ALAUDA_EVENT_TOPIC \
-  --from-literal=topics.audit=ALAUDA_AUDIT_TOPIC
-kubectl --kubeconfig "${CLUSTER_KUBECONFIG}" -n cpaas-system create secret generic platform-default-ch-conn \
-  --from-literal=endpoint=http://clickhouse-cpaas-clickhouse.cpaas-system.svc:8123 \
-  --from-literal=cluster=replicated \
-  --from-literal=database=observability \
-  --from-literal=username=platform-logging \
-  --from-file=password=<(kubectl --kubeconfig "${CLUSTER_KUBECONFIG}" -n cpaas-system \
-      get secret cpaas-clickhouse-passwords -o jsonpath='{.data.logging}' | base64 -d)
-```
-
-**6. PlatformLogForward.** The singleton `platform-default` builds the data path.
-Shards and replicas must equal the ClickHouse topology; two ingest and two query
-replicas match every multi-node ClickHouse profile on the
-[capacity page](https://docs.alauda.io/logging-service/4.4/architecture/capacity_planning.html),
-and the query-tier resources are the product's per-Pod baseline.
-
-`<cluster>/74-platform-log-forward.yaml` — apply on the cluster:
-
-```yaml
-apiVersion: log.alauda.io/v1alpha1
-kind: PlatformLogForward
-metadata:
-  name: platform-default
-spec:
-  output:
-    type: clickhouse
-  externalStorage:
-    type: clickhouse
-    shards: ${CLICKHOUSE_SHARDS}
-    replicas: ${CLICKHOUSE_REPLICAS}
-    secretRef:
-      name: platform-default-ch-conn
-      namespace: cpaas-system
-  externalMessageQueue:
-    type: kafka
-    secretRef:
-      name: platform-default-mq-conn
-      namespace: cpaas-system
-  aggregateVector:
-    replicas: 2
-  razor:
-    replicas: 2
-    resources:
-      limits:
-        cpu: "4"
-        memory: 2Gi
-      requests:
-        cpu: "1"
-        memory: 512Mi
-```
-
-```bash
-# on the cluster
-apply_rendered wl-prod.env wl-prod/74-platform-log-forward.yaml "${CLUSTER_KUBECONFIG}"
-kubectl --kubeconfig "${CLUSTER_KUBECONFIG}" get platformlogforward platform-default \
-  -o jsonpath='{"phase="}{.status.phase}{"  ready="}{.status.conditions[?(@.type=="Ready")].status}{"\n"}'   # Ready / True
-kubectl --kubeconfig "${CLUSTER_KUBECONFIG}" -n cpaas-system get pods -l 'app in (aggregate-vector,razor)' -o wide
-```
-
-**7. Log Collector.** The collector points at the cluster itself and keeps its
-working data under `/var/cpaas/data/nevermore`, which cannot be changed after
-installation. It is a DaemonSet that must cover every node, so it gets no node
-selector.
-
-`<cluster>/75-logagent.yaml` — apply on `global`:
-
-```yaml
-apiVersion: cluster.alauda.io/v1alpha1
-kind: ModuleInfo
-metadata:
-  annotations:
-    cpaas.io/display-name: logagent
-    cpaas.io/module-name: '{"en": "Alauda Container Platform Log Collector", "zh": "Alauda Container Platform Log Collector"}'
-  labels:
-    cpaas.io/cluster-name: ${CLUSTER_NAME}
-    cpaas.io/module-name: logagent
-    cpaas.io/module-type: plugin
-    cpaas.io/product: Platform-Center
-  name: ${CLUSTER_NAME}-logagent
-spec:
-  version: ${LOGAGENT_VERSION}
-  config:
-    crossClusterDependency:
-      logstorage: ${CLUSTER_NAME}
-    dataSource:
-      audit: true
-      event: true
-      kubernetes: false
-      platform: false
-      system: true
-      workload: true
-    components:
-      nevermore:
-        storageSpec:
-          dataDir: /var/cpaas/data/nevermore
-    storage:
-      type: Standard
-```
-
-```bash
-# on global
-apply_rendered wl-prod.env wl-prod/75-logagent.yaml "${GLOBAL_KUBECONFIG}"
-kubectl --kubeconfig "${GLOBAL_KUBECONFIG}" get moduleinfo -l cpaas.io/module-name=logagent   # STATUS Running
-# on the cluster
-kubectl --kubeconfig "${CLUSTER_KUBECONFIG}" -n cpaas-system get pods -l app=nevermore -o wide
-```
-
-**8. Log Essentials** — `global` only, on each side; its name and cluster label
-are fixed by the product.
-
-`global-primary/76-log-api.yaml` (and `global-standby/76-log-api.yaml`) — apply on
-`global`:
-
-```yaml
-apiVersion: cluster.alauda.io/v1alpha1
-kind: ModuleInfo
-metadata:
-  annotations:
-    cpaas.io/display-name: log-api
-    cpaas.io/module-name: '{"en": "Alauda Container Platform Log Essentials", "zh": "Alauda Container Platform Log Essentials"}'
-  labels:
-    cpaas.io/cluster-name: global
-    cpaas.io/module-name: log-api
-    cpaas.io/module-type: plugin
-    cpaas.io/product: Platform-Center
-  name: global-log-api
-spec:
-  version: ${LOG_API_VERSION}
-```
-
-```bash
-# on global (shown for the primary; repeat with global-standby.env on the standby)
-apply_rendered global-primary.env global-primary/76-log-api.yaml "${GLOBAL_KUBECONFIG}"
-kubectl --kubeconfig "${GLOBAL_KUBECONFIG}" get moduleinfo -l cpaas.io/module-name=log-api   # STATUS Running
-```
-
-Then walk the product's seven-step
-[post-install verification](https://docs.alauda.io/logging-service/4.4/install/post-install-verification.html),
-which ends with a synthetic log queried back end to end.
-
-Dedicated pools: change `infra` to `log` in every logging placement — the
-operator `Subscription` (`70`) and the Kafka operator patch, the four Kafka
-tolerations (`controller`, `kafka`, `entityOperator`, `kafkaExporter` in `71`), the
-toleration and node affinity of Keeper (`72`) and ClickHouse (`73`), and the
-step 4 console placement. For example in `71`:
-
-```diff
-     template:
-       pod:
-         tolerations:
--          - key: node-role.kubernetes.io/infra
-+          - key: node-role.kubernetes.io/log
-             operator: Exists
-             effect: NoSchedule
-```
+The packages, the manifests, the generated credentials and the file numbers `70`
+and above of the logging stack are deliberately absent here. Take them from the
+new scheme when it is published, not from an earlier delivery.
 
 #### DaemonSet coverage
 
@@ -2037,6 +1306,11 @@ pool: the `worker` pool and the `master` pool (the control-plane nodes) each tak
 the objects labeled with their role, and the copies differ only in name and role
 label. The `boot` key should be the same key that the provider manifests install
 at node creation, so that the two never disagree.
+
+On a DR pair, apply the machine configuration on **both** `global` sides, from the
+same `site.env`: `MachineConfig` and `MachineConfigPool` objects are not
+replicated by `etcd-sync` (see [Observability](#observability)), so a side that
+was configured only once stays unconfigured.
 
 #### Node disruption policy
 
@@ -2306,25 +1580,26 @@ at peak) and its retention, and the metrics retention.
    (`MONITOR_SIZE`). The page's disk figures are for a 7-day retention; scale them
    proportionally to `MONITOR_RETENTION_DAYS` and add headroom
    (`MONITOR_STORAGE_GI`).
-4. **Logging** — pick the ClickHouse profile whose throughput covers the peak log
-   rate in
+4. **Logging** — the sizes of the logging stack come with its new deployment
+   scheme, together with the install; see [Logging](#logging). Collect the inputs
+   now — the peak log rate, the retention and the resulting profile from
    [Log Component Capacity Planning](https://docs.alauda.io/logging-service/4.4/architecture/capacity_planning.html)
-   (`CLICKHOUSE_SHARDS`, `CLICKHOUSE_REPLICAS`) and take the Kafka broker count
-   from the same profile. Size Kafka volumes as retention × daily volume ×
-   replication factor (`KAFKA_STORAGE_SIZE`) and ClickHouse volumes from the
-   customer's measured daily log volume and retention (`CLICKHOUSE_STORAGE_SIZE`).
-   Throughput above the largest profile is a design change, not a bigger number.
+   — because they set the node count of the logging pool and the size of its
+   local storage, and neither can be changed cheaply afterwards. Throughput above
+   the largest documented profile is a design change, not a bigger number.
 5. **Infra pool (or dedicated pools)** — add up the CPU and memory limits of every
-   component placed on the pool (the plugin tables of steps 3 and 4, plus the
-   ingress controllers) and size the nodes so that the pool still fits with one
-   node down, within the utilization ranges of the evaluation pages. Pods are
-   scheduled by their requests, so also check that the free requests of each
-   logging node cover one ClickHouse replica and one Keeper member (`73`, `72`).
-   The three-node HA profiles set the minimum node count of the logging pool.
-6. **`/var/cpaas` per node** — platform state plus the data the node hosts: its
-   vmstorage share and the collector working data, plus its Kafka, Keeper and
-   ClickHouse volumes where their StorageClass provisions on this disk. Keep the disks on
-   the baseline the capacity pages assume (SSD, about 6000 IOPS and 250 MB/s).
+   component placed on the pool (the plugin parameters of step 3, the ingress
+   controllers, and the logging profile of step 4) and size the nodes so that the
+   pool still fits with one node down, within the utilization ranges of the
+   evaluation pages. Pods are scheduled by their requests, so check the free
+   requests of each node, not only its totals. The three-node HA profiles set the
+   minimum node count of the logging pool.
+6. **Disks per node** — `/var/cpaas` carries platform state plus the data the node
+   hosts: its vmstorage share, and the log collector's working data once logging
+   is installed. The TopoLVM disk is separate and sized from the volumes the
+   stateful components claim on that node
+   ([Local storage: TopoLVM](#local-storage-topolvm)). Keep both on the baseline
+   the capacity pages assume (SSD, about 6000 IOPS and 250 MB/s).
 7. **Bootstrap node** — at least 4 cores, 8 GB memory and 300 GB disk on x86_64
    ([Bootstrap Node Requirements](https://docs.alauda.io/immutable-infra/1.0/global/install.html#bootstrap-host-requirements)).
 
@@ -2378,14 +1653,17 @@ kubectl --kubeconfig "${CLUSTER_KUBECONFIG}" get events -A | grep -E 'ErrImagePu
 kubectl --kubeconfig "${GLOBAL_KUBECONFIG}" get moduleinfo -l cpaas.io/cluster-name="${CLUSTER_NAME}"   # all Running
 # on the cluster
 kubectl --kubeconfig "${CLUSTER_KUBECONFIG}" get pods -A -o wide | \
-  grep -E 'metallb|ingress-nginx|vmstorage|vminsert|vmselect|vmagent|vmalert|alertmanager|cpaas-kafka|keeper|clickhouse|aggregate-vector|razor|log-storage-operator'
+  grep -E 'metallb|ingress-nginx|vmstorage|vminsert|vmselect|vmagent|vmalert|alertmanager'
 kubectl --kubeconfig "${CLUSTER_KUBECONFIG}" get pods -A --field-selector=status.phase!=Running,status.phase!=Succeeded
+kubectl --kubeconfig "${CLUSTER_KUBECONFIG}" get storageclass "${LOCAL_STORAGE_CLASS}" -o wide
 ```
 
 Every listed Pod runs on a node of its planned pool (see the placement table in
 [Node pools, labels and taints](#node-pools-labels-and-taints)), the DaemonSet
-coverage check prints no unexplained line, the ingress VIP answers, and the
-logging post-install verification passed.
+coverage check prints no unexplained line, the ingress VIP answers, and the local
+StorageClass exists. When the logging stack has been installed from the product
+documentation ([Logging](#logging)), add its Pods to the placement check and its
+post-install verification to the evidence.
 
 **Machine configuration** — every `MachineConfigPool` reports `UPDATED=True` and
 `DEGRADED=False`, every node `STATE Done`, no unplanned reboot, and the node
@@ -2447,4 +1725,6 @@ re-installation later.
 - [Machine Configuration Overview](https://docs.alauda.io/immutable-infra/1.0/machine-configuration/overview.html)
 - [Cluster Plugin](https://docs.alauda.io/container_platform/4.4/extend/cluster_plugin.html#installing-via-yaml)
 - [Monitoring Installation](https://docs.alauda.io/container_platform/4.4/observability/monitor/install_monitor.html)
+- [Install Local Storage (TopoLVM)](https://docs.alauda.io/container_platform/4.4/storage/storagesystem_topolvm/installation.html)
+- [Create TopoLVM Local Storage Class](https://docs.alauda.io/container_platform/4.4/configure/storage/functions/topolvm_storageclass.html)
 - [Logging Installation](https://docs.alauda.io/logging-service/4.4/install/index.html)
