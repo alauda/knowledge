@@ -6,6 +6,7 @@ kind:
   - Article
 ProductsVersion:
   - 4.x
+id: KB261000025
 ---
 
 # Managing Platform Configuration and Onboarding Isolated Projects with Argo CD and Tekton on ACP
