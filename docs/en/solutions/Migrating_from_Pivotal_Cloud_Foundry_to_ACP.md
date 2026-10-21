@@ -6,6 +6,11 @@ products:
 ProductsVersion:
    - 4.x
 id: KB251100002
+i18n:
+  additionalPrompts: >-
+    Keep every occurrence of "Alauda Container Platform Progressive Delivery" unchanged in English.
+    Keep the final modification notice and complete trademark attribution and non-endorsement notice verbatim in English.
+    Do not translate, paraphrase, shorten or omit the notice beginning "Argo® is a registered trademark of LF Projects, LLC." and ending "identification purposes only."
 ---
 
 # Migrate the application from PCF(Pivotal Cloud Foundry) to ACP(Alauda Container Platform)
@@ -734,4 +739,9 @@ For more detailed information or assistance with specific application types, ref
 1. [Move2Kube Documentation](https://move2kube.konveyor.io/)
 2. [Alauda Container Platform Documentation](https://docs.alauda.io/)
 3. [Kubernetes Best Practices](https://kubernetes.io/docs/concepts/configuration/overview/)
-4. [Argo Rollouts Documentation](https://argoproj.github.io/argo-rollouts/)
+4. [Argo Rollouts Documentation](https://argoproj.github.io/argo-rollouts/) (the upstream engine used by Alauda Container Platform Progressive Delivery)
+Modified by Alauda, 2026-10-21.
+
+Argo® is a registered trademark of LF Projects, LLC.
+
+Alauda is an independent vendor. This product is not affiliated with, endorsed by, or sponsored by LF Projects, LLC. All trademarks are the property of their respective owners and are used here for identification purposes only.
