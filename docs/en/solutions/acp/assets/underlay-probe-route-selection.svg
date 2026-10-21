@@ -1,0 +1,102 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="1020" viewBox="0 0 1200 1020">
+  <rect width="1200" height="1020" rx="24" fill="#f3f6fa"/>
+  <g font-family="Noto Sans SC, PingFang SC, Microsoft YaHei, sans-serif" fill="#172b4d">
+    <text x="40" y="54" font-size="30" font-weight="700">Why check the source IP when traffic already uses ovn0?</text>
+    <text x="40" y="91" font-size="21" fill="#526477">The same interface can use different source IPs and return paths. U2O is enabled in both cases.</text>
+
+    <rect x="28" y="120" width="1144" height="380" rx="18" fill="#ffffff" stroke="#d9e1ea"/>
+    <rect x="28" y="120" width="8" height="380" rx="4" fill="#d97c28"/>
+    <circle cx="72" cy="163" r="22" fill="#fff0df"/>
+    <text x="72" y="171" font-size="24" text-anchor="middle" font-weight="700" fill="#a65a16">A</text>
+    <text x="110" y="171" font-size="25" font-weight="700">Existing main route: check whether Node InternalIP is selected</text>
+
+    <g fill="none" stroke="#337bba" stroke-width="4" stroke-linejoin="round">
+      <polyline points="224,272 358,272"/>
+      <polyline points="480,272 624,272"/>
+      <polyline points="816,272 961,272"/>
+    </g>
+    <g fill="#337bba"><polygon points="358,272 347,265 347,279"/><polygon points="624,272 613,265 613,279"/><polygon points="961,272 950,265 950,279"/></g>
+    <text x="287" y="248" text-anchor="middle" font-size="20" fill="#337bba">Probe</text>
+    <text x="551" y="248" text-anchor="middle" font-size="20" fill="#337bba">join</text>
+    <text x="890" y="248" text-anchor="middle" font-size="20" fill="#337bba">U2O</text>
+
+    <rect x="66" y="219" width="158" height="108" rx="12" fill="#edf4fc" stroke="#87acd0" stroke-width="2"/>
+    <path d="M87 243 H112 M87 254 H112 M87 265 H112" stroke="#337bba" stroke-width="3" fill="none"/>
+    <circle cx="103" cy="281" r="4" fill="#337bba"/>
+    <text x="158" y="258" text-anchor="middle" font-size="24" font-weight="700">Node</text>
+    <text x="145" y="307" text-anchor="middle" font-size="21">kubelet</text>
+    <circle cx="419" cy="272" r="60" fill="#eef5fd" stroke="#87acd0" stroke-width="2"/>
+    <text x="419" y="279" text-anchor="middle" font-size="25" font-weight="700">ovn0</text>
+    <rect x="624" y="219" width="192" height="108" rx="54" fill="#eef5fd" stroke="#87acd0" stroke-width="2"/>
+    <text x="720" y="260" text-anchor="middle" font-size="23">Default VPC</text>
+    <text x="720" y="293" text-anchor="middle" font-size="23" font-weight="700">OVN router</text>
+    <polygon points="994,219 1088,219 1120,272 1088,327 994,327 962,272" fill="#eaf6f2" stroke="#8dbdae" stroke-width="2"/>
+    <text x="1041" y="262" text-anchor="middle" font-size="22">Underlay</text>
+    <text x="1041" y="294" text-anchor="middle" font-size="25" font-weight="700">Pod</text>
+
+    <g fill="none" stroke="#d17b29" stroke-width="4" stroke-linejoin="round">
+      <polyline points="1041,328 1041,382 720,382 720,328"/>
+      <polyline points="696,327 696,427 575,427"/>
+      <polyline points="359,427 281,427" stroke-dasharray="8 6"/>
+    </g>
+    <g fill="#d17b29"><polygon points="720,328 713,339 727,339"/><polygon points="575,427 586,420 586,434"/></g>
+    <rect x="359" y="397" width="216" height="60" rx="12" fill="#fff3e7" stroke="#e4b780" stroke-width="2"/>
+    <text x="467" y="435" text-anchor="middle" font-size="23" font-weight="700">Physical gateway</text>
+    <text x="915" y="417" text-anchor="middle" font-size="21" fill="#a65a16">Reply destination: Node InternalIP</text>
+    <text x="915" y="449" text-anchor="middle" font-size="20" fill="#a65a16">U2O policy sends it to the physical gateway</text>
+    <line x1="264" y1="408" x2="285" y2="446" stroke="#c64f45" stroke-width="5"/>
+    <line x1="285" y1="408" x2="264" y2="446" stroke="#c64f45" stroke-width="5"/>
+    <text x="155" y="415" text-anchor="middle" font-size="22" fill="#b14b40">Node network</text>
+    <text x="155" y="449" text-anchor="middle" font-size="21" fill="#b14b40">is isolated</text>
+    <text x="56" y="479" font-size="20" fill="#526477">With Node InternalIP as the source, a probe may use ovn0 while its return path is unreachable.</text>
+
+    <rect x="28" y="521" width="1144" height="359" rx="18" fill="#ffffff" stroke="#d9e1ea"/>
+    <rect x="28" y="521" width="8" height="359" rx="4" fill="#228b72"/>
+    <circle cx="72" cy="563" r="22" fill="#e5f5ef"/>
+    <text x="72" y="571" font-size="24" text-anchor="middle" font-weight="700" fill="#19755e">B</text>
+    <text x="110" y="571" font-size="25" font-weight="700">This solution: use table 200 and verify the node's join IP as source</text>
+    <text x="57" y="609" font-size="21" fill="#526477">to Underlay CIDR → table 200 → via join gateway (no explicit src in the route)</text>
+
+    <g fill="none" stroke="#337bba" stroke-width="4" stroke-linejoin="round">
+      <polyline points="224,698 358,698"/>
+      <polyline points="480,698 624,698"/>
+      <polyline points="816,698 961,698"/>
+    </g>
+    <g fill="#337bba"><polygon points="358,698 347,691 347,705"/><polygon points="624,698 613,691 613,705"/><polygon points="961,698 950,691 950,705"/></g>
+    <text x="287" y="675" text-anchor="middle" font-size="20" fill="#337bba">Probe</text>
+    <text x="551" y="675" text-anchor="middle" font-size="20" fill="#337bba">join</text>
+    <text x="890" y="675" text-anchor="middle" font-size="20" fill="#337bba">U2O</text>
+
+    <rect x="66" y="645" width="158" height="108" rx="12" fill="#edf4fc" stroke="#87acd0" stroke-width="2"/>
+    <path d="M87 669 H112 M87 680 H112 M87 691 H112" stroke="#337bba" stroke-width="3" fill="none"/>
+    <circle cx="103" cy="707" r="4" fill="#337bba"/>
+    <text x="158" y="684" text-anchor="middle" font-size="24" font-weight="700">Node</text>
+    <text x="145" y="733" text-anchor="middle" font-size="21">kubelet</text>
+    <circle cx="419" cy="698" r="60" fill="#eef5fd" stroke="#87acd0" stroke-width="2"/>
+    <text x="419" y="705" text-anchor="middle" font-size="25" font-weight="700">ovn0</text>
+    <rect x="624" y="645" width="192" height="108" rx="54" fill="#eef5fd" stroke="#87acd0" stroke-width="2"/>
+    <text x="720" y="686" text-anchor="middle" font-size="23">Default VPC</text>
+    <text x="720" y="719" text-anchor="middle" font-size="23" font-weight="700">OVN router</text>
+    <polygon points="994,645 1088,645 1120,698 1088,753 994,753 962,698" fill="#eaf6f2" stroke="#8dbdae" stroke-width="2"/>
+    <text x="1041" y="688" text-anchor="middle" font-size="22">Underlay</text>
+    <text x="1041" y="720" text-anchor="middle" font-size="25" font-weight="700">Pod</text>
+
+    <g fill="none" stroke="#228b72" stroke-width="4" stroke-linejoin="round">
+      <polyline points="1041,754 1041,800 744,800 744,754"/>
+      <polyline points="696,754 696,800 443,800 443,754"/>
+      <polyline points="395,754 395,800 145,800 145,754"/>
+    </g>
+    <g fill="#228b72">
+      <polygon points="744,754 737,765 751,765"/>
+      <polygon points="443,754 436,765 450,765"/>
+      <polygon points="145,754 138,765 152,765"/>
+    </g>
+    <text x="600" y="841" text-anchor="middle" font-size="21" font-weight="700" fill="#19755e">Reply destination: node join IP. Return via U2O → default VPC router → join → ovn0.</text>
+
+    <circle cx="56" cy="923" r="15" fill="#337bba"/>
+    <text x="56" y="931" text-anchor="middle" font-size="23" font-weight="700" fill="#ffffff">i</text>
+    <text x="85" y="928" font-size="21" font-weight="700">Policy rules do not perform SNAT or rewrite a source IP already bound by an application.</text>
+    <text x="44" y="968" font-size="20" fill="#526477">Check dev / via / src with ip route get &lt;Pod IP&gt;; verify both directions with real probes and packet captures.</text>
+    <text x="44" y="999" font-size="18" fill="#64748b">Logical paths, not physical device locations. Automatic routes may select different source IPs across environments.</text>
+  </g>
+</svg>
