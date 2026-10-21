@@ -10,6 +10,7 @@ queries:
   - "How do I remove a stale region AppRelease after upgrading ACP from 4.0 to 4.3?"
   - "ACP 4.3.3 region AppRelease cleanup"
   - "helm.sh/resource-policy keep region AppRelease"
+id: KB261000033
 ---
 
 # Remove the Residual region AppRelease After Upgrading ACP from 4.0 to 4.3
