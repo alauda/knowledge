@@ -12,7 +12,7 @@ queries:
   - "helm.sh/resource-policy keep region AppRelease"
 ---
 
-# ACP 4.0 to 4.3 Upgrade Leaves the region AppRelease Behind (S2 Solution)
+# Remove the Residual region AppRelease After Upgrading ACP from 4.0 to 4.3
 
 ## Issue
 
