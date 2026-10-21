@@ -1,0 +1,88 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="880" viewBox="0 0 1200 880">
+  <rect width="1200" height="880" fill="#f6f8fb" />
+  <text x="44" y="53" font-family="Noto Sans SC, sans-serif" font-size="32" font-weight="700" fill="#142e49">Probe Underlay Pods through the join network</text>
+  <text x="44" y="90" font-family="Noto Sans SC, sans-serif" font-size="20" fill="#546779">Logical view: the OVN data plane runs across nodes; the router is not a dedicated physical device.</text>
+
+  <rect x="40" y="120" width="300" height="460" rx="22" fill="#ffffff" stroke="#bbc8d5" stroke-width="2" />
+  <text x="64" y="161" font-family="Noto Sans SC, sans-serif" font-size="25" font-weight="700" fill="#142e49">Kubernetes node</text>
+  <rect x="370" y="120" width="790" height="460" rx="22" fill="#edf5ff" stroke="#aac6e7" stroke-width="2" />
+  <text x="396" y="161" font-family="Noto Sans SC, sans-serif" font-size="25" font-weight="700" fill="#142e49">Default VPC · OVN logical network</text>
+
+  <rect x="90" y="200" width="210" height="66" rx="12" fill="#e7eff8" stroke="#7295bb" stroke-width="2" />
+  <text x="195" y="241" text-anchor="middle" font-family="Noto Sans SC, sans-serif" font-size="25" font-weight="600" fill="#142e49">kubelet probes</text>
+  <rect x="90" y="320" width="210" height="78" rx="12" fill="#e3edff" stroke="#3678c9" stroke-width="2" />
+  <text x="195" y="352" text-anchor="middle" font-family="Noto Sans SC, sans-serif" font-size="23" fill="#174d8d">Destination rule</text>
+  <text x="195" y="381" text-anchor="middle" font-family="Noto Sans SC, sans-serif" font-size="25" font-weight="700" fill="#174d8d">table 200</text>
+  <rect x="90" y="450" width="210" height="82" rx="12" fill="#ffffff" stroke="#3678c9" stroke-width="3" />
+  <text x="195" y="484" text-anchor="middle" font-family="Noto Sans SC, sans-serif" font-size="27" font-weight="700" fill="#174d8d">ovn0</text>
+  <text x="195" y="513" text-anchor="middle" font-family="Noto Sans SC, sans-serif" font-size="23" fill="#174d8d">Node join IP</text>
+
+  <line x1="195" y1="266" x2="195" y2="306" stroke="#2877d0" stroke-width="4" />
+  <polygon points="188,305 202,305 195,319" fill="#2877d0" />
+  <line x1="195" y1="398" x2="195" y2="436" stroke="#2877d0" stroke-width="4" />
+  <polygon points="188,435 202,435 195,449" fill="#2877d0" />
+  <polyline points="90,510 65,510 65,234 77,234" fill="none" stroke="#18977e" stroke-width="4" />
+  <polygon points="76,227 76,241 90,234" fill="#18977e" />
+
+  <rect x="407" y="451" width="170" height="80" rx="12" fill="#ffffff" stroke="#6b9bc9" stroke-width="2" />
+  <text x="492" y="485" text-anchor="middle" font-family="Noto Sans SC, sans-serif" font-size="27" font-weight="700" fill="#142e49">join</text>
+  <text x="492" y="515" text-anchor="middle" font-family="Noto Sans SC, sans-serif" font-size="21" fill="#546779">Logical switch</text>
+
+  <circle cx="720" cy="491" r="62" fill="#dbeafe" stroke="#3678c9" stroke-width="3" />
+  <path d="M691 479 H746 M736 470 L747 479 L736 488 M748 505 H694 M704 496 L693 505 L704 514" fill="none" stroke="#174d8d" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" />
+  <text x="720" y="398" text-anchor="middle" font-family="Noto Sans SC, sans-serif" font-size="24" font-weight="600" fill="#142e49">Default VPC</text>
+  <text x="720" y="428" text-anchor="middle" font-family="Noto Sans SC, sans-serif" font-size="21" fill="#142e49">OVN logical router</text>
+
+  <rect x="914" y="451" width="210" height="80" rx="12" fill="#ffffff" stroke="#6b9bc9" stroke-width="2" />
+  <text x="1019" y="485" text-anchor="middle" font-family="Noto Sans SC, sans-serif" font-size="26" font-weight="700" fill="#142e49">Underlay</text>
+  <text x="1019" y="515" text-anchor="middle" font-family="Noto Sans SC, sans-serif" font-size="21" fill="#546779">Logical switch</text>
+
+  <polygon points="1019,194 1087,232 1087,310 1019,348 951,310 951,232" fill="#d8f2e9" stroke="#18977e" stroke-width="3" />
+  <text x="1019" y="251" text-anchor="middle" font-family="Noto Sans SC, sans-serif" font-size="21" font-weight="700" fill="#116e5c">Workload</text>
+  <text x="1019" y="312" text-anchor="middle" font-family="Noto Sans SC, sans-serif" font-size="18" fill="#116e5c">Probe port</text>
+
+  <line x1="300" y1="475" x2="394" y2="475" stroke="#2877d0" stroke-width="4" />
+  <polygon points="393,468 393,482 407,475" fill="#2877d0" />
+  <line x1="407" y1="507" x2="313" y2="507" stroke="#18977e" stroke-width="4" />
+  <polygon points="314,500 314,514 300,507" fill="#18977e" />
+  <line x1="577" y1="475" x2="646" y2="475" stroke="#2877d0" stroke-width="4" />
+  <polygon points="645,468 645,482 659,475" fill="#2877d0" />
+  <line x1="659" y1="507" x2="590" y2="507" stroke="#18977e" stroke-width="4" />
+  <polygon points="591,500 591,514 577,507" fill="#18977e" />
+  <line x1="781" y1="475" x2="901" y2="475" stroke="#2877d0" stroke-width="4" />
+  <polygon points="900,468 900,482 914,475" fill="#2877d0" />
+  <line x1="914" y1="507" x2="794" y2="507" stroke="#18977e" stroke-width="4" />
+  <polygon points="795,500 795,514 781,507" fill="#18977e" />
+  <text x="848" y="545" text-anchor="middle" font-family="Noto Sans SC, sans-serif" font-size="22" font-weight="600" fill="#174d8d">U2O</text>
+  <text x="848" y="570" text-anchor="middle" font-family="Noto Sans SC, sans-serif" font-size="20" fill="#174d8d">Router port</text>
+  <line x1="1003" y1="451" x2="1003" y2="357" stroke="#2877d0" stroke-width="4" />
+  <polygon points="996,358 1010,358 1003,344" fill="#2877d0" />
+  <line x1="1035" y1="344" x2="1035" y2="438" stroke="#18977e" stroke-width="4" />
+  <polygon points="1028,437 1042,437 1035,451" fill="#18977e" />
+
+  <line x1="411" y1="222" x2="458" y2="222" stroke="#2877d0" stroke-width="4" />
+  <polygon points="457,215 457,229 471,222" fill="#2877d0" />
+  <text x="487" y="230" font-family="Noto Sans SC, sans-serif" font-size="23" fill="#174d8d">Request: source = node join IP</text>
+  <line x1="471" y1="273" x2="424" y2="273" stroke="#18977e" stroke-width="4" />
+  <polygon points="425,266 425,280 411,273" fill="#18977e" />
+  <text x="487" y="281" font-family="Noto Sans SC, sans-serif" font-size="23" fill="#116e5c">Reply: via OVN to the join IP</text>
+  <text x="411" y="330" font-family="Noto Sans SC, sans-serif" font-size="22" fill="#546779">Underlay ACL permits the join CIDR</text>
+
+  <rect x="40" y="615" width="1120" height="154" rx="22" fill="#fffaf0" stroke="#dbc59a" stroke-width="2" />
+  <text x="64" y="651" font-family="Noto Sans SC, sans-serif" font-size="24" font-weight="600" fill="#74501c">Physical networks</text>
+  <rect x="90" y="679" width="240" height="58" rx="12" fill="#ffffff" stroke="#c7b38d" stroke-width="2" />
+  <text x="210" y="716" text-anchor="middle" font-family="Noto Sans SC, sans-serif" font-size="20" fill="#74501c">Node physical network</text>
+  <line x1="330" y1="708" x2="688" y2="708" stroke="#c7b38d" stroke-width="3" stroke-dasharray="8 8" />
+  <circle cx="510" cy="708" r="26" fill="#fffaf0" stroke="#b97535" stroke-width="2" />
+  <path d="M495 693 L525 723 M525 693 L495 723" stroke="#b97535" stroke-width="3" />
+  <text x="510" y="671" text-anchor="middle" font-family="Noto Sans SC, sans-serif" font-size="21" fill="#9a5c25">Network isolation</text>
+  <rect x="700" y="679" width="210" height="58" rx="12" fill="#ffffff" stroke="#c7b38d" stroke-width="2" />
+  <text x="805" y="705" text-anchor="middle" font-family="Noto Sans SC, sans-serif" font-size="22" fill="#74501c">Physical gateway</text>
+  <polyline points="1019,531 1019,708 924,708" fill="none" stroke="#9f875f" stroke-width="3" />
+  <polygon points="925,701 925,715 911,708" fill="#9f875f" />
+  <rect x="933" y="596" width="190" height="64" rx="10" fill="#fffaf0" stroke="#c7b38d" stroke-width="2" />
+  <text x="1028" y="622" text-anchor="middle" font-family="Noto Sans SC, sans-serif" font-size="21" fill="#74501c">localnet / VLAN</text>
+  <text x="1028" y="648" text-anchor="middle" font-family="Noto Sans SC, sans-serif" font-size="18" fill="#74501c">Egress preserved</text>
+
+  <text x="44" y="811" font-family="Noto Sans SC, sans-serif" font-size="22" fill="#546779">Verify ip route get and actual packet captures: the source must be the node join IP.</text>
+<text x="805" y="728" text-anchor="middle" font-family="Noto Sans SC, sans-serif" font-size="17" fill="#74501c">Underlay network</text><text x="44" y="842" font-family="Noto Sans SC, sans-serif" font-size="21" fill="#546779">Traffic leaving through ovn0 alone does not prove that the return path works.</text><text x="1019" y="281" text-anchor="middle" font-family="Noto Sans SC, sans-serif" font-size="24" font-weight="700" fill="#116e5c">Pod</text></svg>

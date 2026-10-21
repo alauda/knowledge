@@ -1,0 +1,68 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="850" viewBox="0 0 1200 850">
+  <rect width="1200" height="850" fill="#f6f8fb"/>
+  <g font-family="Noto Sans SC, sans-serif" fill="#18344f">
+    <text x="40" y="53" font-size="31" font-weight="700">Without U2O: isolated networks block kubelet probes</text>
+    <text x="40" y="93" font-size="22" fill="#586c7e">Default VPC · Underlay with a physical gateway · u2oInterconnection: false</text>
+
+    <rect x="40" y="135" width="310" height="440" rx="20" fill="#edf5ff" stroke="#b3cae1" stroke-width="2"/>
+    <text x="65" y="175" font-size="24" font-weight="700">Node management</text>
+    <rect x="85" y="220" width="220" height="84" rx="13" fill="#ffffff" stroke="#5687b8" stroke-width="2"/>
+    <path d="M111 242 H133 M111 252 H133 M111 262 H126" fill="none" stroke="#3978ac" stroke-width="3"/>
+    <text x="157" y="253" font-size="25" font-weight="700">kubelet</text>
+    <text x="195" y="284" text-anchor="middle" font-size="21">HTTP / TCP probe</text>
+    <line x1="195" y1="304" x2="195" y2="435" stroke="#337dc0" stroke-width="4"/>
+    <polygon points="188,434 202,434 195,449" fill="#337dc0"/>
+    <text x="65" y="205" font-size="21" fill="#526f87">Target: Underlay Pod IP</text>
+    <rect x="85" y="449" width="220" height="76" rx="13" fill="#ffffff" stroke="#5687b8" stroke-width="2"/>
+    <text x="195" y="480" text-anchor="middle" font-size="23" font-weight="700">Management NIC</text>
+    <text x="195" y="510" text-anchor="middle" font-size="22">Node InternalIP</text>
+
+    <rect x="760" y="135" width="400" height="440" rx="20" fill="#fff9ed" stroke="#d8c59d" stroke-width="2"/>
+    <text x="785" y="175" font-size="24" font-weight="700" fill="#71521f">Underlay workload network</text>
+    <polygon points="960,196 1062,220 1062,263 960,287 858,263 858,220" fill="#e5f3ed" stroke="#4f9982" stroke-width="2"/>
+    <text x="960" y="250" text-anchor="middle" font-size="26" font-weight="700" fill="#276852">Workload Pod</text>
+    <rect x="825" y="318" width="270" height="58" rx="12" fill="#ffffff" stroke="#b8a377" stroke-width="2"/>
+    <text x="960" y="354" text-anchor="middle" font-size="21">Underlay logical switch</text>
+    <line x1="960" y1="318" x2="960" y2="298" stroke="#b09b71" stroke-width="3" stroke-dasharray="6 5"/>
+    <polygon points="954,299 966,299 960,287" fill="#b09b71"/>
+    <text x="960" y="412" text-anchor="middle" font-size="22" fill="#80683a">localnet / br-provider / VLAN</text>
+    <line x1="960" y1="449" x2="960" y2="424" stroke="#b09b71" stroke-width="3" stroke-dasharray="6 5"/>
+    <line x1="960" y1="393" x2="960" y2="384" stroke="#b09b71" stroke-width="3" stroke-dasharray="6 5"/>
+    <polygon points="954,386 966,386 960,376" fill="#b09b71"/>
+    <rect x="825" y="449" width="270" height="76" rx="13" fill="#ffffff" stroke="#b8a377" stroke-width="2"/>
+    <text x="960" y="480" text-anchor="middle" font-size="25" font-weight="700" fill="#71521f">Physical gateway</text>
+    <text x="960" y="510" text-anchor="middle" font-size="20" fill="#80683a">Physical route required</text>
+
+    <line x1="305" y1="487" x2="536" y2="487" stroke="#337dc0" stroke-width="4"/>
+    <polygon points="535,480 535,494 549,487" fill="#337dc0"/>
+    <line x1="601" y1="487" x2="811" y2="487" stroke="#c1aa82" stroke-width="3" stroke-dasharray="8 8"/>
+    <polygon points="810,480 810,494 824,487" fill="#c1aa82"/>
+    <rect x="552" y="438" width="46" height="98" rx="12" fill="#fff0ed" stroke="#c45b49" stroke-width="2"/>
+    <path d="M563 473 L587 501 M587 473 L563 501" stroke="#c64f3e" stroke-width="5" stroke-linecap="round"/>
+    <text x="558" y="386" text-anchor="middle" font-size="26" font-weight="700" fill="#b74c3c">Network isolation</text>
+    <text x="558" y="418" text-anchor="middle" font-size="23" fill="#b74c3c">No reachable probe path</text>
+    <text x="555" y="560" text-anchor="middle" font-size="23" font-weight="700" fill="#b74c3c">Blocked: Pod receives no probe</text>
+    <text x="557" y="224" text-anchor="middle" font-size="22" fill="#586c7e">Solid blue: probe request</text>
+    <text x="557" y="261" text-anchor="middle" font-size="22" fill="#80683a">Dashed: intended path</text>
+
+    <rect x="40" y="615" width="1120" height="145" rx="20" fill="#ffffff" stroke="#c3cfdb" stroke-width="2"/>
+    <text x="65" y="650" font-size="24" font-weight="700">No U2O connection from join to this Underlay subnet</text>
+    <rect x="75" y="680" width="150" height="48" rx="11" fill="#edf5ff" stroke="#8aaccd" stroke-width="2"/>
+    <text x="150" y="711" text-anchor="middle" font-size="24">ovn0</text>
+    <line x1="225" y1="704" x2="285" y2="704" stroke="#7899b9" stroke-width="3"/>
+    <polygon points="283,698 283,710 296,704" fill="#7899b9"/>
+    <rect x="297" y="680" width="150" height="48" rx="11" fill="#edf5ff" stroke="#8aaccd" stroke-width="2"/>
+    <text x="372" y="711" text-anchor="middle" font-size="24">join</text>
+    <line x1="447" y1="704" x2="508" y2="704" stroke="#7899b9" stroke-width="3"/>
+    <polygon points="506,698 506,710 519,704" fill="#7899b9"/>
+    <rect x="520" y="680" width="220" height="48" rx="11" fill="#edf5ff" stroke="#8aaccd" stroke-width="2"/>
+    <text x="630" y="711" text-anchor="middle" font-size="21">Default VPC router</text>
+    <line x1="740" y1="704" x2="791" y2="704" stroke="#c9b8b4" stroke-width="3" stroke-dasharray="7 6"/>
+    <path d="M801 691 L825 717 M825 691 L801 717" stroke="#c64f3e" stroke-width="4" stroke-linecap="round"/>
+    <text x="850" y="697" font-size="22" fill="#b74c3c">No U2O router port</text>
+    <text x="850" y="726" font-size="21" fill="#586c7e">No path around isolation</text>
+
+    <text x="40" y="797" font-size="20" fill="#586c7e">This diagram assumes isolated physical networks with no alternate route.</text>
+    <text x="40" y="827" font-size="20" fill="#586c7e">If physical connectivity or a dedicated path exists, verify the actual routing.</text>
+  </g>
+</svg>
