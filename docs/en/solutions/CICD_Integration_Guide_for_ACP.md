@@ -5,10 +5,15 @@ products:
 kind:
    - Solution
 id: KB250500011
+i18n:
+  additionalPrompts: >-
+    Keep every occurrence of "Alauda Container Platform Progressive Delivery" unchanged in English.
+    Keep the final modification notice and complete trademark attribution and non-endorsement notice verbatim in English.
+    Do not translate, paraphrase, shorten or omit the notice beginning "Argo® is a registered trademark of LF Projects, LLC." and ending "identification purposes only."
 ---
 # CI/CD Integration Example with Alauda Container Platform
 
-This document provides an example CI/CD pipeline integration for deploying applications on the Alauda Container Platform (ACP), using tools such as Argo Rollouts, Gateway API, and Skopeo. This is one of many possible approaches. Users are encouraged to adapt this example to fit their own deployment strategies and tools.
+This document provides an example CI/CD pipeline integration for deploying applications on the Alauda Container Platform (ACP), using Alauda Container Platform Progressive Delivery based on upstream Argo Rollouts, Gateway API, and Skopeo. This is one of many possible approaches. Users are encouraged to adapt this example to fit their own deployment strategies and tools.
 
 For alternative deployment methods, please refer to:
 
@@ -441,3 +446,8 @@ Once the pipeline is configured and fine-tuned, you can use the pipeline to depl
 ## Conclusion
 
 In this tutorial, we have covered the steps to configure and deploy a pipeline for application rollout using Argo Rollouts. We have also discussed how to monitor the application and make adjustments as needed. By following these steps, you can ensure a smooth and successful deployment of your application.
+Modified by Alauda, 2026-10-21.
+
+Argo® is a registered trademark of LF Projects, LLC.
+
+Alauda is an independent vendor. This product is not affiliated with, endorsed by, or sponsored by LF Projects, LLC. All trademarks are the property of their respective owners and are used here for identification purposes only.

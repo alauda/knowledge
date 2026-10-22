@@ -4,6 +4,11 @@ products:
 kind:
    - Article
 id: KB1751435394-1D7E
+i18n:
+  additionalPrompts: >-
+    Keep every occurrence of "Alauda Container Platform Progressive Delivery" unchanged in English.
+    Keep the final modification notice and complete trademark attribution and non-endorsement notice verbatim in English.
+    Do not translate, paraphrase, shorten or omit the notice beginning "Argo® is a registered trademark of LF Projects, LLC." and ending "identification purposes only."
 ---
 # ACP Deployment Strategies
 
@@ -34,7 +39,7 @@ Alauda Container Platform offers four implementation methods for blue/green and 
 | 3       | ACP API           | Istio VirtualService | North-south and east-west | Blue/green and canary |
 | 4       | ASM API (Flagger) | Istio VirtualService | North-south and East-west | Blue/green and canary |
 
-**Note**: Alternative methods leveraging Argo Rollouts are covered in ACP Deployment Strategies with Argo Rollouts.
+**Note**: Alternative methods leveraging Alauda Container Platform Progressive Delivery, based on upstream Argo Rollouts, are covered in ACP Deployment Strategies with Argo Rollouts.
 
 
 #### Method 1: Using Kubernetes Service to implement blue/green deployment
@@ -959,8 +964,8 @@ You can monitor the progress of the canary deployment through:
 1. Alauda Service Mesh UI to monitor metrics
    ![alauda mesh ui](../../assets/canary.png "canary deploy")
 
-2. The demo UI
-   ![demo ui](../../assets/demo-gw.png "demo")
+2. The demo workload's traffic visualization (cropped view; not the Alauda product UI)
+   ![Demo workload traffic visualization](../../assets/demo-gw.png "Cropped upstream demo workload visualization")
 
 3. Watching VirtualService changes
 
@@ -1153,3 +1158,8 @@ When choosing a deployment strategy, consider the following factors:
 
 Alauda Container Platform's flexibility allows you to choose the most appropriate deployment strategy based on your specific requirements, ensuring reliable and efficient application updates with minimal risk and downtime.
 
+Modified by Alauda, 2026-10-21.
+
+Argo® is a registered trademark of LF Projects, LLC.
+
+Alauda is an independent vendor. This product is not affiliated with, endorsed by, or sponsored by LF Projects, LLC. All trademarks are the property of their respective owners and are used here for identification purposes only.
