@@ -10,23 +10,48 @@ ProductsVersion:
 
 # Alauda DevOps Best Practices: Overview and Scenario Guide
 
-This series helps application and platform teams combine Alauda DevOps capabilities into a delivery workflow. Start with a working pipeline, connect build outputs to controlled releases, and then standardize the platform for multiple isolated projects.
+A team starting with one repository usually needs a build and a test result first.
+Once that works, the questions change: how does the tested image reach production,
+who approves it, and what must the platform prepare before another team can use the
+same process? This series works through those questions in that order. It explains
+how to choose and combine capabilities, then points to the product instructions
+and reference files needed to implement the choice.
 
-The configuration baseline is Alauda DevOps Pipelines 4.15, Artifact Hub Shim 1.0, Connectors 1.14, and Alauda Container Platform GitOps 4.4 on a compatible ACP installation. Use the compatibility requirements of each component when selecting packages. Examples use GitLab, Harbor, Nexus, and SonarQube. They describe a reference implementation, with environment preparation and acceptance checks required before production use.
+The configuration baseline is Alauda DevOps Pipelines 4.15, Artifact Hub Shim 1.0,
+Connectors 1.14, and Alauda Container Platform GitOps 4.4 on a compatible ACP
+installation. Follow each component's compatibility requirements when selecting
+packages. Examples use GitLab, Harbor, Nexus, and SonarQube. The reference design
+requires environment preparation and acceptance checks before production use.
 
-The series has three entry points:
+## How to use this guide
 
-| Your starting point | Read next |
-| --- | --- |
-| You need a build or test pipeline for one repository. | [Start a pipeline](#start-a-pipeline) below. |
-| A pipeline already runs; you need a traceable path from a commit to production. | [From Commit to Production on ACP](./From_Commit_to_Production_on_ACP.md). |
-| You operate a shared platform and need repeatable configuration and project onboarding. | [Managing Platform Configuration and Onboarding Isolated Projects](./Managing_Platform_Configuration_and_Onboarding_Isolated_Projects_with_Argo_CD_and_Tekton_on_ACP.md). |
+Choose an entry according to the problem you have now:
 
-The [companion samples](https://github.com/AlaudaDevops/devops-best-practices-samples) contain the platform repository, project declaration, onboarding pipelines, GitOps repository template, application delivery examples, and acceptance scripts. Replace example addresses, image references, identities, and encrypted credential placeholders before using them.
+| Your starting point | What you need to decide | Read next |
+| --- | --- | --- |
+| You have one repository, or a simple job without a repository, and want a working pipeline. | Where to keep the definition and how to start it. | [Start a pipeline](#start-a-pipeline). |
+| A pipeline already runs, but build, test, and release are separate manual activities. | How to carry the same image through environments and where to introduce release controls. | [Connect the delivery stages](#connect-the-delivery-stages), then [From Commit to Production on ACP](./From_Commit_to_Production_on_ACP.md). |
+| Several teams will share the platform, and every project requires repeated administration. | Which settings and responsibilities to standardize before handing the platform to projects. | [Prepare a shared platform](#prepare-a-shared-platform), then [Managing Platform Configuration and Onboarding Isolated Projects](./Managing_Platform_Configuration_and_Onboarding_Isolated_Projects_with_Argo_CD_and_Tekton_on_ACP.md). |
+
+Each scenario below explains when a capability helps, how it fits with the others,
+and where to continue. The delivery and platform articles develop the choices,
+configuration points, and expected results. For a guided implementation of the
+application workflow, use the [Application CI/CD tutorials](https://docs.alauda.io/alauda-devops-pipelines/4.15/pipelines/tutorials/index.html).
+
+The [companion samples](https://github.com/AlaudaDevops/devops-best-practices-samples)
+contain a platform repository, project declarations, onboarding pipelines, a
+project GitOps template, application CI/CD, and acceptance scripts. They are
+reference files to adapt. Replace example addresses, images, identities, and
+encrypted credential placeholders before use. The articles explain the decisions
+and boundaries so that reading the files is not a prerequisite for understanding
+the design.
 
 ## The overall design
 
-The delivery layer moves one change from source to an immutable image and then to an environment. The platform layer supplies reusable definitions, tool access, namespaces, and operating settings. The control layer decides what may run, who approves a release, and what evidence must be retained.
+The design has three layers. The **delivery layer** follows one change from source
+to a running application. The **platform layer** provides the definitions, tool
+access, and project environments that make that path repeatable. The **control
+layer** places authorization and evidence checks at specific points on the path.
 
 ```mermaid
 flowchart TB
@@ -57,74 +82,214 @@ flowchart TB
   Git -.-> Connectors
 ```
 
-Application developers own source and application delivery configuration. Platform administrators own shared components, admission rules, administrator credentials, and onboarding. Release approvers authorize a selected digest after examining its build and test evidence. Separate the release identity from the build identity.
+| Layer | What belongs here | Who makes the decisions |
+| --- | --- | --- |
+| Delivery | Source, triggers, build and scan results, image digests, test deployment, and production changes. | Application developers and project maintainers. |
+| Platform | Component settings, versioned catalog content, administrator Connectors, encrypted credentials, project declarations, and deployment boundaries. | Platform administrators. |
+| Control | Required merge checks, release approval, promotion access, image admission, and retained audit evidence. | Platform administrators and designated release approvers. |
+
+The layers have different reconciliation owners. Argo CD reconciles the objects
+tracked in the platform or project GitOps repository. Onboarding creates or
+reconciles namespaces, project Connectors, and external tool tenants; Argo CD does
+not automatically manage those external operations. ACP creates the namespace
+with the same name as its project, which onboarding adopts. Assign one owner to
+each resource or field so that two controllers do not repeatedly undo each other.
+
+Separating build and release identities also matters. A developer can produce a
+candidate image; the release decision authorizes a particular digest after its
+build and test evidence is examined. A signature, approval, and production Git
+change each establish a different part of that record.
 
 ## Start a pipeline
 
-Choose the simplest definition model that meets the team's needs. The models can coexist.
+For a single application, first decide who should maintain the definition and
+whether definition changes need the same review history as source changes. A
+simple manually operated job can start in the cluster. A team that wants
+merge-request checks benefits from PaC. When several projects share the same
+workflow, centralize its implementation and let projects supply inputs.
 
-| Model | Definition and trigger | Use it when |
+| Model | Definition and execution | Choose it when | What you take on |
+| --- | --- | --- | --- |
+| Pipeline in the cluster | Maintain a Pipeline in a project namespace; save parameters, Workspaces, and Integrations in a Run Template. | A small number of jobs need a straightforward entry, including jobs without a code repository. | Definition history and permission control are maintained through the platform process. |
+| Pipelines as Code (PaC) | Keep PipelineRun definitions in `.tekton/`; repository events start runs and report results. | Definitions should evolve with source, and reviewers need checks on a merge request. | Repository access, webhook delivery, definition provenance, and credentials available to proposed source must be governed. |
+| Centrally managed template | Publish a versioned catalog Pipeline, or maintain a Pipeline in a controlled namespace; projects reference it. | Multiple projects need a shared process with deliberate upgrades. | The platform owns compatibility and published versions; projects still own their inputs and adoption. |
+
+These choices can coexist. PaC can reference the central Pipeline through a
+resolver, leaving only trigger annotations and project inputs in `.tekton/`.
+A Run Template can expose that same centrally maintained workflow to manual,
+event-driven, and scheduled execution. Central reuse therefore does not require
+giving up the repository's review experience.
+
+Start with [Run Template](https://docs.alauda.io/alauda-devops-pipelines/4.15/pipelines/how_to/run_template.html),
+[Configure GitLab Repository](https://docs.alauda.io/alauda-devops-pipelines/4.15/pac/guides/configure_gitlab_repo.html),
+[Configure GitHub Repository](https://docs.alauda.io/alauda-devops-pipelines/4.15/pac/guides/configure_github_repo.html),
+or [Centralized Management with Hub Pipeline and Run Template](https://docs.alauda.io/alauda-devops-pipelines/4.15/pipelines/how_to/hub_pipeline_run_template_centralized_management.html).
+The delivery article explains how the two event routes connect to these definitions.
+
+### Choose how work starts
+
+| When work should start | Entry | Typical reason |
 | --- | --- | --- |
-| Pipeline in the cluster | Create a Pipeline in a project namespace. Save parameters, Workspaces, and Integrations in a Run Template. Start manually, through Triggers, or on a schedule. | A small number of pipelines need a straightforward execution entry. |
-| Pipelines as Code (PaC) | Keep PipelineRun definitions in the application's `.tekton/` directory. Code events start runs and report results to the merge request. | Definitions should evolve with source and participate in merge-request checks. |
-| Centrally managed template | Maintain a versioned Pipeline in the catalog, or a Pipeline in a controlled namespace. Projects supply parameters through a Run Template or a PaC PipelineRun using a resolver. | Multiple projects should share the same standard workflow. |
+| A person requests it | Console or rendered PipelineRun from a Run Template. | First validation, a regression run, or a release decision. |
+| Code changes | PaC, or Triggers with a Run Template. | Validate a merge request or build after a merge. |
+| An artifact event arrives | Harbor event trigger. | Hand an image digest to a later stage. |
+| An interval elapses | ScheduledTrigger. | Reconcile tool resources, rotate credentials, or run a periodic check. |
+| Another system requests it | Incoming Webhook. | A change-management system or an internal portal starts work. |
 
-For a PaC retry from a merge request, comment `/test <pipelinerun-name> branch:<branch>` on the merge request. For a push-triggered run, comment the same form on the commit at the head of that branch. The `branch` value makes the source explicit. Refer to [Trigger PAC Pipelines](https://docs.alauda.io/alauda-devops-pipelines/4.15/pac/how_to/trigger_pipeline.html) for the complete syntax. Use one event route for each event: PaC or Triggers. Enabling both routes for the same event can start duplicate work.
+Use one route, PaC or Triggers, for the same code event. Both can create runs, so
+connecting both to that event can duplicate the work. Prefer PaC when the
+repository review experience is central; use Triggers when the platform owns the
+event mapping and Run Template. A schedule is useful for reconciliation because
+it reuses the same inputs and execution definition as a manual recovery run.
 
-Start with [Run Template](https://docs.alauda.io/alauda-devops-pipelines/4.15/pipelines/how_to/run_template.html), [Configure GitLab Repository](https://docs.alauda.io/alauda-devops-pipelines/4.15/pac/guides/configure_gitlab_repo.html), or [Centralized Management with Hub Pipeline and Run Template](https://docs.alauda.io/alauda-devops-pipelines/4.15/pipelines/how_to/hub_pipeline_run_template_centralized_management.html). The [Application CI/CD tutorials](https://docs.alauda.io/alauda-devops-pipelines/4.15/pipelines/tutorials/index.html) provide a guided implementation.
+For a PaC retry from a merge request, comment
+`/test <pipelinerun-name> branch:<branch>` on the merge request. For a push-triggered
+run, comment the same form on the commit at the head of that branch. The explicit
+branch makes the requested source clear. The release-candidate `ci` sample has an
+additional runtime restriction described below; it intentionally rejects comment
+retries. See [Trigger PAC Pipelines](https://docs.alauda.io/alauda-devops-pipelines/4.15/pac/how_to/trigger_pipeline.html)
+for the complete syntax.
 
-For systems that do not use Git events, an Incoming Webhook can start a PipelineRun. Send an HTTP `POST` with a JSON body containing `repository`, `namespace`, `branch`, `pipelinerun`, and `secret` to the PaC controller's `/incoming` endpoint. For example:
+For an Incoming Webhook, send an HTTP `POST` with a JSON body to the PaC
+controller's `/incoming` endpoint. The five fields identify the Repository,
+namespace, branch, PipelineRun definition, and shared secret:
 
 ```bash
+# PAC_CONTROLLER_URL is the platform-provided controller endpoint.
 curl -i -X POST "$PAC_CONTROLLER_URL/incoming" \
   -H 'Content-Type: application/json' \
   -d '{"repository":"<repository>","namespace":"<namespace>","branch":"main","pipelinerun":"<pipelinerun>","secret":"<webhook-secret>"}'
 ```
 
-Treat the call as accepted only when it returns HTTP `202` and a new PipelineRun appears. An HTTP `200` response with an empty body can mean that no run was triggered, for example because the secret did not match. The controller URL, route exposure, and secret are platform prerequisites; see [Incoming Webhooks](https://docs.alauda.io/alauda-devops-pipelines/4.15/pac/how_to/incoming_webhooks.html).
+Treat the request as accepted only when HTTP `202` is returned and a new
+PipelineRun appears. An empty HTTP `200` can mean that no run matched, for example
+because the secret did not match. Keep the secret in the caller's credential
+management. Controller configuration, route exposure, and authentication are
+platform prerequisites; see [Incoming Webhooks](https://docs.alauda.io/alauda-devops-pipelines/4.15/pac/how_to/incoming_webhooks.html).
 
 ## Connect the delivery stages
 
-| Requirement | Recommended combination | Detailed guidance |
+Once CI runs, the next problem is preserving the relationship between what was
+built, what was tested, and what is released. Pass `repository@sha256:<digest>`
+between stages. A tag helps someone recognize a release, but moving the tag does
+not change the digest recorded in an environment's deployment configuration.
+
+For development or test, a direct workload update can be sufficient. Production
+often needs a reviewed record of desired state, which makes a GitOps change a
+useful deployment entry. Separating the production artifact project adds another
+decision: who may copy an approved candidate into that project? Add each control
+for the decision it serves.
+
+| Situation | Combination and reason | Continue with |
 | --- | --- | --- |
-| Build a traceable artifact | Reuse catalog Tasks, scan the output, and pass its digest to later stages. | [From Commit to Production](./From_Commit_to_Production_on_ACP.md). |
-| Deploy to development or test | Update the workload by digest directly when Git history of environment state is unnecessary. | [Application CI/CD tutorials](https://docs.alauda.io/alauda-devops-pipelines/4.15/pipelines/tutorials/index.html). |
-| Deploy to production | Review a change to the production GitOps repository; Argo CD reconciles the selected digest. | [Alauda Container Platform GitOps](https://docs.alauda.io/gitops/4.4/). |
-| Separate production artifact access | Approve and copy the selected image by digest into a production registry project. | [Promote Artifacts with Skopeo Copy](https://docs.alauda.io/alauda-devops-artifacthub-shim/1.0/catalog/how_to/promote_artifacts_with_skopeo_copy.html). |
-| Record who approved a release | Add an ApprovalTask, use group resource names, and retain its approval response. | [Manual Approval Gate](https://docs.alauda.io/alauda-devops-pipelines/4.15/pipelines/how_to/manual_approval_gate.html). |
-| Verify image signatures | Configure Chains keys and registry access centrally; verify the image by digest before promotion and at deployment admission. | [Signing Key Configuration](https://docs.alauda.io/alauda-devops-pipelines/4.15/chains/configure/signing_key_configuration.html). |
-| Hand off an artifact event | Map a Harbor event to the next pipeline, carrying the digest. Check scan and signing evidence separately. | [Use Harbor Event Triggers](https://docs.alauda.io/alauda-devops-pipelines/4.15/triggers/how_to/harbor_events.html). |
+| One commit must produce a traceable, tested image. | Reuse catalog Tasks for build and scan, then retain the resulting digest and run evidence. | [From Commit to Production](./From_Commit_to_Production_on_ACP.md). |
+| Test should update quickly and Git history of its state is unnecessary. | Deploy the digest directly with an authorized workload or Helm Task. | [Application CI/CD tutorials](https://docs.alauda.io/alauda-devops-pipelines/4.15/pipelines/tutorials/index.html). |
+| Production state must be reviewed and recoverable from Git. | Update the production GitOps reference through a merge request, then let Argo CD reconcile it. | [GitOps](https://docs.alauda.io/gitops/4.4/). |
+| Build and production registry access must be separate. | Copy the selected digest to a private production project with a release identity. | [Promote Artifacts with Skopeo Copy](https://docs.alauda.io/alauda-devops-artifacthub-shim/1.0/catalog/how_to/promote_artifacts_with_skopeo_copy.html). |
+| A person must authorize the release and leave a record. | Add an ApprovalTask and retain its responses; configure a separate Git review where required. | [Manual Approval Gate](https://docs.alauda.io/alauda-devops-pipelines/4.15/pipelines/how_to/manual_approval_gate.html). |
+| Deployment must check a platform-controlled signer. | Configure Chains centrally and verify the digest before release and at admission. | [Signing Key Configuration](https://docs.alauda.io/alauda-devops-pipelines/4.15/chains/configure/signing_key_configuration.html). |
+| The registry should hand an image to a later stage. | Carry the Harbor event's digest into the next run and check its CI evidence. | [Harbor event triggers](https://docs.alauda.io/alauda-devops-pipelines/4.15/triggers/how_to/harbor_events.html). |
 
-Promotion copies a selected image; it does not establish that the image passed CI. The approver must match the digest with a successful trusted build and the test environment. For the sample, a trusted CI result is the `ci` PipelineRun for a `push` event on `main`; the sample rejects comment-triggered `ci` runs before building, and uses a separate definition for merge-request validation. The project credential still needs a separate scratch registry boundary to prevent proposed code from writing release candidates. Signatures establish the configured signer's statement, not which pipeline produced the image; their meaning also depends on control over the signing key and the definitions allowed to run.
+An image push event establishes that an image arrived. Promotion establishes that
+bytes were copied through a selected path. Neither establishes that CI passed.
+The approver must correlate the digest with a successful trusted build, scanning,
+and the test deployment. A signature establishes the configured signer's
+statement; its meaning depends on who controls the key and which definitions and
+source are allowed to use the signing path.
 
-The samples deliberately keep test CD, promotion, and production CD as manually started runs. Their inputs come from the preceding run's digest result. Harbor-driven automation is a separate integration step. The first production deployment waits for a promoted image; after that image is promoted, follow the same reviewed production GitOps path for later releases.
+### What the delivery sample chooses
+
+The sample uses GitOps for both test and production so that test exercises the
+same synchronization path as production. Test changes commit directly; production
+changes propose a merge request. It uses separate source and production registry
+projects, with a separate release identity and an approval node before copying.
+These are example choices to compare with your own review and artifact-access
+requirements.
+
+Test CD, promotion, and production CD are manually started and take the preceding
+stage's digest. This makes every handoff visible while establishing the workflow.
+Harbor-driven automation can be added after event authentication, parameter
+mapping, and CI-result correlation are configured. The first production deployment
+waits for the first promoted image and its reviewed production GitOps change.
+
+For this sample, a trusted CI result is `ci` for a `push` on `main`. A pre-build
+check reads the actual PaC event and branch annotations and rejects comment-triggered
+`ci` runs before building, including comments on `main`. Merge requests use a
+separate definition and scratch image repository. The shared project credential
+still covers both repositories; a separate scratch registry project and restricted
+credential are needed to prevent proposed source from writing release candidates.
 
 ## Prepare a shared platform
 
-Platform settings are administrator decisions. Roll them out in stages and check [Feature Maturity](https://docs.alauda.io/alauda-devops-pipelines/4.15/overview/feature_maturity.html) for the selected release.
+As more teams join, repeated administration becomes an ownership problem. The
+platform must decide which definitions, tool resources, credentials, policies,
+and retention settings each project receives. Standardize those decisions before
+onboarding, then let projects choose their application-specific workflow within
+the established boundary.
 
-| Platform concern | Recommended approach |
-| --- | --- |
-| Tool access | Use project-scoped Connectors. Proxy access uses short-lived workload tokens. Manage image pull Secrets, PaC clone credentials, and Chains registry credentials as separate long-lived credential responsibilities. A project owner who can create Pods in a credential-bearing namespace can use the credentials in that namespace. |
-| Project onboarding | Orchestrate the four Connectors automatic creation Tasks, then seed a project GitOps repository and propose platform registration through a merge request. Complete the administrator prerequisites and acceptance checks. |
-| Platform configuration | Keep component settings, policies, encrypted administrator credentials, and project declarations in a platform repository. Assign one owner to each resource or field. |
-| Namespace isolation | Use separate project namespaces and tool-side tenants. Separate build, delivery, and workload namespaces and restrict access to administrator namespaces. |
-| Execution policy | Use platform ClusterPolicies and project Policies. Restrict direct TaskRun and CustomRun creation. Optionally require approved resolver types and coordinates. Move from Audit to Enforce after checking intended workflows. |
-| Cleanup | Select one cleanup mechanism. For event-based Pruner, review global defaults and namespace override settings before enabling deletion. A global first sync can affect every namespace, with successful and failed history counted separately; inventory tenants and notify owners before changing the defaults. |
-| Audit history | Store run records and logs in external Results storage with an explicit retention period. Export approval evidence separately before deleting its objects. |
-| Scheduled work | Use ScheduledTrigger or CronJob for reconciliation and rotation, with failure alerts and no overlapping runs for a tenant. The sample uses an atomic per-project lock; operators must inspect failed or cancelled runs before clearing a retained lock. |
+| Platform situation | Approach and reason | Detailed guidance |
+| --- | --- | --- |
+| Pipelines need tools without distributing administrator credentials. | Use project Connectors and proxy workload tokens; track the remaining long-lived credentials separately. | [Connectors Proxy](https://docs.alauda.io/alauda-devops-connectors/1.14/connectors/concepts/connectors_proxy.html) and [CSI Driver](https://docs.alauda.io/alauda-devops-connectors/1.14/connectors/concepts/connectors_csi.html). |
+| Each project needs resources in four external tools. | Orchestrate the four Connectors automatic creation Tasks from a reviewed declaration; assign one reconciliation owner per tenant. | [Onboarding and product Tasks](./Managing_Platform_Configuration_and_Onboarding_Isolated_Projects_with_Argo_CD_and_Tekton_on_ACP.md#reuse-the-product-tasks). |
+| Platform settings exist only in a running cluster. | Keep component settings, policies, encrypted credentials, and project declarations in a platform repository. | [Platform configuration](./Managing_Platform_Configuration_and_Onboarding_Isolated_Projects_with_Argo_CD_and_Tekton_on_ACP.md). |
+| Teams must not change one another's environments or credentials. | Separate namespaces and tool tenants, constrain deployment identities, and verify effective access. | [Project boundaries](./Managing_Platform_Configuration_and_Onboarding_Isolated_Projects_with_Argo_CD_and_Tekton_on_ACP.md#accept-the-project-boundaries). |
+| Projects need restrictions beyond the shared baseline. | Combine platform ClusterPolicies with project Policies; restrict direct TaskRun and CustomRun creation and optionally constrain definition sources. | [Pipeline execution constraints](https://docs.alauda.io/alauda-devops-pipelines/4.15/pipelines/how_to/constrain_pipeline_execution_with_kyverno.html). |
+| Cluster history must be cleaned while audit evidence remains available. | Select Pruner settings and external Results storage together, with separate approval-evidence retention. | [Audit and recovery](./Managing_Platform_Configuration_and_Onboarding_Isolated_Projects_with_Argo_CD_and_Tekton_on_ACP.md#preserve-audit-records-and-plan-recovery). |
+| Credentials need periodic reconciliation or renewal. | Schedule the same onboarding workflow with failure alerts and a per-project concurrency lock. | [ScheduledTrigger](https://docs.alauda.io/alauda-devops-pipelines/4.15/triggers/how_to/scheduledtriggers.html) and [reconciliation](./Managing_Platform_Configuration_and_Onboarding_Isolated_Projects_with_Argo_CD_and_Tekton_on_ACP.md#reconcile-and-rotate-deliberately). |
+| Another system initiates work. | Expose an authenticated Incoming Webhook and define what acceptance and completion mean to the caller. | [Incoming Webhooks](https://docs.alauda.io/alauda-devops-pipelines/4.15/pac/how_to/incoming_webhooks.html). |
 
-Results Watcher scope deserves a separate rollout decision. Its default watch scope can affect finished runs across the cluster and add `results.tekton.dev/*` finalizers. Scope it before enabling it. Disabling archiving does not remove existing finalizers; follow the product recovery procedure before cleanup. After Pruner removes cluster objects, the external Results store is the audit source.
+Proxy workload tokens do not remove every long-lived credential responsibility.
+Image pull Secrets, PaC clone credentials, and Chains registry credentials still
+need scoped access, rotation, and recovery. A project owner who can create Pods
+in a credential-bearing namespace can use those credentials. Administrator,
+release, and signing namespaces therefore need explicit run-creation boundaries.
 
-The platform repository is the durable, reviewable source for configuration and project boundaries. It makes changes auditable and repeatable, but it is not a backup for sealed-secrets keys, signing keys, external tool data, or the Results store. Keep those dependencies in a separate recovery plan. Reverting a registration commit can prune an ACP project and its same-named namespace, so treat that action as decommissioning rather than an ordinary rollback.
+Cleanup and archiving also have shared consequences. Event-based Pruner defaults
+can affect every namespace on the first synchronization, with successful and
+failed history counted separately. Inventory tenants and their retention needs
+before enabling deletion. Results Watcher can add `results.tekton.dev/*`
+finalizers to finished runs across its watch scope; define that scope before
+enabling it. Disabling archiving does not remove existing finalizers. Follow the
+product recovery procedure before cleanup, and verify access to the external
+Results store that remains after live objects are pruned.
 
-The [platform article](./Managing_Platform_Configuration_and_Onboarding_Isolated_Projects_with_Argo_CD_and_Tekton_on_ACP.md) explains the 18 platform decisions, repository layout, ownership boundaries, onboarding workflow, rotation, and acceptance checks.
+The [platform article](./Managing_Platform_Configuration_and_Onboarding_Isolated_Projects_with_Argo_CD_and_Tekton_on_ACP.md)
+explains the 18 decisions, their repository layers, onboarding outputs,
+permissions, rotation, and acceptance. These are administrator-managed settings;
+check [Feature Maturity](https://docs.alauda.io/alauda-devops-pipelines/4.15/overview/feature_maturity.html)
+and introduce them in stages. The platform repository provides durable
+configuration and a review trail. Keys, external tool data, and Results storage
+need separate backups. Reverting a project registration can prune the ACP project
+and its same-named namespace, so review that operation as decommissioning.
+
+## Choose an adoption path
+
+| What the team needs now | Start with | Add when the requirement appears |
+| --- | --- | --- |
+| A small number of jobs. | Cluster Pipeline and a Run Template. | PaC for source review; central templates when reuse becomes worthwhile. |
+| A traceable application delivery path. | Build and scan, pass digests, and choose deployment per environment. | Production Git review, approval, artifact promotion, and admission according to the release boundary. |
+| A platform for isolated projects. | Shared baselines, administrator prerequisites, and a reviewed project declaration. | Scheduled reconciliation, deliberate rotation, policy enforcement, and retained audit evidence after acceptance. |
+
+Each row can be adopted incrementally. A team can keep a simple job in the
+cluster while its main application uses PaC and a shared catalog Pipeline. Release
+controls should answer the environment's authorization and evidence requirements.
+Adding a control also adds a platform owner, prerequisites, and an operational
+recovery responsibility.
 
 ## Operate without internet access
 
-Make the catalog, pinned tool and base images, package dependencies, certificates, and vulnerability databases available through the platform's approved internal services. Runtime pipelines must resolve Tasks and Pipelines from local catalog or cluster sources. The sample CI configuration points Trivy at `registry.example.com/mirror/trivy-db:2`; replace it with a reachable database mirror and grant the scanner access.
+Make the catalog, pinned tool and base images, package dependencies, certificates,
+and vulnerability databases available through approved internal services. Runtime
+pipelines must resolve Tasks and Pipelines from local catalog or cluster sources.
+The sample points Trivy at `registry.example.com/mirror/trivy-db:2`; replace it with
+a reachable database mirror and grant the scanner access.
 
-The degree of network isolation, number of teams, and required approval evidence are deployment inputs that the platform team must decide. Capacity sizing, migration and decommissioning automation, platform disaster recovery, customer change-management integration, and offline package distribution procedures are outside this series. Define those procedures for the target environment.
+The degree of network isolation, number of teams, and required approval evidence
+are deployment inputs for the platform team. Capacity sizing, migration and
+decommissioning automation, platform disaster recovery, customer change-management
+integration, and offline package distribution procedures require their own
+operating plans. This series provides the choices and configuration boundaries
+from which to develop those plans.
 
 ## Related information
 
