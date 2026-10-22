@@ -674,7 +674,7 @@ broad role, and a project label does not constrain every writer.
 
 | Boundary | Result and remaining condition |
 | --- | --- |
-| Namespace and Pod Security | Workloads, build, and delivery have distinct namespaces and security levels. The sample owner binding grants `edit` in the project namespace only. |
+| Namespace and Pod Security | Workloads, build, and delivery have distinct namespaces and security levels. The sample owner binding grants `admin` in the project namespace only. |
 | Deployment authorization | Effective AppProject destinations constrain location; the platform admission boundary constrains sensitive kinds written by the actual Argo CD identities. Direct Kubernetes writers still need RBAC restrictions. |
 | Pipeline routing | Repositories and triggers route events to the intended project. Definition-source and direct-run policies constrain execution only where installed and enforced. |
 | External tool tenancy | GitLab group, private Harbor projects, Nexus repositories/user, and SonarQube permissions are scoped per project. Verify instance-wide anonymous and visibility settings as prerequisites. |
@@ -699,7 +699,7 @@ The following matrix summarizes the six roles and the grants supplied or require
 | Role | Platform repo | Project declaration | Project namespace | Delivery namespace | GitOps `envs/prod` | Production | Connectors |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | Platform administrator | Write, prerequisite | Write, prerequisite | Administrator, prerequisite | Apply definitions and start runs | Configure protection separately | Administrator, prerequisite | Administrator Connectors |
-| Application developer / project owner | No Git grant supplied | No Git grant supplied | Owners group gets `edit` in `shop` | No sample binding | No Git grant supplied | No workload binding supplied | Can use credentials in `shop` through Pods |
+| Application developer / project owner | No Git grant supplied | No Git grant supplied | Owners group gets `admin` in `shop` | No sample binding | No Git grant supplied | No workload binding supplied | Can read project Secrets and use credentials in `shop` through Pods |
 | Release approver | No grant supplied | No grant supplied | No binding supplied | ApprovalTask response; optional console read role | No Git review role supplied | No workload binding supplied | No mount grant supplied |
 | CI ServiceAccount | No access supplied | No access supplied | Runs in `shop-build` | No binding supplied | No writer supplied | No workload binding supplied | Mount/proxy grants for project Harbor, SonarQube, Nexus |
 | Delivery ServiceAccount | No access supplied | No access supplied | No binding supplied | Executes CD; no run-creation grant supplied | Maintainer group token through writer Connector | Changes Git references, reconciled by Argo CD | GitOps writer mount/proxy grant |
@@ -738,7 +738,7 @@ Run `acceptance/02-platform-and-onboarding.sh` from the sample in an isolated ac
 
 For cross-project image denial, first verify that the exact image exists and can be pulled in its own project. Then test an unauthorized project, distinguish `unauthorized` from `not found` and Pod Security rejection, and repeat in the opposite direction using an image that exists there. Delete temporary probe resources after the checks.
 
-Test self-healing only on a disposable resource in the acceptance project. The sample's default check deletes the project owners RoleBinding, so the project owner can temporarily lose access while the object is restored. Record its UID and recovery manifest, perform the approved change, and confirm recreation with a different UID. Restore it if the check fails. This is separate from proving ongoing automatic reconciliation of the operator-managed component layer.
+Test self-healing only on a disposable resource in the acceptance project. Onboarding renders a dedicated `<project>-self-healing-probe` RoleBinding with no subjects, so deleting it removes nobody's access. Merge and synchronize its registration before running the check; existing projects need a registration update to obtain it. The script requires its acceptance-probe label and refuses a binding with subjects. It saves the UID and recovery manifest, deletes the probe, and requires GitOps to recreate it with a different UID; a fallback restoration is reported as a failure. This is separate from proving ongoing automatic reconciliation of the operator-managed component layer.
 
 ### Know which outputs should exist
 
