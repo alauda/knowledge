@@ -5,6 +5,7 @@ kind:
   - Solution
 ProductsVersion:
   - '4.2.x,4.3.x,4.4.x'
+id: KB261000040
 ---
 
 # Kubelet probe connectivity between isolated node and Underlay networks

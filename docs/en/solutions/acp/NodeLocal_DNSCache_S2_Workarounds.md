@@ -5,6 +5,7 @@ products:
   - Alauda Container Platform
 ProductsVersion:
   - '4.2.x,4.3.x,4.4.x'
+id: KB261000048
 ---
 
 # Temporary Workarounds for Common NodeLocal DNSCache Issues in Field Environments
