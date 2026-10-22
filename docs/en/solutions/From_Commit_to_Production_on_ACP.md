@@ -12,6 +12,8 @@ ProductsVersion:
 
 Use this article to choose where pipeline definitions live, how deployments consume build outputs, and where approvals, promotion, and signature checks belong. For a guided implementation, follow the [Application CI/CD tutorials](https://docs.alauda.io/alauda-devops-pipelines/4.15/pipelines/tutorials/index.html).
 
+A build that passes is only the start of delivery. The next questions are which image test actually ran, who authorized that image for production, and how the production deployment can be traced back to the same change. Work through those questions in order: choose the definition and trigger, choose the deployment route for each environment, then add the release controls required by your organization. A small project can start with a manual run; central templates and additional controls can be introduced as the workflow grows.
+
 This is the delivery part of [Alauda DevOps Best Practices](./Alauda_DevOps_Best_Practices_Overview.md). Its configuration baseline is Pipelines 4.15, Artifact Hub Shim 1.0, Connectors 1.14, and GitOps 4.4. Project namespaces, tool-side resources, and Connectors must already exist; the [platform article](./Managing_Platform_Configuration_and_Onboarding_Isolated_Projects_with_Argo_CD_and_Tekton_on_ACP.md) explains their preparation.
 
 The [companion samples](https://github.com/AlaudaDevops/devops-best-practices-samples) use a fictional `shop` project. CI runs in `shop-build`; CD and promotion run in `shop-cd`; workloads run in `shop-test` and `shop-prod`. The sample binds the project owner group in `shop` only; applying the PaC Repository, CD and promotion objects, and starting their runs requires a platform administrator or a separately delegated grant in `shop-build` and `shop-cd`. See the sample application's ["Who applies what"](https://github.com/AlaudaDevops/devops-best-practices-samples/blob/main/sample-app/README.md#who-applies-what) table. Replace every example address, tool image, group, credential placeholder, and policy identity for your environment. Make the vulnerability database, tool images, base images, and dependencies available locally for disconnected execution.
@@ -84,7 +86,11 @@ The sample separates the two outputs:
 | `sample-app/.tekton/ci.yaml` | Push to `main` | `registry.example.com/shop/hello` | Source for test CD and promotion |
 | `sample-app/.tekton/ci-merge-request.yaml` | Merge request | `registry.example.com/shop/hello-mr` | Temporary merge-request artifacts |
 
-The sample's Harbor Connector has project-level access. Separating repository names does not itself enforce a credential boundary. For stronger separation, use a distinct temporary registry project and a credential that cannot write release-candidate images. Before delivery, check that the selected digest is the `IMAGE_DIGEST` of a successful trusted `main` CI run whose event type is `push`; a comment-triggered run on another branch is not a release candidate.
+The release-candidate definition also uses the catalog Pipeline's pre-build step to require a `push` event with source and target branch `main`. It reads PaC's actual Pod annotations, because comment arguments can override event and branch template variables. A named `/test ci` command can bypass PaC event annotations, so it fails this runtime check before `build-image`, even when commented on `main`. Retry release-candidate CI with a new reviewed push; use `ci-merge-request` for comment-triggered validation.
+
+The sample's Harbor Connector has project-level access. Separating repository names and adding the event check do not themselves enforce a credential boundary: merge-request code still runs with a credential that can write that project. For stronger separation, use a distinct temporary registry project and a credential that cannot write release-candidate images. Before delivery, match the selected digest to the `IMAGE_DIGEST` of a successful trusted `main` CI run whose event type is `push`, then examine its scan and test evidence.
+
+If delivery starts from a Harbor event, expose the EventListener only where Harbor can reach it and authenticate every request, for example with an interceptor that compares the webhook's authorization header with a Secret. An EventListener without source validation starts a run for any request that reaches it. See [Use Harbor Event Triggers](https://docs.alauda.io/alauda-devops-pipelines/4.15/triggers/how_to/harbor_events.html).
 
 Both sample CI definitions bind the Connector proxy CA through the `ca-bundle` Workspace. The proxy's CA is required even when the upstream registry uses a publicly trusted certificate. For offline scanning, set `trivyExtraArgs` to use the platform's mirrored vulnerability database, for example `--db-repository registry.example.com/mirror/trivy-db:2`. The scanner must be able to pull that image.
 
@@ -123,7 +129,16 @@ The sample updates the production `digest:` line with `sed` and verifies the ren
 
 The sample starts test CD, promotion, and production CD manually from rendered PipelineRun YAML. Replace the template parameters, verify the image mapping, identity, and Workspaces, and submit with `kubectl create`. A console Run Template form exposes Pipeline parameters: in the sample, remove the empty third `updateArgs` entry, use the full `repository@sha256:digest` for test CD, and use the bare `sha256:digest` for production CD because the production repository is fixed by the seeded overlay. Restrict who may create PipelineRuns in the delivery namespace; a console form can expose parameters that are fixed in the rendered YAML path. Use [Run Template](https://docs.alauda.io/alauda-devops-pipelines/4.15/pipelines/how_to/run_template.html) for other execution entries. Harbor event automation is an additional integration, not part of the sample's manual path.
 
-Production rollback follows the same review boundary: select a retained, previously promoted digest, verify its signature and application compatibility, and review the GitOps change. A tested GitOps rollback consists of: find the previous digest in the production Git history; confirm it remains in the production registry and is signed; create a branch and change only the `digest:` line; open a merge request and wait for validation before review and merge; verify the image in Argo CD and the Deployment and wait for rollout; and return to the newer version through the same one-line change if needed. Database and data migrations need an application-specific rollback plan. Establish and rehearse the complete rollback runbook in the target environment. Configure [Harbor tag retention](https://goharbor.io/docs/2.14.0/working-with-projects/working-with-images/create-tag-retention-rules/) and [tag immutability](https://goharbor.io/docs/2.14.0/working-with-projects/working-with-images/create-tag-immutability-rules/) so that required rollback images remain available.
+Production rollback follows the same review boundary. Rebuilds can produce different content, so select a retained, previously promoted digest and use this GitOps path:
+
+1. Find the previous digest in the production Git history.
+2. Confirm that it remains in the production registry, verify its signature, and check compatibility with current configuration and data.
+3. Create a branch and change only the production overlay's `digest:` line.
+4. Open a merge request, wait for validation, then review and merge it.
+5. Confirm the selected image in Argo CD and the Deployment, and wait for rollout completion.
+6. If returning to the newer version is required, use the same reviewed one-line change.
+
+Database and data migrations need an application-specific rollback plan. Rehearse the complete runbook in the target environment. Configure [Harbor tag retention](https://goharbor.io/docs/2.14.0/working-with-projects/working-with-images/create-tag-retention-rules/) and [tag immutability](https://goharbor.io/docs/2.14.0/working-with-projects/working-with-images/create-tag-immutability-rules/) so that required rollback images remain available.
 
 ## Select the release controls
 
@@ -164,19 +179,21 @@ PipelineRun and task timeout budgets must include work before approval, the enti
 
 Approvers can inspect pending work in the console or through `kubectl`. The optional sample `promotion/optional/console-approver.yaml` supplies a custom console role and group binding; review its scope before applying it. An approval notification can be sent with the catalog's `send-mail` Task. Email addresses, SMTP configuration, and credentials must be configured separately; the sample does not integrate that notification step.
 
+To start a run through a Pipelines-as-Code Incoming Webhook, send a `POST` request whose JSON body contains `repository`, `namespace`, `branch`, `pipelinerun`, and `secret` to the controller's `/incoming` endpoint. Treat the call as successful only when it returns HTTP `202` and a new PipelineRun appears; an HTTP `200` with an empty body means that no run was started, for example because the secret did not match. See [Incoming Webhooks](https://docs.alauda.io/alauda-devops-pipelines/4.15/pac/how_to/incoming_webhooks.html).
+
 Customer change-management system integration is outside this series. The available building blocks are the approval node and [Incoming Webhooks](https://docs.alauda.io/alauda-devops-pipelines/4.15/pac/how_to/incoming_webhooks.html). Define the mapping and audit contract for that integration separately.
 
 ### Gate the production Connector after approval
 
 Keep the production Connector and its Secret in a namespace where project members cannot create Pods or run arbitrary pipelines. A Pod can mount a Secret from its own namespace without a separate Secret-read authorization check. Consequently, permission to create Pods or PipelineRuns in a credential-bearing namespace is a credential boundary. With `enable-connectors-approval` disabled, a principal that can create a Pod or PipelineRun in `shop-cd` can use the production Connector granted to the release identity; an ApprovalTask does not protect that path. Treat the namespace and its ServiceAccounts as the boundary until proxy approval is enabled and verified.
 
-The sample release ServiceAccount `shop-release` reads the source Connector and mounts the production Connector from `platform-connectors`. Its standing grants are in `sample-app/promotion/standing-access.yaml`. In the sample, the copy Task authenticates both ends with their Connector credentials and routes both ends through the Connectors proxy. Bind the proxy CA bundles for both `src-ca-bundle` and `dst-ca-bundle`, even when the registries use publicly trusted certificates; without the source bundle, the source pull can fail TLS verification. The production robot account must also be able to read the source repository. Use RBAC for the cross-namespace proxy grants described by the product guide.
+The sample release ServiceAccount `shop-release` mounts the source and production Connectors from `platform-connectors`. Its standing grants are in `sample-app/promotion/standing-access.yaml`. The two registry configurations share the copy Task's proxy environment; the destination configuration overrides conflicting source settings. In this sample both ends therefore use the production Connector's proxy credential. The production robot must be able to pull the staging repository as well as write the production repository; onboarding grants both. The source mount supplies the source CA bundle and does not establish a separate read-only authentication path. Bind both `src-ca-bundle` and `dst-ca-bundle`, even when the registries use publicly trusted certificates, because the proxy re-signs TLS. Use RBAC for the cross-namespace proxy grants described by the product guide.
 
 Approval gating uses two installation-wide feature flags. Roll them out in this order:
 
 1. Inventory every identity mounting a Connector that is not behind approval. Prepare its read authorization and `connectors/proxy` permission with verb `*`. A `get` grant on `connectors/proxy` is insufficient. Do not grant direct proxy access to the production Connector that approval must gate.
 2. Enable `enable-connectors-approval`. Immediately create the required AccessPolicies, including the administrator-Connector grants and the production approval policy. Do not start affected runs in the interval between enabling the flag and creating the policies.
-3. In the production AccessPolicy, configure the designated `approvers` and keep them aligned with the ApprovalTask and promotion admission policy. The `approvers` field in a project declaration is an audited record only; it does not configure either object. Remove any other matching default or direct proxy grants.
+3. Keep the promotion Pipeline's ApprovalTask and production AccessPolicy `approvers` aligned. The `approvers` field in a project declaration is an audited record only; onboarding does not apply or compare it. Keep the AccessPolicy under platform-administrator control so a Pipeline editor cannot change both sides of the gate. Remove any other matching default or direct proxy grants.
 4. Enable `enable-connector-proxy-permissions`, which applies the proxy permission check to requests as well.
 
 Set feature flags through `ConnectorsConfig`. For the full configuration and verification path, see [Enable Proxy Permission Checks and Approval Gating](https://docs.alauda.io/alauda-devops-connectors/1.14/connectors/how_to/enable_proxy_permissions_and_approval.html), [AccessPolicy](https://docs.alauda.io/alauda-devops-connectors/1.14/connectors/concepts/access_policy.html), and [Skopeo Copy connector approval](https://docs.alauda.io/alauda-devops-artifacthub-shim/1.0/catalog/how_to/promote_artifacts_with_skopeo_copy.html#connector-approval).
@@ -199,7 +216,7 @@ cosign verify --key cosign.pub "$IMAGE"
 cosign verify-attestation --key cosign.pub --type slsaprovenance "$IMAGE"
 ```
 
-The `--type` value must match the provenance predicate emitted by Chains. Keep the Chains format and the verification command aligned (the sample expects SLSA provenance v0.2); a different format requires the corresponding cosign type.
+The `--type` value must match the provenance predicate emitted by Chains. This sample expects Chains `artifacts.taskrun.format: slsa/v1`, which emits SLSA provenance v0.2, and therefore uses cosign `--type slsaprovenance`. The `slsa/v1` configuration name does not mean the SLSA v1 predicate. A different Chains format requires the corresponding cosign type and attestation-policy paths.
 
 For an offline installation configured without a transparency log, use the product's offline verification settings, including `--insecure-ignore-tlog=true` where required. This skips the external transparency-log check; retain the signature and attestation checks. Authenticate to private registries without committing the login credentials.
 
@@ -225,17 +242,17 @@ The sample's resolver and bare-run policies exclude `platform-connectors`, where
 
 ## Accept the delivery workflow
 
-Run `acceptance/01-commit-to-production.sh` from the sample only in an isolated acceptance project with a separate project, namespaces, and Harbor production repository after replacing its inputs. The script defaults to sample names; set every input explicitly and never point it at an ordinary production tenant. The checks are an execution procedure, not a claim that an arbitrary environment is ready.
+Run `acceptance/01-commit-to-production.sh` after the first promotion, production GitOps merge, and completed rollout. Use a disposable acceptance project with its own namespaces and Harbor production repository. `PROJECT` is required; inspect the remaining defaults and replace all environment-specific inputs. The script creates temporary admission probes in that project's production namespace. The table distinguishes its checks from the release evidence that you must inspect separately.
 
-| Check | Required evidence |
-| --- | --- |
-| CI completed | The trusted `main` run succeeded; its image repository and digest match the selected release input. |
-| Test ran the selected image | Compare the complete workload image reference and verify rollout completion. |
-| Promotion copied that image | The promotion result reports the expected destination repository and digest. |
-| Production uses the promotion result | The GitOps merge request is merged, the rendered image matches the destination digest, and the workload rollout completed. `Synced` alone can describe an older revision. |
-| Signature and provenance exist | Both cosign commands succeed against the production image. A signing annotation alone is insufficient. |
-| Admission reports or enforces the selected policy | In Audit, verify a known signed production digest as a positive control and review the report for an unsigned image; Audit reports are evidence, not enforcement. In Enforce, verify the signed positive control first, then distinguish rejection of an unsigned image from Pod Security or image-pull failure. Clean up both probes afterward. |
-| Approval is attributable | Save the ApprovalTask response, approver group members, selected digest, and related run identifiers in the release record. |
+| Check | Script coverage | Evidence to inspect separately |
+| --- | --- | --- |
+| CI completed | Uses the supplied `BUILD_DIGEST`; it does not select or validate a CI run. | The trusted `push` run on `main` succeeded; its repository, digest, scan, and test results match the release input. |
+| Test ran the selected image | Compares the complete image reference and waits for rollout completion. | Application-level test results for that deployment. |
+| Promotion copied that image | Compares the release tag's registry digest with `BUILD_DIGEST`. | The promotion run's `promoted-digest` and destination mapping match that digest and repository. |
+| Production uses the promotion result | Checks Application sync/health, the exact release digest, and rollout completion. | Review and merge of the intended GitOps diff and its rendered image. `Synced` alone can describe an older revision. |
+| Signature and provenance exist | Runs both cosign commands against the production image. | The attestation identifies the expected copy TaskRun; approval history is retained separately. |
+| Admission reports or enforces the policy | First checks a signed production image, then an unsigned image; selects reports by probe UID and policy. | Audit reports demonstrate reporting. Claim enforcement only after the same controls pass in Enforce. Distinguish signature denial from Pod Security and registry-access failures. |
+| Approval is attributable | Checks the approval object's ownership chain and responses, including group members. | Save those responses, the approved digest, and related run identifiers in the release record before cleanup. |
 
 Before production, address the sample's explicit hardening work: restrict the GitOps writer's namespace, protect production Git changes, install the promotion Core rules, constrain production image sources, and limit direct cluster writes. Do not grant project members Pod creation in namespaces that contain administrator or release credentials. Establish local rollback and policy-service recovery runbooks.
 
