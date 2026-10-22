@@ -462,6 +462,16 @@ Use ACP group resource names in `approvers`, rather than a group's display name 
 
 PipelineRun and task timeout budgets must include work before approval, the entire approval window, and work after approval. Keep the approver group separate from identities allowed to initiate or modify release runs. Use [Manual Approval Gate](https://docs.alauda.io/alauda-devops-pipelines/4.15/pipelines/how_to/manual_approval_gate.html) for approval permissions, group responses, and timeout configuration. Retain the ApprovalTask responses separately before the objects are removed.
 
+Do not assume that an approval response is attributable merely because its
+`name` field contains an approver name. The sample expects the Manual Approval
+Gate webhook to bind a response to the authenticated user and to reject a
+patch that names another user, but that behavior must be verified with the
+Manual Approval Gate version installed on the target cluster. Test an approved
+member's own response and an out-of-identity response before treating the
+ApprovalTask as an auditable user decision. Until both checks pass, preserve the
+authenticated audit event separately and describe the ApprovalTask as a record
+of submitted input rather than proof of who submitted it.
+
 Approvers can inspect pending work in the console or through `kubectl`. The optional sample `promotion/optional/console-approver.yaml` supplies a custom console role and group binding; review its scope before applying it. An approval notification can be sent with the catalog's `send-mail` Task. Email addresses, SMTP configuration, and credentials must be configured separately; the sample does not integrate that notification step.
 
 To start a run through a Pipelines-as-Code Incoming Webhook, send a `POST` request whose JSON body contains `repository`, `namespace`, `branch`, `pipelinerun`, and `secret` to the controller's `/incoming` endpoint. Treat the call as successful only when it returns HTTP `202` and a new PipelineRun appears; an HTTP `200` with an empty body means that no run was started, for example because the secret did not match. See [Incoming Webhooks](https://docs.alauda.io/alauda-devops-pipelines/4.15/pac/how_to/incoming_webhooks.html).
@@ -548,7 +558,7 @@ If the platform chooses a separate signature repository, configure `storage.oci.
 
 ### Introduce deployment verification with positive and negative controls
 
-At deployment admission, start the image-verification policy in Audit, with the sample's `mutateDigest: false` setting, and review the matching images and reports before Enforce. Kyverno also needs read credentials for private production registry projects through `imageRegistryCredentials.secrets`; otherwise a valid signature can be unreadable and Enforce will reject every production image. The sample's production image list is explicit: add each newly onboarded production repository to the policy. See [Image Signature Verification](https://docs.alauda.io/alauda-devops-pipelines/4.15/chains/how_to/image_signature_verification.html).
+At deployment admission, start the image-verification policy in Audit, with the sample's `mutateDigest: false` setting, and review the matching images and reports before Enforce. For a private release registry, create the pull-only `kubernetes.io/dockerconfigjson` Secret in the namespace where the Kyverno admission controller runs, reference it through `imageRegistryCredentials.secrets`, and give it pull access to every release image and to the OCI `.sig` and `.att` attachments. If Chains stores attachments in a separate signature repository, the same Kyverno credential (or an explicitly configured equivalent) must be able to read that repository too. A workstation's `skopeo login` or `cosign login` authenticates only that client; it does not give Kyverno registry access. Treat `UNAUTHORIZED`, `401`, or a similar registry-authentication message in a PolicyReport as a credential or registry configuration failure, not as evidence that the image is unsigned. First obtain a successful report for a known signed digest, then run the unsigned negative control, and switch to Enforce only after both results are attributable to signature verification. The sample's production image list is explicit: add each newly onboarded production repository to the policy. See [Image Signature Verification](https://docs.alauda.io/alauda-devops-pipelines/4.15/chains/how_to/image_signature_verification.html).
 
 The signature policy selects explicitly listed production image repositories.
 Images from another repository can fall outside that selection even in a
