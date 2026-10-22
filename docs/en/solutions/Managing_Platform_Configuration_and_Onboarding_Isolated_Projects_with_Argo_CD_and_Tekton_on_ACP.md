@@ -134,17 +134,24 @@ Platform administrators are responsible for webhook setup and event-delivery ver
 The merge dispatcher has a second readiness contract beyond the declaration
 ConfigMap. Before it creates a child onboarding run, the `projects` Application
 must have published the exact merged declaration as `project-<name>` in the
-management namespace, and the onboarding Application must have created the
-project's release-Connector `Role` and `RoleBinding` there. The sample names
-both objects `project-onboarding-release-connectors-<name>` and grants the
-dispatcher ServiceAccount name-scoped `get` access to them. These grants let the
-dispatcher wait without granting it permission to change the release
-Connectors. A new project therefore needs its release-Connector RBAC file and
-its `onboarding/kustomization.yaml` entry in the same reviewed change as the
-declaration and `projects/kustomization.yaml` generator entry. If either
-Application is still catching up, the dispatcher must wait or report the
-project as not ready; starting the child run early can fail when it tries to
-reconcile the release Connectors.
+management namespace. For an already registered project, the onboarding
+Application must also have created the project's release-Connector `Role` and
+`RoleBinding` there. The sample names both objects
+`project-onboarding-release-connectors-<name>` and grants the dispatcher
+ServiceAccount name-scoped `get` access to them. These grants let the dispatcher
+wait without granting it permission to change the release Connectors.
+
+The first onboarding run is the exception: it creates that release-Connector
+RBAC as part of its registration child, so both objects may be absent when the
+dispatcher starts the initial run. The dispatcher still waits when exactly one
+of the two objects exists, which prevents a partially applied registration from
+starting with incomplete permissions. Include the release-Connector RBAC file
+and its `onboarding/kustomization.yaml` entry in the reviewed registration
+change produced by that first run, together with the declaration and
+`projects/kustomization.yaml` generator entry. If either Application is still
+catching up, the dispatcher must wait or report the project as not ready;
+starting a subsequent child run early can fail when it tries to reconcile the
+release Connectors.
 
 Keep Harbor projects private. Nexus anonymous access combined with an anonymous role that can read tenant repositories bypasses their user credentials; the onboarding Task only warns about anonymous access. Disable it (Settings → Security → Anonymous Access) or remove the anonymous role's access to tenant repositories, then confirm that an unauthenticated read is refused. Configure SonarQube permissions according to the project-isolation requirements in its Task guide. Do not infer isolation merely from the presence of separate credentials.
 
@@ -538,7 +545,7 @@ Before handoff, a platform administrator must add the project's developers with 
 role that allows them to create repositories in that group, according to the
 platform's access policy.
 
-The registration step proposes Git changes instead of directly applying Argo CD resources. Review the entire diff, including RBAC and destination changes. Submit one platform merge request that adds the declaration, its `configMapGenerator` entry in `projects/kustomization.yaml`, the project's release-Connector Role and RoleBinding plus ScheduledTrigger files together with their entries in `onboarding/kustomization.yaml`, and the project's production repository in the image-verification policy. Without the `configMapGenerator` entry the dispatcher waits for the project's ConfigMap and then skips the project. Without the release-Connector RBAC entry, the dispatcher cannot confirm that the child run's Connector prerequisites exist. Keep sufficient execution capacity for both the parent and child run: the waiting parent still reserves its Pod resources. Cancellation and cleanup must account for the independently created child run.
+The registration step proposes Git changes instead of directly applying Argo CD resources. Review the entire diff, including RBAC and destination changes. Submit one platform merge request that adds the declaration, its `configMapGenerator` entry in `projects/kustomization.yaml`, the project's release-Connector Role and RoleBinding plus ScheduledTrigger files together with their entries in `onboarding/kustomization.yaml`, and the project's production repository in the image-verification policy. Without the `configMapGenerator` entry the dispatcher waits for the project's ConfigMap and then skips the project. The initial run can create the release-Connector RBAC through its registration child, but every later run requires both objects; a one-sided RBAC change leaves the dispatcher waiting. Keep sufficient execution capacity for both the parent and child run: the waiting parent still reserves its Pod resources. Cancellation and cleanup must account for the independently created child run.
 
 The pipeline runs in the management namespace with administrator Connectors. Permission to create Pods or PipelineRuns there is effectively access to those credentials, even without API permission to read Secrets. Limit that namespace and the onboarding identity to platform automation and administrators.
 
