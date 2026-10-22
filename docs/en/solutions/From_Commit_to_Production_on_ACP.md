@@ -3,7 +3,7 @@ products:
   - Alauda Container Platform
   - Alauda DevOps
 kind:
-  - Article
+  - Best Practices
 ProductsVersion:
   - 4.x
 ---
@@ -14,7 +14,7 @@ Use this article to choose where pipeline definitions live, how deployments cons
 
 This is the delivery part of [Alauda DevOps Best Practices](./Alauda_DevOps_Best_Practices_Overview.md). Its configuration baseline is Pipelines 4.15, Artifact Hub Shim 1.0, Connectors 1.14, and GitOps 4.4. Project namespaces, tool-side resources, and Connectors must already exist; the [platform article](./Managing_Platform_Configuration_and_Onboarding_Isolated_Projects_with_Argo_CD_and_Tekton_on_ACP.md) explains their preparation.
 
-The [companion samples](https://github.com/AlaudaDevops/devops-best-practices-samples) use a fictional `shop` project. CI runs in `shop-build`; CD and promotion run in `shop-cd`; workloads run in `shop-test` and `shop-prod`. Replace every example address, tool image, group, credential placeholder, and policy identity for your environment. Make the vulnerability database, tool images, base images, and dependencies available locally for disconnected execution.
+The [companion samples](https://github.com/AlaudaDevops/devops-best-practices-samples) use a fictional `shop` project. CI runs in `shop-build`; CD and promotion run in `shop-cd`; workloads run in `shop-test` and `shop-prod`. The sample binds the project owner group in `shop` only; applying the PaC Repository, CD and promotion objects, and starting their runs requires a platform administrator or a separately delegated grant in `shop-build` and `shop-cd`. See the sample application's ["Who applies what"](https://github.com/AlaudaDevops/devops-best-practices-samples/blob/main/sample-app/README.md#who-applies-what) table. Replace every example address, tool image, group, credential placeholder, and policy identity for your environment. Make the vulnerability database, tool images, base images, and dependencies available locally for disconnected execution.
 
 ## Follow one image identity through the workflow
 
@@ -44,7 +44,9 @@ When a vulnerability is found in an already deployed image, fix it and use the s
 
 Start with a cluster Pipeline when that is sufficient. Add PaC when the change history and merge-request experience matter. Use central templates when projects should reuse a standard workflow. The same project can use all three for different jobs. Choose one route, PaC or Triggers, for a given event.
 
-For retries from a merge request, use `/test <pipelinerun-name>`. Keep the complete syntax in one place by linking to [Trigger PAC Pipelines](https://docs.alauda.io/alauda-devops-pipelines/4.15/pac/how_to/trigger_pipeline.html).
+For a retry from a merge request, comment `/test <pipelinerun-name> branch:<branch>` on the merge request. For a push-triggered run, comment the same form on the commit at the head of that branch. Keep the complete syntax in one place by linking to [Trigger PAC Pipelines](https://docs.alauda.io/alauda-devops-pipelines/4.15/pac/how_to/trigger_pipeline.html).
+
+A failed check blocks a merge only when the Git platform requires that check to pass. On GitLab, enable **Pipelines must succeed**. If Auto DevOps creates an additional pipeline and no runner picks it up, the GitLab pipeline can remain running and the merge request continues to show a running pipeline; disable Auto DevOps for these repositories or provide a runner.
 
 ### Combine PaC with a central template
 
@@ -82,7 +84,7 @@ The sample separates the two outputs:
 | `sample-app/.tekton/ci.yaml` | Push to `main` | `registry.example.com/shop/hello` | Source for test CD and promotion |
 | `sample-app/.tekton/ci-merge-request.yaml` | Merge request | `registry.example.com/shop/hello-mr` | Temporary merge-request artifacts |
 
-The sample's Harbor Connector has project-level access. Separating repository names does not itself enforce a credential boundary. For stronger separation, use a distinct temporary registry project and a credential that cannot write release-candidate images. Before delivery, check that the selected digest is the `IMAGE_DIGEST` of a successful trusted `main` CI run.
+The sample's Harbor Connector has project-level access. Separating repository names does not itself enforce a credential boundary. For stronger separation, use a distinct temporary registry project and a credential that cannot write release-candidate images. Before delivery, check that the selected digest is the `IMAGE_DIGEST` of a successful trusted `main` CI run whose event type is `push`; a comment-triggered run on another branch is not a release candidate.
 
 Both sample CI definitions bind the Connector proxy CA through the `ca-bundle` Workspace. The proxy's CA is required even when the upstream registry uses a publicly trusted certificate. For offline scanning, set `trivyExtraArgs` to use the platform's mirrored vulnerability database, for example `--db-repository registry.example.com/mirror/trivy-db:2`. The scanner must be able to pull that image.
 
@@ -109,7 +111,7 @@ gitops/
     └── prod/kustomization.yaml
 ```
 
-In the sample, test CD uses `submitMode: direct`; production CD uses `submitMode: pr`. The production overlay is seeded with the production registry repository, so a release changes only its digest. The first production deployment waits for a promoted image.
+In the sample, test CD uses `submitMode: direct` and `kustomize edit set image`, which may rewrite the test overlay. Production CD uses `submitMode: pr` and changes only the `digest:` line with `sed`; the production overlay is seeded with the production registry repository. The first production deployment waits for a promoted image.
 
 Enforce production Git review in the code platform. Use protected branches and, where supported, code-owner approval. Other options include a separately protected production branch or repository, or a reviewed server-side policy. Branch protection alone does not create directory-level protection. Remove direct production write access that would bypass the chosen review path.
 
@@ -117,11 +119,11 @@ Enforce production Git review in the code platform. Use protected branches and, 
 
 `gitops-repo-update` is a Pipeline and runs as a separate PipelineRun. Pass the selected digest as an argument to its update script. Use a fresh source Workspace volume per run and an image that contains every command used by the script. `submitMode: pr` also requires the configured GitLab CLI image and a token with API access.
 
-The sample updates the `digest:` line with `sed` and verifies the rendered image with Kustomize. This preserves a one-line production diff. Avoid using a rewrite operation that changes unrelated formatting or image fields. The GitOps writer token needs the scopes required for cloning, pushing, and creating the merge request; keep it separate from the application CI token.
+The sample updates the production `digest:` line with `sed` and verifies the rendered image with Kustomize. This preserves a one-line production diff. Avoid using a rewrite operation that changes unrelated formatting or image fields in production. The GitOps writer is a group access token with Maintainer access in the sample; that identity can change branch protection and code-owner settings, so use a project-scoped least-privilege token or a separately protected production repository in a hardened deployment. Keep it separate from the application CI token.
 
-The sample starts test CD, promotion, and production CD manually from rendered PipelineRun YAML. Replace the template parameters, verify the image mapping, identity, and Workspaces, and submit with `kubectl create`. Use [Run Template](https://docs.alauda.io/alauda-devops-pipelines/4.15/pipelines/how_to/run_template.html) for other execution entries. Harbor event automation is an additional integration, not part of the sample's manual path.
+The sample starts test CD, promotion, and production CD manually from rendered PipelineRun YAML. Replace the template parameters, verify the image mapping, identity, and Workspaces, and submit with `kubectl create`. A console Run Template form exposes Pipeline parameters: in the sample, remove the empty third `updateArgs` entry, use the full `repository@sha256:digest` for test CD, and use the bare `sha256:digest` for production CD because the production repository is fixed by the seeded overlay. Restrict who may create PipelineRuns in the delivery namespace; a console form can expose parameters that are fixed in the rendered YAML path. Use [Run Template](https://docs.alauda.io/alauda-devops-pipelines/4.15/pipelines/how_to/run_template.html) for other execution entries. Harbor event automation is an additional integration, not part of the sample's manual path.
 
-Production rollback follows the same review boundary: select a retained, previously promoted digest, verify its signature and application compatibility, and review the GitOps change. Database and data migrations need an application-specific rollback plan. Establish and rehearse the complete rollback runbook in the target environment. Configure [Harbor tag retention](https://goharbor.io/docs/2.14.0/working-with-projects/working-with-images/create-tag-retention-rules/) and [tag immutability](https://goharbor.io/docs/2.14.0/working-with-projects/working-with-images/create-tag-immutability-rules/) so that required rollback images remain available.
+Production rollback follows the same review boundary: select a retained, previously promoted digest, verify its signature and application compatibility, and review the GitOps change. A tested GitOps rollback consists of: find the previous digest in the production Git history; confirm it remains in the production registry and is signed; create a branch and change only the `digest:` line; open a merge request and wait for validation before review and merge; verify the image in Argo CD and the Deployment and wait for rollout; and return to the newer version through the same one-line change if needed. Database and data migrations need an application-specific rollback plan. Establish and rehearse the complete rollback runbook in the target environment. Configure [Harbor tag retention](https://goharbor.io/docs/2.14.0/working-with-projects/working-with-images/create-tag-retention-rules/) and [tag immutability](https://goharbor.io/docs/2.14.0/working-with-projects/working-with-images/create-tag-immutability-rules/) so that required rollback images remain available.
 
 ## Select the release controls
 
@@ -129,12 +131,12 @@ Promotion, approval, credential gating, and image admission solve separate decis
 
 | Decision | Recommended control |
 | --- | --- |
-| Should production use a separate artifact project? | Copy the selected digest into that project, then update the production Git reference. |
+| Should production use a separate artifact project? | Copy the selected digest into that project, then update the production Git reference. If test and production consume the same image repository, promote only the Git reference and admit only digests approved for production, because a repository-based rule cannot distinguish the environments. |
 | Who authorizes the selected release? | An ApprovalTask, a production Git merge-request review, or both, according to policy. |
 | Who may use the production Connector? | A dedicated release identity plus admission and RBAC restrictions. Add approval-gated proxy access when credential owners and pipeline owners are separate. |
 | What may be deployed? | Admission policies for allowed production repositories, signatures, and any required approved-digest evidence. |
 
-Use the Core promotion admission rules in [Constrain Artifact Promotion with Kyverno](https://docs.alauda.io/alauda-devops-artifacthub-shim/1.0/catalog/how_to/constrain_artifact_promotion_with_kyverno.html). Rules 1–3 constrain the promotion execution path. Add rule 4 when the promotion Pipeline is maintained in a namespace, to control changes to that definition. The companion samples do not install these promotion rules or a production-repository-only deployment policy; platform administrators must add them before using the reference design as a production control.
+Use the Core promotion admission rules in [Constrain Artifact Promotion with Kyverno](https://docs.alauda.io/alauda-devops-artifacthub-shim/1.0/catalog/how_to/constrain_artifact_promotion_with_kyverno.html). Rules 1–3 constrain the promotion execution path. Add rule 4 when the promotion Pipeline is maintained in a namespace, to control changes to that definition. The companion samples do not install these promotion rules or a production-repository-only deployment policy; platform administrators must add them before using the reference design as a production control. A signed image proves possession of the signing key, not that this particular pipeline produced it.
 
 Promotion validates the source and destination mapping and copies bytes. It does not query CI to establish that the image passed. The approver must correlate the digest with the trusted build, scan, and test evidence. The sample validates that the image mapping is first, the source uses a SHA-256 digest, and the repositories and release-label format match the configured workflow. Optional signature mappings must refer to the same image digest.
 
@@ -166,26 +168,26 @@ Customer change-management system integration is outside this series. The availa
 
 ### Gate the production Connector after approval
 
-Keep the production Connector and its Secret in a namespace where project members cannot create Pods or run arbitrary pipelines. A Pod can mount a Secret from its own namespace without a separate Secret-read authorization check. Consequently, permission to create Pods or PipelineRuns in a credential-bearing namespace is a credential boundary.
+Keep the production Connector and its Secret in a namespace where project members cannot create Pods or run arbitrary pipelines. A Pod can mount a Secret from its own namespace without a separate Secret-read authorization check. Consequently, permission to create Pods or PipelineRuns in a credential-bearing namespace is a credential boundary. With `enable-connectors-approval` disabled, a principal that can create a Pod or PipelineRun in `shop-cd` can use the production Connector granted to the release identity; an ApprovalTask does not protect that path. Treat the namespace and its ServiceAccounts as the boundary until proxy approval is enabled and verified.
 
-The sample release ServiceAccount `shop-release` reads the source Connector and mounts the production Connector from `platform-connectors`. Its standing grants are in `sample-app/promotion/standing-access.yaml`. Use RBAC for the cross-namespace proxy grants described by the product guide.
+The sample release ServiceAccount `shop-release` reads the source Connector and mounts the production Connector from `platform-connectors`. Its standing grants are in `sample-app/promotion/standing-access.yaml`. In the sample, the copy Task authenticates both ends with the production Connector's credentials; the source Connector mount supplies its CA certificate, so the production robot account must also be able to read the source repository. Use RBAC for the cross-namespace proxy grants described by the product guide.
 
 Approval gating uses two installation-wide feature flags. Roll them out in this order:
 
 1. Inventory every identity mounting a Connector that is not behind approval. Prepare its read authorization and `connectors/proxy` permission with verb `*`. A `get` grant on `connectors/proxy` is insufficient. Do not grant direct proxy access to the production Connector that approval must gate.
 2. Enable `enable-connectors-approval`. Immediately create the required AccessPolicies, including the administrator-Connector grants and the production approval policy. Do not start affected runs in the interval between enabling the flag and creating the policies.
-3. In the production AccessPolicy, configure the designated `approvers` and keep them aligned with the ApprovalTask and promotion admission policy. Remove any other matching default or direct proxy grants.
+3. In the production AccessPolicy, configure the designated `approvers` and keep them aligned with the ApprovalTask and promotion admission policy. The `approvers` field in a project declaration is an audited record only; it does not configure either object. Remove any other matching default or direct proxy grants.
 4. Enable `enable-connector-proxy-permissions`, which applies the proxy permission check to requests as well.
 
 Set feature flags through `ConnectorsConfig`. For the full configuration and verification path, see [Enable Proxy Permission Checks and Approval Gating](https://docs.alauda.io/alauda-devops-connectors/1.14/connectors/how_to/enable_proxy_permissions_and_approval.html), [AccessPolicy](https://docs.alauda.io/alauda-devops-connectors/1.14/connectors/concepts/access_policy.html), and [Skopeo Copy connector approval](https://docs.alauda.io/alauda-devops-artifacthub-shim/1.0/catalog/how_to/promote_artifacts_with_skopeo_copy.html#connector-approval).
 
-`defaultPermission` policies have authorization prerequisites and are not a substitute for every cross-namespace RBAC grant. A Ready policy alone does not establish a working mount. Verify the actual identity, Pod events, mounted configuration, and AccessRequest result.
+`defaultPermission` policies have authorization prerequisites and are not a substitute for every cross-namespace RBAC grant. A name-scoped `get` Role does not by itself satisfy a policy that requires namespace-wide reads. A `defaultPermission` policy applies only to identities with namespace-wide `get`; other identities can be silently skipped. The sample grants the onboarding identity namespace-wide `get` in the management namespace, while keeping proxy permissions limited to the named administrator Connectors; keep that broader read scoped to the management namespace. A Ready policy alone does not establish a working mount. Verify the actual identity, Pod events, mounted configuration, and AccessRequest result.
 
 ## Sign and verify the image
 
 Configure Chains signing keys centrally and distribute only the public verification key to projects. Protect both the signing Secret and the ability to create Pods in its namespace. Application teams do not need access to the signing Secret.
 
-The sample stores signatures and attestations beside the image. Chains first uses matching registry credentials from the run's ServiceAccount. Those credentials must be able to push to the image's registry project. Where they are absent, configure a centrally managed registry credential on the Chains controller through `TektonConfig`. Chains does not use a Connector's CSI proxy Workspace as its registry credential.
+The sample stores signatures and attestations beside the image. Chains first uses matching registry credentials from the run's ServiceAccount. In the sample, the image-pull Secret also has push permission and is used by Chains, so it is not a read-only credential; separate a read-only workload Secret from a signing credential in a hardened deployment. Those credentials must be able to push to the image's registry project. Where they are absent, configure a centrally managed registry credential on the Chains controller through `TektonConfig`. Chains does not use a Connector's CSI proxy Workspace as its registry credential.
 
 The central credential is created by an administrator, outside Git. Limit it to the registry projects that Chains must read and sign. When onboarding a project, the platform team must add its source and production registry projects to that credential's access. Rotate it and restrict its Secret and namespace. Apply controller configuration changes in a maintenance window, preserving other container options already configured.
 
@@ -197,11 +199,13 @@ cosign verify --key cosign.pub "$IMAGE"
 cosign verify-attestation --key cosign.pub --type slsaprovenance "$IMAGE"
 ```
 
+The `--type` value must match the provenance predicate emitted by Chains. Keep the Chains format and the verification command aligned (the sample expects SLSA provenance v0.2); a different format requires the corresponding cosign type.
+
 For an offline installation configured without a transparency log, use the product's offline verification settings, including `--insecure-ignore-tlog=true` where required. This skips the external transparency-log check; retain the signature and attestation checks. Authenticate to private registries without committing the login credentials.
 
-If the platform chooses a separate signature repository, configure `storage.oci.repository` centrally and use the corresponding `COSIGN_REPOSITORY` in verification and the repository setting in Kyverno. Review storage and overwrite behavior before combining build and promotion attestations for the same digest. Copying build signature attachments during promotion is optional; use the documented `imageMappings` and `multiArch: all` configuration if selected.
+If the platform chooses a separate signature repository, configure `storage.oci.repository` centrally and use the corresponding `COSIGN_REPOSITORY` in verification and the repository setting in Kyverno. Review storage and overwrite behavior before combining build and promotion attestations for the same digest. Copying build signature attachments during promotion is optional; the sample uses explicit `.sig` and `.att` mappings. For multi-architecture images, follow the Skopeo Copy Task contract and set `multiArch: all` when copying the index and its attachments; do not assume the single-image mappings cover an index automatically.
 
-At deployment admission, start the image-verification policy in Audit, with the sample's `mutateDigest: false` setting, and review the matching images and reports before Enforce. The sample's production image list is explicit: add each newly onboarded production repository to the policy. See [Image Signature Verification](https://docs.alauda.io/alauda-devops-pipelines/4.15/chains/how_to/image_signature_verification.html).
+At deployment admission, start the image-verification policy in Audit, with the sample's `mutateDigest: false` setting, and review the matching images and reports before Enforce. Kyverno also needs read credentials for private production registry projects through `imageRegistryCredentials.secrets`; otherwise a valid signature can be unreadable and Enforce will reject every production image. The sample's production image list is explicit: add each newly onboarded production repository to the policy. See [Image Signature Verification](https://docs.alauda.io/alauda-devops-pipelines/4.15/chains/how_to/image_signature_verification.html).
 
 ## Check the controls at their actual enforcement points
 
@@ -217,9 +221,11 @@ At deployment admission, start the image-verification policy in Audit, with the 
 
 Use platform ClusterPolicies for the baseline and project Policies for additional restrictions. Restrict PolicyException creation or disable exceptions according to platform policy. A resolver-type allow-list alone does not pin catalog, repository, namespace, version, or definition content. The inline validation exception must be handled explicitly when enabling a no-inline policy.
 
+The sample's resolver and bare-run policies exclude `platform-connectors`, where onboarding uses administrator Connectors. Keep Pod and PipelineRun creation in that namespace limited to platform administrators and the platform ServiceAccount; the policy exclusions do not create that boundary.
+
 ## Accept the delivery workflow
 
-Run `acceptance/01-commit-to-production.sh` from the sample only in an isolated acceptance project after replacing its inputs. The checks are an execution procedure, not a claim that an arbitrary environment is ready.
+Run `acceptance/01-commit-to-production.sh` from the sample only in an isolated acceptance project with a separate project, namespaces, and Harbor production repository after replacing its inputs. The script defaults to sample names; set every input explicitly and never point it at an ordinary production tenant. The checks are an execution procedure, not a claim that an arbitrary environment is ready.
 
 | Check | Required evidence |
 | --- | --- |
@@ -228,7 +234,7 @@ Run `acceptance/01-commit-to-production.sh` from the sample only in an isolated 
 | Promotion copied that image | The promotion result reports the expected destination repository and digest. |
 | Production uses the promotion result | The GitOps merge request is merged, the rendered image matches the destination digest, and the workload rollout completed. `Synced` alone can describe an older revision. |
 | Signature and provenance exist | Both cosign commands succeed against the production image. A signing annotation alone is insufficient. |
-| Admission enforces the selected policy | Use a restricted-compatible probe in the acceptance project and distinguish policy rejection from Pod Security or image-pull failure. Clean up the probe afterward. |
+| Admission reports or enforces the selected policy | In Audit, verify a known signed production digest as a positive control and review the report for an unsigned image; Audit reports are evidence, not enforcement. In Enforce, verify the signed positive control first, then distinguish rejection of an unsigned image from Pod Security or image-pull failure. Clean up both probes afterward. |
 | Approval is attributable | Save the ApprovalTask response, approver group members, selected digest, and related run identifiers in the release record. |
 
 Before production, address the sample's explicit hardening work: restrict the GitOps writer's namespace, protect production Git changes, install the promotion Core rules, constrain production image sources, and limit direct cluster writes. Do not grant project members Pod creation in namespaces that contain administrator or release credentials. Establish local rollback and policy-service recovery runbooks.

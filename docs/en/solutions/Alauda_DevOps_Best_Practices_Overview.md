@@ -3,7 +3,7 @@ products:
   - Alauda Container Platform
   - Alauda DevOps
 kind:
-  - Article
+  - Best Practices
 ProductsVersion:
   - 4.x
 ---
@@ -69,9 +69,11 @@ Choose the simplest definition model that meets the team's needs. The models can
 | Pipelines as Code (PaC) | Keep PipelineRun definitions in the application's `.tekton/` directory. Code events start runs and report results to the merge request. | Definitions should evolve with source and participate in merge-request checks. |
 | Centrally managed template | Maintain a versioned Pipeline in the catalog, or a Pipeline in a controlled namespace. Projects supply parameters through a Run Template or a PaC PipelineRun using a resolver. | Multiple projects should share the same standard workflow. |
 
-For PaC retries, use `/test <pipelinerun-name>` in the merge request and refer to [Trigger PAC Pipelines](https://docs.alauda.io/alauda-devops-pipelines/4.15/pac/how_to/trigger_pipeline.html) for the complete syntax. Use one event route for each event: PaC or Triggers. Enabling both routes for the same event can start duplicate work.
+For a PaC retry from a merge request, comment `/test <pipelinerun-name> branch:<branch>` on the merge request. For a push-triggered run, comment the same form on the commit at the head of that branch. The `branch` value makes the source explicit. Refer to [Trigger PAC Pipelines](https://docs.alauda.io/alauda-devops-pipelines/4.15/pac/how_to/trigger_pipeline.html) for the complete syntax. Use one event route for each event: PaC or Triggers. Enabling both routes for the same event can start duplicate work.
 
 Start with [Run Template](https://docs.alauda.io/alauda-devops-pipelines/4.15/pipelines/how_to/run_template.html), [Configure GitLab Repository](https://docs.alauda.io/alauda-devops-pipelines/4.15/pac/guides/configure_gitlab_repo.html), or [Centralized Management with Hub Pipeline and Run Template](https://docs.alauda.io/alauda-devops-pipelines/4.15/pipelines/how_to/hub_pipeline_run_template_centralized_management.html). The [Application CI/CD tutorials](https://docs.alauda.io/alauda-devops-pipelines/4.15/pipelines/tutorials/index.html) provide a guided implementation.
+
+For systems that do not use Git events, an Incoming Webhook can start a PipelineRun. Send an HTTP `POST` with a JSON body containing `repository`, `namespace`, `branch`, `pipelinerun`, and `secret` to the PaC `/incoming` endpoint. Treat the request as accepted only when it returns `202` and a new PipelineRun appears; a `200` response with an empty body can mean that no run was triggered.
 
 ## Connect the delivery stages
 
@@ -85,9 +87,9 @@ Start with [Run Template](https://docs.alauda.io/alauda-devops-pipelines/4.15/pi
 | Verify image signatures | Configure Chains keys and registry access centrally; verify the image by digest before promotion and at deployment admission. | [Signing Key Configuration](https://docs.alauda.io/alauda-devops-pipelines/4.15/chains/configure/signing_key_configuration.html). |
 | Hand off an artifact event | Map a Harbor event to the next pipeline, carrying the digest. Check scan and signing evidence separately. | [Use Harbor Event Triggers](https://docs.alauda.io/alauda-devops-pipelines/4.15/triggers/how_to/harbor_events.html). |
 
-Promotion copies a selected image; it does not establish that the image passed CI. The approver must match the digest with a successful trusted build and the test environment. Signatures establish the configured signer's statement; their meaning also depends on control over the signing key and the definitions allowed to run.
+Promotion copies a selected image; it does not establish that the image passed CI. The approver must match the digest with a successful trusted build and the test environment. For the sample, a trusted CI result is the `ci` PipelineRun for a `push` event on `main`; a successful `/test ci branch:<branch>` run from another branch is not equivalent. Signatures establish the configured signer's statement, not which pipeline produced the image; their meaning also depends on control over the signing key and the definitions allowed to run.
 
-The samples deliberately keep test CD, promotion, and production CD as manually started runs. Their inputs come from the preceding run's digest result. Harbor-driven automation is a separate integration step. The release tutorial's first deployment is performed by an administrator; subsequent releases follow the configured delivery path.
+The samples deliberately keep test CD, promotion, and production CD as manually started runs. Their inputs come from the preceding run's digest result. Harbor-driven automation is a separate integration step. The first production deployment waits for a promoted image; after that image is promoted, follow the same reviewed production GitOps path for later releases.
 
 ## Prepare a shared platform
 
@@ -95,16 +97,18 @@ Platform settings are administrator decisions. Roll them out in stages and check
 
 | Platform concern | Recommended approach |
 | --- | --- |
-| Tool access | Use project-scoped Connectors. Proxy access uses short-lived workload tokens. Manage image pull Secrets, PaC clone credentials, and Chains registry credentials as separate long-lived credential responsibilities. |
+| Tool access | Use project-scoped Connectors. Proxy access uses short-lived workload tokens. Manage image pull Secrets, PaC clone credentials, and Chains registry credentials as separate long-lived credential responsibilities. A project owner who can create Pods in a credential-bearing namespace can use the credentials in that namespace. |
 | Project onboarding | Orchestrate the four Connectors automatic creation Tasks, then seed a project GitOps repository and propose platform registration through a merge request. Complete the administrator prerequisites and acceptance checks. |
 | Platform configuration | Keep component settings, policies, encrypted administrator credentials, and project declarations in a platform repository. Assign one owner to each resource or field. |
 | Namespace isolation | Use separate project namespaces and tool-side tenants. Separate build, delivery, and workload namespaces and restrict access to administrator namespaces. |
 | Execution policy | Use platform ClusterPolicies and project Policies. Restrict direct TaskRun and CustomRun creation. Optionally require approved resolver types and coordinates. Move from Audit to Enforce after checking intended workflows. |
-| Cleanup | Select one cleanup mechanism. For event-based Pruner, review global defaults and namespace override settings before enabling deletion. |
+| Cleanup | Select one cleanup mechanism. For event-based Pruner, review global defaults and namespace override settings before enabling deletion. A global first sync can affect every namespace, with successful and failed history counted separately; inventory tenants and notify owners before changing the defaults. |
 | Audit history | Store run records and logs in external Results storage with an explicit retention period. Export approval evidence separately before deleting its objects. |
-| Scheduled work | Use ScheduledTrigger or CronJob for reconciliation and rotation, with failure alerts and no overlapping runs for a tenant. |
+| Scheduled work | Use ScheduledTrigger or CronJob for reconciliation and rotation, with failure alerts and no overlapping runs for a tenant. The sample has no distributed lock, so its operators enforce that rule. |
 
 Results Watcher scope deserves a separate rollout decision. Its default watch scope can affect finished runs across the cluster and add `results.tekton.dev/*` finalizers. Scope it before enabling it. Disabling archiving does not remove existing finalizers; follow the product recovery procedure before cleanup. After Pruner removes cluster objects, the external Results store is the audit source.
+
+The platform repository is the durable, reviewable source for configuration and project boundaries. It makes changes auditable and repeatable, but it is not a backup for sealed-secrets keys, signing keys, external tool data, or the Results store. Keep those dependencies in a separate recovery plan. Reverting a registration commit can prune an ACP project and its same-named namespace, so treat that action as decommissioning rather than an ordinary rollback.
 
 The [platform article](./Managing_Platform_Configuration_and_Onboarding_Isolated_Projects_with_Argo_CD_and_Tekton_on_ACP.md) explains the 18 platform decisions, repository layout, ownership boundaries, onboarding workflow, rotation, and acceptance checks.
 
