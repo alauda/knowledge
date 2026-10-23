@@ -238,6 +238,10 @@ the established boundary.
 | Credentials need periodic reconciliation or renewal. | Schedule the same onboarding workflow with failure alerts and a per-project concurrency lock. | [ScheduledTrigger](https://docs.alauda.io/alauda-devops-pipelines/4.15/triggers/how_to/scheduledtriggers.html) and [reconciliation](./Managing_Platform_Configuration_and_Onboarding_Isolated_Projects_with_Argo_CD_and_Tekton_on_ACP.md#reconcile-and-rotate-deliberately). |
 | Another system initiates work. | Expose an authenticated Incoming Webhook and define what acceptance and completion mean to the caller. | [Incoming Webhooks](https://docs.alauda.io/alauda-devops-pipelines/4.15/pac/how_to/incoming_webhooks.html). |
 
+Keep Kyverno `PolicyException` creation under platform-administrator control.
+The exception can weaken a shared admission boundary, so it must not be left to
+the local project policy or to an application identity.
+
 Proxy workload tokens do not remove every long-lived credential responsibility.
 Image pull Secrets, PaC clone credentials, and Chains registry credentials still
 need scoped access, rotation, and recovery. A project owner who can create Pods
@@ -246,7 +250,9 @@ release, and signing namespaces therefore need explicit run-creation boundaries.
 
 Cleanup and archiving also have shared consequences. Event-based Pruner defaults
 can affect every namespace on the first synchronization, with successful and
-failed history counted separately. Inventory tenants and their retention needs
+failed history counted separately. Set the global Pruner `enforcedConfigLevel` to
+`namespace` before relying on namespace-specific overrides; otherwise the
+cluster-level value remains in force. Inventory tenants and their retention needs
 before enabling deletion. Results Watcher can add `results.tekton.dev/*`
 finalizers to finished runs across its watch scope; define that scope before
 enabling it. Disabling archiving does not remove existing finalizers. Follow the

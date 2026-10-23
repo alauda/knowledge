@@ -281,11 +281,14 @@ spec:
                 value: [cluster, hub, git]
 ```
 
-This does not constrain a resolver's URL, catalog, namespace, version, definition content, or runtime credential scope. It also rejects inline `pipelineSpec` when enforced. Convert the sample's inline validation flow to a catalog Pipeline before enabling that restriction for project repositories. Restrict PolicyException creation or disable exceptions according to platform policy.
+This does not constrain a resolver's URL, catalog, namespace, version, definition content, or runtime credential scope. It also rejects inline `pipelineSpec` when enforced. Convert the sample's inline validation flow to a catalog Pipeline before enabling that restriction for project repositories. In `Audit`, a matching direct run is still admitted and should produce a PolicyReport; in `Enforce`, the same request is rejected. Test both modes with a disposable project identity before relying on the policy. Allow only platform administrators to create `PolicyException` objects, or disable exceptions according to platform policy; do not delegate this escape hatch to project identities.
 
 ### Constrain project deployment without replacing ACP ownership
 
-The sample's `argocd-project-namespace-boundary` policy constrains writes of Role,
+The sample's `argocd-project-namespace-boundary` policy is installed in
+`Enforce` from the beginning. Do not follow an Audit-first rollout for this
+boundary: an Audit report does not prevent a project identity from writing a
+protected object. The policy constrains writes of Role,
 RoleBinding, ResourceQuota, LimitRange, NetworkPolicy, Kyverno PolicyException,
 and Connectors AccessPolicy by the configured Argo CD identities in labelled
 project namespaces. It allows the platform-owned registration path and requires `allowExistingViolations: false`. Adapt both Argo CD identities for the target cluster and verify the intended allow and deny cases for the installed APIs before relying on the boundary. The exception for the platform `projects` Application depends on Argo CD's `argocd.argoproj.io/tracking-id` annotation; label-only resource tracking is not covered. Restrict exception and AccessPolicy creation by other identities as well, and keep any platform exception namespace outside project destinations. Install and verify the policy on every destination cluster to which the boundary should apply.
@@ -307,9 +310,11 @@ A rejected object makes the Application's synchronization fail with the policy
 message. Retry settings determine subsequent attempts. Remove the forbidden
 object from the project source and synchronize the corrected revision. This
 admission policy has no background scan, so an Audit trial needs an actual matching
-write before there is a report to inspect.
+write before there is a report to inspect. The same seven protected object kinds are covered
+in Audit and Enforce; Audit records a report while Enforce rejects the matching
+write.
 
-Kyverno availability and recovery are platform operating concerns. For policies used as admission gates, keep the resource webhooks registered with `failurePolicy: Fail`; when Kyverno is unreachable, matching writes are then rejected. An absent webhook provides no enforcement, and an orderly scale-to-zero can remove resource webhook registrations. Operate Kyverno highly available and keep a controlled recovery procedure, including the conditions for temporarily removing and later restoring webhook configurations. A signing result proves the signing key, not the pipeline that produced an image. Restrict ClusterPolicy, resolver, webhook, and PolicyException changes to platform administrators. See [Pipeline Policy Constraints with Tekton and Kyverno](./Pipeline_Policy_Constraints_with_Tekton_and_Kyverno.md) for the policy design.
+Kyverno availability and recovery are platform operating concerns. For policies used as admission gates, keep the resource webhooks registered with `failurePolicy: Fail`; when Kyverno is unreachable, matching writes are then rejected. For this boundary, that includes Role, RoleBinding, ResourceQuota, LimitRange, NetworkPolicy, PolicyException, and Connectors AccessPolicy writes: the onboarding identity and cluster administrators are also rejected until Kyverno recovers. An absent webhook provides no enforcement, and an orderly scale-to-zero can remove resource webhook registrations. Operate Kyverno highly available and keep a controlled recovery procedure, including the conditions for temporarily removing and later restoring webhook configurations. A signing result proves the signing key, not the pipeline that produced an image. Restrict ClusterPolicy, resolver, webhook, and PolicyException changes to platform administrators. See [Pipeline Policy Constraints with Tekton and Kyverno](./Pipeline_Policy_Constraints_with_Tekton_and_Kyverno.md) for the policy design.
 
 ## Organize and synchronize the platform repository
 
@@ -373,7 +378,7 @@ three are appropriate for a layer.
 | Policies, projects, and onboarding | Automated sync, prune, and self-heal in the sample. | Git owns these resources; registration deletion has project-level consequences. |
 | Project environment Applications | Automated sync, prune, and self-heal. | Git is the desired application state; test and production differ in Git review requirements. |
 
-For partial singleton component configuration, use server-side apply so the platform repository owns only the specified fields. The samples also set `argocd.argoproj.io/compare-options: ServerSideDiff=true`. Review the generated diff and the operator's field ownership before synchronization. The component layer uses `prune: false` so that removing a fragment does not delete the singleton TektonConfig, and starts with `selfHeal: false`. Observe the operator's write-back behavior and effective ownership in the target environment before enabling ongoing self-healing. Automatic synchronization of a new Git revision and self-healing of a live edit are separate decisions.
+For partial singleton component configuration, use server-side apply so the platform repository owns only the specified fields. Set `argocd.argoproj.io/compare-options: ServerSideDiff=true` with it; without server-side diff, the Application can remain `OutOfSync` and self-healing can repeatedly reapply the same apparent drift. Review the generated diff and the operator's field ownership before synchronization. The component layer uses `prune: false` so that removing a fragment does not delete the singleton TektonConfig, and starts with `selfHeal: false`. Observe the operator's write-back behavior and effective ownership in the target environment before enabling ongoing self-healing. Automatic synchronization of a new Git revision and self-healing of a live edit are separate decisions.
 
 The credential layer does not enable self-healing: seal credentials for the target controller and plan how rotations update live Secrets and encrypted source. Other layers can use prune and self-heal according to their ownership. Namespaces are created by onboarding; do not add a second namespace creator with `CreateNamespace`.
 
@@ -413,7 +418,7 @@ Kustomize reference prevents generation of that Application's manifest set, so
 unrelated objects in the same layer can also stop synchronizing. Finding the
 problem in merge-request validation keeps it close to the author and the diff.
 
-Both the platform and project GitOps templates include `.tekton/validate.yaml`, which composes catalog `git-clone` and `run-script` Tasks. Replace its tool image with a locally available image containing the required shell and Kustomize commands. Establish its webhook before the first merge-request run. With default-branch definition provenance, a change to the validation definition is first exercised after it has entered that branch.
+Both the platform and project GitOps templates include `.tekton/validate.yaml`, which composes catalog `git-clone` and `run-script` Tasks. Replace its tool image with a locally available image containing `sh`, `kubectl`, and the `kubectl kustomize` command; an image with only a standalone Kustomize binary is insufficient for the sample script. Establish its webhook before the first merge-request run. With default-branch definition provenance, a change to the validation definition is first exercised after it has entered that branch.
 
 Validate every directory owned by an Application, and add new directories to the validation paths. Re-run a merge-request check with `/test validate branch:<branch>`. YAML parsing and Kustomize rendering do not validate CRD admission behavior; use the target schemas and an isolated project for that acceptance step.
 
@@ -473,7 +478,7 @@ sonarqube:
 
 `imagePullFrom` is reserved: this sample only prints a warning when it is set and grants no cross-project pull access.
 
-The declaration's `approvers` field is a reviewed record only: onboarding validates its shape but does not apply or compare it. The approvers that take effect are the promotion Pipeline's `ApprovalTask` list and the production `AccessPolicy`; nothing keeps those three sources in sync, so update them together in one reviewed change. Keep the production `AccessPolicy` under platform-administrator control because a person who can edit the Pipeline can otherwise change its `ApprovalTask` list while the AccessPolicy continues to enforce its own approver set.
+The declaration's `approvers` field is a reviewed record only: onboarding validates its shape but does not apply or compare it. The approvers that take effect are the promotion Pipeline's `ApprovalTask` list and the production `AccessPolicy`; nothing keeps those three sources in sync, so update them together in one reviewed change. Keep the production `AccessPolicy` under platform-administrator control because a person who can edit the Pipeline can otherwise change its `ApprovalTask` list while the AccessPolicy continues to enforce its own approver set. A signing result records the configured key, not the Pipeline that produced the image, and Chains does not create a run-level signature for a `PipelineRun` containing `CustomRun` tasks; keep that limitation in the release evidence.
 
 ### Review all inputs in the project merge request
 
@@ -490,6 +495,11 @@ replacing the explicit files with more automation. Separately, add the new
 registry projects to the platform-owned central Chains credential's access.
 
 Submit the declaration, project-specific onboarding permissions, and schedule through a platform merge request. Confirm that the declaration and onboarding Applications have synchronized; synchronize them manually when using a manual sync policy. Then examine the dispatcher result and every child onboarding run. A successful merge or dispatcher does not by itself establish complete project readiness.
+
+The merge check does not replace onboarding validation. The declaration's
+structure and derived names are checked by the post-merge onboarding run, so a
+syntactically valid but semantically invalid declaration can still merge and
+must be diagnosed from that run's result.
 
 The sample dispatches changed declarations after a merge. A path filter can also admit a run with no relevant declaration changes; the dispatcher is responsible for selecting actual declarations. A deleted declaration is skipped, rather than interpreted as an instruction to delete a project.
 
@@ -525,6 +535,9 @@ The exported ACP project omits status, server-generated metadata, and GitOps
 tracking markers. Keeping runtime tracking out of Git avoids a registration merge
 request whose only purpose is to copy the previous synchronization's metadata.
 Namespaces and delivery identities are created before the tool Tasks need them.
+The build namespace uses Pod Security `baseline`; workload and delivery
+namespaces use the stricter `restricted` level. Keep this distinction when
+applying the namespace labels.
 
 Harbor pull configuration is distributed to workload and build namespaces. The
 sample delivery namespace runs tool images and does not receive that project pull
@@ -596,6 +609,12 @@ spec:
 Set the provider URL explicitly so completion requests and the Repository token use the intended GitLab instance. The PaC repository URL differs from the `.git` URL used by Argo CD. `gitops/config` is a repository beneath the `gitops` subgroup, rather than a repository path conflicting with that subgroup's name.
 
 The project's PaC Repository uses the Developer-level group access token. When automatic webhook registration is enabled, the controller uses the centralized webhook-registration credential configured by platform administrators to create and delete the webhook; verify a fresh event and its resulting run. The separate GitOps writer uses the Maintainer-level group access token. Keep the webhook-registration credential available through repository decommissioning, and check for remaining code-platform webhooks afterward. The application's Repository belongs in the build namespace, where CI executes. Application CI objects belong in the build namespace; CD and promotion Run Templates and PipelineRuns belong in the delivery namespace and require an administrator or an explicit delegated grant.
+
+If `git_provider.url` is omitted, PaC can send completion comments to the
+public `gitlab.com` provider instead of the self-managed GitLab instance, so
+the intended merge request may never show the final status. Always set the
+provider URL for a self-managed installation and verify the comment on the
+expected merge request.
 
 ### Separate platform parameters from application inputs
 
@@ -684,8 +703,17 @@ broad role, and a project label does not constrain every writer.
 The production release credential in this sample can read the staging project as
 well as write production because the copy Task uses the destination proxy
 configuration for both ends. The mount named source-readonly supplies the source
-CA; it does not establish a separate authentication path. The delivery article
-explains this copy-specific behavior and its approval boundary.
+CA; it does not establish a separate authentication path. Chains uses its
+platform-owned central registry credential for the promotion signature; do not
+give the `shop-release` identity a matching production-registry push credential,
+or Chains will prefer that credential and the release identity will gain a direct
+write path. The delivery article explains this copy-specific behavior and its
+approval boundary.
+
+When promotion admission is enabled, use the Pipeline's `imageMappings` input
+for every source-to-release mapping. The admission rule recognizes that mapping
+form; a separately supplied repository or tag parameter is not a substitute.
+Verify the build provenance for each digest before approving the promotion.
 
 Cross-project pull access needs a separately reviewed grant. The declaration's
 reserved `imagePullFrom` field only emits a warning in the sample; it does not
@@ -707,7 +735,7 @@ The following matrix summarizes the six roles and the grants supplied or require
 
 The release approver is not automatically a Git code owner. Configure the Git review role separately if both approvals are required. The supplied Maintainer writer can change GitLab protection settings; a production deployment needs a separately protected branch or repository and a narrower writer identity. Verify effective permissions with the actual users and ServiceAccounts before delegating delivery-namespace run creation.
 
-Name-scoped Connector `get` grants record the mounts this workflow needs; they do not remove ACP's broader default Connector reads within a project. Identity-specific proxy restrictions require the proxy permission features and grants described in the [delivery article](./From_Commit_to_Production_on_ACP.md#gate-the-production-connector-after-approval). Keep the distinction between read authorization, proxy authorization, and access to raw Secrets when reviewing this matrix.
+Name-scoped Connector `get` grants record the mounts this workflow needs; they do not remove ACP's broader default Connector reads within a project. Identity-specific proxy restrictions require the proxy permission features and grants described in the [delivery article](./From_Commit_to_Production_on_ACP.md#gate-the-production-connector-after-approval). Keep the distinction between read authorization, proxy authorization, and access to raw Secrets when reviewing this matrix. A `defaultPermission` policy selects only identities that have namespace-wide `get` on Connectors; a name-scoped `get` does not qualify, and other identities are skipped silently while the policy can still report `Ready`.
 
 Keep CI, GitOps delivery, and artifact promotion identities separate. A runtime
 ServiceAccount having execution credentials does not mean it can create its own
@@ -734,7 +762,7 @@ permissions, and keep release initiators and approvers separate.
 | Event routing | A fresh repository event or merge-request retry produces the expected run in the intended namespace. |
 | Rotation | A successful non-overlapping run updates the intended credential and an authorized operation works afterward. |
 
-Run `acceptance/02-platform-and-onboarding.sh` from the sample in an isolated acceptance project. Its companion delivery script verifies the image path after the first promoted production deployment. The acceptance script does not check onboarding runs: read the dispatcher's `onboarding-runs` result, confirm that it names a run for every project the change should onboard, and confirm that each child run has `Succeeded=True`. Check the four Connectors, the seeded repository, registration merge request, and Applications. The initial placeholder digest is not deployable; workload health follows the first real deployment. The platform `projects` Application can remain `OutOfSync` for platform-managed fields in this design; inspect the effective destinations and policy instead of treating that status alone as failure.
+Run `acceptance/02-platform-and-onboarding.sh` from the sample in an isolated acceptance project. Its companion delivery script verifies the image path after the first promoted production deployment. The acceptance script does not check onboarding runs: read the dispatcher's `onboarding-runs` result, confirm that it names a run for every project the change should onboard, and confirm that each child run has `Succeeded=True`. Check the four Connectors, the seeded repository, registration merge request, and Applications. The initial placeholder digest is not deployable; workload health follows the first real deployment. The platform `projects` Application can remain `OutOfSync` for platform-managed fields in this design; inspect the effective destinations and policy instead of treating that status alone as failure. When `no-bare-taskrun.yaml` is enabled, create one disposable direct TaskRun as the project identity and confirm that `Audit` admits it with a PolicyReport while `Enforce` rejects it; delete the probe and retain the report as evidence.
 
 For cross-project image denial, first verify that the exact image exists and can be pulled in its own project. Then test an unauthorized project, distinguish `unauthorized` from `not found` and Pod Security rejection, and repeat in the opposite direction using an image that exists there. Delete temporary probe resources after the checks.
 
