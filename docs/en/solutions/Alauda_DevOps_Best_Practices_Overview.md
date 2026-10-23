@@ -143,11 +143,13 @@ event mapping and Run Template. A schedule is useful for reconciliation because
 it reuses the same inputs and execution definition as a manual recovery run.
 
 For a PaC retry from a merge request, comment
-`/test <pipelinerun-name> branch:<branch>` on the merge request. For a push-triggered
-run, comment the same form on the commit at the head of that branch. The explicit
-branch makes the requested source clear. The release-candidate `ci` sample has an
-additional runtime restriction described below; it intentionally rejects comment
-retries. See [Trigger PAC Pipelines](https://docs.alauda.io/alauda-devops-pipelines/4.15/pac/how_to/trigger_pipeline.html)
+`/test <pipelinerun-name> branch:<branch>` on the merge request. PaC uses the
+merge request's source branch for that comment; `branch:` records the intended
+source but does not switch the merge request to another branch. To run a
+different branch, post the same command on the latest commit of that branch.
+The release-candidate `ci` sample has an additional runtime restriction
+described below; it intentionally rejects comment retries. See [Trigger PAC
+Pipelines](https://docs.alauda.io/alauda-devops-pipelines/4.15/pac/how_to/trigger_pipeline.html)
 for the complete syntax.
 
 For an Incoming Webhook, send an HTTP `POST` with a JSON body to the PaC

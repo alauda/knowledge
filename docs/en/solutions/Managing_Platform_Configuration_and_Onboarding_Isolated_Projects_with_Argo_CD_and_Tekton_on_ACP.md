@@ -146,7 +146,15 @@ Application is still catching up, the dispatcher must wait or report the
 project as not ready; starting the child run early can fail when it tries to
 reconcile the release Connectors.
 
-Keep Harbor projects private. Nexus anonymous access combined with an anonymous role that can read tenant repositories bypasses their user credentials; the onboarding Task only warns about anonymous access. Disable it (Settings → Security → Anonymous Access) or remove the anonymous role's access to tenant repositories, then confirm that an unauthenticated read is refused. Configure SonarQube permissions according to the project-isolation requirements in its Task guide. Do not infer isolation merely from the presence of separate credentials.
+Keep Harbor projects private. If Nexus anonymous access is enabled and its
+anonymous role can read tenant repositories, an unauthenticated user can read
+repositories created by the onboarding Task, bypassing the tenant credentials.
+The onboarding Task only warns about anonymous access. Disable it (Settings →
+Security → Anonymous Access) or remove the anonymous role's access to tenant
+repositories, then confirm that an unauthenticated read is refused. Configure
+SonarQube permissions according to the project-isolation requirements in its
+Task guide. Do not infer isolation merely from the presence of separate
+credentials.
 
 For a disconnected environment, prepare local catalog content, pinned tool and base images, dependency repositories, certificates, and vulnerability databases before running pipelines.
 
@@ -380,7 +388,16 @@ three are appropriate for a layer.
 
 For partial singleton component configuration, use server-side apply so the platform repository owns only the specified fields. Set `argocd.argoproj.io/compare-options: ServerSideDiff=true` with it; without server-side diff, the Application can remain `OutOfSync` and self-healing can repeatedly reapply the same apparent drift. Review the generated diff and the operator's field ownership before synchronization. The component layer uses `prune: false` so that removing a fragment does not delete the singleton TektonConfig, and starts with `selfHeal: false`. Observe the operator's write-back behavior and effective ownership in the target environment before enabling ongoing self-healing. Automatic synchronization of a new Git revision and self-healing of a live edit are separate decisions.
 
-The credential layer does not enable self-healing: seal credentials for the target controller and plan how rotations update live Secrets and encrypted source. Other layers can use prune and self-heal according to their ownership. Namespaces are created by onboarding; do not add a second namespace creator with `CreateNamespace`.
+The credential layer does not enable self-healing: the Sealed Secrets controller
+may write controller-managed state back to the live Secret, so Argo CD can see a
+field-level difference that it must not repeatedly overwrite. Seal credentials
+for the target controller and plan how rotations update live Secrets and
+encrypted source. For layers with self-healing enabled, change managed objects
+through the platform repository and a reviewed merge; a direct `kubectl` edit is
+temporary and will be reconciled. The ACP project creates the same-named inner
+namespace first; onboarding labels and adopts that namespace, then creates the
+workload, build, and delivery namespaces. Do not add a second namespace creator
+with `CreateNamespace`.
 
 ### Review the effective AppProject and its alternatives
 
@@ -420,7 +437,7 @@ problem in merge-request validation keeps it close to the author and the diff.
 
 Both the platform and project GitOps templates include `.tekton/validate.yaml`, which composes catalog `git-clone` and `run-script` Tasks. Replace its tool image with a locally available image containing `sh`, `kubectl`, and the `kubectl kustomize` command; an image with only a standalone Kustomize binary is insufficient for the sample script. Establish its webhook before the first merge-request run. With default-branch definition provenance, a change to the validation definition is first exercised after it has entered that branch.
 
-Validate every directory owned by an Application, and add new directories to the validation paths. Re-run a merge-request check with `/test validate branch:<branch>`. YAML parsing and Kustomize rendering do not validate CRD admission behavior; use the target schemas and an isolated project for that acceptance step.
+Validate every directory owned by an Application, and add new directories to the validation paths. Re-run a merge-request check with `/test validate branch:<branch>`. PaC uses the merge request's source branch and ignores `branch:` for choosing another MR branch; to run another branch, comment on its latest commit. YAML parsing and Kustomize rendering do not validate CRD admission behavior; use the target schemas and an isolated project for that acceptance step.
 
 A validation status blocks a merge only when the Git platform requires it. On GitLab, enable **Pipelines must succeed** for the platform and project GitOps repositories. If Auto DevOps starts an additional pipeline without an available runner, the merge request can remain in a running state; disable Auto DevOps for these repositories or provide a runner.
 
@@ -474,7 +491,20 @@ sonarqube:
   project: shop
 ```
 
-`owners` contains ACP group resource names without a `group:` prefix; approval entries use `group:<resource-name>`. A console display name is not the resource name. Group membership changes belong to group administration, rather than edits naming individuals in every declaration.
+`owners` contains ACP group resource names without a `group:` prefix; approval entries use `group:<resource-name>`. A console display name is not the resource name. When a fixed group name is required, create the group as a reviewed `auth.alauda.io/v1` `Group` object and import its user members through ACP group administration; do not put individual user names in every declaration. For example:
+
+```yaml
+apiVersion: auth.alauda.io/v1
+kind: Group
+metadata:
+  name: shop-platform-owners
+spec:
+  users: []
+```
+
+After the group exists, add approved members in the console and verify the
+resource name with `kubectl get groups`. Group membership changes belong to
+group administration, rather than edits naming individuals in every declaration.
 
 `imagePullFrom` is reserved: this sample only prints a warning when it is set and grants no cross-project pull access.
 

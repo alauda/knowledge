@@ -164,7 +164,7 @@ for the same event and job, since enabling both can duplicate the work. The
 same project can keep simple jobs in the cluster, use PaC for its main application,
 and reference a central template from both.
 
-For a retry from a merge request, comment `/test <pipelinerun-name> branch:<branch>` on the merge request. For a push-triggered run, comment the same form on the commit at the head of that branch. Keep the complete syntax in one place by linking to [Trigger PAC Pipelines](https://docs.alauda.io/alauda-devops-pipelines/4.15/pac/how_to/trigger_pipeline.html).
+For a retry from a merge request, comment `/test <pipelinerun-name> branch:<branch>` on the merge request. PaC uses that merge request's source branch; the `branch:` argument documents the source but does not select another branch. For a push-triggered run, comment the same form on the latest commit of the branch that should run. Keep the complete syntax in one place by linking to [Trigger PAC Pipelines](https://docs.alauda.io/alauda-devops-pipelines/4.15/pac/how_to/trigger_pipeline.html).
 
 A failed check blocks a merge only when the Git platform requires that check to pass. On GitLab, enable **Pipelines must succeed**. If Auto DevOps creates an additional pipeline and no runner picks it up, the GitLab pipeline can remain running and the merge request continues to show a running pipeline; disable Auto DevOps for these repositories or provide a runner.
 
@@ -329,7 +329,7 @@ writer separate from the application CI token and restrict both its Git rights
 and the namespace from which it can be used. The execution-rights section below
 explains why the sample's Maintainer token needs additional protection.
 
-The sample starts test CD, promotion, and production CD manually from rendered PipelineRun YAML. Replace the template parameters, verify the image mapping, identity, and Workspaces, and submit with `kubectl create`. A console Run Template form exposes Pipeline parameters: in the sample, remove the empty third `updateArgs` entry, use the full `repository@sha256:digest` for test CD, and use the bare `sha256:digest` for production CD because the production repository is fixed by the seeded overlay. Restrict who may create PipelineRuns in the delivery namespace; a console form can expose parameters that are fixed in the rendered YAML path. Use [Run Template](https://docs.alauda.io/alauda-devops-pipelines/4.15/pipelines/how_to/run_template.html) for other execution entries. Harbor event automation is an additional integration, not part of the sample's manual path.
+The sample starts test CD, promotion, and production CD manually from rendered PipelineRun YAML. Replace the template parameters, verify the image mapping, identity, and Workspaces, and submit with `kubectl create`. This manual setup path is a fallback for the sample; the target workflow should carry the digest from the trusted CI result through reviewed trigger inputs instead of asking an operator to copy an image reference. A console Run Template form exposes Pipeline parameters: in the sample, remove the empty third `updateArgs` entry, use the full `repository@sha256:digest` for test CD, and use the bare `sha256:digest` for production CD because the production repository is fixed by the seeded overlay. Restrict who may create PipelineRuns in the delivery namespace; a console form can expose parameters that are fixed in the rendered YAML path. Use [Run Template](https://docs.alauda.io/alauda-devops-pipelines/4.15/pipelines/how_to/run_template.html) for other execution entries. Harbor event automation is an additional integration, not part of the sample's manual path.
 
 ### Assign execution rights separately from repository ownership
 
@@ -374,6 +374,20 @@ Production rollback follows the same review boundary. Rebuilds can produce diffe
 4. Open a merge request, wait for validation, then review and merge it.
 5. Confirm the selected image in Argo CD and the Deployment, and wait for rollout completion.
 6. If returning to the newer version is required, use the same reviewed one-line change.
+
+For the evidence review, keep the expected one-line diff and verify the live
+objects explicitly:
+
+```bash
+git log -p -- envs/prod/kustomization.yaml
+kubectl -n argocd get application <project>-prod -o yaml
+kubectl -n <project>-prod get deployment <workload> -o jsonpath='{.spec.template.spec.containers[*].image}{"\n"}'
+kubectl -n <project>-prod rollout status deployment/<workload>
+```
+
+The Git diff should change only the production digest; the Application and
+Deployment should report that same digest, and the rollout command should finish
+successfully.
 
 Database and data migrations need an application-specific rollback plan. Rehearse the complete runbook in the target environment. Configure [Harbor tag retention](https://goharbor.io/docs/2.14.0/working-with-projects/working-with-images/create-tag-retention-rules/) and [tag immutability](https://goharbor.io/docs/2.14.0/working-with-projects/working-with-images/create-tag-immutability-rules/) so that required rollback images remain available.
 
@@ -537,6 +551,13 @@ copy step.
 Configure Chains signing keys centrally and distribute only the public verification key to projects. Protect both the signing Secret and the ability to create Pods in its namespace. Application teams do not need access to the signing Secret.
 
 The sample stores signatures and attestations beside the image. Chains first uses matching registry credentials from the run's ServiceAccount. In the sample, the image-pull Secret also has push permission and is used by Chains, so it is not a read-only credential; separate a read-only workload Secret from a signing credential in a hardened deployment. Those credentials must be able to push to the image's registry project. Where they are absent, configure a centrally managed registry credential on the Chains controller through `TektonConfig`. Chains does not use a Connector's CSI proxy Workspace as its registry credential. Keep the `shop-release` ServiceAccount free of a matching production-registry push credential; otherwise Chains will select it first and the promotion identity will gain a direct production write path. Use the platform-owned central credential when the promotion run has no matching ServiceAccount credential.
+
+Treat `signing-secrets` as platform-owned and inspect its `immutable` field
+and owner references before rotating it. If the installed Chains or installer
+marks it immutable or manages it through a SealedSecret, create the replacement
+through that component's documented procedure and update the verification key and
+admission policy as one reviewed change; do not edit generated Secret data in
+place. Verify that retained signatures remain verifiable with the selected key.
 
 The central credential is created by an administrator, outside Git. Limit it to the registry projects that Chains must read and sign. When onboarding a project, the platform team must add its source and production registry projects to that credential's access. Rotate it and restrict its Secret and namespace. Apply controller configuration changes in a maintenance window, preserving other container options already configured.
 
