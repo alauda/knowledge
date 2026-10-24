@@ -28,9 +28,11 @@ By the end, you should be able to explain:
 - Whether production needs artifact copying, human approval, approval-gated credentials, and deployment admission.
 - Where each control takes effect and which prerequisites the platform team must supply.
 
-Work through these decisions in that order. A small project can begin with a
-manual run; source-based definitions, central templates, and release controls can
-be introduced when their benefits justify their ownership and operating cost.
+Work through these decisions in that order. A small project can bootstrap with a
+manual run, but the target workflow should carry the selected digest from the
+trusted CI result through reviewed inputs. Source-based definitions, central
+templates, and release controls can then be introduced when their benefits
+justify their ownership and operating cost.
 
 This is the delivery part of [Alauda DevOps Best Practices](./Alauda_DevOps_Best_Practices_Overview.md). Its configuration baseline is Pipelines 4.15, Artifact Hub Shim 1.0, Connectors 1.14, and GitOps 4.4. Project namespaces, tool-side resources, and Connectors must already exist; the [platform article](./Managing_Platform_Configuration_and_Onboarding_Isolated_Projects_with_Argo_CD_and_Tekton_on_ACP.md) explains their preparation.
 
@@ -507,7 +509,7 @@ Approval gating uses two installation-wide feature flags. Roll them out in this 
 
 Set feature flags through `ConnectorsConfig`. For the full configuration and verification path, see [Enable Proxy Permission Checks and Approval Gating](https://docs.alauda.io/alauda-devops-connectors/1.14/connectors/how_to/enable_proxy_permissions_and_approval.html), [AccessPolicy](https://docs.alauda.io/alauda-devops-connectors/1.14/connectors/concepts/access_policy.html), and [Skopeo Copy connector approval](https://docs.alauda.io/alauda-devops-artifacthub-shim/1.0/catalog/how_to/promote_artifacts_with_skopeo_copy.html#connector-approval).
 
-`defaultPermission` policies have authorization prerequisites and are not a substitute for every cross-namespace RBAC grant. A name-scoped `get` Role does not by itself satisfy a policy that requires namespace-wide reads. A `defaultPermission` policy applies only to identities with namespace-wide `get`; other identities can be silently skipped, with that skip visible only in the controller log while the policy can still report `Ready`. The sample grants the onboarding identity namespace-wide `get` in the management namespace, while keeping proxy permissions limited to the named administrator Connectors; keep that broader read scoped to the management namespace. A Ready policy alone does not establish a working mount. Verify the actual identity, Pod events, mounted configuration, and AccessRequest result.
+`defaultPermission` policies have authorization prerequisites and are not a substitute for every cross-namespace RBAC grant. Every identity used for a Connector mount must be able to `get` the named Connector in its source namespace; a name-scoped `get` Role records that relationship but does not by itself satisfy a policy that requires namespace-wide reads. A `defaultPermission` policy applies only to identities with namespace-wide `get`; other identities can be silently skipped, with that skip visible only in the controller log while the policy can still report `Ready`. The sample grants the onboarding identity namespace-wide `get` in the management namespace, while keeping proxy permissions limited to the named administrator Connectors; keep that broader read scoped to the management namespace. A Ready policy alone does not establish a working mount. Verify the actual identity, Pod events, mounted configuration, and AccessRequest result.
 
 ### Connect the release steps in their actual order
 
@@ -544,11 +546,15 @@ the production project. Verification at workload admission checks the image that
 the cluster is being asked to run, including requests outside the normal release
 path. Both can be used. The sample supplies deployment verification and separate
 cosign acceptance checks; it does not add a source-verification task before its
-copy step.
+copy step. Chains does not create a run-level signature for a `PipelineRun` that
+contains `CustomRun` tasks, so correlate those runs with their image digest,
+TaskRun evidence, and any separate approval record.
 
 ### Prepare signing and registry access centrally
 
 Configure Chains signing keys centrally and distribute only the public verification key to projects. Protect both the signing Secret and the ability to create Pods in its namespace. Application teams do not need access to the signing Secret.
+
+Before enabling signing, check the effective permissions of every project identity, including automatically created EventListener ServiceAccounts and their groups. They must be denied Secret `get`, `list`, and `watch`, and Pod creation in the Chains namespace. Inspect cluster-wide grants as well as project RoleBindings. If a check allows access, narrow the grants in their platform-managed source or install a component version with least-privilege roles before onboarding; then repeat the checks and confirm denial with an independent project token. Built-in webhook Secret validation runs under the separate core-interceptors identity, so it does not require cluster-wide Secret access for the EventListener. After narrowing permissions, verify both an authenticated real event and an incorrect-authentication negative control. The sample [Chains prerequisites](https://github.com/AlaudaDevops/devops-best-practices-samples/blob/main/sample-app/chains/README.md#check-project-access-before-enabling-signing) provide the administrator commands.
 
 The sample stores signatures and attestations beside the image. Chains first uses matching registry credentials from the run's ServiceAccount. In the sample, the image-pull Secret also has push permission and is used by Chains, so it is not a read-only credential; separate a read-only workload Secret from a signing credential in a hardened deployment. Those credentials must be able to push to the image's registry project. Where they are absent, configure a centrally managed registry credential on the Chains controller through `TektonConfig`. Chains does not use a Connector's CSI proxy Workspace as its registry credential. Keep the `shop-release` ServiceAccount free of a matching production-registry push credential; otherwise Chains will select it first and the promotion identity will gain a direct production write path. Use the platform-owned central credential when the promotion run has no matching ServiceAccount credential.
 
@@ -557,7 +563,10 @@ and owner references before rotating it. If the installed Chains or installer
 marks it immutable or manages it through a SealedSecret, create the replacement
 through that component's documented procedure and update the verification key and
 admission policy as one reviewed change; do not edit generated Secret data in
-place. Verify that retained signatures remain verifiable with the selected key.
+place. Keep the old public key in the verification policy alongside the new key
+until every image signed with the old key, including retained rollback images and
+running Pods, is retired. Verify signatures with both keys during the transition,
+then remove the old key in a separate reviewed change.
 
 The central credential is created by an administrator, outside Git. Limit it to the registry projects that Chains must read and sign. When onboarding a project, the platform team must add its source and production registry projects to that credential's access. Rotate it and restrict its Secret and namespace. Apply controller configuration changes in a maintenance window, preserving other container options already configured.
 
@@ -575,7 +584,7 @@ The `--type` value must match the provenance predicate emitted by Chains. This s
 
 For an offline installation configured without a transparency log, use the product's offline verification settings, including `--insecure-ignore-tlog=true` where required. This skips the external transparency-log check; retain the signature and attestation checks. Authenticate to private registries without committing the login credentials.
 
-If the platform chooses a separate signature repository, configure `storage.oci.repository` centrally and use the corresponding `COSIGN_REPOSITORY` in verification and the repository setting in Kyverno. Review storage and overwrite behavior before combining build and promotion attestations for the same digest: depending on the registry and Chains configuration, a promotion signature may coexist with or replace an attachment written by CI. Capture and verify the CI signature and provenance before promotion, and retain a separate copy or repository when both records must remain independently auditable. Copying build signature attachments during promotion is optional; the sample uses explicit `.sig` and `.att` mappings. For multi-architecture images, follow the Skopeo Copy Task contract and set `multiArch: all` when copying the index and its attachments; do not assume the single-image mappings cover an index automatically.
+If the platform chooses a separate signature repository, configure `storage.oci.repository` centrally and use the corresponding `COSIGN_REPOSITORY` in verification and the repository setting in Kyverno. Changing the storage setting does not migrate existing attachments. Preserve the existing CI evidence separately before switching, and verify a newly signed image at the configured location before relying on it for promotion. Review storage and overwrite behavior before combining build and promotion attestations for the same digest: depending on the registry and Chains configuration, a promotion signature may coexist with or replace an attachment written by CI. Capture and verify the CI signature and provenance before promotion, and retain a separate copy or repository when both records must remain independently auditable. When the separate repository uses one attachment tag per digest and promotion replaces the CI attachment, do not add the CI `.sig` and `.att` mappings to the promotion run; verify the CI evidence first and preserve it separately. Copying build signature attachments during promotion is optional; the sample uses explicit `.sig` and `.att` mappings for the default same-repository layout. For multi-architecture images, follow the Skopeo Copy Task contract and set `multiArch: all` when copying the index and its attachments; do not assume the single-image mappings cover an index automatically.
 
 ### Introduce deployment verification with positive and negative controls
 
@@ -586,6 +595,8 @@ Images from another repository can fall outside that selection even in a
 production namespace. Pair verification with a production-image-source and digest
 restriction when that is the platform's release boundary; the sample does not
 install that additional restriction.
+
+During signing-key rotation, use one attestor with `count: 1` and separate `entries` for the old and new public keys, including each key's required offline verification options. This accepts a signature from either key. Verify old-image admission before replacing the signer, then verify the new signature and admission. Retain the old entry while any old-signed deployment or rollback image is still needed.
 
 An attestation's Pipeline label can help detect selecting the wrong workflow, but
 a name alone is not a unique execution identity: another namespace can contain a

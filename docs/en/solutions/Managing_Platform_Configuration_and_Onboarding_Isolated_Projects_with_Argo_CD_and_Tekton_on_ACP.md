@@ -123,6 +123,8 @@ An administrator creates the management namespace, `platform-connectors` in the 
 
 Create the Chains signing key and central registry credential outside Git. The central registry credential must exist before syncing the component layer that mounts it. Give it access only to registry projects that Chains must read and sign, and update that access when a project is onboarded.
 
+Before onboarding, check every project ServiceAccount, including automatically created EventListener identities, with its actual groups: Secret `get`, `list`, and `watch`, and Pod creation in the Chains namespace must be denied. If any request is allowed, narrow the grants in their platform-managed source or install a component version with least-privilege roles, then repeat the checks with an independent project token. Built-in webhook Secret validation uses the separate core-interceptors identity; the EventListener does not need cluster-wide Secret reads. Recheck real webhook acceptance and incorrect-authentication rejection after the permission change. Follow the sample's [project-access checks](https://github.com/AlaudaDevops/devops-best-practices-samples/blob/main/sample-app/chains/README.md#check-project-access-before-enabling-signing).
+
 Register the platform repository with Argo CD and provide read access to each project GitOps repository. A repository credential template can cover the approved GitLab URL prefix; narrower templates must be added per project. Use repository URLs ending in `.git` for Application and AppProject GitLab references. Use the cluster name registered by Alauda GitOps for both Application destinations and AppProject destination constraints.
 
 Create the ACP project through the platform before onboarding it. The pipeline exports that project's manifest for subsequent registration. Importing an existing project into Git needs the same review as creating one: the project Application can later prune that resource.
@@ -144,7 +146,11 @@ its `onboarding/kustomization.yaml` entry in the same reviewed change as the
 declaration and `projects/kustomization.yaml` generator entry. If either
 Application is still catching up, the dispatcher must wait or report the
 project as not ready; starting the child run early can fail when it tries to
-reconcile the release Connectors.
+reconcile the release Connectors. After the Applications become ready, retry
+from the merge commit while it is still the `main` HEAD with
+`/test onboard-changed-projects branch:main`. If that commit is no longer the
+branch HEAD, start the onboarding Run Template for the affected project instead;
+inspect the parent result and each child run after the retry.
 
 Keep Harbor projects private. If Nexus anonymous access is enabled and its
 anonymous role can read tenant repositories, an unauthenticated user can read
@@ -184,7 +190,7 @@ The table identifies the platform decision and its repository layer. Values and 
 | # | When this matters | Decision | Why it is shared | Layer and guidance |
 | --- | --- | --- | --- | --- |
 | 1 | Before onboarding the first repository or changing GitLab providers. | Separate Repository access tokens from webhook administration; use reviewed default-branch definitions and an explicit GitLab provider URL. | Credential scope and pre-merge execution trust should be consistent. | Credentials and project: [PaC Repository configuration](https://docs.alauda.io/alauda-devops-pipelines/4.15/pac/how_to/advanced_repository_config.html). |
-| 2 | When teams need reproducible merge-request or push-triggered reruns. | Standardize merge-request retries with `/test <pipelinerun-name> branch:<branch>`. | Teams use one supported entry and make the source branch explicit. | Project template: [Trigger PAC Pipelines](https://docs.alauda.io/alauda-devops-pipelines/4.15/pac/how_to/trigger_pipeline.html). |
+| 2 | When teams need reproducible merge-request or push-triggered reruns. | For a merge-request run, comment `/test <pipelinerun-name> branch:<branch>` on the merge request; for a push-triggered run, post the same form on the latest commit of the branch that should run. | Teams use one supported entry and make the source branch explicit. | Project template: [Trigger PAC Pipelines](https://docs.alauda.io/alauda-devops-pipelines/4.15/pac/how_to/trigger_pipeline.html). |
 | 3 | When a platform-managed address or Connector must change without editing every application. | Separate platform-provided Repository parameters from application inputs. | Addresses and Connector names have a defined owner. | Project: [Advanced Repository Configuration](https://docs.alauda.io/alauda-devops-pipelines/4.15/pac/how_to/advanced_repository_config.html). |
 | 4 | When an external registry event starts another pipeline. | Decide Harbor event handoffs. | Event endpoints and validation need consistent ownership. | Component: [Harbor events](https://docs.alauda.io/alauda-devops-pipelines/4.15/triggers/how_to/harbor_events.html). |
 | 5 | When credentials or declarations need periodic repair. | Schedule reconciliation and rotation with failure alerts. | The platform owns the interval and operational response. | Component: [ScheduledTrigger](https://docs.alauda.io/alauda-devops-pipelines/4.15/triggers/how_to/scheduledtriggers.html). |
@@ -289,7 +295,7 @@ spec:
                 value: [cluster, hub, git]
 ```
 
-This does not constrain a resolver's URL, catalog, namespace, version, definition content, or runtime credential scope. It also rejects inline `pipelineSpec` when enforced. Convert the sample's inline validation flow to a catalog Pipeline before enabling that restriction for project repositories. In `Audit`, a matching direct run is still admitted and should produce a PolicyReport; in `Enforce`, the same request is rejected. Test both modes with a disposable project identity before relying on the policy. Allow only platform administrators to create `PolicyException` objects, or disable exceptions according to platform policy; do not delegate this escape hatch to project identities.
+This does not constrain a resolver's URL, catalog, namespace, version, definition content, or runtime credential scope. It also rejects inline `pipelineSpec` when enforced. Convert the sample's inline validation flow to a catalog Pipeline before enabling that restriction for project repositories. In `Audit`, a PipelineRun that violates this resolver rule is still admitted and should produce a PolicyReport; in `Enforce`, the same request is rejected. Test both modes with a disposable project identity before relying on the policy. Allow only platform administrators to create `PolicyException` objects, or disable exceptions according to platform policy; do not delegate this escape hatch to project identities.
 
 ### Constrain project deployment without replacing ACP ownership
 
@@ -316,13 +322,12 @@ the sample includes the aggregate read role for PolicyException and AccessPolicy
 
 A rejected object makes the Application's synchronization fail with the policy
 message. Retry settings determine subsequent attempts. Remove the forbidden
-object from the project source and synchronize the corrected revision. This
-admission policy has no background scan, so an Audit trial needs an actual matching
-write before there is a report to inspect. The same seven protected object kinds are covered
-in Audit and Enforce; Audit records a report while Enforce rejects the matching
-write.
+object from the project source and synchronize the corrected revision. Keep this
+boundary in `Enforce` from its first installation; its purpose is to stop a
+project identity from changing protected objects, so an `Audit` rollout would
+leave that gap open.
 
-Kyverno availability and recovery are platform operating concerns. For policies used as admission gates, keep the resource webhooks registered with `failurePolicy: Fail`; when Kyverno is unreachable, matching writes are then rejected. For this boundary, that includes Role, RoleBinding, ResourceQuota, LimitRange, NetworkPolicy, PolicyException, and Connectors AccessPolicy writes: the onboarding identity and cluster administrators are also rejected until Kyverno recovers. An absent webhook provides no enforcement, and an orderly scale-to-zero can remove resource webhook registrations. Operate Kyverno highly available and keep a controlled recovery procedure, including the conditions for temporarily removing and later restoring webhook configurations. A signing result proves the signing key, not the pipeline that produced an image. Restrict ClusterPolicy, resolver, webhook, and PolicyException changes to platform administrators. See [Pipeline Policy Constraints with Tekton and Kyverno](./Pipeline_Policy_Constraints_with_Tekton_and_Kyverno.md) for the policy design.
+Kyverno availability and recovery are platform operating concerns. For policies used as admission gates, keep the resource webhooks registered with `failurePolicy: Fail`; when Kyverno is unreachable, matching writes are then rejected. This applies to Audit policies as well: `failureAction: Audit` controls the result when Kyverno evaluates a request, but it does not make an unavailable Kyverno webhook fail open. In the sample, `no-bare-taskrun` is an Audit policy that matches direct `TaskRun` creation across the cluster (apart from its documented platform exclusion), so a Kyverno outage can prevent those TaskRuns from being created and can stop pipelines that depend on them. For this boundary, failure also includes Role, RoleBinding, ResourceQuota, LimitRange, NetworkPolicy, PolicyException, and Connectors AccessPolicy writes: the onboarding identity and cluster administrators are rejected until Kyverno recovers. An absent webhook provides no enforcement, and an orderly scale-to-zero can remove resource webhook registrations. Operate Kyverno highly available and keep a controlled recovery procedure, including the conditions for temporarily removing and later restoring webhook configurations. A signing result proves the signing key, not the pipeline that produced an image. Restrict ClusterPolicy, resolver, webhook, and PolicyException changes to platform administrators. See [Pipeline Policy Constraints with Tekton and Kyverno](./Pipeline_Policy_Constraints_with_Tekton_and_Kyverno.md) for the policy design.
 
 ## Organize and synchronize the platform repository
 
@@ -491,20 +496,26 @@ sonarqube:
   project: shop
 ```
 
-`owners` contains ACP group resource names without a `group:` prefix; approval entries use `group:<resource-name>`. A console display name is not the resource name. When a fixed group name is required, create the group as a reviewed `auth.alauda.io/v1` `Group` object and import its user members through ACP group administration; do not put individual user names in every declaration. For example:
+`owners` contains ACP group resource names without a `group:` prefix; approval entries use `group:<resource-name>`. A console display name is not the resource name. When a fixed group name is required, create the group as a reviewed `auth.alauda.io/v1` `Group` object and import its user members through ACP group administration; do not put individual user names in every declaration. The following example uses ACP's local identity source. Both the display-name annotation and the identity-source reference are required; use the appropriate reference for a group managed by another identity provider.
 
 ```yaml
 apiVersion: auth.alauda.io/v1
 kind: Group
 metadata:
   name: shop-platform-owners
+  annotations:
+    cpaas.io/display-name: Shop platform owners
 spec:
+  refConnector:
+    id: local
+    type: local
   users: []
 ```
 
 After the group exists, add approved members in the console and verify the
-resource name with `kubectl get groups`. Group membership changes belong to
-group administration, rather than edits naming individuals in every declaration.
+resource name with `kubectl get groups.auth.alauda.io`. Group membership changes
+belong to group administration, rather than edits naming individuals in every
+declaration.
 
 `imagePullFrom` is reserved: this sample only prints a warning when it is set and grants no cross-project pull access.
 
@@ -848,6 +859,8 @@ Git does not replace backups of credentials and external data. Before a platform
 3. Chains signing keys and the central registry credential; coordinate any verification-key change with image admission.
 4. The management namespace and installed automatic creation Tasks.
 5. Argo CD repository access and project repository credential templates, plus PaC access and webhook configuration.
+
+For a signing-key rotation, first configure one attestor in `require-signed-images` with `count: 1` and separate `entries` for the old and new public keys. Confirm that an old-signed image is still admitted, then replace the signer through its supported management workflow and verify a new signature. Retain the old entry until every old-signed image, including rollback versions, is retired; remove it in a separate reviewed change. Inspect the signing Secret's immutability, owners, and installation method before replacement.
 
 After preparing those dependencies, synchronize the platform layers, run onboarding for the declared projects, review registration changes, and complete the acceptance checks. This is a dependency outline; a complete empty-cluster or second-cluster recovery runbook must be exercised in the target environment.
 

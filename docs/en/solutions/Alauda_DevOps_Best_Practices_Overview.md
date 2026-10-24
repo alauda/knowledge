@@ -208,11 +208,14 @@ projects, with a separate release identity and an approval node before copying.
 These are example choices to compare with your own review and artifact-access
 requirements.
 
-Test CD, promotion, and production CD are manually started and take the preceding
-stage's digest. This makes every handoff visible while establishing the workflow.
-Harbor-driven automation can be added after event authentication, parameter
-mapping, and CI-result correlation are configured. The first production deployment
-waits for the first promoted image and its reviewed production GitOps change.
+Test CD, promotion, and production CD are manually started in the sample and take
+the preceding stage's digest. This makes every handoff visible while establishing
+the workflow, but manual digest entry is a fallback for the sample rather than the
+target operating model. A production workflow should carry the digest from the
+trusted CI result through reviewed trigger inputs. Harbor-driven automation can be
+added after event authentication, parameter mapping, and CI-result correlation are
+configured. The first production deployment waits for the first promoted image
+and its reviewed production GitOps change.
 
 For this sample, a trusted CI result is `ci` for a `push` on `main`. A pre-build
 check reads the actual PaC event and branch annotations and rejects comment-triggered
