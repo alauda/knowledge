@@ -6,6 +6,7 @@ kind:
   - Best Practices
 ProductsVersion:
   - 4.x
+id: KB261000020
 ---
 
 # Alauda DevOps Best Practices: Overview and Scenario Guide
