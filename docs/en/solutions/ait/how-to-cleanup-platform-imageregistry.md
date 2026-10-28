@@ -6,6 +6,11 @@ kind:
 ProductsVersion:
    - 4.1,4.2
 id: KB260200006
+i18n:
+  additionalPrompts: >-
+    Keep every occurrence of "Alauda Container Platform Progressive Delivery" unchanged in English.
+    Keep the final modification notice and complete trademark attribution and non-endorsement notice verbatim in English.
+    Do not translate, paraphrase, shorten or omit the notice beginning "Argo® is a registered trademark of LF Projects, LLC." and ending "identification purposes only."
 ---
 
 # How to clean up platform built-in Image Registry
@@ -129,7 +134,7 @@ printf "%-40s %-10s %-40s %s\n" "MODULE" "LIFECYCLE" "INSTALLED(CLUSTER:VERSION)
 MODULE                                   LIFECYCLE  INSTALLED(CLUSTER:VERSION)               DISPLAY_NAME
 aml-global                               agnostic                                            {"en": "Alauda AI Essentials", "zh": "Alauda AI Essentials"}
 application-services-core                agnostic                                            {"en": "Alauda Container Platform Data Services Essentials", "zh": "Alauda Container Platform Data Services Essentials"}
-argo-rollouts                            aligned                                             {"en": "Alauda Build of Argo Rollouts", "zh": "Alauda Build of Argo Rollouts"}
+argo-rollouts                            aligned                                             {"en": "Alauda Container Platform Progressive Delivery", "zh": "Alauda Container Platform Progressive Delivery"}
 argocd                                   agnostic                                            {"en": "Alauda Container Platform GitOps", "zh": "Alauda Container Platform GitOps"}
 asm-global                               aligned                                             {"en": "Alauda Service Mesh Essentials", "zh": "Alauda Service Mesh Essentials"}
 capi-provider-aws                        agnostic   global:v4.0.10                           {"en": "Alauda Container Platform EKS Provider", "zh": "Alauda Container Platform EKS Provider"}
@@ -273,3 +278,8 @@ If you have stored custom or non-platform images in the registry:
 **Contact Support**:
 
 If you encounter any issues during the cleanup process, please contact technical support for assistance.
+Modified by Alauda, 2026-10-21.
+
+Argo® is a registered trademark of LF Projects, LLC.
+
+Alauda is an independent vendor. This product is not affiliated with, endorsed by, or sponsored by LF Projects, LLC. All trademarks are the property of their respective owners and are used here for identification purposes only.

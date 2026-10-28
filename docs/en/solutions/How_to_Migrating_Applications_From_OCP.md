@@ -6,6 +6,11 @@ products:
 ProductsVersion:
   - 3.18.x,4.x
 id: KB250900012
+i18n:
+  additionalPrompts: >-
+    Keep every occurrence of "Alauda Container Platform Progressive Delivery" unchanged in English.
+    Keep the final modification notice and complete trademark attribution and non-endorsement notice verbatim in English.
+    Do not translate, paraphrase, shorten or omit the notice beginning "Argo® is a registered trademark of LF Projects, LLC." and ending "identification purposes only."
 ---
 
 # Migrate the application from OCP(OpenShift Container Platform) to ACP(Alauda Container Platform)
@@ -814,6 +819,11 @@ kubectl get virtualservice -n <your-namespace>
 
 ## Conclusion
 
-By using pre-prepared manifests and the `oc-convert`, `template2helm`, and Helm tools, the migration from OCP to ACP is simplified, enabling a smooth transition from OCP-specific resources to Kubernetes-native deployments. Following this guide allows for an efficient application migration while leveraging ACP’s advanced features, such as Istio-based networking and Argo Rollouts for deployment strategies.
+By using pre-prepared manifests and the `oc-convert`, `template2helm`, and Helm tools, the migration from OCP to ACP is simplified, enabling a smooth transition from OCP-specific resources to Kubernetes-native deployments. Following this guide allows for an efficient application migration while leveraging ACP’s advanced features, such as Istio-based networking and Alauda Container Platform Progressive Delivery based on upstream Argo Rollouts.
 
 For additional support, consult the Alauda Container Platform documentation or contact the ACP support team.
+Modified by Alauda, 2026-10-21.
+
+Argo® is a registered trademark of LF Projects, LLC.
+
+Alauda is an independent vendor. This product is not affiliated with, endorsed by, or sponsored by LF Projects, LLC. All trademarks are the property of their respective owners and are used here for identification purposes only.
