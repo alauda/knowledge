@@ -39,6 +39,7 @@ if test -n "$RUN_DIR"; then
   RUN_ID="$(jq -er '.runID' "$RUN_DIR/plan.json")"
   REGISTRY_NS="$(jq -er '.scope.operandNamespace' "$RUN_DIR/plan.json")"
   OPERATOR_NS="$(jq -er '.scope.operatorNamespace' "$RUN_DIR/plan.json")"
+  REGISTRY_SERVICE="$(jq -er '.scope.serviceName' "$RUN_DIR/plan.json")"
   REGISTRY_DEPLOY="$(jq -r '.discovery.deployment // empty' "$RUN_DIR/plan.json")"
   GATEWAY_DEPLOY="$(jq -r '.discovery.gatewayDeployment // empty' "$RUN_DIR/plan.json")"
   OUT="$(dirname "$RUN_DIR")"
@@ -49,6 +50,7 @@ fi
 mkdir -p "$OUT"
 S3_ARGS=()
 FORCE_ARGS=()
+NESTED_ARGS=()
 registry-migrate version
 ac version --client
 printf 'context=%s\nrun-dir=%s\n' "$CTX" "$RUN_DIR"
@@ -84,6 +86,7 @@ registry-migrate plan --output-dir "$OUT" --run-id "$RUN_ID" \
 jq -e '(.discovery.blockers // []) | length == 0' "$RUN_DIR/plan.json"
 REGISTRY_DEPLOY="$(jq -er '.discovery.deployment | select(length > 0)' "$RUN_DIR/plan.json")"
 GATEWAY_DEPLOY="$(jq -er '.discovery.gatewayDeployment | select(length > 0)' "$RUN_DIR/plan.json")"
+REGISTRY_SERVICE="$(jq -er '.scope.serviceName' "$RUN_DIR/plan.json")"
 jq '{scope,storage:.discovery.storage,routes:.discovery.routes,limits:.namespaceLimits,warnings:.discovery.warnings}' "$RUN_DIR/plan.json"
 ```
 
@@ -110,7 +113,12 @@ PULL_SECRET_REF="$(acn get deployments -A -o json | jq -er '
     [.metadata.namespace,.metadata.name]] |
   if length == 1 then .[0] | @tsv else error("review legacy pull-secret controller candidates") end')"
 IFS=$'\t' read -r PULL_SECRET_NS PULL_SECRET_DEPLOY <<< "$PULL_SECRET_REF"
-stop_deployment "$PULL_SECRET_NS" "$PULL_SECRET_DEPLOY"
+if test "${#FORCE_ARGS[@]}" -eq 0; then
+  stop_deployment "$PULL_SECRET_NS" "$PULL_SECRET_DEPLOY"
+else
+  acn -n "$PULL_SECRET_NS" get deployment "$PULL_SECRET_DEPLOY" -o wide
+  echo "force mode: leaving the legacy pull-secret controller state unchanged"
+fi
 evidence controller-stopped.json legacyControllerStopped
 registry-migrate run --run-dir "$RUN_DIR" --stage P1-credentials \
   --evidence-file "$RUN_DIR/controller-stopped.json" \
@@ -127,14 +135,23 @@ Before running the command, set `WRITER_RECORD` to the maintenance/change record
 
 ```bash
 export WRITER_RECORD="/path/to/maintenance-writer-record.txt"
-stop_deployment "$REGISTRY_NS" "$REGISTRY_DEPLOY"
-stop_deployment "$REGISTRY_NS" "$GATEWAY_DEPLOY"
+if test "${#FORCE_ARGS[@]}" -eq 0; then
+  stop_deployment "$REGISTRY_NS" "$REGISTRY_DEPLOY"
+  stop_deployment "$REGISTRY_NS" "$GATEWAY_DEPLOY"
+else
+  acns get deployment "$REGISTRY_DEPLOY" "$GATEWAY_DEPLOY" -o wide
+  echo "force mode: leaving legacy Registry/Gateway states unchanged"
+fi
 LEGACY_PRUNER="$(acns get cronjob image-pruner --ignore-not-found -o name)"
 if test -n "$LEGACY_PRUNER"; then
-  acns patch cronjob image-pruner --type=merge -p '{"spec":{"suspend":true}}'
+  if test "${#FORCE_ARGS[@]}" -eq 0; then
+    acns patch cronjob image-pruner --type=merge -p '{"spec":{"suspend":true}}'
+  else
+    echo "force mode: leaving the legacy Pruner state unchanged"
+  fi
 fi
-acns get endpoints image-registry -o wide
-acns get endpointslices.discovery.k8s.io -l kubernetes.io/service-name=image-registry -o wide
+acns get endpoints "$REGISTRY_SERVICE" -o wide
+acns get endpointslices.discovery.k8s.io -l "kubernetes.io/service-name=$REGISTRY_SERVICE" -o wide
 test -n "$WRITER_RECORD"
 test -s "$WRITER_RECORD"
 if test "$WRITER_RECORD" != "$RUN_DIR/writer-record.txt"; then
@@ -146,7 +163,7 @@ registry-migrate run --run-dir "$RUN_DIR" --stage P2-stop-writers \
   "${FORCE_ARGS[@]}" --kubeconfig "$KCFG" --approve
 ```
 
-Expected result: old Registry/Gateway Pods and Ready endpoints are gone, the old Pruner is suspended, active jobs have finished, and the stage is recorded. If the platform cannot keep old components stopped, set `FORCE_ARGS=(--force)` only after an administrator accepts the consistency risk. Force does not bypass API, UID, S3, metadata, stage, or new Operator pause checks.
+Expected result: old Registry/Gateway Pods and Ready endpoints are gone, the old Pruner is suspended, active jobs have finished, and the stage is recorded. The copied `WRITER_RECORD` is a mandatory administrator gate for external writers; the tool separately checks live cluster writers. If the platform cannot keep old components stopped, set `FORCE_ARGS=(--force)` only after an administrator accepts the consistency risk. Force does not bypass API, UID, S3, metadata, stage, or new Operator pause checks.
 
 ## 5. P3-final-inventory: freeze the inventory and S3 state
 
@@ -178,12 +195,13 @@ Do not use both paths.
 ```bash
 registry-migrate resume --run-dir "$RUN_DIR" --stage P3-final-inventory \
   "${P3_PROTECTION[@]}" "${S3_ARGS[@]}" \
+  "${NESTED_ARGS[@]}" \
   "${FORCE_ARGS[@]}" --kubeconfig "$KCFG" --approve
 registry-migrate report --run-dir "$RUN_DIR"
 jq '{items:(.items|length),digest,sample:(.items[0] | {namespace,repository,tag,digest})}' "$RUN_DIR/final-inventory.json"
 ```
 
-Expected result: recorded stage, `final-inventory.json`, and `s3-snapshot.json`. Scanning reads tag links, manifests, and configs; it does not move layers. Approved test residue excluded with `--skip-nested-repositories` must be reviewed in `legacy-metadata-report.json` and not counted as migrated.
+Expected result: recorded stage, `final-inventory.json`, and `s3-snapshot.json`. Scanning reads tag links, manifests, and configs; it does not move layers. Approved test residue excluded with `--skip-nested-repositories` must be reviewed in `legacy-metadata-report.json` and not counted as migrated. Set `NESTED_ARGS=(--skip-nested-repositories)` before P3 only for that approved residue; the normal value is `NESTED_ARGS=()`.
 
 
 ## 6. P4-prepare-operator: prepare Registry v2 read-only
@@ -281,10 +299,10 @@ Expected result: Operator, Registry, Image API, and APIService are ready; P7 is 
 
 ## 10. P8-commit: verify business access, then open writes
 
-Use the actual external URL for this cluster, including protocol and port. Do not copy a test environment port to another cluster. A trusted system CA or provider PEM CA is required for TLS acceptance; `curl -k` is only a diagnostic.
+Use the actual external URL for this cluster, including protocol and port. Do not copy a test environment port to another cluster. A trusted system CA or provider PEM CA is required for TLS acceptance; `curl -k` is only a diagnostic. Set the three test inputs for this cluster before running the probe block.
 
 ```bash
-test -n "$REGISTRY_URL"
+export REGISTRY_URL="${REGISTRY_URL:?set the actual external Registry URL, including scheme and port}"
 REGISTRY_HOST="$(jq -er '.discovery.routes[0].hostname' "$RUN_DIR/plan.json")"
 jq -ne --arg url "$REGISTRY_URL" --arg host "$REGISTRY_HOST" \
   '($url | capture("^https?://(?<host>[^/:]+)(:[0-9]+)?/?$").host) == $host'
@@ -293,8 +311,8 @@ if test -n "$REGISTRY_CA_BUNDLE"; then CURL_TLS_ARGS=(--cacert "$REGISTRY_CA_BUN
 http_code="$(curl -sS "${CURL_TLS_ARGS[@]}" --connect-timeout 10 --max-time 20 \
   -o /dev/null -w '%{http_code}' "$REGISTRY_URL/v2/")"
 case "$http_code" in 200|401|403) echo "Registry reachable: HTTP $http_code" ;; *) echo "unexpected HTTP $http_code"; exit 1 ;; esac
-test -n "$TEST_NS"
-test -n "$TEST_REPO"
+export TEST_NS="${TEST_NS:?set a namespace containing a migrated test image}"
+export TEST_REPO="${TEST_REPO:?set an isolated namespace/repository:tag for dry-run deletion}"
 mkdir -p "$RUN_DIR/verification"
 
 env AC_IMAGE_REGISTRY_MODE=legacy \
