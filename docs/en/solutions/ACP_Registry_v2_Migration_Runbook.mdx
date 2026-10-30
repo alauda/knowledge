@@ -163,7 +163,7 @@ registry-migrate run --run-dir "$RUN_DIR" --stage P2-stop-writers \
   "${FORCE_ARGS[@]}" --kubeconfig "$KCFG" --approve
 ```
 
-Expected result: old Registry/Gateway Pods and Ready endpoints are gone, the old Pruner is suspended, active jobs have finished, and the stage is recorded. The copied `WRITER_RECORD` is a mandatory administrator gate for external writers; the tool separately checks live cluster writers. If the platform cannot keep old components stopped, set `FORCE_ARGS=(--force)` only after an administrator accepts the consistency risk. Force does not bypass API, UID, S3, metadata, stage, or new Operator pause checks.
+Expected result in the normal path: old Registry/Gateway Pods and Ready endpoints are gone, the old Pruner is suspended, active jobs have finished, and the stage is recorded. The copied `WRITER_RECORD` is a mandatory administrator gate for external writers; the tool separately checks live cluster writers. If the platform cannot keep old components stopped, set `FORCE_ARGS=(--force)` only after an administrator accepts the consistency risk; in that path, record the actual running state and expect the tool’s force-fence warning instead of claiming that the old Pods or endpoints are gone. Force does not bypass API, UID, S3, metadata, stage, or new Operator pause checks.
 
 ## 5. P3-final-inventory: freeze the inventory and S3 state
 
