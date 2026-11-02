@@ -17,6 +17,18 @@ This procedure covers one ACP cluster, one legacy Registry, the same business cl
 
 PVC/filesystem migration, cross-cluster mirroring, `ac image mirror`, manual `ImageStreamMapping` backfill, and automatic Operator takeover are outside this runbook. Migrate one cluster at a time. P2 starts the maintenance window; P7 restores read-only service; P8 opens writes.
 
+## Release 4.5 Compatibility Gates
+
+Release 4.5 separates the Operator installation namespace from the Registry operand namespace. The default installation namespace is `image-registry-system`; the default operand namespace is `cpaas-system`. The operand namespace is persisted for the installation, so do not infer it from the Operator namespace or from a later environment variable. Use the namespace recorded in `plan.json` as the source of truth.
+
+The Operator provides steady-state Registry, Image API, pull-secret rotation, namespace limits, Ingress, storage and Pruner behavior. It does not automatically take over the legacy chart. The migration tool and the platform administrator own legacy writer shutdown, credential handoff, S3/inventory protection, old chart removal and metadata import. A PVC, HostPath, non-image OCI artifact, or non-default S3 root/prefix must stop the plan unless the provider has approved a separate migration path.
+
+The Operator must be held at zero replicas before P4 and P6. Manual InstallPlan approval only controls whether OLM installs a bundle; it does not pause an Operator that is already running. If the platform cannot provide a verified pause/hold procedure, stop before removing the legacy chart. Otherwise the Operator can create a default Config, storage, or Pruner while the import boundary is still being prepared.
+
+Use the release-4.5 compatible `ac` for the compatibility checks. Its default `ac get images` and `ac delete images` contract remains the 4.3 repository/tag interface. Leave `AC_REGISTRY_COMPAT_OUTPUT` unset or set it to `4.3`; use `native` only for a separate modern API diagnostic. An explicit `--registry-url` follows the legacy Registry HTTP path, while auto mode can select the modern backend. The original 4.3 `ac` has no Registry mode setting; test it with an explicit Registry URL and a dedicated kubeconfig.
+
+Modern verification uses `imagedigests.image.alauda.io`, `imagestreams` and `imagestreamtags`. Do not treat the row count of `ac get images` as an Image API completeness check. `ac adm prune images` is a platform-level operation; namespace users may manage their permitted tags but must not be used as proof that cluster-wide prune or GC is authorized.
+
 ## 0. Prepare the terminal and tools
 
 Use a dedicated Bash terminal. `cpaas-system` and `image-registry-system` are common ACP namespaces; confirm them.
@@ -233,7 +245,9 @@ registry-migrate run --run-dir "$RUN_DIR" --stage P4-prepare-operator \
   --evidence-file "$RUN_DIR/operator-paused.json" \
   "${FORCE_ARGS[@]}" --kubeconfig "$KCFG" --approve
 acn get config.imageregistry.operator.alauda.io cluster -o json |
-  jq -e '.spec.readOnly == true and .spec.imagePullSecret.managementState == "Unmanaged"'
+  jq -e '.spec.readOnly == true and
+    .spec.imagePullSecret.managementState == "Unmanaged" and
+    .spec.storage.managementState == "Unmanaged"'
 acn get imagepruner.imageregistry.operator.alauda.io cluster -o json |
   jq -e '.spec.suspend == true'
 ```
@@ -295,7 +309,18 @@ registry-migrate run --run-dir "$RUN_DIR" --stage P7-verify --kubeconfig "$KCFG"
 registry-migrate verify --run-dir "$RUN_DIR" --kubeconfig "$KCFG"
 ```
 
-Expected result: Operator, Registry, Image API, and APIService are ready; P7 is `verified` and `verify` exits zero. Confirm Service ports `80→8080`, `443→5000`, and `5000→5000`, Ready endpoints, the new Ingress backend, Config, metadata, and limits. Config remains read-only, pull-Secret management remains Unmanaged, and the Pruner remains suspended. Stop on failure.
+Expected result: Operator, Registry, Image API, and APIService are ready; P7 is `verified` and `verify` exits zero. Confirm Service ports `80→8080`, `443→5000`, and `5000→5000`, Ready endpoints, the new Ingress backend, Config, metadata, and limits. Config remains read-only, storage and pull-Secret management remain Unmanaged, and the Pruner remains suspended.
+
+Confirm the release-4.5 metadata resources and the namespace limit scope:
+
+```bash
+acn get imagedigests.image.alauda.io -o yaml > "$RUN_DIR/verification/imagedigests.yaml"
+acn get imagestreams.image.alauda.io -A -o yaml > "$RUN_DIR/verification/imagestreams.yaml"
+acn get limitrange -A -l "registry-migrate.run-id=$RUN_ID" -o yaml \
+  > "$RUN_DIR/verification/migration-limitranges.yaml"
+```
+
+The imported `LimitRange` objects are a static snapshot for namespaces already covered by the plan. They do not become a global policy and do not automatically apply to namespaces created later.
 
 ## 10. P8-commit: verify business access, then open writes
 
@@ -306,14 +331,19 @@ export REGISTRY_URL="${REGISTRY_URL:?set the actual external Registry URL, inclu
 REGISTRY_HOST="$(jq -er '.discovery.routes[0].hostname' "$RUN_DIR/plan.json")"
 jq -ne --arg url "$REGISTRY_URL" --arg host "$REGISTRY_HOST" \
   '($url | capture("^https?://(?<host>[^/:]+)(:[0-9]+)?/?$").host) == $host'
+mkdir -p "$RUN_DIR/verification"
 CURL_TLS_ARGS=()
 if test -n "$REGISTRY_CA_BUNDLE"; then CURL_TLS_ARGS=(--cacert "$REGISTRY_CA_BUNDLE"); fi
 http_code="$(curl -sS "${CURL_TLS_ARGS[@]}" --connect-timeout 10 --max-time 20 \
   -o /dev/null -w '%{http_code}' "$REGISTRY_URL/v2/")"
 case "$http_code" in 200|401|403) echo "Registry reachable: HTTP $http_code" ;; *) echo "unexpected HTTP $http_code"; exit 1 ;; esac
+curl -sS "${CURL_TLS_ARGS[@]}" --connect-timeout 10 --max-time 20 \
+  -D "$RUN_DIR/verification/registry-v2-headers.txt" -o /dev/null "$REGISTRY_URL/v2/"
+if grep -qi '^WWW-Authenticate:' "$RUN_DIR/verification/registry-v2-headers.txt"; then
+  echo "Review the WWW-Authenticate realm and confirm its host and port are reachable from the same client."
+fi
 export TEST_NS="${TEST_NS:?set a namespace containing a migrated test image}"
 export TEST_REPO="${TEST_REPO:?set an isolated namespace/repository:tag for dry-run deletion}"
-mkdir -p "$RUN_DIR/verification"
 
 env AC_IMAGE_REGISTRY_MODE=legacy \
   ac --kubeconfig "$KCFG" --context "$CTX" get images -n "$TEST_NS" -o json \
@@ -329,6 +359,18 @@ env AC_IMAGE_REGISTRY_MODE=modern \
 ```
 
 Expected result: anonymous `/v2/` 401/403 proves only entry-point reachability; authenticated legacy and modern queries succeed, and both delete commands remain dry-run. The legacy view lists repository/tag data; the modern view uses ImageDigest/ImageStream data. Do not compare row counts as proof of completeness.
+
+The commands above use the release-4.5 compatible `ac`. When the original 4.3 client is part of the customer contract, run the same read and dry-run checks separately with `AC43_BIN`, an explicit `--registry-url "$REGISTRY_URL"`, and an isolated kubeconfig. Do not call `ac config set-registry-mode` with the original 4.3 binary. The compatibility binary keeps the 4.3 output shape by default; setting `AC_REGISTRY_COMPAT_OUTPUT=native` changes the output contract and is not valid evidence for old scripts.
+
+For modern-native diagnostics only, query the Image API resource directly:
+
+```bash
+env AC_IMAGE_REGISTRY_MODE=modern AC_REGISTRY_COMPAT_OUTPUT=native \
+  ac --kubeconfig "$KCFG" --context "$CTX" get images -o json \
+  > "$RUN_DIR/verification/modern-native-images.json"
+```
+
+Do not use that native output to compare with the original 4.3 pipeline contract. Before enabling prune or GC, verify that the caller has platform-admin access to the Registry Config; a namespace-level tag administrator is not sufficient.
 
 Create a disposable test Pod with `imagePullPolicy=Always` using the original image reference, ServiceAccount and Secret. Verify pulls through the original `:80`, `:443`, and `:5000` paths and the external host as applicable. Record the Pod, digest, query output, and pull result. Do not perform a positive push before P8.
 
@@ -349,7 +391,7 @@ registry-migrate verify --run-dir "$RUN_DIR" --kubeconfig "$KCFG"
 registry-migrate report --run-dir "$RUN_DIR"
 ```
 
-Expected result: `state=committed`; Config is writable, pull-Secret management is Managed, and the Pruner has its recorded original suspension value. After Operator reconciliation, use an approved OCI client to push and pull one disposable repository and retain that output. If a failure occurs now, the write transition has already been committed; do not assume read-only state.
+Expected result: `state=committed`; Config is writable, storage and pull-Secret management are Managed, and the Pruner has its recorded original suspension value. After Operator reconciliation, use an approved OCI client to push and pull one disposable repository and retain that output. If a failure occurs now, the write transition has already been committed; do not assume read-only state.
 
 ## Appendix: S3 access, retries, exceptions, and recovery
 
