@@ -9,45 +9,87 @@ ProductsVersion:
 
 # ACP Registry v2 Migration Runbook
 
-This runbook upgrades one ACP business cluster from the legacy chart Registry to the Registry managed by `cluster-image-registry-operator`. The migration is performed by the independent `registry-migrate` tool; it is not an automatic takeover feature of the Operator.
+This runbook migrates the Registry in one ACP business cluster from the legacy chart release to the Registry v2 instance managed by `cluster-image-registry-operator`. The migration is performed by the standalone `registry-migrate` tool. Only one cluster is involved, and Registry v2 reuses the same S3 bucket, endpoint, and prefix as the legacy Registry.
 
-Before the maintenance window, contact your ACP platform service provider and obtain the provider-approved `registry-migrate` binary, compatible `ac`, the Registry v2 Operator bundle/CRD, the ACP pause/hold procedure, and the S3 backup/restore procedure. This runbook was checked against `registry-migrate` v4.5.0 (commit `6edeb747`). The migration tool version is independent of the ACP release. Do not build binaries during the window.
+**This procedure deletes no images.** On the resource side there are only two delete operations: uninstalling the legacy chart in P5 (performed by the platform administrator in the plugin page) and deleting the leftover Ingress. `ac delete images` in P8 is a dry run; never add `--confirm`.
 
-This procedure covers one ACP cluster, one legacy Registry, the same business cluster, legacy S3 storage, and a Gateway Ingress as the external entry point. Registry v2 reuses the same S3 bucket, endpoint, and prefix. A legacy `image-registry` Service of type `NodePort` is acceptable when clients use the Gateway Ingress address.
+## Stage overview
 
-PVC/filesystem migration, cross-cluster mirroring, `ac image mirror`, manual `ImageStreamMapping` backfill, and automatic Operator takeover are outside this runbook. Migrate one cluster at a time. P2 starts the maintenance window; P7 restores read-only service; P8 opens writes.
+| Stage | Purpose | Service interruption | Rerunnable on failure |
+| --- | --- | --- | --- |
+| 0 | Validate the tools, the login session, and the cluster context | No | Yes |
+| P0 plan | Generate the read-only plan and check the blockers | No | Yes |
+| P1-backup | Save the recovery material | No | Yes |
+| P1-credentials | Hand over the pull Secret controller | No | Yes |
+| P2-stop-writers | Stop the legacy writers (**maintenance window starts**) | **Yes** | Yes |
+| P3-final-inventory | Freeze the image inventory and the S3 snapshot | **Yes** | Yes, but the protection state is immutable |
+| P4-prepare-operator | Scale the Operator to zero and create the read-only Registry v2 | **Yes** | Yes |
+| P5-remove-legacy-chart | Uninstall the legacy plugin by hand; the tool deletes the leftover Ingress | **Yes** | The commands can be re-run; the uninstall must be completed by hand |
+| P6-cold-import | Import the metadata and the namespace limits | **Yes** | Yes |
+| P7-verify | Restore the Operator and verify the read-only service | Partially restored | Yes |
+| P8-commit | Verify business access and open writes (**maintenance window ends**) | Restored | Yes |
 
-## Release 4.5 Compatibility Gates
+The table above is the route map for the whole procedure. Start at section 0.
 
-Release 4.5 separates the Operator installation namespace from the Registry operand namespace. The default installation namespace is `image-registry-system`; the default operand namespace is `cpaas-system`. The operand namespace is persisted for the installation, so do not infer it from the Operator namespace or from a later environment variable. Use the namespace recorded in `plan.json` as the source of truth.
+## Prerequisites
 
-The Operator provides steady-state Registry, Image API, pull-secret rotation, namespace limits, Ingress, storage and Pruner behavior. It does not automatically take over the legacy chart. The migration tool and the platform administrator own legacy writer shutdown, credential handoff, S3/inventory protection, old chart removal and metadata import. A PVC, HostPath, non-image OCI artifact, or non-default S3 root/prefix must stop the plan unless the provider has approved a separate migration path.
-
-The Operator must be held at zero replicas before P4 and P6. Manual InstallPlan approval only controls whether OLM installs a bundle; it does not pause an Operator that is already running. If the platform cannot provide a verified pause/hold procedure, stop before removing the legacy chart. Otherwise the Operator can create a default Config, storage, or Pruner while the import boundary is still being prepared.
-
-Use the release-4.5 compatible `ac` for the compatibility checks. Its default `ac get images` and `ac delete images` contract remains the 4.3 repository/tag interface. Leave `AC_REGISTRY_COMPAT_OUTPUT` unset or set it to `4.3`; use `native` only for a separate modern API diagnostic. An explicit `--registry-url` follows the legacy Registry HTTP path, while auto mode can select the modern backend. The original 4.3 `ac` has no Registry mode setting; test it with an explicit Registry URL and a dedicated kubeconfig.
-
-Modern verification uses `imagedigests.image.alauda.io`, `imagestreams` and `imagestreamtags`. Do not treat the row count of `ac get images` as an Image API completeness check. `ac adm prune images` is a platform-level operation; namespace users may manage their permitted tags but must not be used as proof that cluster-wide prune or GC is authorized.
+- **Tool versions**: obtain the provider-approved `registry-migrate` binary, a compatible `ac` binary, the Registry v2 bundle, and the S3 backup/restore procedure from your ACP service provider. The `registry-migrate` version is independent of the ACP release.
+- **Namespaces**: the Operator is installed in `image-registry-system`, and the Registry instance (the operand namespace) runs in `cpaas-system`. The operand namespace is fixed at installation time and cannot be inferred from the Operator namespace or from environment variables; always use `scope.operandNamespace` in `plan.json`.
+- **Stop immediately if any of the following is present**, unless the provider has approved a separate migration path: PVCs, HostPath volumes, non-image OCI artifacts, or a non-default S3 root/prefix.
+- **The Operator must stay at zero replicas between P4 and P6.** Approving an InstallPlan by hand only controls whether OLM installs the bundle; it does not pause an Operator that is already running. If the platform cannot provide a verified pause procedure, abort the migration before P4; otherwise the Operator creates its own default Config, storage, and Pruner and breaks the import boundary.
+- **`ac` compatibility**: `ac get images` and `ac delete images` still use the legacy chart Registry repository/tag contract by default, controlled by `AC_REGISTRY_COMPAT_OUTPUT` (leave it unset or set it to `4.3`). P8 uses `AC_IMAGE_REGISTRY_MODE=legacy/modern` to select a view; the two settings do not replace each other.
 
 ## 0. Prepare the terminal and tools
 
-Use a dedicated Bash terminal. `cpaas-system` and `image-registry-system` are common ACP namespaces; confirm them.
+Use a dedicated terminal and **run every step in it**. You must have completed `ac login` before this section: an ACP login token usually expires after 24 hours, and once it does every cluster request returns `Unauthorized`. When unsure, list the sessions first:
 
 ```bash
-set -e -o pipefail
+ac config get-sessions
+```
+
+The row marked with `*` in the `CURRENT` column is the active session. Use its `PLATFORM` and `SESSION` columns to log in again:
+
+```bash
+printf 'PLATFORM: '; IFS= read -r PLATFORM
+printf 'SESSION: '; IFS= read -r SESSION
+ac login "$PLATFORM" --name "$SESSION"
+```
+
+Then run the block below. It validates the tools, confirms the authentication state, selects a context, and defines the variables and functions that every later step uses. If the kubeconfig is not at `~/.kube/config`, change only the `export KCFG=` line.
+
+```bash
+setup_run() {
 umask 077
-export KCFG="/path/to/business.kubeconfig"
+unset KCFG                      # clear a stale path left over from an earlier terminal
+export KCFG="$HOME/.kube/config"
+test -f "$KCFG" || { echo "ERROR: kubeconfig not found: $KCFG" >&2; echo "Edit the KCFG line above if the business kubeconfig is elsewhere" >&2; return 1; }
+for b in registry-migrate ac jq curl; do
+  command -v "$b" >/dev/null || { echo "ERROR: $b not found in PATH" >&2; return 1; }
+done
 printf 'Enter the real platform administrator account: '
 IFS= read -r ACTOR
-test -n "$ACTOR"
-export REGISTRY_NS="cpaas-system"
+test -n "$ACTOR" || { echo "ERROR: administrator account is required" >&2; return 1; }
+export REGISTRY_NS="cpaas-system"        # used to create the plan on a first run; overridden by plan.json on re-runs
 export OPERATOR_NS="image-registry-system"
-CTX="$(ac --kubeconfig "$KCFG" config current-context)"
-test -n "$CTX"
+CTX_LIST="$(ac --kubeconfig "$KCFG" config get-contexts -o name || true)"
+test -n "$CTX_LIST" || { echo "ERROR: no context in $KCFG" >&2; echo "Login first: ac login --platform <PLATFORM> --name <SESSION>" >&2; return 1; }
+CTX="$(ac --kubeconfig "$KCFG" config current-context 2>/dev/null || true)"
+test -n "$CTX" || { test "$(echo "$CTX_LIST" | grep -c .)" -eq 1 && CTX="$CTX_LIST" || {
+  echo "Available contexts:" >&2; echo "$CTX_LIST" >&2; printf 'Enter the context to use: ' >&2; IFS= read -r CTX; }; }
+echo "$CTX_LIST" | grep -Fxq "$CTX" || { echo "ERROR: context not found: $CTX" >&2; return 1; }
+ac --kubeconfig "$KCFG" --context "$CTX" whoami >/dev/null 2>&1 || {
+  echo "ERROR: not authenticated for context $CTX (token expired?)" >&2
+  echo "Existing sessions:" >&2
+  ac --kubeconfig "$KCFG" config get-sessions >&2 || true
+  echo "Re-login: ac login --platform <PLATFORM> --name <SESSION>" >&2
+  return 1; }
 OUT="$PWD/registry-migrate-runs"
-
-if test -n "$RUN_DIR"; then
-  test -f "$RUN_DIR/plan.json"
+if test -n "${RUN_DIR:-}" && ! test -f "$RUN_DIR/plan.json"; then
+  echo "WARN: ignoring stale RUN_DIR (no plan.json): $RUN_DIR" >&2
+  unset RUN_DIR
+fi
+if test -n "${RUN_DIR:-}"; then
+  test -f "$RUN_DIR/plan.json" || { echo "ERROR: RUN_DIR is set but plan.json is missing: $RUN_DIR" >&2; echo "Fix: unset RUN_DIR to start a new migration" >&2; return 1; }
   RUN_ID="$(jq -er '.runID' "$RUN_DIR/plan.json")"
   REGISTRY_NS="$(jq -er '.scope.operandNamespace' "$RUN_DIR/plan.json")"
   OPERATOR_NS="$(jq -er '.scope.operatorNamespace' "$RUN_DIR/plan.json")"
@@ -62,12 +104,24 @@ fi
 mkdir -p "$OUT"
 S3_ARGS=()
 FORCE_ARGS=()
-NESTED_ARGS=()
 registry-migrate version
 ac version --client
 printf 'context=%s\nrun-dir=%s\n' "$CTX" "$RUN_DIR"
+}
+setup_run || echo "STOP: section 0 aborted; fix the error above and re-run this block. The shell stays open." >&2
+```
 
-acn() { ac --kubeconfig "$KCFG" --context "$CTX" "$@"; }
+Every later step depends on the variables and functions defined here, and any failure only prints `STOP`; the terminal stays open. When the block finishes, confirm that the `context=` line it prints is the business cluster for this migration. Fix the cause and re-run the block if needed (a re-run resets `S3_ARGS` and `FORCE_ARGS`).
+
+If the terminal closes unexpectedly, export the original `RUN_DIR` as described in appendix B and run this section again; it restores the run ID, the namespaces, and the Deployment names from `plan.json`. Do not start a new run.
+
+The next block is mandatory. It defines `acn`, `acns`, `evidence`, and `stop_deployment`, which the later sections call.
+
+```bash
+acn() {
+  test -n "${CTX:-}" || { echo "ERROR: CTX is empty; run section 0 first" >&2; return 1; }
+  ac --kubeconfig "${KCFG:-$HOME/.kube/config}" --context "$CTX" "$@"
+}
 acns() { acn -n "$REGISTRY_NS" "$@"; }
 evidence() {
   jq --arg actor "$ACTOR" --arg at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --arg field "$2" \
@@ -75,48 +129,55 @@ evidence() {
     "$RUN_DIR/plan.json" > "$RUN_DIR/$1"
 }
 stop_deployment() {
-  local namespace="$1" name="$2" selector
+  local namespace="$1" name="$2" selector pods
   acn -n "$namespace" get deployment "$name" -o wide
   selector="$(acn -n "$namespace" get deployment "$name" -o json |
     jq -er '.spec.selector.matchLabels | to_entries | map("\(.key)=\(.value)") | join(",") | select(length > 0)')"
   acn -n "$namespace" scale deployment "$name" --replicas=0
   pods="$(acn -n "$namespace" get pods -l "$selector" -o name)"
   if test -n "$pods"; then
-    acn -n "$namespace" wait --for=delete pod -l "$selector" --timeout=180s
+    acn -n "$namespace" wait --for=delete pod -l "$selector" --timeout=180s || true
   fi
 }
 ```
-
-For a new migration, unset `RUN_DIR` before this section. To recover after the terminal exits, export the original absolute `RUN_DIR` and run this section again; it restores the run ID, namespaces, and Deployment names from `plan.json`. Do not create a new run for a retry. Re-select S3 and force arrays after reload.
 
 ## 1. P0: create and review the plan
 
 ```bash
 registry-migrate plan --output-dir "$OUT" --run-id "$RUN_ID" \
   --operand-namespace "$REGISTRY_NS" --operator-namespace "$OPERATOR_NS" \
-  --kubeconfig "$KCFG"
-jq -e '(.discovery.blockers // []) | length == 0' "$RUN_DIR/plan.json"
-REGISTRY_DEPLOY="$(jq -er '.discovery.deployment | select(length > 0)' "$RUN_DIR/plan.json")"
-GATEWAY_DEPLOY="$(jq -er '.discovery.gatewayDeployment | select(length > 0)' "$RUN_DIR/plan.json")"
-REGISTRY_SERVICE="$(jq -er '.scope.serviceName' "$RUN_DIR/plan.json")"
-jq '{scope,storage:.discovery.storage,routes:.discovery.routes,limits:.namespaceLimits,warnings:.discovery.warnings}' "$RUN_DIR/plan.json"
+  --kubeconfig "$KCFG" &&
+jq -e '(.discovery.blockers // []) | length == 0' "$RUN_DIR/plan.json" &&
+REGISTRY_DEPLOY="$(jq -er '.discovery.deployment | select(length > 0)' "$RUN_DIR/plan.json")" &&
+GATEWAY_DEPLOY="$(jq -er '.discovery.gatewayDeployment | select(length > 0)' "$RUN_DIR/plan.json")" &&
+REGISTRY_SERVICE="$(jq -er '.scope.serviceName' "$RUN_DIR/plan.json")" &&
+jq '{scope,storage:.discovery.storage,routes:.discovery.routes,limits:.namespaceLimits,warnings:.discovery.warnings}' "$RUN_DIR/plan.json" &&
+echo "P0 OK: $RUN_DIR/plan.json"
 ```
 
-The plan is read-only. Review every blocker, S3 bucket/endpoint/prefix, old host/TLS/IngressClass, replicas, scheduling fields, and timeout values. Stop if any blocker is present or the plan does not match the cluster.
+Seeing `P0 OK` means the plan was generated and passed the blocker check; if the line is missing, the step failed. A failing `&&` chain only returns a non-zero exit code and does not close the terminal. When blockers are present, inspect them first:
+
+```bash
+jq '.discovery.blockers' "$RUN_DIR/plan.json"
+```
+
+Planning is a read-only operation. Check every blocker, the S3 bucket/endpoint/prefix, the legacy host/TLS/IngressClass, the replica counts, and the timeouts, taking the expected values from the change record and the current cluster state; stop if the plan disagrees with the cluster. The `scope.operandNamespace` it prints must be the namespace that actually holds the Registry; if it is not, correct `REGISTRY_NS` in section 0 and re-run P0.
 
 ## 2. P1-backup: save recovery material
 
-Save old chart values, platform management objects, protected credentials, and the provider’s S3 recovery record. The tool backup is a redacted Registry-scoped snapshot; it does not contain Secret data or restore S3 image data by itself.
+**This stage must complete before P1-credentials**: the credentials stage rewrites pull Secret contents, and reversing the order leaves the backup snapshot without recovery value.
+
+The backup is a redacted, Registry-scoped snapshot that records UIDs, owners, ServiceAccounts, and references; it contains no image layer data. Run:
 
 ```bash
 registry-migrate backup --run-dir "$RUN_DIR" --kubeconfig "$KCFG" --approve
 ```
 
-Expected result: a recorded stage and relevant resource/Secret summaries containing UID, owner, ServiceAccount, and reference information. This is not a backup of every object in the namespace.
+Success check: the command exits 0 and adds a resource/Secret summary file under `$RUN_DIR`. If it exits non-zero, do not continue to P1-credentials; check RBAC and re-run this section.
 
 ## 3. P1-credentials: hand off pull Secrets
 
-The legacy Registry must still be readable. First pause the AppRelease/ClusterPlugin or other platform source that manages `sa-imagepullsecret-controller`.
+The legacy Registry must still be readable. First suspend the AppRelease/ClusterPlugin or other platform source that manages `sa-imagepullsecret-controller`, then run the block below. If jq reports several candidates, identify the single target by hand with `acn get deployments -A -o wide | grep -i imagepull` and re-run this section.
 
 ```bash
 PULL_SECRET_REF="$(acn get deployments -A -o json | jq -er '
@@ -124,29 +185,40 @@ PULL_SECRET_REF="$(acn get deployments -A -o json | jq -er '
     ((.metadata.labels // {}) | tojson | test("sa-imagepullsecret-controller";"i"))) |
     [.metadata.namespace,.metadata.name]] |
   if length == 1 then .[0] | @tsv else error("review legacy pull-secret controller candidates") end')"
+PULL_SECRET_NS=""; PULL_SECRET_DEPLOY=""
 IFS=$'\t' read -r PULL_SECRET_NS PULL_SECRET_DEPLOY <<< "$PULL_SECRET_REF"
-if test "${#FORCE_ARGS[@]}" -eq 0; then
-  stop_deployment "$PULL_SECRET_NS" "$PULL_SECRET_DEPLOY"
+if test -z "$PULL_SECRET_DEPLOY"; then
+  echo "STOP: cannot resolve the legacy pull-secret controller; fix the jq error above and re-run. Stage not recorded." >&2
 else
-  acn -n "$PULL_SECRET_NS" get deployment "$PULL_SECRET_DEPLOY" -o wide
-  echo "force mode: leaving the legacy pull-secret controller state unchanged"
+  if test "${#FORCE_ARGS[@]}" -eq 0; then
+    stop_deployment "$PULL_SECRET_NS" "$PULL_SECRET_DEPLOY"
+  else
+    acn -n "$PULL_SECRET_NS" get deployment "$PULL_SECRET_DEPLOY" -o wide
+    echo "force mode: leaving the legacy pull-secret controller state unchanged"
+  fi
+  evidence controller-stopped.json legacyControllerStopped
+  registry-migrate run --run-dir "$RUN_DIR" --stage P1-credentials \
+    --evidence-file "$RUN_DIR/controller-stopped.json" \
+    "${FORCE_ARGS[@]}" --kubeconfig "$KCFG" --approve
 fi
-evidence controller-stopped.json legacyControllerStopped
-registry-migrate run --run-dir "$RUN_DIR" --stage P1-credentials \
-  --evidence-file "$RUN_DIR/controller-stopped.json" \
-  "${FORCE_ARGS[@]}" --kubeconfig "$KCFG" --approve
 ```
 
-Expected result: Secret totals, progress, `updated/skipped`, and a recorded stage. Existing Secret names/UIDs and ServiceAccount owner UIDs remain unchanged. Do not recreate same-named Secrets. Do not uninstall the old chart until this phase succeeds.
+Success check: the output reports the Secret count and the `updated/skipped` counters, and the stage state is written to the journal; the name and UID of existing Secrets and the ServiceAccount owner UID stay unchanged. Do not uninstall the legacy chart before this stage succeeds.
 
-## 4. P2-stop-writers: stop legacy writers
+## 4. P2-stop-writers: stop the legacy writers (maintenance window starts)
 
-Pause the legacy chart management source. Stop the legacy Registry and Gateway Deployments, pause the legacy Pruner when present, and stop external jobs writing the same S3 bucket/prefix. An old Image API or another metadata writer must be stopped and recorded by an administrator.
+First suspend the platform source that manages the legacy chart. Scale the legacy Registry and Gateway Deployments to zero; if a legacy Pruner CronJob exists, set `suspend=true`; and stop every external Job that writes to the same bucket/prefix.
 
-Before running the command, set `WRITER_RECORD` to the maintenance/change record that lists the external S3 and metadata writers, the stop time, and the administrator approval. The file is copied into the run directory for audit.
+Before you run anything, point `WRITER_RECORD` at the maintenance or change record. It must name the external S3 and metadata writers, the stop time, and the administrator's approval. The file is copied into the run directory for auditing; if it is missing, the block below stops nothing.
 
 ```bash
-export WRITER_RECORD="/path/to/maintenance-writer-record.txt"
+stop_writers() {
+export WRITER_RECORD="${WRITER_RECORD:-/tmp/maintenance-writer-record.txt}"
+if ! test -s "$WRITER_RECORD"; then
+  echo "STOP: WRITER_RECORD missing or empty: $WRITER_RECORD; nothing was stopped." >&2
+  echo "Create it first: window time, external writers, stop time, approver. The shell stays open." >&2
+  return 1
+fi
 if test "${#FORCE_ARGS[@]}" -eq 0; then
   stop_deployment "$REGISTRY_NS" "$REGISTRY_DEPLOY"
   stop_deployment "$REGISTRY_NS" "$GATEWAY_DEPLOY"
@@ -164,8 +236,9 @@ if test -n "$LEGACY_PRUNER"; then
 fi
 acns get endpoints "$REGISTRY_SERVICE" -o wide
 acns get endpointslices.discovery.k8s.io -l "kubernetes.io/service-name=$REGISTRY_SERVICE" -o wide
-test -n "$WRITER_RECORD"
-test -s "$WRITER_RECORD"
+mkdir -p "$RUN_DIR/verification"
+acn get cronjob,job -A -o wide > "$RUN_DIR/verification/legacy-jobs.txt" ||
+  echo "WARN: could not list cluster jobs" >&2
 if test "$WRITER_RECORD" != "$RUN_DIR/writer-record.txt"; then
   cp "$WRITER_RECORD" "$RUN_DIR/writer-record.txt"
 fi
@@ -173,17 +246,31 @@ evidence writers-stopped.json legacyWritersStopped
 registry-migrate run --run-dir "$RUN_DIR" --stage P2-stop-writers \
   --evidence-file "$RUN_DIR/writers-stopped.json" \
   "${FORCE_ARGS[@]}" --kubeconfig "$KCFG" --approve
+}
+stop_writers
 ```
 
-Expected result in the normal path: old Registry/Gateway Pods and Ready endpoints are gone, the old Pruner is suspended, active jobs have finished, and the stage is recorded. The copied `WRITER_RECORD` is a mandatory administrator gate for external writers; the tool separately checks live cluster writers. If the platform cannot keep old components stopped, set `FORCE_ARGS=(--force)` only after an administrator accepts the consistency risk; in that path, record the actual running state and expect the tool’s force-fence warning instead of claiming that the old Pods or endpoints are gone. Force does not bypass API, UID, S3, metadata, stage, or new Operator pause checks.
+Success check: the legacy Registry/Gateway Pods and their Ready endpoints are gone, the legacy Pruner is suspended, the active Jobs have finished, and the stage state is written to the journal.
+
+**Confirm that no other writer remains before entering P3**: check `verification/legacy-jobs.txt` for CronJobs or Jobs that still target the legacy Registry, and if S3 is reachable, list it twice a few minutes apart — the object count and the newest `LastModified` must be identical.
+
+If the platform cannot keep the legacy components stopped, set `FORCE_ARGS=(--force)` only after the administrator accepts the consistency risk. That path records the actual runtime state and prints a force-fence warning. See the escape hatches in appendix B.
 
 ## 5. P3-final-inventory: freeze the inventory and S3 state
 
-The final inventory records repository/tag/digest relationships and manifest/config metadata. The S3 snapshot records object count, bytes, and listing digest. It does not copy layers or provide data recovery.
+The final inventory records the repository/tag/digest relationships together with the manifest and config metadata; the S3 snapshot records the object count, the byte count, and the listing digest. Registry v2 reuses the same bucket and prefix, so **the layers stay where they are: this stage copies nothing and deletes nothing**. It also creates no data copy — if you need a recovery point, the administrator must take an S3 snapshot or enable versioning before P3.
 
-Choose exactly one path.
+**Once recorded, the P3 protection state cannot be changed**: adding proof afterwards has no effect, and the only remedy is a new run from P0. Before you start, confirm that a recovery point exists if you choose path 2, and always re-run with the same path you chose the first time.
 
-**Verified recovery point:**
+Choose exactly one path. Run only one of the two blocks; running both makes path 2 overwrite path 1.
+
+**Path 1: skip the restore verification explicitly** (the administrator accepts running without an S3 recovery point; the tool records a warning and the `not-established` state)
+
+```bash
+P3_PROTECTION=(--skip-s3-backup-verification)
+```
+
+**Path 2: provide a verified recovery point** (the tool records `restoreVerified` and the reference)
 
 ```bash
 printf 'Enter the verified S3 recovery-point identifier or report path: '
@@ -196,31 +283,37 @@ jq --arg actor "$ACTOR" --arg at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
 P3_PROTECTION=(--evidence-file "$RUN_DIR/restore-proof.json")
 ```
 
-**Explicitly skipped recovery verification:** an administrator may accept a run with no S3 recovery point. The tool records a warning and `not-established` state.
+Nested repositories are not skipped by default. Turn the switch on only after confirming that every nested repository in `legacy-metadata-report.json` is an approved historical test leftover:
 
 ```bash
-P3_PROTECTION=(--skip-s3-backup-verification)
+NESTED_ARGS=()
+# NESTED_ARGS=(--skip-nested-repositories)
 ```
 
-Do not use both paths.
+If the S3 endpoint in `plan.json` is a cluster-internal address (of the form `*.svc.cluster.local`), this host cannot resolve it and the stage stops with `dial tcp: lookup ... no such host`. Go to appendix A now, set up the port forward and `S3_ARGS`, then come back and run the block below.
+
+P3 uses `resume` rather than `run`: after an interruption, `resume` reuses the completed scan, while every other stage uses `run` (idempotent, completed items are skipped).
 
 ```bash
 registry-migrate resume --run-dir "$RUN_DIR" --stage P3-final-inventory \
-  "${P3_PROTECTION[@]}" "${S3_ARGS[@]}" \
-  "${NESTED_ARGS[@]}" \
+  "${P3_PROTECTION[@]}" "${S3_ARGS[@]}" "${NESTED_ARGS[@]}" \
   "${FORCE_ARGS[@]}" --kubeconfig "$KCFG" --approve
+
 registry-migrate report --run-dir "$RUN_DIR"
-jq '{items:(.items|length),digest,sample:(.items[0] | {namespace,repository,tag,digest})}' "$RUN_DIR/final-inventory.json"
+
+jq '{items:(.items|length),digest,sample:(.items[0] // {} | {namespace,repository,tag})}' "$RUN_DIR/final-inventory.json"
 ```
 
-Expected result: recorded stage, `final-inventory.json`, and `s3-snapshot.json`. Scanning reads tag links, manifests, and configs; it does not move layers. Approved test residue excluded with `--skip-nested-repositories` must be reviewed in `legacy-metadata-report.json` and not counted as migrated. Set `NESTED_ARGS=(--skip-nested-repositories)` before P3 only for that approved residue; the normal value is `NESTED_ARGS=()`.
+Success check: the stage state is written to the journal, and `final-inventory.json` and `s3-snapshot.json` are created; the scan only reads tag links, manifests, and configs and moves no layers.
 
+If the stage fails on nested repositories, read `legacy-metadata-report.json` first and set `NESTED_ARGS=(--skip-nested-repositories)` only when every entry is an approved historical test leftover. Excluded repositories never reach `final-inventory.json`, are not imported in P6, and cannot be added later, so review them one by one.
 
-## 6. P4-prepare-operator: prepare Registry v2 read-only
+## 6. P4-prepare-operator: prepare the read-only Registry v2
 
-Install or upgrade the provider-approved Operator bundle/CRD. Establish the ACP-specific pause/hold that keeps the current Operator Deployment at zero during P4–P6. A Manual Subscription controls InstallPlan approval; it does not pause an already running Operator.
+Install or upgrade the provider-approved Operator bundle/CRD (in the platform plugin page; the tool does not do this) and establish the ACP pause procedure so that the Operator Deployment stays at zero replicas from P4 through P6. A Manual Subscription only controls InstallPlan approval; it does not pause an Operator that is already running.
 
 ```bash
+prepare_operator() {
 acn -n "$OPERATOR_NS" get subscription,installplan,csv -o wide
 stop_deployment "$OPERATOR_NS" cluster-image-registry-operator
 PRUNER="$(acn get imagepruner.imageregistry.operator.alauda.io cluster --ignore-not-found -o name)"
@@ -231,8 +324,14 @@ if test -n "$PRUNER"; then
   existing_plan="$(jq -r '.metadata.annotations["registry-migrate.plan-digest"] // empty' "$RUN_DIR/imagepruner-before.json")"
   current_run="$(jq -er '.runID' "$RUN_DIR/plan.json")"
   current_plan="$(jq -er '.digest' "$RUN_DIR/plan.json")"
-  test -z "$existing_run" -o "$existing_run" = "$current_run"
-  test -z "$existing_plan" -o "$existing_plan" = "$current_plan"
+  if test -n "$existing_run" && test "$existing_run" != "$current_run"; then
+    echo "STOP: imagepruner belongs to run $existing_run; refusing to reuse it" >&2
+    return 1
+  fi
+  if test -n "$existing_plan" && test "$existing_plan" != "$current_plan"; then
+    echo "STOP: imagepruner was prepared by a different plan ($existing_plan)" >&2
+    return 1
+  fi
   if test -z "$existing_run"; then
     acn annotate "$PRUNER" "registry-migrate.run-id=$current_run"
   fi
@@ -250,35 +349,77 @@ acn get config.imageregistry.operator.alauda.io cluster -o json |
     .spec.storage.managementState == "Unmanaged"'
 acn get imagepruner.imageregistry.operator.alauda.io cluster -o json |
   jq -e '.spec.suspend == true'
+}
+prepare_operator
 ```
 
-Expected result: `state=prepared`; Config reuses planned S3/routes, is read-only, and leaves pull-Secret management Unmanaged. The Pruner is suspended. If it did not exist, the tool creates it and records `registry-migrate.original-suspend=false`. An annotation conflict is a stop condition; do not use `--overwrite`.
+Success check: `state` in `registry-migrate report` is `prepared`; the Config reuses the planned S3 settings and routes, is read-only, and manages both the pull Secret and storage as `Unmanaged`; the Pruner is suspended. If no Pruner existed, the tool creates one and records `registry-migrate.original-suspend`.
 
-## 7. P5-remove-legacy-chart: uninstall the old chart
+If the ImagePruner already carries a `run-id` or `plan-digest` annotation from another run that disagrees with the current plan, the command aborts without overwriting the value (at that point the Operator is already at zero replicas, but the stage is not recorded). Once you are sure the old run is abandoned, you may delete those two annotations with provider approval and re-run this section; **do not delete `registry-migrate.original-suspend`**, because P8 depends on it. A failing assertion means the Operator reconciled the Config again; confirm that the pause procedure is in effect before re-running this section.
 
-The platform administrator uninstalls the legacy Registry/Gateway chart through the actual AppRelease/ClusterPlugin process. The tool does not perform this uninstall. Keep business pull Secrets, ServiceAccounts, S3 data, and TLS Secrets.
+## 7. P5-remove-legacy-chart: uninstall the legacy chart
+
+This step cannot be undone. **First** record the current Secret list as the baseline for the comparison after the uninstall (it must run before the uninstall, otherwise the diff below is always empty):
 
 ```bash
-jq -r '.discovery.routes[] | select(.gateway == true) | [.name,.ingressUID] | @tsv' "$RUN_DIR/plan.json" |
-while IFS=$'\t' read -r name expected_uid; do
-  actual_uid="$(acns get ingress "$name" --ignore-not-found -o jsonpath='{.metadata.uid}')"
-  if test -n "$actual_uid"; then
-    test "$actual_uid" = "$expected_uid"
-    acns delete ingress "$name" --wait=true
-  fi
-done
-registry-migrate run --run-dir "$RUN_DIR" --stage P5-remove-legacy-chart \
-  --kubeconfig "$KCFG" --approve
+date -u > "$RUN_DIR/pre-uninstall-secrets.at"
+acns get secret -o name > "$RUN_DIR/pre-uninstall-secrets.txt"
 ```
 
-Expected result: recorded stage. The tool confirms old Service/Deployments/routes are gone, TLS Secret remains, and business Secret/ServiceAccount identities have not changed. New Ingress uses planned `targetName` values; the old Ingress name is only a deletion target.
+The platform administrator uninstalls the legacy Registry/Gateway plugin in the cluster plugin page; the tool does not uninstall anything. The uninstall deletes the resources in the chart manifest, so a TLS Secret or an S3 credential Secret generated by that chart disappears with it. Verify immediately afterwards:
+
+```bash
+test -s "$RUN_DIR/pre-uninstall-secrets.txt" ||
+  echo "STOP: pre-uninstall snapshot missing; the diff below proves nothing" >&2
+printf 'baseline captured at: %s\n' "$(cat "$RUN_DIR/pre-uninstall-secrets.at" 2>/dev/null || echo unknown)"
+acns get secret -o name > "$RUN_DIR/post-uninstall-secrets.txt"
+diff "$RUN_DIR/pre-uninstall-secrets.txt" "$RUN_DIR/post-uninstall-secrets.txt" ||
+  echo "WARN: Secret list changed; confirm the TLS Secret and S3 credentials still exist before continuing" >&2
+```
+
+The baseline timestamp must be earlier than the uninstall; otherwise the diff proves nothing and you have to compare against the P1 backup by hand. Keep the business pull Secrets, the ServiceAccounts, the S3 data, and the TLS Secret. If a TLS or S3 credential Secret shows up in the diff, restore it before continuing.
+
+Then delete the leftover Ingress and record the stage. **The next block permanently deletes the Ingresses marked `gateway=true` in the plan**, so confirm the routes are backed up first:
+
+```bash
+remove_legacy_chart() {
+acn -n "$OPERATOR_NS" get deployment cluster-image-registry-operator -o json |
+  jq -e '.spec.replicas == 0' >/dev/null ||
+  echo "WARN: operator replicas is not 0; confirm it is still paused before removing the legacy chart" >&2
+ROUTE_COUNT="$(jq -e '[.discovery.routes[] | select(.gateway == true)] | length' "$RUN_DIR/plan.json")" ||
+  { echo "STOP: cannot read routes from plan.json" >&2; return 1; }
+test "$ROUTE_COUNT" -gt 0 ||
+  echo "WARN: plan has no gateway route; confirm no legacy Ingress remains before recording the stage" >&2
+FAILED=""
+while IFS=$'\t' read -r name expected_uid; do
+  actual_uid="$(acns get ingress "$name" --ignore-not-found -o jsonpath='{.metadata.uid}')"
+  if test -z "$actual_uid"; then
+    echo "SKIP: ingress $name is already absent"
+    continue
+  fi
+  if test "$actual_uid" != "$expected_uid"; then
+    echo "STOP: ingress $name has a different UID ($actual_uid != $expected_uid); not deleting" >&2
+    FAILED=1
+    continue
+  fi
+  acns delete ingress "$name" --wait=true
+done < <(jq -r '.discovery.routes[] | select(.gateway == true) | [.name,.ingressUID] | @tsv' "$RUN_DIR/plan.json")
+test -z "$FAILED" || { echo "STOP: legacy Ingress cleanup incomplete; stage not recorded. Shell stays open." >&2; return 1; }
+registry-migrate run --run-dir "$RUN_DIR" --stage P5-remove-legacy-chart \
+  --kubeconfig "$KCFG" --approve
+}
+remove_legacy_chart
+```
+
+Success check: the stage state is written to the journal; the tool confirms that the legacy Service/Deployment/route are gone, the TLS Secret still exists, and the business Secret/ServiceAccount identities are unchanged. The new Ingress uses the planned `targetName`; the legacy Ingress names are used only as deletion targets. A UID mismatch means the Ingress was recreated: stop and contact your service provider instead of forcing the deletion.
 
 ## 8. P6-cold-import: import metadata and limits
 
-The new Operator must still be paused. Re-check the pause and generate a fresh evidence file before importing.
+The Operator must still be at zero replicas. Confirm it again and generate a fresh evidence file:
 
 ```bash
 stop_deployment "$OPERATOR_NS" cluster-image-registry-operator
+acn -n "$OPERATOR_NS" get deployment cluster-image-registry-operator -o json | jq -e '.spec.replicas == 0' >/dev/null
 evidence operator-paused.json operatorPaused
 registry-migrate run --run-dir "$RUN_DIR" --stage P6-cold-import \
   --inventory-file "$RUN_DIR/final-inventory.json" \
@@ -286,13 +427,13 @@ registry-migrate run --run-dir "$RUN_DIR" --stage P6-cold-import \
   "${FORCE_ARGS[@]}" --kubeconfig "$KCFG" --approve
 ```
 
-Expected result: `state=imported`, with progress for unique ImageDigest objects, ImageStream/tag relationships, and namespace limits. Shared digests are stored once while repository/tag references remain. No blobs or layers are uploaded and no ordinary `ImageStreamMapping` bypass is used.
+Success check: `state` in `registry-migrate report` is `imported`, and the output reports the unique ImageDigest objects, the ImageStream/tag relationships, and the namespace limit progress. A shared digest is stored once and keeps all of its repository/tag references. If the stage fails, confirm that the Operator is still at zero replicas and re-run it; the import counts are checked in section 9.
 
-The legacy Gateway limits are projected into existing namespace `registry-migrate-image-limits` LimitRange: `type: alauda.io/Image` with `max.storage` for image size, and `type: alauda.io/ImageStream` with `max["alauda.io/repository-tags"]` for repository-tag count. A legacy `2GB/2000` value is represented as `2Gi/2000`. Namespace-specific rules are selected by the approved plan; review `namespaceLimits` when rules overlap. The migration does not create ResourceQuota, overwrite existing user limits, or configure future namespaces.
+The legacy Gateway limits are projected onto the `registry-migrate-image-limits` LimitRange of each existing namespace: image size uses `type: alauda.io/Image` with `max.storage`, and the repository-tag count uses `type: alauda.io/ImageStream` with `max["alauda.io/repository-tags"]`. The legacy `2GB/2000` becomes `2Gi/2000` in the new limits (`2Gi=2048Mi`; `2000` means the namespace may hold at most 2000 repository tags). The approved plan selects the per-namespace rules. The migration never overwrites limits that users already set and never configures namespaces created later.
 
 ## 9. P7-verify: resume the Operator and verify read-only service
 
-Release the ACP pause/hold through the platform procedure. Then restore the Operator and wait for the data plane.
+Release the ACP pause through the platform procedure, then restore the Operator and wait for the data plane. `--replicas=1` is the default; if the change record lists a different original replica count, change that line.
 
 ```bash
 acn -n "$OPERATOR_NS" scale deployment cluster-image-registry-operator --replicas=1
@@ -307,133 +448,236 @@ acn get apiservice v1.image.alauda.io -o json |
   jq -e '.status.conditions // [] | any(.[]; .type == "Available" and .status == "True" and .reason == "Passed")'
 registry-migrate run --run-dir "$RUN_DIR" --stage P7-verify --kubeconfig "$KCFG" --approve
 registry-migrate verify --run-dir "$RUN_DIR" --kubeconfig "$KCFG"
+acn get config.imageregistry.operator.alauda.io cluster -o json |
+  jq -e '.spec.readOnly == true and
+    .spec.imagePullSecret.managementState == "Unmanaged" and
+    .spec.storage.managementState == "Unmanaged"'
+acn get imagepruner.imageregistry.operator.alauda.io cluster -o json |
+  jq -e '.spec.suspend == true'
 ```
 
-Expected result: Operator, Registry, Image API, and APIService are ready; P7 is `verified` and `verify` exits zero. Confirm Service ports `80→8080`, `443→5000`, and `5000→5000`, Ready endpoints, the new Ingress backend, Config, metadata, and limits. Config remains read-only, storage and pull-Secret management remain Unmanaged, and the Pruner remains suspended.
+Success check: the Operator, Registry, Image API, and APIService are all ready; the P7 state is `verified` and `verify` exits 0. The Service ports are `80→8080`, `443→5000`, and `5000→5000`, the endpoints are Ready, and the new Ingress backend, Config, metadata, and limits are correct; the Config is still read-only, storage and the pull Secret are still `Unmanaged`, and the Pruner is still suspended.
 
-Confirm the release-4.5 metadata resources and the namespace limit scope:
+**This is the most important checkpoint in the maintenance window: business pulls should work again, and pushes must be rejected (403/405).** If pulls fail, check whether the pull Secret contains the new ingress host (see section 10), the Service ports, and the Ingress backend first. Conversely, if a push succeeds at this stage, `readOnly` is not in effect: stop and do not enter P8.
+
+Collect the verification evidence:
 
 ```bash
-acn get imagedigests.image.alauda.io -o yaml > "$RUN_DIR/verification/imagedigests.yaml"
-acn get imagestreams.image.alauda.io -A -o yaml > "$RUN_DIR/verification/imagestreams.yaml"
-acn get limitrange -A -l "registry-migrate.run-id=$RUN_ID" -o yaml \
-  > "$RUN_DIR/verification/migration-limitranges.yaml"
+mkdir -p "$RUN_DIR/verification"
+acn get imagedigests.image.alauda.io -o yaml > "$RUN_DIR/verification/imagedigests.yaml" ||
+  echo "WARN: imagedigests not captured" >&2
+acn get imagestreams.image.alauda.io -A -o yaml > "$RUN_DIR/verification/imagestreams.yaml" ||
+  echo "WARN: imagestreams not captured" >&2
+acn get limitrange -A --field-selector metadata.name=registry-migrate-image-limits -o yaml \
+  > "$RUN_DIR/verification/migration-limitranges.yaml" ||
+  echo "WARN: limitranges not captured" >&2
 ```
 
-The imported `LimitRange` objects are a static snapshot for namespaces already covered by the plan. They do not become a global policy and do not automatically apply to namespaces created later.
+Compare the import result. A shared digest is stored once, so compare digest sets rather than repository/tag counts:
+
+```bash
+jq -r '.items[].digest | select(. != null)' "$RUN_DIR/final-inventory.json" | sort -u \
+  > "$RUN_DIR/verification/inventory-digests.txt"
+acn get imagedigests.image.alauda.io -o json |
+  jq -r '.items[].metadata.name' | sort -u > "$RUN_DIR/verification/cluster-digests.txt"
+wc -l < "$RUN_DIR/verification/inventory-digests.txt"
+comm -23 "$RUN_DIR/verification/inventory-digests.txt" "$RUN_DIR/verification/cluster-digests.txt"
+```
+
+The first command prints the number of digests in the inventory. `comm -23` lists the digests that are in the inventory but missing from the cluster, and **the output must be empty**; if it is not, find out whether those images were skipped or failed to import. The opposite direction (present in the cluster but not in the inventory) is allowed, because those objects may be historical or created by the Operator, but record the reason in the migration notes.
+
+`LimitRange` is a static snapshot of the namespaces the plan already covers. It is not a global policy and is not applied automatically to namespaces created later.
 
 ## 10. P8-commit: verify business access, then open writes
 
-Use the actual external URL for this cluster, including protocol and port. Do not copy a test environment port to another cluster. A trusted system CA or provider PEM CA is required for TLS acceptance; `curl -k` is only a diagnostic. Set the three test inputs for this cluster before running the probe block.
+`REGISTRY_URL` must point at **the Ingress address that the new Registry exposes**, that is, the entry point used to reach the Registry from outside the cluster. It defaults to the planned route (`scheme` + `hostname`) and needs no manual input; when the real entry point is a different domain or VIP, override it with `REGISTRY_URL_OVERRIDE` instead of editing this block. The port comes from this cluster's plan, so do not carry over a port from another environment.
+
+Certificates fall into two cases:
+
+- The ingress certificate is issued by a trusted CA: `export REGISTRY_CA_BUNDLE=/path/to/ca.pem`. curl uses it for verification, and `ac` inherits the same CA through `SSL_CERT_FILE`.
+- The ingress certificate is issued by an internal CA whose SAN does not include this host (for example an auto-generated `*.nip.io` domain): TLS verification is bound to fail, so `export REGISTRY_TLS_INSECURE=1` to skip it and note this environment limitation in the migration record.
 
 ```bash
-export REGISTRY_URL="${REGISTRY_URL:?set the actual external Registry URL, including scheme and port}"
-REGISTRY_HOST="$(jq -er '.discovery.routes[0].hostname' "$RUN_DIR/plan.json")"
+export REGISTRY_HOST="$(jq -er '([.discovery.routes[] | select(.gateway == true)][0] // .discovery.routes[0]).hostname' "$RUN_DIR/plan.json")"
+REGISTRY_SCHEME="$(jq -er '([.discovery.routes[] | select(.gateway == true)][0] // .discovery.routes[0]).scheme // "http"' "$RUN_DIR/plan.json")"
+unset REGISTRY_URL
+export REGISTRY_URL="${REGISTRY_URL_OVERRIDE:-$REGISTRY_SCHEME://$REGISTRY_HOST}"
+printf 'REGISTRY_URL=%s\n' "$REGISTRY_URL"
 jq -ne --arg url "$REGISTRY_URL" --arg host "$REGISTRY_HOST" \
-  '($url | capture("^https?://(?<host>[^/:]+)(:[0-9]+)?/?$").host) == $host'
+  '($url | capture("^https?://(?<host>[^/:]+)(:[0-9]+)?/?$").host) == $host' >/dev/null 2>&1 ||
+  echo "NOTE: REGISTRY_URL is not the bare planned ingress host ($REGISTRY_HOST); confirm it is the external address of the new Registry."
 mkdir -p "$RUN_DIR/verification"
 CURL_TLS_ARGS=()
-if test -n "$REGISTRY_CA_BUNDLE"; then CURL_TLS_ARGS=(--cacert "$REGISTRY_CA_BUNDLE"); fi
-http_code="$(curl -sS "${CURL_TLS_ARGS[@]}" --connect-timeout 10 --max-time 20 \
-  -o /dev/null -w '%{http_code}' "$REGISTRY_URL/v2/")"
-case "$http_code" in 200|401|403) echo "Registry reachable: HTTP $http_code" ;; *) echo "unexpected HTTP $http_code"; exit 1 ;; esac
-curl -sS "${CURL_TLS_ARGS[@]}" --connect-timeout 10 --max-time 20 \
-  -D "$RUN_DIR/verification/registry-v2-headers.txt" -o /dev/null "$REGISTRY_URL/v2/"
-if grep -qi '^WWW-Authenticate:' "$RUN_DIR/verification/registry-v2-headers.txt"; then
-  echo "Review the WWW-Authenticate realm and confirm its host and port are reachable from the same client."
+AC_TLS_ARGS=()
+if test -n "${REGISTRY_CA_BUNDLE:-}"; then
+  CURL_TLS_ARGS+=(--cacert "$REGISTRY_CA_BUNDLE")
+  export SSL_CERT_FILE="$REGISTRY_CA_BUNDLE"
 fi
-export TEST_NS="${TEST_NS:?set a namespace containing a migrated test image}"
-export TEST_REPO="${TEST_REPO:?set an isolated namespace/repository:tag for dry-run deletion}"
+if test "${REGISTRY_TLS_INSECURE:-0}" = 1; then
+  CURL_TLS_ARGS+=(--insecure)
+  AC_TLS_ARGS+=(--insecure-skip-tls-verify)
+fi
+probe_and_export() {
+  http_code="$(curl -sS "${CURL_TLS_ARGS[@]}" --connect-timeout 10 --max-time 20 \
+    -o /dev/null -w '%{http_code}' "$REGISTRY_URL/v2/")"
+  case "$http_code" in
+    200|401|403) echo "Registry reachable: HTTP $http_code" ;;
+    *) echo "ERROR: unexpected HTTP ${http_code:-000} from $REGISTRY_URL/v2/" >&2
+       echo "000 = this machine cannot reach the host (route/VPN/DNS); 502/504 = a proxy or the ingress cannot reach the backend." >&2
+       echo "The shell stays open. Fix the cause, then re-run this block." >&2
+       return 1 ;;
+  esac
+  curl -sS "${CURL_TLS_ARGS[@]}" --connect-timeout 10 --max-time 20 \
+    -D "$RUN_DIR/verification/registry-v2-headers.txt" -o /dev/null "$REGISTRY_URL/v2/"
+  if grep -qi '^WWW-Authenticate:' "$RUN_DIR/verification/registry-v2-headers.txt"; then
+    echo "Check the host and port of the WWW-Authenticate realm; see appendix A if they differ from the ingress." >&2
+  fi
 
-env AC_IMAGE_REGISTRY_MODE=legacy \
-  ac --kubeconfig "$KCFG" --context "$CTX" get images -n "$TEST_NS" -o json \
-  --registry-url "$REGISTRY_URL" | tee "$RUN_DIR/verification/legacy-images.json"
-env AC_IMAGE_REGISTRY_MODE=modern \
-  ac --kubeconfig "$KCFG" --context "$CTX" get images -o json \
-  | tee "$RUN_DIR/verification/modern-images.json"
-env AC_IMAGE_REGISTRY_MODE=legacy \
-  ac --kubeconfig "$KCFG" --context "$CTX" delete images \
-  --repo "$TEST_REPO" --registry-url "$REGISTRY_URL"
-env AC_IMAGE_REGISTRY_MODE=modern \
-  ac --kubeconfig "$KCFG" --context "$CTX" delete images --repo "$TEST_REPO"
+  TEST_NS="${TEST_NS:-$(jq -er '.items[0].namespace' "$RUN_DIR/final-inventory.json")}" ||
+    { echo "ERROR: final-inventory.json has no items; P3 produced no inventory" >&2; return 1; }
+  TEST_REPO="${TEST_REPO:-$(jq -r '.items[0] | "\(.namespace)/\(.repository):\(.tag)"' "$RUN_DIR/final-inventory.json")}"
+  export TEST_NS TEST_REPO
+
+  env AC_IMAGE_REGISTRY_MODE=legacy \
+    ac --kubeconfig "$KCFG" --context "$CTX" "${AC_TLS_ARGS[@]}" get images -n "$TEST_NS" -o json \
+    --registry-url "$REGISTRY_URL" > "$RUN_DIR/verification/legacy-images.json" ||
+    { echo "ERROR: legacy view failed; see the error above. The shell stays open." >&2; return 1; }
+  env AC_IMAGE_REGISTRY_MODE=modern \
+    ac --kubeconfig "$KCFG" --context "$CTX" "${AC_TLS_ARGS[@]}" get images -A -o json \
+    --registry-url "$REGISTRY_URL" > "$RUN_DIR/verification/modern-images.json" ||
+    { echo "ERROR: modern view failed; see the error above. The shell stays open." >&2; return 1; }
+  printf 'legacy=%s modern=%s\n' \
+    "$(jq '.items | length' "$RUN_DIR/verification/legacy-images.json" 2>/dev/null || echo n/a)" \
+    "$(jq '.items | length' "$RUN_DIR/verification/modern-images.json" 2>/dev/null || echo n/a)"
+
+  # Keep these as dry runs: never add --confirm / --yes / -f, or the tag is really deleted.
+  env AC_IMAGE_REGISTRY_MODE=legacy \
+    ac --kubeconfig "$KCFG" --context "$CTX" "${AC_TLS_ARGS[@]}" delete images \
+    --repo "$TEST_REPO" --registry-url "$REGISTRY_URL"
+  env AC_IMAGE_REGISTRY_MODE=modern \
+    ac --kubeconfig "$KCFG" --context "$CTX" "${AC_TLS_ARGS[@]}" delete images \
+    --repo "$TEST_REPO" --registry-url "$REGISTRY_URL"
+}
+probe_and_export
 ```
 
-Expected result: anonymous `/v2/` 401/403 proves only entry-point reachability; authenticated legacy and modern queries succeed, and both delete commands remain dry-run. The legacy view lists repository/tag data; the modern view uses ImageDigest/ImageStream data. Do not compare row counts as proof of completeness.
+Success check: an anonymous 401/403 from `/v2/` only proves that the entry point is reachable; it says nothing about authentication or read/write access. The stage passes only when the authenticated legacy and modern queries both succeed and both `delete images` calls remain dry runs (they print `To delete, run with --confirm flag`). The legacy view lists repository/tag data; the modern view uses ImageDigest/ImageStream data.
 
-The commands above use the release-4.5 compatible `ac`. When the original 4.3 client is part of the customer contract, run the same read and dry-run checks separately with `AC43_BIN`, an explicit `--registry-url "$REGISTRY_URL"`, and an isolated kubeconfig. Do not call `ac config set-registry-mode` with the original 4.3 binary. The compatibility binary keeps the 4.3 output shape by default; setting `AC_REGISTRY_COMPAT_OUTPUT=native` changes the output contract and is not valid evidence for old scripts.
-
-For modern-native diagnostics only, query the Image API resource directly:
+Next, check that every namespace's pull Secret contains the new ingress host:
 
 ```bash
-env AC_IMAGE_REGISTRY_MODE=modern AC_REGISTRY_COMPAT_OUTPUT=native \
-  ac --kubeconfig "$KCFG" --context "$CTX" get images -o json \
-  > "$RUN_DIR/verification/modern-native-images.json"
+acn get secret -A -o json |
+  jq -r --arg h "$REGISTRY_HOST" '
+    .items[] | select(.type == "kubernetes.io/dockerconfigjson") |
+    (.data[".dockerconfigjson"] | @base64d | fromjson? | (.auths // {}) | keys) as $k |
+    select(($k | any(test($h))) | not) |
+    "REVIEW \(.metadata.namespace)/\(.metadata.name): no auth entry for \($h)"'
 ```
 
-Do not use that native output to compare with the original 4.3 pipeline contract. Before enabling prune or GC, verify that the caller has platform-admin access to the Registry Config; a namespace-level tag administrator is not sufficient.
+No output means every pull Secret already points at the new entry point. When a `REVIEW` line appears, namespaces managed by the Operator refresh on their own, so wait a minute or two and run the check again; Secrets left over from before the migration that the Operator does not manage are never rewritten, so the administrator must confirm that Pods in those namespaces can still pull.
 
-Create a disposable test Pod with `imagePullPolicy=Always` using the original image reference, ServiceAccount and Secret. Verify pulls through the original `:80`, `:443`, and `:5000` paths and the external host as applicable. Record the Pod, digest, query output, and pull result. Do not perform a positive push before P8.
+If you plan to enable the Pruner or GC after the migration, first confirm that the caller has platform-admin rights on the Registry Config. `ac adm prune images` is a platform-level operation that acts on the whole cluster's Registry, so **do not run it as part of this procedure**; adding and removing tags is a namespace permission, and the dry runs above work with the current login identity.
 
-After the business checks pass and an administrator approves the cutover:
+Run the block below only after the business checks pass and the administrator approves the switch. It is the irreversible point where writes are opened: rolling back afterwards also means handling new images and credential rotation, so make sure there is no way back before you continue. The evidence it writes sets `businessProbeVerified` and `pullSecretHandoffVerified` directly, so **complete the queries above and the pull Secret check first**.
 
 ```bash
+commit_run() {
+test -n "${ACTOR:-}" || { echo "ERROR: ACTOR is empty; export ACTOR=<platform admin account> and re-run this block" >&2; return 1; }
 jq --arg actor "$ACTOR" --arg at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
   '{version:"v1",runID:.runID,planDigest:.digest,observedAt:$at,actor:$actor,commitApproved:true,businessProbeVerified:true,pullSecretHandoffVerified:true}' \
   "$RUN_DIR/plan.json" > "$RUN_DIR/commit-approval.json"
+jq -e '.actor | length > 0' "$RUN_DIR/commit-approval.json" >/dev/null ||
+  { echo "ERROR: commit-approval.json has an empty actor; the tool rejects it" >&2; return 1; }
 registry-migrate run --run-dir "$RUN_DIR" --stage P8-commit \
   --evidence-file "$RUN_DIR/commit-approval.json" --kubeconfig "$KCFG" --approve
 acn get config.imageregistry.operator.alauda.io cluster -o json |
-  jq -e '.spec.readOnly == false and .spec.imagePullSecret.managementState == "Managed"'
+  jq -e '.spec.readOnly == false and
+    .spec.imagePullSecret.managementState == "Managed" and
+    .spec.storage.managementState == "Unmanaged"' ||
+  echo "NOTE: the commit itself may have succeeded and only this Config assertion failed; check the state in registry-migrate report before considering rollback" >&2
 acn get imagepruner.imageregistry.operator.alauda.io cluster -o json | jq -e '
-  .metadata.annotations["registry-migrate.original-suspend"] as $original |
-  ($original == "true" or $original == "false") and (.spec.suspend == ($original == "true"))'
+  (.metadata.annotations["registry-migrate.original-suspend"] // "false") as $original |
+  .spec.suspend == ($original == "true")' ||
+  echo "NOTE: if the actual suspend value disagrees with the annotation, compare imagepruner-before.json from P4 before considering rollback" >&2
 registry-migrate verify --run-dir "$RUN_DIR" --kubeconfig "$KCFG"
 registry-migrate report --run-dir "$RUN_DIR"
+}
+commit_run
 ```
 
-Expected result: `state=committed`; Config is writable, storage and pull-Secret management are Managed, and the Pruner has its recorded original suspension value. After Operator reconciliation, use an approved OCI client to push and pull one disposable repository and retain that output. If a failure occurs now, the write transition has already been committed; do not assume read-only state.
+Success check: `state` in `registry-migrate report` is `committed`; the Config is writable (`readOnly=false`), pull Secret management becomes `Managed`, storage stays `Unmanaged` (the administrator keeps managing S3), and `spec.suspend` on the Pruner returns to the value recorded before the migration (`registry-migrate.original-suspend`; a pre-migration value of `false` returns to `false`). A failing assertion does not mean the commit failed: check `state` before deciding to roll back.
 
-## Appendix: S3 access, retries, exceptions, and recovery
+Finally, push to and pull from a throwaway repository with an approved OCI client and keep the output. When the Registry authentication realm disagrees with the ingress port (appendix A), `skopeo`, `docker`, and `containerd` fail; in that case verify the manifest and blob `sha256` values through the Registry v2 API with `curl` instead.
 
-### S3 available only inside the cluster
+## Appendix A: known environment limitations
+
+### S3 reachable only from inside the cluster
+
+If the S3 endpoint in `plan.json` is a cluster-internal address (of the form `*.svc.cluster.local`), this host cannot resolve it and P3 stops while listing objects with `dial tcp: lookup ... no such host`. Set up a port forward first.
+
+Run this in **a second terminal** (it blocks in the foreground, so do not use the migration terminal). Replace `minio-system/service/minio` with the real S3 Service name and port; if the migration terminal uses a context other than `current-context`, export `CTX` in the new terminal first:
 
 ```bash
-ac --kubeconfig "/path/to/business.kubeconfig" --context "actual-context" \
-  -n minio-system port-forward service/minio 19000:9000
+: "${KCFG:=$HOME/.kube/config}"
+: "${CTX:=$(ac --kubeconfig "$KCFG" config current-context)}"
+ac --kubeconfig "$KCFG" --context "$CTX" -n minio-system port-forward service/minio 19000:9000
 ```
 
-In the original terminal:
+Back in the **migration terminal**, confirm that the tunnel works and set the override:
 
 ```bash
-curl --fail --connect-timeout 5 --max-time 10 \
-  http://127.0.0.1:19000/minio/health/live
+curl --fail --connect-timeout 5 --max-time 10 http://127.0.0.1:19000/minio/health/live
 S3_ARGS=(--s3-endpoint http://127.0.0.1:19000)
 ```
 
-The override changes only the P3 transport address; the source endpoint remains in the plan/snapshot and is not replaced in the target Config. Rebuild a broken tunnel and retry the same run. An HTTPS tunnel still uses `https://`; port forwarding does not convert the protocol.
+The override only changes the transport address used by P3; the endpoint in the plan, in the snapshot, and in the target Config stays the same. An HTTPS tunnel still uses `https://`, because a port forward does not change the protocol. Rebuild the tunnel if it drops, then retry the same run.
 
-### Exceptions and recovery
+### Authentication realm and ingress port disagree
 
-- **Force writer fence:** after an administrator accepts the consistency risk, set `FORCE_ARGS=(--force)` before P1/P2/P3/P4/P6. It cannot bypass API, UID, S3, metadata, or stage checks, and never bypasses the new Operator pause in P4/P6.
-- **Skip S3 verification:** set `P3_PROTECTION=(--skip-s3-backup-verification)` only when the administrator accepts that no S3 recovery point was established.
-- **Nested test residue:** add `--skip-nested-repositories` to P3 only for approved historical test residue. Review `legacy-metadata-report.json`.
-- **Original 4.3 ac:** it has no `set-registry-mode`; use `--registry-url`, `--kubeconfig`, and `--context` for a legacy query. The full permission/pagination matrix belongs to the platform’s separate compatibility acceptance record, not to the production migration window.
+The `WWW-Authenticate: realm=...` address in the 401 response from `/v2/` may use a different port from the ingress (for example the realm says 443 while the ingress only exposes 11780). Authentication in `skopeo`, `docker`, and `containerd` then fails even though the Registry itself is healthy. The `REGISTRY_URL` used here requires the definition block in section 10.
 
-If the Bash terminal exits, export the original absolute run directory and run Section 0 again:
+```bash
+curl -sS -k -D - -o /dev/null "$REGISTRY_URL/v2/" | grep -i '^www-authenticate:'
+```
+
+Replace `-k` with `--cacert /path/to/ca.pem` when the ingress certificate is trusted. If the realm is unreachable, verify through the Registry v2 API with `curl`; do not conclude that the migration failed, because this is an entry-point configuration issue that has to be fixed separately.
+
+## Appendix B: retries, exceptions, and recovery
+
+### Continue the same run after the terminal exits
 
 ```bash
 export RUN_DIR="/absolute/path/to/registry-migrate-runs/original-run-id"
+# Re-set the arrays you need, as described in section 5 (skip the ones you do not use):
+#   S3_ARGS=(--s3-endpoint http://127.0.0.1:19000)
+#   FORCE_ARGS=(--force)
+#   NESTED_ARGS=(--skip-nested-repositories)
 ```
 
-Section 0 restores the original run ID, scope, and discovered Deployments. Re-select S3, force, and P3 protection arrays. Do not create a new run or repeat completed manual uninstall/Ingress deletion steps.
+Then run section 0 again; it restores the run ID, the namespaces, and the Deployment names from `plan.json`. `P3_PROTECTION` must match the first choice. Do not start a new run, and do not repeat the manual uninstall or the Ingress deletion you already completed.
 
-The tool is idempotent within one run: completed Secrets, metadata, limits, and checks are skipped or revalidated. Preserve plan, journal, backups, inventory, snapshot, evidence, and verification output. P3’s protection state is immutable; adding proof later does not change a run that originally skipped verification.
+### Escape hatches
 
-For recovery:
+| Switch | When to use it | Cost |
+| --- | --- | --- |
+| `FORCE_ARGS=(--force)` | The platform cannot keep the legacy components stopped and the administrator accepts the consistency risk | It does not bypass the API, UID, S3, metadata, or stage checks, and it never bypasses the P4/P6 Operator pause check; the output carries a force-fence warning, and you must not claim that the legacy Pods or endpoints are gone |
+| `P3_PROTECTION=(--skip-s3-backup-verification)` | The administrator accepts continuing without an S3 recovery point | Records a warning and the `not-established` state, and cannot be repaired afterwards |
+| `NESTED_ARGS=(--skip-nested-repositories)` | Every nested repository in `legacy-metadata-report.json` is an approved historical test leftover | Excluded repositories do not count towards the migration result and must be reviewed one by one |
+
+`ac` 4.3 has no `set-registry-mode`; legacy queries use `--registry-url`, `--kubeconfig`, and `--context`. The full permission and pagination matrix belongs to the platform's separate compatibility acceptance record, not to the production migration window.
+
+### Rollback
+
+`rollback` **is not an automatic restore**. It does three things only: it records the rollback request in the journal, locks the run so that no later stage can advance, and prints the manual recovery checklist. It does not reinstall the legacy chart, does not recreate Secrets with their original UIDs, does not delete Registry v2 resources, and does not restore S3 objects. The actual recovery is the manual work below.
 
 ```bash
 registry-migrate rollback --run-dir "$RUN_DIR" --kubeconfig "$KCFG" --approve
 registry-migrate report --run-dir "$RUN_DIR"
 ```
 
-`rollback` records a manual recovery request and protects source data. It does not reinstall the old chart, recreate an original-UID Secret, delete Registry v2 resources, or restore S3 objects. Before chart removal, restore old replicas, Pruner/platform state, credentials, and chart configuration from the saved materials. After chart removal, stop new Registry writes and reconciliation first, then manually restore chart/platform configuration, credentials, and S3 access. After P8, account for new images and credential rotation; do not point the same S3 writer back at the legacy Registry without a controlled recovery plan. After a real recovery, start a new run ID and do not edit plan/journal to bypass identity drift.
+- **Before uninstalling the chart**: restore the original replica counts, the Pruner and platform state, the credentials, and the chart configuration from the change record and the P1 backup.
+- **After uninstalling the chart**: stop writes to and reconciliation of the new Registry first, then restore the chart/platform configuration, the credentials, and S3 access by hand.
+- **After P8**: new images and credential rotation also need handling. Without a controlled recovery plan, do not point the same S3 writer back at the legacy Registry.
+- **Start a new run ID** after the recovery, and do not bypass identity drift by editing the plan or the journal.
+
+The tool is idempotent within a run: completed Secrets, metadata, limits, and checks are skipped or re-verified. Keep the plan, the journal, the backup, the inventory, the snapshot, the evidence, and the verification output.
