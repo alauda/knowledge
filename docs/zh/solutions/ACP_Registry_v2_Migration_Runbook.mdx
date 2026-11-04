@@ -542,7 +542,10 @@ ac rollout status deployment/image-api-server -n "$MODERN_REGISTRY_NAMESPACE" --
 
 ### 对象存储重用
 
-对于 S3、OSS、GCS、Azure、Swift 或 IBM COS 等对象存储，配置 Registry v2 使用与遗留 Registry 相同的存储桶或容器、端点、地域、路径前缀、凭据、CA 和访问参数。
+对于兼容 S3 的对象存储，按照已确认的迁移方案，为目标 Registry 配置源存储桶、端点、地域、路径前缀、凭据、CA 和访问参数。
+ACP 4.4 支持 S3、PVC、基于 hostPath 的 PV/PVC，以及用于可丢弃数据的 `emptyDir`。
+API schema 中可能保留其他存储字段，但这些后端不属于 ACP 4.4 承诺支持的范围。
+存储类型受支持并不代表已有对应的迁移流程；源存储不在已确认方案范围内时，请联系技术支持，不要套用 S3 迁移步骤。
 
 如果遗留 Registry 使用路径前缀且 Registry v2 无法配置相同的前缀，则请改用场景 B。如果 Registry v2 Operator 不支持遗留对象存储类型或所需的访问参数，也请使用场景 B。
 

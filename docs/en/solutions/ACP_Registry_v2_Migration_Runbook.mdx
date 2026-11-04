@@ -541,7 +541,12 @@ ac rollout status deployment/image-api-server -n "$MODERN_REGISTRY_NAMESPACE" --
 
 ### Object Storage Reuse
 
-For object storage such as S3, OSS, GCS, Azure, Swift, or IBM COS, configure Registry v2 to use the same bucket or container, endpoint, region, path prefix, credentials, CA, and access parameters that the legacy Registry used.
+For S3-compatible object storage, configure the target Registry with the source bucket, endpoint,
+region, path prefix, credentials, CA, and access parameters required by the approved migration plan.
+ACP 4.4 supports S3, PVC, hostPath-backed PV/PVC, and disposable `emptyDir` storage. Other storage
+fields can remain in the API schema, but those backends are outside the ACP 4.4 support scope.
+Storage support alone does not establish a migration procedure; contact technical support for a
+source backend that is not covered by the approved plan. Do not reuse the S3 procedure for it.
 
 If the legacy Registry uses a path prefix and Registry v2 cannot configure the same prefix, use Scenario B instead. Also use Scenario B if the Registry v2 Operator does not support the legacy object storage type or a required access parameter.
 
