@@ -4,9 +4,9 @@ kind:
 products:
   - Alauda Container Platform
 ProductsVersion:
-  - 4.x
+  - '4.2,4.4'
 id: KB260400014
-sourceSHA: a1822ba42c868cb22c2a1fa2b88bbba7d0d2268ae6d2d03a7a50bcae99057c6a
+sourceSHA: 700e6a058c41f715a04a80dce3814f872821bce1a0c88baded431583ab50056e
 ---
 
 # 如何使用 Community Percona Operator 部署 MongoDB
@@ -15,7 +15,7 @@ sourceSHA: a1822ba42c868cb22c2a1fa2b88bbba7d0d2268ae6d2d03a7a50bcae99057c6a
 
 本指南将指导您在 Alauda 容器平台上使用上游 **community** [Percona Server for MongoDB Operator](https://github.com/percona/percona-server-mongodb-operator) 部署 MongoDB。之前捆绑的 Alauda MongoDB 插件不再通过 ACP 市场分发，因此本指南提供了使用社区版本的自助路径。
 
-**验证版本**（在 ACP 4.2 / Kubernetes 1.33 和 ACP 4.4 / Kubernetes 1.35 上验证；请查看上游文档以获取更新版本）：
+**验证版本**（在 ACP 4.2 / Kubernetes 1.33 上完整验证；在 ACP 4.4 / Kubernetes 1.35 上仅重新验证了基础部署——各版本的验证范围请参见 [Alauda 验证的](#alauda-验证的)；请查看上游文档以获取更新版本）：
 
 | 组件                                 | 版本                  |
 | :------------------------------------ | :-------------------- |
@@ -32,7 +32,7 @@ sourceSHA: a1822ba42c868cb22c2a1fa2b88bbba7d0d2268ae6d2d03a7a50bcae99057c6a
 
 ## 先决条件
 
-- 拥有 `cluster-admin` 访问权限的 ACP 4.x 集群。
+- 拥有 `cluster-admin` 访问权限的 ACP 4.2 或 4.4 集群。其他 ACP 4.x 版本尚未测试；各版本的测试范围请参见 [Alauda 验证的](#alauda-验证的) 表格。
 - 已配置 `kubectl` 以连接目标集群。
 - 一个目标命名空间、集群名称和 `StorageClass`。请一次性导出并在整个指南中重复使用：
 
@@ -69,8 +69,9 @@ ACP 集群节点通常无法直接从 `docker.io` 拉取。您必须先将 opera
 `skopeo` 可以直接在注册表之间复制镜像，而无需本地 Docker 守护进程，并保留多架构清单。
 
 ```bash
-PRIVATE_REGISTRY="<your-private-registry>"          # 例如 registry.example.com
-skopeo login "$PRIVATE_REGISTRY"                    # 如果您的注册表需要身份验证
+: "${PRIVATE_REGISTRY:?export PRIVATE_REGISTRY first (see Prerequisites)}"
+REGISTRY_SERVER="${PRIVATE_REGISTRY%%/*}"            # PRIVATE_REGISTRY 的 host[:port] 部分，例如 registry.example.com:443
+skopeo login "$REGISTRY_SERVER"                     # 如果您的注册表需要身份验证
 
 for img in \
   percona/percona-server-mongodb-operator:1.22.0 \
@@ -89,8 +90,8 @@ done
 ### 选项 B：docker pull / tag / push
 
 ```bash
-REGISTRY_SERVER="<your-registry-host>"               # 例如 registry.example.com:443
-PRIVATE_REGISTRY="$REGISTRY_SERVER/<your-project>"   # 例如 registry.example.com:443/middleware
+: "${PRIVATE_REGISTRY:?export PRIVATE_REGISTRY first (see Prerequisites)}"
+REGISTRY_SERVER="${PRIVATE_REGISTRY%%/*}"            # PRIVATE_REGISTRY 的 host[:port] 部分，例如 registry.example.com:443
 docker login "$REGISTRY_SERVER"
 
 for img in \
@@ -113,7 +114,7 @@ done
 kubectl -n kube-public get configmap global-info -o jsonpath='{.data.registryAddress}'
 ```
 
-使用该值（主机和端口）作为下面的 `REGISTRY_SERVER`，而不是 `:45443` 示例。
+使用该值（主机和端口）代替 `:45443` 示例，作为先决条件中 `PRIVATE_REGISTRY` 的主机部分，例如 `export PRIVATE_REGISTRY=<registryAddress>/<your-harbor-project>`。
 
 如果您要推送到随 ACP 提供的 Harbor 注册表（典型端点 `https://<acp-portal-host>:45443`），则推送凭据存储在管理集群的 Secret 中 — 它们与您的 ACP 门户登录不同：
 
@@ -122,8 +123,9 @@ kubectl -n kube-public get configmap global-info -o jsonpath='{.data.registryAdd
 REG_USER=$(kubectl -n cpaas-system get secret registry-admin -o jsonpath='{.data.username}' | base64 -d)
 REG_PASS=$(kubectl -n cpaas-system get secret registry-admin -o jsonpath='{.data.password}' | base64 -d)
 
-REGISTRY_SERVER="<acp-portal-host>:45443"            # 例如 acp.example.com:45443
-PRIVATE_REGISTRY="$REGISTRY_SERVER/<your-harbor-project>"   # 例如 acp.example.com:45443/middleware
+# PRIVATE_REGISTRY 来自先决条件，例如 acp.example.com:45443/middleware
+: "${PRIVATE_REGISTRY:?export PRIVATE_REGISTRY first (see Prerequisites)}"
+REGISTRY_SERVER="${PRIVATE_REGISTRY%%/*}"            # 例如 acp.example.com:45443
 skopeo login -u "$REG_USER" -p "$REG_PASS" --tls-verify=false "$REGISTRY_SERVER"
 
 # skopeo copy 调用 — 注意 --dest-tls-verify=false 用于自签名证书
@@ -141,14 +143,14 @@ done
 
 如果您的私有注册表需要身份验证（ACP 集成的 Harbor 需要），集群节点无法在没有凭据的情况下拉取镜像。在目标命名空间中创建一个 `kubernetes.io/dockerconfigjson` Secret，稍后您将把它附加到 operator 部署和集群 CR。
 
-`--docker-server` 必须仅是注册表 **主机**（没有项目路径）。对于 ACP Harbor，这就是您在步骤 1 中分配给 `REGISTRY_SERVER` 的值 — 例如 `acp.example.com:45443`，而不是 `acp.example.com:45443/middleware`。
+`--docker-server` 必须仅是注册表 **主机**（没有项目路径）。这就是 `$PRIVATE_REGISTRY` 的主机部分，下面的代码块会将其派生为 `REGISTRY_SERVER` — 例如 `acp.example.com:45443`，而不是 `acp.example.com:45443/middleware`。
 
-设置三个变量以适应您的注册表，然后创建 Secret。如果您来自步骤 1 的 ACP-Harbor 部分，您已经设置了这些；否则现在定义它们：
+设置注册表凭据，然后创建 Secret。如果您来自步骤 1 的 ACP-Harbor 部分，`REG_USER` 和 `REG_PASS` 已经设置，下面的代码块会保留它们；否则请替换占位符：
 
 ```bash
-REGISTRY_SERVER="<your-registry-host>"     # 例如 registry.example.com:443（仅主机 — 无项目路径）
-REG_USER="<registry-username>"
-REG_PASS="<registry-password>"
+REGISTRY_SERVER="${PRIVATE_REGISTRY%%/*}"     # 仅主机 — 无项目路径，例如 registry.example.com:443
+REG_USER="${REG_USER:-<registry-username>}"
+REG_PASS="${REG_PASS:-<registry-password>}"
 
 # 对于 ACP 集成的 Harbor，具体地，从管理集群的 registry-admin Secret 填充 REG_USER / REG_PASS（请参见步骤 1 的 Harbor 部分）：
 #   REG_USER=$(kubectl -n cpaas-system get secret registry-admin -o jsonpath='{.data.username}' | base64 -d)
@@ -204,7 +206,7 @@ kubectl label ns "$CLUSTER_NS" \
 下载您选择的包，将 operator 镜像重写为您的私有注册表，并应用。
 
 ```bash
-PRIVATE_REGISTRY="<your-private-registry>"
+: "${PRIVATE_REGISTRY:?export PRIVATE_REGISTRY first (see Prerequisites)}"
 # 默认使用 Prerequisites 中的 $NS。如果您希望 operator 与集群 CR 位于不同命名空间，请覆盖（仅在选择 cw-bundle.yaml 时有意义）。
 OPERATOR_NS="${OPERATOR_NS:-$NS}"
 BUNDLE="bundle.yaml"              # 如果您选择了集群范围，则为 cw-bundle.yaml
@@ -393,19 +395,19 @@ kubectl -n "$NS" port-forward "svc/${CLUSTER}-mongos" 27017:27017
 
 ### Alauda 验证的
 
-| 领域                       | 测试内容                                                                                                                                                                                                                    |
-| :------------------------- | :--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Operator 安装           | 通过 `kubectl` 应用包，镜像重写到私有注册表，命名空间 operator（单命名空间监视）                                                                                                                        |
-| MongoDB 版本           | 6.0 (`6.0.27-21`)、7.0 (`7.0.30-16`)、8.0 (`8.0.19-7`) — 每个版本的分片集群达到 `ready`                                                                                                                                  |
-| 集群拓扑         | 副本集（大小 1、3、5）和分片集群（`rs0` + `cfg` + `mongos`）                                                                                                                                                         |
-| 内置用户配置 | 所有五个 operator 管理的用户（`userAdmin`、`databaseAdmin`、`clusterAdmin`、`clusterMonitor`、`backup`）从 `secrets.users` Secret 创建                                                                                     |
-| 故障转移 / 重新选举      | 杀死主节点触发重新选举；数据和副本集成员资格保持                                                                                                                                                     |
-| 逻辑备份 + 恢复   | `PerconaServerMongoDBBackup` 到兼容 S3 的 MinIO；`PerconaServerMongoDBRestore` 正确将数据库恢复到备份点                                                                                           |
-| 通过 cert-manager 的 TLS       | `tls.issuerConf` 引用 ACP `ClusterIssuer`（例如 `cpaas-ca`）；operator 创建 `Certificate` CR，颁发证书，强制执行 `requireTLS`，mongosh 通过 TLS 连接                                                          |
-| 智能升级              | 从 MongoDB 7.0 修补 `spec.image` 到 8.0 触发滚动重启（次要节点优先，主节点最后）；数据和副本集健康保持                                                                                      |
-| PVC 调整                 | 设置 `spec.enableVolumeExpansion: true` 和具有 `allowVolumeExpansion: true` 的 `StorageClass`，增加 `volumeSpec.persistentVolumeClaim.resources.requests.storage` 会传播到底层 PVC，而无需重启 pod |
-| 副本扩展            | `replsets.rs0.size` 3 → 5（干净加入 + 初始同步）和 5 → 3（干净退役）                                                                                                                                               |
-| ACP 私有注册表       | 通过 `skopeo copy --all` 将镜像镜像到 ACP 集成的 Harbor，并使用附加的 `imagePullSecret` 拉取它们                                                                                                        |
+| 领域                       | 测试内容                                                                                                                                                                                                                    | ACP 4.2 | ACP 4.4 |
+| :------------------------- | :--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | :--- | :--- |
+| Operator 安装           | 通过 `kubectl` 应用包，镜像重写到私有注册表，命名空间 operator（单命名空间监视）                                                                                                                        | 是 | 是（仅命名空间范围的 `bundle.yaml`） |
+| MongoDB 版本           | 6.0 (`6.0.27-21`)、7.0 (`7.0.30-16`)、8.0 (`8.0.19-7`) — 每个版本的分片集群达到 `ready`                                                                                                                                  | 是 | 仅 8.0 (`8.0.19-7`) |
+| 集群拓扑         | 副本集（大小 1、3、5）和分片集群（`rs0` + `cfg` + `mongos`）                                                                                                                                                         | 是 | 仅分片集群（每个角色 1 个副本） |
+| 内置用户配置 | 所有五个 operator 管理的用户（`userAdmin`、`databaseAdmin`、`clusterAdmin`、`clusterMonitor`、`backup`）从 `secrets.users` Secret 创建                                                                                     | 是 | 仅步骤 6 的 `userAdmin` 登录 |
+| 故障转移 / 重新选举      | 杀死主节点触发重新选举；数据和副本集成员资格保持                                                                                                                                                     | 是 | 未测试 |
+| 逻辑备份 + 恢复   | `PerconaServerMongoDBBackup` 到兼容 S3 的 MinIO；`PerconaServerMongoDBRestore` 正确将数据库恢复到备份点                                                                                           | 是 | 未测试 |
+| 通过 cert-manager 的 TLS       | `tls.issuerConf` 引用 ACP `ClusterIssuer`（例如 `cpaas-ca`）；operator 创建 `Certificate` CR，颁发证书，强制执行 `requireTLS`，mongosh 通过 TLS 连接                                                          | 是 | 未测试 |
+| 智能升级              | 从 MongoDB 7.0 修补 `spec.image` 到 8.0 触发滚动重启（次要节点优先，主节点最后）；数据和副本集健康保持                                                                                      | 是 | 未测试 |
+| PVC 调整                 | 设置 `spec.enableVolumeExpansion: true` 和具有 `allowVolumeExpansion: true` 的 `StorageClass`，增加 `volumeSpec.persistentVolumeClaim.resources.requests.storage` 会传播到底层 PVC，而无需重启 pod | 是 | 未测试 |
+| 副本扩展            | `replsets.rs0.size` 3 → 5（干净加入 + 初始同步）和 5 → 3（干净退役）                                                                                                                                               | 是 | 未测试 |
+| ACP 私有注册表       | 通过 `skopeo copy --all` 将镜像镜像到 ACP 集成的 Harbor，并使用附加的 `imagePullSecret` 拉取它们                                                                                                        | 是 | 是（镜像同步到平台注册表并从中拉取） |
 
 ### 未由 Alauda 验证的
 
