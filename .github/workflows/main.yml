@@ -17,7 +17,10 @@ on:
 jobs:
   build:
     if: "!contains(github.event.head_commit.message, '[skip ci]')"
-    runs-on: ubuntu-latest
+    # ubuntu-latest became ubuntu-26.04 on 2026-10-27. The locked Playwright (1.57, pulled in
+    # by @alauda/doom) cannot install its browser there, so `yarn --immutable` failed on every
+    # run from then on. Return to ubuntu-latest once the locked Playwright supports 26.04.
+    runs-on: ubuntu-24.04
     environment: translate
     env:
       AZURE_OPENAI_API_KEY: ${{ secrets.AZURE_OPENAI_API_KEY }}
