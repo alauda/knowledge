@@ -31,7 +31,7 @@ A `RedisShake` resource runs in one of two modes:
 - **`sync`**: copies the full dataset, then keeps replicating every write made on the source. It never stops on its own; you end it by deleting the resource. Use it when the source must stay in service until cutover.
 - **`rump`**: copies the keys once, by scanning the source, and then finishes. Writes made after a key was copied are not carried over. Use it when you can stop writes on the source for the whole copy.
 
-## Choose a Migration Mode
+## Choose a Migration Mode {#choose-a-migration-mode}
 
 | Source Redis | Target Redis | Mode |
 | --- | --- | --- |
@@ -215,7 +215,7 @@ To change a migration setting, delete the resource and create it again. A `rump`
 - **No migration to an older Redis.** A Redis 7.x source cannot be migrated to a 5.x or 6.x target.
 - **Network stability.** Persistent network instability between the two sides causes replication restarts and growing lag. Make sure the connection is stable before you start.
 
-## Appendix: Platform 3.x
+## Appendix: Platform 3.x {#appendix-platform-3x}
 
 On platform 3.8.x – 3.16.x, the procedure above applies with these differences.
 
