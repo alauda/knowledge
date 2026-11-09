@@ -33,7 +33,7 @@ Use the same run directory for retries. Start at section 0.
 
 ## Prerequisites
 
-- **Tools and recovery procedures**: contact your ACP service provider for approved `registry-migrate` and compatible `ac` binaries, the Registry v2 bundle, and the platform pause and S3 recovery procedures. The migration tool version is independent of the ACP release.
+- **Tools and recovery procedures**: contact your ACP service provider for approved `registry-migrate` and compatible `ac` binaries, the Registry v2 bundle, and the platform pause and S3 recovery procedures.
 - **Namespaces**: the default Operator installation namespace is `image-registry-system`; the default Registry operand namespace is `cpaas-system`. The operand namespace is fixed at installation. Confirm the actual values and use `scope.operandNamespace` in `plan.json` throughout the migration.
 - **Storage scope**: stop if the legacy Registry's image-data backend uses PVCs or HostPath, or the migration contains non-image OCI artifacts or a non-default S3 root/prefix, unless the provider has approved another procedure. HostPath mounts used only by node trust or resolver components are not image-data storage.
 - **Operator pause**: the Operator must remain at zero replicas during P4–P6. Manual InstallPlan approval does not pause an already running Operator. Establish the provider-approved pause before P4 and before removing the legacy chart.
@@ -448,7 +448,7 @@ Success check: P5 is recorded; old Service/Deployments/routes are gone, planned 
 
 ## 8. P6-cold-import: import metadata and limits
 
-Use `registry-migrate` v4.5.1 or a provider-approved later build for existing ImageStreams. P6 checks all target streams before its first metadata write. A matching digest alone is insufficient: the repository, source and Registry address must also match the frozen inventory and planned addresses. Equivalent pre-existing objects are reused without changing their UID or ownership. Known internal and external addresses do not require rewriting tag history.
+Use the provider-approved `registry-migrate` build with pre-existing ImageStream checks. P6 checks all target streams before its first metadata write. A matching digest alone is insufficient: the repository, source and Registry address must also match the frozen inventory and planned addresses. Equivalent pre-existing objects are reused without changing their UID or ownership. Known internal and external addresses do not require rewriting tag history.
 
 Keep the new Operator paused. Confirm zero replicas and no Operator Pods, then generate fresh pause evidence and import:
 
@@ -464,9 +464,7 @@ registry-migrate run --run-dir "$RUN_DIR" --stage P6-cold-import \
 
 Success check: the report shows `imported`, with progress for unique ImageDigest objects, ImageStream/tag relationships, and namespace limits. A shared digest is stored once while preserving its repository/tag references. Retry failures in the same run with the Operator still paused; section 9 checks the result.
 
-If preflight reports a digest/source conflict, stop and resolve the difference against `final-inventory.json`. If it reports that an existing stream needs changes but is not owned by this migration, the tool has left it unchanged. Neither `--force` nor deleting the inventory/journal resolves metadata conflicts. Keep any ImageDigest objects from a partial earlier attempt; P6 reuses matching records.
-
-If preflight reports that an existing stream needs changes but is not owned by this migration, stop. Do not add `registry-migrate.run-id` or `registry-migrate.plan-digest` manually: annotations written outside the tool journal have no rollback record and can block later runs. Preserve and compare the ImageStream's complete snapshot with the frozen inventory; a provider-approved journaled adoption procedure must separately validate its UID/resourceVersion and the repository/tag/digest mapping. A same-digest object that needs no change is reused automatically.
+If preflight reports a digest/source conflict or an existing stream that needs changes but is not owned by this migration, stop and resolve it against `final-inventory.json` and the saved ImageStream snapshot. The tool leaves the object unchanged. Do not add `registry-migrate.run-id` or `registry-migrate.plan-digest` manually: annotations written outside the tool journal have no rollback record and can block later runs. A provider-approved journaled adoption procedure must separately validate UID/resourceVersion and the repository/tag/digest mapping. A same-digest object that needs no change is reused automatically. Neither `--force` nor deleting the inventory/journal resolves metadata conflicts. Keep any ImageDigest objects from a partial earlier attempt; P6 reuses matching records.
 
 After an approved, journaled adoption procedure, rerun the original P6 command with fresh pause evidence. The tool pins eligible DockerImage tag sources to the verified digest and preserves existing history; real digest conflicts remain errors. A UID/resourceVersion test failure means the selected object changed: stop and review a fresh snapshot. Do not continue to P7 until P6 is `imported`.
 
