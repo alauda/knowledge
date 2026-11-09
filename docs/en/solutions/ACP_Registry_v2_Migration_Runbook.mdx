@@ -163,6 +163,33 @@ jq '.discovery.blockers' "$RUN_DIR/plan.json"
 
 Planning is read-only. Compare the scope, S3 bucket/endpoint/prefix, original host/TLS/IngressClass, replica counts, scheduling, and timeouts with the change record and live cluster. Stop on any mismatch. If `scope.operandNamespace` is wrong, correct `REGISTRY_NS` in section 0 before planning again.
 
+Check for pre-existing Registry v2 metadata before stopping writers. Legacy chart test images should be pushed to the legacy Registry; do not manually create backing ImageStream objects as migration test data. Existing metadata is a review condition, not a reason to delete it. Save the following list and inspect any objects in repositories covered by this migration:
+
+```bash
+check_existing_streams() {
+  local crd
+  crd="$(acn get crd imagestreams.storage.image.alauda.io --ignore-not-found -o name)" || return 1
+  if test -z "$crd"; then
+    echo "No Registry v2 backing ImageStream CRD exists yet."
+    return 0
+  fi
+  acn get imagestreams.storage.image.alauda.io -A -o json \
+    > "$RUN_DIR/existing-image-streams.json" || return 1
+  jq -r '.items[] | [.metadata.namespace, .metadata.name, .metadata.uid,
+    (.metadata.annotations["registry-migrate.run-id"] // "unowned"),
+    (.metadata.annotations["registry-migrate.plan-digest"] // "")] | @tsv' \
+    "$RUN_DIR/existing-image-streams.json"
+}
+check_existing_streams_or_stop() {
+  check_existing_streams || {
+    echo "STOP: existing ImageStream inventory failed; fix the error before stopping writers or continuing." >&2
+    echo "Do not continue to P1 until the inventory file is complete." >&2
+    return 1
+  }
+}
+check_existing_streams_or_stop
+```
+
 ## 2. P1-backup: save recovery material
 
 Complete this stage **before P1-credentials**, which rewrites pull Secret contents in place. The tool creates a redacted Registry-scoped snapshot of resource identities, owners, ServiceAccounts, references, and data digests. It contains **neither Secret data nor S3 image data**.
@@ -421,6 +448,8 @@ Success check: P5 is recorded; old Service/Deployments/routes are gone, planned 
 
 ## 8. P6-cold-import: import metadata and limits
 
+Use `registry-migrate` v4.5.1 or a provider-approved later build for existing ImageStreams. P6 checks all target streams before its first metadata write. A matching digest alone is insufficient: the repository, source and Registry address must also match the frozen inventory and planned addresses. Equivalent pre-existing objects are reused without changing their UID or ownership. Known internal and external addresses do not require rewriting tag history.
+
 Keep the new Operator paused. Confirm zero replicas and no Operator Pods, then generate fresh pause evidence and import:
 
 ```bash
@@ -434,6 +463,12 @@ registry-migrate run --run-dir "$RUN_DIR" --stage P6-cold-import \
 ```
 
 Success check: the report shows `imported`, with progress for unique ImageDigest objects, ImageStream/tag relationships, and namespace limits. A shared digest is stored once while preserving its repository/tag references. Retry failures in the same run with the Operator still paused; section 9 checks the result.
+
+If preflight reports a digest/source conflict, stop and resolve the difference against `final-inventory.json`. If it reports that an existing stream needs changes but is not owned by this migration, the tool has left it unchanged. Neither `--force` nor deleting the inventory/journal resolves metadata conflicts. Keep any ImageDigest objects from a partial earlier attempt; P6 reuses matching records.
+
+If preflight reports that an existing stream needs changes but is not owned by this migration, stop. Do not add `registry-migrate.run-id` or `registry-migrate.plan-digest` manually: annotations written outside the tool journal have no rollback record and can block later runs. Preserve and compare the ImageStream's complete snapshot with the frozen inventory; a provider-approved journaled adoption procedure must separately validate its UID/resourceVersion and the repository/tag/digest mapping. A same-digest object that needs no change is reused automatically.
+
+After an approved, journaled adoption procedure, rerun the original P6 command with fresh pause evidence. The tool pins eligible DockerImage tag sources to the verified digest and preserves existing history; real digest conflicts remain errors. A UID/resourceVersion test failure means the selected object changed: stop and review a fresh snapshot. Do not continue to P7 until P6 is `imported`.
 
 The old Gateway limits become each planned namespace's `registry-migrate-image-limits` LimitRange: image size uses `type: alauda.io/Image` with `max.storage`; tag count uses `type: alauda.io/ImageStream` with `max["alauda.io/repository-tags"]`. Legacy `2GB/2000` becomes `2Gi/2000` (`2Gi=2048Mi`). **2000 is the tag limit for each repository/ImageStream in that namespace, not the namespace-wide total.** The plan selects namespace-specific rules. Migration does not overwrite user-defined limits or apply policy to future namespaces.
 
