@@ -5,6 +5,7 @@ products:
   - Alauda Application Services
 ProductsVersion:
   - 4.1,4.2,4.3
+id: KB261100005
 ---
 
 # PostgreSQL fails to start with "Bus error" (exit 135) on nodes with hugepages enabled

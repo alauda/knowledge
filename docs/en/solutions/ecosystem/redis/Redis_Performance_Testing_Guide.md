@@ -5,6 +5,7 @@ kind:
   - Solution
 ProductsVersion:
   - 4.x
+id: KB261100001
 ---
 
 # Redis Cluster and Sentinel Performance Testing Guide

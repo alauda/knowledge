@@ -6,26 +6,26 @@ products:
 ProductsVersion:
   - '3.18.x,4.x'
 id: KB250900012
-sourceSHA: 6b965340ef53877c4b0e601cafc57862c3bc44122340cd13764f820054215a26
+sourceSHA: 9b59f469624c957b238ba33547da1cd553981b023ebc87bee8e25b817bb4c8ab
 ---
 
-# 将应用程序从 OCP（OpenShift 容器平台）迁移到 ACP（Alauda 容器平台）
+# 从 OCP（OpenShift Container Platform）迁移应用程序到 ACP（Alauda Container Platform）
 
 ## 概述
 
-本文档提供了将应用程序从 OpenShift 容器平台（OCP）迁移到 Alauda 容器平台（ACP）的详细说明，使用预先准备的 OCP 清单和一系列自定义工具（`oc-convert`、`template2helm`）。
+本文档提供了从 OpenShift Container Platform (OCP) 迁移应用程序到 Alauda Container Platform (ACP) 的详细说明，使用预先准备的 OCP 清单和一系列自定义工具（`oc-convert`，`template2helm`）。
 
 ## 环境信息
 
-Alauda 容器平台:3.18.x,4.x
+Alauda Container Platform:3.18.x,4.x
 
 OCP 版本: 4.10 - 4.14
 
 ## 先决条件
 
-- **Alauda 容器平台环境**: 一个可用的 ACP 账户（例如，LDAP），并具有访问权限。
+- **Alauda Container Platform 环境**: 一个可用的 ACP 账户（例如，LDAP），并具有访问权限。
 - **项目和命名空间**: 在 ACP 中预先创建的项目和命名空间，并具有适当的权限。
-- **OCP 应用程序清单**: 预先准备的 OCP 模板的 YAML 文件（例如，`DeploymentConfig`、`Route`、`Service`、`HorizontalPodAutoscaler`）。
+- **OCP 应用程序清单**: 预先准备的 OCP 模板的 YAML 文件（例如，`DeploymentConfig`，`Route`，`Service`，`HorizontalPodAutoscaler`）。
 - **OCP 路由替换策略**:
   - **Ingress Nginx**: 必须提前部署 ingress-nginx 控制器。
   - **Istio 和 Gateway**: 必须在 ACP 上部署 Istio，并为应用程序配置 Gateway。
@@ -34,11 +34,11 @@ OCP 版本: 4.10 - 4.14
   - `template2helm`: 一种专有的 ACP 工具，用于将 OCP 模板转换为 Helm 图表。
   - [Helm CLI](https://helm.sh/docs/intro/install/): 用于渲染 Kubernetes YAML 清单。
   - [Kubectl CLI](https://kubectl.docs.kubernetes.io/installation/kubectl/): 用于与 ACP 集群交互。
-- **容器镜像注册表访问**: 应用程序镜像必须推送到 ACP 镜像注册表，并且用户必须具有访问权限。
+- **容器镜像注册表访问**: 应用程序镜像必须推送到 ACP 镜像注册表，用户必须具有访问权限。
 
 ## 将 OCP YAML 迁移到 Helm 图表
 
-在将应用程序部署到 ACP 之前，必须将 OCP YAML 文件迁移到 Helm 图表。这是一次性的转换过程。在此初始步骤之后，后续的应用程序发布不需要重复转换。对于 ACP 平台上的每个新发布，可以直接使用标准 Helm 命令从图表渲染 Kubernetes YAML 并进行部署，从而简化持续部署过程。
+在将应用程序部署到 ACP 之前，必须将 OCP YAML 文件迁移到 Helm 图表。这是一次性的转换过程。在此初始步骤之后，后续的应用程序发布不需要重复转换。对于 ACP 平台上的每个新版本，可以直接使用标准 Helm 命令从图表渲染 Kubernetes YAML 并进行部署，从而简化持续部署过程。
 
 迁移过程分为以下步骤：
 
@@ -57,9 +57,9 @@ OCP 版本: 4.10 - 4.14
 假设应用程序包括以下清单：
 
 - `deploymentconfig.yaml`: 定义应用程序的 `DeploymentConfig`。
-- `route.yaml`: 指定 OCP `Route` 以进行外部访问。
+- `route.yaml`: 指定 OCP `Route` 以供外部访问。
 - `service.yaml`: 描述用于内部通信的 `Service`。
-- `hpa.yaml`（可选）: 配置用于扩展的 `HorizontalPodAutoscaler`。
+- `hpa.yaml`（可选）: 配置 `HorizontalPodAutoscaler` 以进行扩展。
 - `configmap.yaml`: 存储非敏感配置数据，例如应用程序设置或环境变量，可以作为卷挂载或传递给 Pod。
 - `secret.yaml`: 管理敏感信息，例如密码、API 密钥或证书，这些信息被安全存储并挂载到 Pod 中供应用程序使用。
 
@@ -69,7 +69,7 @@ OCP 版本: 4.10 - 4.14
 - **资源要求**: CPU、内存和存储规格。
 - **服务绑定**: 与数据库、消息队列或外部服务的连接。
 - **网络**: 路由、域名和外部流量模式。
-- **环境变量**: 在 `DeploymentConfig` 中定义的配置设置和秘密。
+- **环境变量**: 在 `DeploymentConfig` 中定义的配置设置和机密。
 
 ### 2. 准备迁移环境
 
@@ -93,7 +93,7 @@ kind: Template
 apiVersion: v1
 parameters:
   - name: SERVICE_FULLNAME
-    description: "服务的全名。"
+    description: "服务的完整名称。"
     required: true
   - name: SERVICE_NAME
     description: "服务的名称。"
@@ -182,7 +182,7 @@ kind: Template
 apiVersion: v1
 parameters:
   - name: SERVICE_FULLNAME
-    description: "服务的全名。"
+    description: "服务的完整名称。"
     required: true
   - name: SERVICE_NAME
     description: "服务的名称。"
@@ -321,7 +321,7 @@ kind: Template
 apiVersion: v1
 parameters:
   - name: SERVICE_FULLNAME
-    description: "服务的全名。"
+    description: "服务的完整名称。"
     required: true
   - name: NAMESPACE
     description: "当前命名空间的版本。"
@@ -358,10 +358,10 @@ kind: Template
 apiVersion: v1
 parameters:
   - name: GREEN_SERVICE_FULLNAME
-    description: "绿色路由中的服务全名"
+    description: "绿色路由中的服务完整名称"
     required: true
   - name: SERVICE_FULLNAME
-    description: "服务的全名"
+    description: "服务的完整名称"
     required: true
   - name: WILDCARD_DNS
     description: "集群的 DNS"
@@ -394,10 +394,10 @@ kind: Template
 apiVersion: v1
 parameters:
   - name: SERVICE_NAME
-    description: "路由中服务的全名。"
+    description: "路由中服务的完整名称。"
     required: true
   - name: SERVICE_FULLNAME
-    description: "路由中服务的全名。"
+    description: "路由中服务的完整名称。"
     required: true
   - name: APP_DOMAIN
     description: "该服务的环境。"
@@ -431,7 +431,7 @@ kind: Template
 apiVersion: v1
 parameters:
   - name: SERVICE_FULLNAME
-    description: "服务的全名。"
+    description: "服务的完整名称。"
     required: true
   - name: SERVICE_NAME
     description: "服务的名称。"
@@ -484,7 +484,7 @@ kind: Template
 apiVersion: v1
 parameters:
   - name: SERVICE_FULLNAME
-    description: "服务的全名。"
+    description: "服务的完整名称。"
     required: true
   - name: NAMESPACE
     description: "当前命名空间的版本。"
@@ -521,7 +521,7 @@ kind: Template
 apiVersion: v1
 parameters:
   - name: SERVICE_FULLNAME
-    description: "服务的全名。"
+    description: "服务的完整名称。"
     required: true
   - name: NAMESPACE
     description: "当前命名空间的版本。"
@@ -558,7 +558,7 @@ objects:
 
 ### 3. 转换 OCP 特定资源
 
-使用 `oc-convert` 将 OCP 特定资源（例如，`DeploymentConfig`、`Route`）转换为 Kubernetes 兼容资源。
+使用 `oc-convert` 将 OCP 特定资源（例如，`DeploymentConfig`，`Route`）转换为 Kubernetes 兼容资源。
 
 `oc-convert` 命令支持以下标志：
 
@@ -580,7 +580,7 @@ objects:
   - 调整 `spec.selector` 以符合 Kubernetes 标准。
   - 修改 `spec.strategy` 以使用 Kubernetes 滚动更新或重建策略。
   - 删除 OCP 特定的 `spec.template.triggers`。
-- 如果使用 `--gateway`，则将 `Route` 转换为 Istio 兼容资源（例如，`VirtualService`、`DestinationRule`）。
+- 如果使用 `--gateway`，则将 `Route` 转换为 Istio 兼容资源（例如，`VirtualService`，`DestinationRule`）。
 - 如果使用 `--ingress`，则将 `Route` 转换为 Ingress-Nginx 兼容资源（例如，`Ingress`）。
 
 #### 场景 1: 使用 Ingress Nginx
@@ -590,7 +590,7 @@ objects:
 oc-convert --input ocp-yaml/ --output output.yaml --ingress <ingress-class-name>
 ```
 
-输出文件（`output.yaml`）是一个包含所有转换资源的综合模板。检查 `output.yaml` 以确保所有资源都已正确转换：
+输出文件（`output.yaml`）是一个包含所有转换资源的综合模板。检查 `output.yaml` 以确保所有资源正确转换：
 
 ```yaml
 # cat output.yaml
@@ -599,7 +599,7 @@ kind: Template
 apiVersion: v1
 parameters:
 - name: SERVICE_FULLNAME
-  description: 服务的全名
+  description: 服务的完整名称
   required: true
 - name: ...
 metadata: {}
@@ -701,7 +701,7 @@ oc-convert --input ocp-yaml/ --output output.yaml --gateway
           simple: RANDOM # 或 ROUND_ROBIN
   ```
 
-- 其他资源（例如，`Service`、`HorizontalPodAutoscaler`）保持兼容。
+- 其他资源（例如，`Service`，`HorizontalPodAutoscaler`）保持兼容。
 
 ### 4. 将 OCP 模板转换为 Helm 图表
 
@@ -740,11 +740,11 @@ output
 └── values.yaml
 ```
 
-此时，OCP YAML 文件已成功迁移到 ACP 应用程序图表。该图表应保存在代码库中，以便后续的应用程序发布。
+此时，OCP YAML 文件已成功迁移到 ACP 应用程序图表。此图表应保存在代码库中以供后续应用程序发布使用。
 
 ## 从 Helm 图表部署应用程序
 
-在初始 Helm 图表转换之后，后续的应用程序发布可以通过 CI/CD 管道进行管理。管道可以使用 `helm template` 命令和更新的参数来渲染 Kubernetes YAML 文件，然后使用 `kubectl apply` 与渲染的 YAML 进行应用程序更新。
+在初始 Helm 图表转换之后，后续的应用程序发布可以通过 CI/CD 管道进行管理。管道可以使用 `helm template` 命令与更新的参数渲染 Kubernetes YAML 文件，然后使用 `kubectl apply` 与渲染的 YAML 执行应用程序更新。
 
 ### 1. 从图表渲染 Kubernetes YAML
 
@@ -761,7 +761,7 @@ helm template . \
   --set SERVICE_FULLNAME=<your-service-name> > rendered.yaml
 ```
 
-要仅更新应用程序的单个资源，请仅渲染其对应的 YAML 文件：
+要仅更新应用程序的单个资源，只需渲染其对应的 YAML 文件：
 
 ```bash
 # 预览特定的 YAML 文件
@@ -778,7 +778,7 @@ helm template . \
 # 登录到 ACP
 kubectl acp login <acp_address> --idp=<idp_name> --cluster=<cluster-name>
 
-# 使用 dry-run 检查错误
+# 使用干运行检查错误
 kubectl apply --dry-run=client -f rendered.yaml
 ```
 
@@ -789,7 +789,7 @@ kubectl apply --dry-run=client -f rendered.yaml
 - 有效的 Istio `VirtualService` 和 `DestinationRule` 配置。
 - 适当的资源限制和安全上下文。
 
-### 2. 将应用程序部署到 Alauda 容器平台
+### 2. 将应用程序部署到 Alauda Container Platform
 
 部署渲染的清单：
 
@@ -804,7 +804,7 @@ kubectl apply -f rendered.yaml
 # 检查部署
 kubectl get deployments -n <your-namespace>
 
-# 检查 Pods
+# 检查 Pod
 kubectl get pods -n <your-namespace>
 
 # 检查服务
@@ -816,6 +816,11 @@ kubectl get virtualservice -n <your-namespace>
 
 ## 结论
 
-通过使用预先准备的清单以及 `oc-convert`、`template2helm` 和 Helm 工具，从 OCP 到 ACP 的迁移得以简化，使 OCP 特定资源向 Kubernetes 原生部署的平稳过渡。遵循本指南可以高效地进行应用程序迁移，同时利用 ACP 的高级功能，例如基于 Istio 的网络和 Argo Rollouts 部署策略。
+通过使用预先准备的清单和 `oc-convert`、`template2helm` 及 Helm 工具，从 OCP 迁移到 ACP 的过程得以简化，使得从 OCP 特定资源到 Kubernetes 原生部署的平稳过渡。遵循本指南可以高效地迁移应用程序，同时利用 ACP 的高级功能，例如基于 Istio 的网络和基于上游 Argo Rollouts 的 Alauda Container Platform Progressive Delivery。
 
-如需更多支持，请查阅 Alauda 容器平台文档或联系 ACP 支持团队。
+如需更多支持，请查阅 Alauda Container Platform 文档或联系 ACP 支持团队。
+由 Alauda 修改，2026-10-21。
+
+Argo® is a registered trademark of LF Projects, LLC.
+
+Alauda is an independent vendor. This product is not affiliated with, endorsed by, or sponsored by LF Projects, LLC. All trademarks are the property of their respective owners and are used here for identification purposes only.

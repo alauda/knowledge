@@ -6,6 +6,7 @@ kind:
 ProductsVersion:
   - 3.x
   - 4.x
+id: KB261100002
 ---
 
 # Kafka Performance Testing Guide
