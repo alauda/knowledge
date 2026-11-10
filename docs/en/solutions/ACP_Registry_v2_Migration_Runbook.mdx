@@ -130,11 +130,11 @@ evidence() {
 }
 stop_deployment() {
   local namespace="$1" name="$2" selector pods
-  acn -n "$namespace" get deployment "$name" -o wide
+  acn -n "$namespace" get deployment "$name" -o wide || return 1
   selector="$(acn -n "$namespace" get deployment "$name" -o json |
-    jq -er '.spec.selector.matchLabels | to_entries | map("\(.key)=\(.value)") | join(",") | select(length > 0)')"
-  acn -n "$namespace" scale deployment "$name" --replicas=0
-  pods="$(acn -n "$namespace" get pods -l "$selector" -o name)"
+    jq -er '.spec.selector.matchLabels | to_entries | map("\(.key)=\(.value)") | join(",") | select(length > 0)')" || return 1
+  acn -n "$namespace" scale deployment "$name" --replicas=0 || return 1
+  pods="$(acn -n "$namespace" get pods -l "$selector" -o name)" || return 1
   if test -n "$pods"; then
     acn -n "$namespace" wait --for=delete pod -l "$selector" --timeout=180s || true
   fi
@@ -355,22 +355,26 @@ Before retrying an incomplete P3 with `NESTED_ARGS=(--skip-nested-repositories)`
 
 ## 6. P4-prepare-operator: prepare the read-only Registry v2
 
-Install or upgrade the provider-approved bundle/CRD through the ACP Operator installation workflow. Keep the Operator at zero replicas during P4–P6 using the verified pause procedure; a Manual Subscription alone is insufficient. The tool prepares Config and credentials here; the Registry workloads are reconciled after resuming the Operator in P7.
+In the ACP console, open **Administrator → Marketplace → OperatorHub**, select the target business cluster, and install or upgrade `cluster-image-registry-operator` in `image-registry-system`. Set the operand namespace to `cpaas-system` (or the namespace in `plan.json`), approve the InstallPlan, and wait for the CSV to report `Succeeded` and the Operator Deployment to exist. Then keep the Operator at zero replicas during P4–P6 using the verified pause procedure.
 
 Record the original Operator replica count for P7, separately from the planned Registry count. P8 restores the Pruner baseline; a new ImagePruner records `registry-migrate.original-suspend=false`, allowing scheduled cleanup. To keep cleanup disabled, arrange an approved suspended baseline before P4. Do not change the recorded annotation afterwards.
 
 ```bash
 prepare_operator() {
-acn -n "$OPERATOR_NS" get subscription,installplan,csv -o wide
-stop_deployment "$OPERATOR_NS" cluster-image-registry-operator
-PRUNER="$(acn get imagepruner.imageregistry.operator.alauda.io cluster --ignore-not-found -o name)"
+acn -n "$OPERATOR_NS" get subscription,installplan,csv -o wide || return 1
+if ! acn -n "$OPERATOR_NS" get deployment cluster-image-registry-operator -o wide >/dev/null; then
+  echo "STOP: install or upgrade cluster-image-registry-operator before P4" >&2
+  return 1
+fi
+stop_deployment "$OPERATOR_NS" cluster-image-registry-operator || return 1
+PRUNER="$(acn get imagepruner.imageregistry.operator.alauda.io cluster --ignore-not-found -o name)" || return 1
 if test -n "$PRUNER"; then
-  acn get "$PRUNER" -o json > "$RUN_DIR/imagepruner-before.json"
-  jq '{annotations:.metadata.annotations,suspend:.spec.suspend}' "$RUN_DIR/imagepruner-before.json"
-  existing_run="$(jq -r '.metadata.annotations["registry-migrate.run-id"] // empty' "$RUN_DIR/imagepruner-before.json")"
-  existing_plan="$(jq -r '.metadata.annotations["registry-migrate.plan-digest"] // empty' "$RUN_DIR/imagepruner-before.json")"
-  current_run="$(jq -er '.runID' "$RUN_DIR/plan.json")"
-  current_plan="$(jq -er '.digest' "$RUN_DIR/plan.json")"
+  acn get "$PRUNER" -o json > "$RUN_DIR/imagepruner-before.json" || return 1
+  jq '{annotations:.metadata.annotations,suspend:.spec.suspend}' "$RUN_DIR/imagepruner-before.json" || return 1
+  existing_run="$(jq -r '.metadata.annotations["registry-migrate.run-id"] // empty' "$RUN_DIR/imagepruner-before.json")" || return 1
+  existing_plan="$(jq -r '.metadata.annotations["registry-migrate.plan-digest"] // empty' "$RUN_DIR/imagepruner-before.json")" || return 1
+  current_run="$(jq -er '.runID' "$RUN_DIR/plan.json")" || return 1
+  current_plan="$(jq -er '.digest' "$RUN_DIR/plan.json")" || return 1
   if test -n "$existing_run" && test "$existing_run" != "$current_run"; then
     echo "STOP: imagepruner belongs to run $existing_run; refusing to reuse it" >&2
     return 1
@@ -380,22 +384,22 @@ if test -n "$PRUNER"; then
     return 1
   fi
   if test -z "$existing_run"; then
-    acn annotate "$PRUNER" "registry-migrate.run-id=$current_run"
+    acn annotate "$PRUNER" "registry-migrate.run-id=$current_run" || return 1
   fi
   if test -z "$existing_plan"; then
-    acn annotate "$PRUNER" "registry-migrate.plan-digest=$current_plan"
+    acn annotate "$PRUNER" "registry-migrate.plan-digest=$current_plan" || return 1
   fi
 fi
-evidence operator-paused.json operatorPaused
+evidence operator-paused.json operatorPaused || return 1
 registry-migrate run --run-dir "$RUN_DIR" --stage P4-prepare-operator \
   --evidence-file "$RUN_DIR/operator-paused.json" \
-  "${FORCE_ARGS[@]}" --kubeconfig "$KCFG" --approve
+  "${FORCE_ARGS[@]}" --kubeconfig "$KCFG" --approve || return 1
 acn get config.imageregistry.operator.alauda.io cluster -o json |
   jq -e '.spec.readOnly == true and
     .spec.imagePullSecret.managementState == "Unmanaged" and
-    .spec.storage.managementState == "Unmanaged"'
+    .spec.storage.managementState == "Unmanaged"' || return 1
 acn get imagepruner.imageregistry.operator.alauda.io cluster -o json |
-  jq -e '.spec.suspend == true'
+  jq -e '.spec.suspend == true' || return 1
 }
 prepare_operator
 ```
