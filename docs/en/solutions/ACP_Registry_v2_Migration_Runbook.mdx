@@ -236,14 +236,30 @@ Success check: the tool reports the Secret count and `updated/skipped` counters 
 
 Pause the platform source managing the legacy chart. Stop the Registry and Gateway Deployments, suspend the legacy Pruner CronJob if present, and stop external jobs or metadata writers using the same S3 bucket/prefix. Suspending a CronJob does not stop an already active Job.
 
-Before running the block, set `WRITER_RECORD` to the maintenance/change record naming those writers, their stop times, and administrator approval. If the file is absent or empty, this block returns before stopping components.
+The block prompts for missing writer-record fields and creates `$RUN_DIR/writer-record.txt`; an existing non-empty `WRITER_RECORD` is reused.
 
 ```bash
 stop_writers() {
-export WRITER_RECORD="${WRITER_RECORD:-/tmp/maintenance-writer-record.txt}"
+export WRITER_RECORD="${WRITER_RECORD:-$RUN_DIR/writer-record.txt}"
+if ! test -s "$WRITER_RECORD"; then
+  printf 'Maintenance window start (RFC3339): '
+  IFS= read -r WINDOW_START || { echo "STOP: maintenance window start is required; nothing was stopped." >&2; return 1; }
+  test -n "$WINDOW_START" || { echo "STOP: maintenance window start is required; nothing was stopped." >&2; return 1; }
+  printf 'External writers (or none): '
+  IFS= read -r EXTERNAL_WRITERS || { echo "STOP: external writer record is required; nothing was stopped." >&2; return 1; }
+  test -n "$EXTERNAL_WRITERS" || { echo "STOP: external writer record is required; nothing was stopped." >&2; return 1; }
+  printf 'Writer stop time (RFC3339): '
+  IFS= read -r STOP_TIME || { echo "STOP: writer stop time is required; nothing was stopped." >&2; return 1; }
+  test -n "$STOP_TIME" || { echo "STOP: writer stop time is required; nothing was stopped." >&2; return 1; }
+  cat > "$WRITER_RECORD" <<EOF
+window_start=$WINDOW_START
+external_writers=$EXTERNAL_WRITERS
+stop_time=$STOP_TIME
+approver=$ACTOR
+EOF
+fi
 if ! test -s "$WRITER_RECORD"; then
   echo "STOP: WRITER_RECORD missing or empty: $WRITER_RECORD; nothing was stopped." >&2
-  echo "Create it first: window time, external writers, stop time, approver. The shell stays open." >&2
   return 1
 fi
 if test "${#FORCE_ARGS[@]}" -eq 0; then
