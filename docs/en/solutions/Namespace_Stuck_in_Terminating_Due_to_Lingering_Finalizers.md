@@ -36,6 +36,8 @@ A namespace wedged in `Terminating` therefore means at least one finalizer is no
 - The controller is running but cannot complete its cleanup (a downstream API unreachable, a missing credential, a webhook timing out).
 - The object is a custom resource whose CRD itself has been deleted; without the CRD the controller is gone, leaving orphaned instances.
 
+A related case on the ACP `global` cluster does not involve a finalizer on any object. When a namespace on `global` has the same name as a workload cluster that was created and later deleted, the namespace holds `OperatorView` objects. They are served from memory by `marketplace-apiserver` in `cpaas-system`, which does not accept DELETE for them. The namespace controller cannot empty the namespace, and the namespace condition `NamespaceDeletionContentFailure` reads `Failed to delete all resource types, 1 remaining: OperatorView resource does not support DELETE requests`. Editing or patching the namespace finalizer does not help. Once `marketplace-apiserver` is stopped, its APIService `v1alpha2.app.alauda.io` has no endpoints (`False (MissingEndpoints)`), and the deletion is then blocked by `NamespaceDeletionDiscoveryFailure` with `stale GroupVersion discovery: app.alauda.io/v1alpha2` until that APIService is removed. See Step 3 below.
+
 ## Resolution
 
 The safe fix is to find the specific resources holding finalizers, identify the owning controller, and let that controller finish its job. Forcing the finalizer off should be reserved for the case where the controller is known to be gone and its residual state is confirmed to be safe to drop.
@@ -68,6 +70,28 @@ kubectl patch <kind>/<name> -n "$NS" \
 
 Repeat until every lingering object is gone. The namespace then transitions out of `Terminating` within a few seconds.
 
+Step 3 — on the `global` cluster, when the namespace condition names `OperatorView resource does not support DELETE requests` and the namespace belongs to a workload cluster of the same name that no longer exists:
+
+> **Warning:** While `marketplace-apiserver` is scaled to zero and its APIService is removed, the APIs it serves, including `OperatorView` and `app.alauda.io/v1alpha2`, are unavailable on the `global` cluster, and console pages that read it can fail. Do this only when the namespace is confirmed to be the leftover of a deleted cluster and the condition above is present. Save both objects first. Rollback: apply the saved APIService and scale `marketplace-apiserver` back to the recorded replica count.
+
+```bash
+NS=<namespace>
+kubectl get ns "$NS" -o jsonpath='{range .status.conditions[*]}{.type}: {.message}{"\n"}{end}'
+kubectl -n cpaas-system get deploy marketplace-apiserver -o jsonpath='{.spec.replicas}{"\n"}'
+kubectl -n cpaas-system get deploy marketplace-apiserver -o yaml > /tmp/marketplace-apiserver.yaml
+kubectl get apiservice v1alpha2.app.alauda.io -o yaml > /tmp/apiservice-v1alpha2.app.alauda.io.yaml
+
+# 1. stop the aggregated API server that serves OperatorView
+kubectl -n cpaas-system scale deploy marketplace-apiserver --replicas=0
+
+# 2. the namespace now reports stale discovery for app.alauda.io/v1alpha2; remove the APIService
+kubectl get apiservice | grep -v True
+kubectl delete apiservice v1alpha2.app.alauda.io
+kubectl get ns "$NS"
+```
+
+When the namespace is gone, apply `/tmp/apiservice-v1alpha2.app.alauda.io.yaml` again if the APIService has not been recreated, and scale `marketplace-apiserver` back to the recorded replica count. Then check that `kubectl get apiservice v1alpha2.app.alauda.io` shows `True`.
+
 ## Diagnostic Steps
 
 Before forcing anything, gather evidence so you can justify the decision to remove a finalizer:
@@ -76,6 +100,14 @@ Inspect the namespace object itself for its own finalizer — the `kubernetes` f
 
 ```bash
 kubectl get ns scheduling -o yaml | grep -A3 finalizers
+```
+
+Read the namespace conditions. `NamespaceDeletionContentFailure` with `OperatorView resource does not support DELETE requests`, or `NamespaceDeletionDiscoveryFailure` with `stale GroupVersion discovery: app.alauda.io/v1alpha2`, points to the `global` cluster case handled in Step 3, not to a finalizer:
+
+```bash
+kubectl get ns scheduling -o jsonpath='{range .status.conditions[*]}{.type}={.status} {.message}{"\n"}{end}'
+kubectl get operatorview -n scheduling
+kubectl get apiservice | grep -v True
 ```
 
 Check whether any CRD has been deleted while instances still exist; orphaned CRs are a very common cause:

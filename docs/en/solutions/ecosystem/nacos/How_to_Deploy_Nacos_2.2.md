@@ -257,3 +257,34 @@ Nacos resolves configs by composing names; the log line is expected during start
 ### Q8. After a Nacos 2.2.3 ephemeral instance is taken offline, the pod remains registered under the service
 
 Known community issue affecting Nacos 2.2.3. Fixed in 2.3.x. Track upstream: <https://github.com/alibaba/nacos/issues/11258>. To eliminate the symptom permanently, redeploy Nacos using the [Nacos 2.5 plan](./How_to_Deploy_Nacos_2.5.md).
+
+### Q9. How do I move Nacos members on TopoLVM to new nodes, for example before reinstalling the node operating system?
+
+TopoLVM volumes are local to one node, so a Nacos Pod cannot move to another node together with its PVCs. Move the members one at a time and let each one come up on a new node with new, empty volumes. Nacos configuration is kept in MySQL (see the MySQL prerequisite above), which this procedure does not touch.
+
+1. Prepare one new node per Nacos member (for example four new nodes for a four-member cluster), each with TopoLVM storage and enough free capacity for the member's log and data volumes.
+2. Taint every node that currently runs a Nacos Pod, so that the Pods cannot be scheduled back onto them:
+
+   ```bash
+   kubectl get pod -n <nacos-namespace> -o wide | grep -i nacos
+   kubectl taint nodes <old-node> nacos-migration=true:NoSchedule
+   ```
+
+3. For one member, delete its log PVC and its data PVC first, then delete the Pod. Taking member 0 as an example:
+
+   > **Warning:** Deleting the PVCs permanently deletes the member's local volumes on the old node. Move only one member at a time, and only while all other members are Ready, so that the cluster keeps serving. Do not reinstall an old node before every member has moved. Rollback for a member that has not been deleted yet: remove the taint from its node (`kubectl taint nodes <old-node> nacos-migration=true:NoSchedule-`).
+
+   ```bash
+   kubectl get pvc -n <nacos-namespace>
+   kubectl delete pvc -n <nacos-namespace> <member-0-log-pvc> <member-0-data-pvc> --wait=false
+   kubectl delete pod -n <nacos-namespace> <nacos-pod-0>
+   ```
+
+4. Wait until the recreated Pod is running on a new node and is Ready, with new PVCs bound:
+
+   ```bash
+   kubectl get pod -n <nacos-namespace> <nacos-pod-0> -o wide -w
+   kubectl get pvc -n <nacos-namespace>
+   ```
+
+5. Repeat steps 3 and 4 for the next member until every member runs on a new node. Then remove the taints from the old nodes or take the nodes out of service.
