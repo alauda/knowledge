@@ -549,77 +549,172 @@ Imported `LimitRange` objects are static settings for the namespaces covered by 
 
 ## 10. P8-commit: verify business access, then open writes
 
-`REGISTRY_URL` must reach the new Registry through the original external entry point. The default below combines the plan's `scheme` and `hostname`; it **does not supply an external port** and may not reflect upstream TLS termination. Before running the block, set `REGISTRY_URL_OVERRIDE` to the actual full URL when needed, for example `https://registry.example.com:11780`. Confirm any alternate domain/VIP serves this Registry; do not reuse another environment's port.
+Run each code block separately in the **same Bash session** used for P0-P7, then press **Enter**.
+Stop on an error before running the next block. If the terminal remains at a `>` prompt, press
+**Ctrl+C** and paste that complete block again, without the Markdown fence markers.
 
-For TLS, the issuer must be trusted and the SAN must match the host. For a private CA, set `REGISTRY_CA_BUNDLE` to its PEM file; the block supplies it to curl and exports `SSL_CERT_FILE` for `ac`. Correct any certificate/address mismatch. `REGISTRY_TLS_INSECURE=1` is diagnostic only and does not establish TLS acceptance.
+### Prepare the Endpoint and Test Image
 
-`TEST_NS` and `TEST_REPO` default to the first inventory entry, which is not necessarily a disposable test target. Set them to an approved migrated test image before the block. Both delete calls must remain dry runs; never add confirmation flags.
+`REGISTRY_URL` must be the new Registry's external base URL, including its scheme and any external
+port. The default uses the planned scheme and hostname without an external port. When the actual
+entry point differs, set `REGISTRY_URL_OVERRIDE`, for example `https://registry.example.com:11780`,
+before running this block. Confirm that the address serves this Registry.
 
 ```bash
-export REGISTRY_HOST="$(jq -er '([.discovery.routes[] | select(.gateway == true)][0] // .discovery.routes[0]).hostname' "$RUN_DIR/plan.json")"
-REGISTRY_SCHEME="$(jq -er '([.discovery.routes[] | select(.gateway == true)][0] // .discovery.routes[0]).scheme // "http"' "$RUN_DIR/plan.json")"
-unset REGISTRY_URL
-export REGISTRY_URL="${REGISTRY_URL_OVERRIDE:-$REGISTRY_SCHEME://$REGISTRY_HOST}"
-printf 'REGISTRY_URL=%s\n' "$REGISTRY_URL"
-jq -ne --arg url "$REGISTRY_URL" --arg host "$REGISTRY_HOST" \
-  '($url | capture("^https?://(?<host>[^/:]+)(:[0-9]+)?/?$").host) == $host' >/dev/null 2>&1 ||
-  echo "NOTE: REGISTRY_URL is not the bare planned ingress host ($REGISTRY_HOST); confirm it is the external address of the new Registry."
-mkdir -p "$RUN_DIR/verification"
+P8_ENDPOINT_OK=0
+P8_LEGACY_QUERY_OK=0
+P8_MODERN_QUERY_OK=0
+unset REGISTRY_HOST REGISTRY_SCHEME REGISTRY_URL
+REGISTRY_HOST="$(jq -er '
+  ([.discovery.routes[] | select(.gateway == true)][0] //
+    .discovery.routes[0]).hostname | strings | select(length > 0)
+' "$RUN_DIR/plan.json")" &&
+REGISTRY_SCHEME="$(jq -er '
+  ([.discovery.routes[] | select(.gateway == true)][0] //
+    .discovery.routes[0]).scheme // "http"
+' "$RUN_DIR/plan.json")" &&
+REGISTRY_URL="${REGISTRY_URL_OVERRIDE:-$REGISTRY_SCHEME://$REGISTRY_HOST}" &&
+REGISTRY_URL="${REGISTRY_URL%/}" &&
+mkdir -p "$RUN_DIR/verification" &&
+printf 'Planned host=%s\nREGISTRY_URL=%s\n' "$REGISTRY_HOST" "$REGISTRY_URL"
+```
+
+Expected result: the planned host and approved external URL are printed. Resolve any error or
+address mismatch before continuing.
+
+For HTTPS, the issuer must be trusted and the certificate SAN must match the host. For a private CA,
+set `REGISTRY_CA_BUNDLE` to its PEM file; the following block supplies it to curl.
+`REGISTRY_TLS_INSECURE=1` is diagnostic only; repeat the probe with certificate verification enabled
+before accepting TLS.
+
+```bash
 CURL_TLS_ARGS=()
-AC_TLS_ARGS=()
 if test -n "${REGISTRY_CA_BUNDLE:-}"; then
   CURL_TLS_ARGS+=(--cacert "$REGISTRY_CA_BUNDLE")
-  export SSL_CERT_FILE="$REGISTRY_CA_BUNDLE"
 fi
 if test "${REGISTRY_TLS_INSECURE:-0}" = 1; then
   CURL_TLS_ARGS+=(--insecure)
-  AC_TLS_ARGS+=(--insecure-skip-tls-verify)
 fi
-probe_and_export() {
-  http_code="$(curl -sS "${CURL_TLS_ARGS[@]}" --connect-timeout 10 --max-time 20 \
-    -o /dev/null -w '%{http_code}' "$REGISTRY_URL/v2/")"
-  case "$http_code" in
-    200|401|403) echo "Registry reachable: HTTP $http_code" ;;
-    *) echo "ERROR: unexpected HTTP ${http_code:-000} from $REGISTRY_URL/v2/" >&2
-       echo "000 = this machine cannot reach the host (route/VPN/DNS); 502/504 = a proxy or the ingress cannot reach the backend." >&2
-       echo "The shell stays open. Fix the cause, then re-run this block." >&2
-       return 1 ;;
-  esac
-  curl -sS "${CURL_TLS_ARGS[@]}" --connect-timeout 10 --max-time 20 \
-    -D "$RUN_DIR/verification/registry-v2-headers.txt" -o /dev/null "$REGISTRY_URL/v2/"
-  if grep -qi '^WWW-Authenticate:' "$RUN_DIR/verification/registry-v2-headers.txt"; then
-    echo "Check the host and port of the WWW-Authenticate realm; see appendix A if they differ from the ingress." >&2
-  fi
-
-  TEST_NS="${TEST_NS:-$(jq -er '.items[0].namespace' "$RUN_DIR/final-inventory.json")}" ||
-    { echo "ERROR: final-inventory.json has no items; P3 produced no inventory" >&2; return 1; }
-  TEST_REPO="${TEST_REPO:-$(jq -r '.items[0] | "\(.namespace)/\(.repository):\(.tag)"' "$RUN_DIR/final-inventory.json")}"
-  export TEST_NS TEST_REPO
-
-  env AC_IMAGE_REGISTRY_MODE=legacy \
-    ac --kubeconfig "$KCFG" --context "$CTX" "${AC_TLS_ARGS[@]}" get images -n "$TEST_NS" -o json \
-    --registry-url "$REGISTRY_URL" > "$RUN_DIR/verification/legacy-images.json" ||
-    { echo "ERROR: legacy view failed; see the error above. The shell stays open." >&2; return 1; }
-  env AC_IMAGE_REGISTRY_MODE=modern \
-    ac --kubeconfig "$KCFG" --context "$CTX" "${AC_TLS_ARGS[@]}" get images -A -o json \
-    --registry-url "$REGISTRY_URL" > "$RUN_DIR/verification/modern-images.json" ||
-    { echo "ERROR: modern view failed; see the error above. The shell stays open." >&2; return 1; }
-  printf 'legacy=%s modern=%s\n' \
-    "$(jq '.items | length' "$RUN_DIR/verification/legacy-images.json" 2>/dev/null || echo n/a)" \
-    "$(jq '.items | length' "$RUN_DIR/verification/modern-images.json" 2>/dev/null || echo n/a)"
-
-  # Keep these as dry runs: never add --confirm / --yes / -f, or the tag is really deleted.
-  env AC_IMAGE_REGISTRY_MODE=legacy \
-    ac --kubeconfig "$KCFG" --context "$CTX" "${AC_TLS_ARGS[@]}" delete images \
-    --repo "$TEST_REPO" --registry-url "$REGISTRY_URL"
-  env AC_IMAGE_REGISTRY_MODE=modern \
-    ac --kubeconfig "$KCFG" --context "$CTX" "${AC_TLS_ARGS[@]}" delete images \
-    --repo "$TEST_REPO" --registry-url "$REGISTRY_URL"
-}
-probe_and_export
 ```
 
-Success check: queries in both modes succeed, and both delete calls identify the intended tag without deleting it; dry-run wording varies by `ac` version. Both modes pass `--registry-url`, so these are HTTP compatibility checks, not independent public Image API checks; P7 covers that API. Anonymous `/v2/` 200/401/403 proves reachability only, and row counts do not prove completeness. A failed or timed-out query remains unverified even if a later command succeeds.
+Probe the endpoint and save its response headers in one request:
+
+```bash
+P8_ENDPOINT_OK=0
+if test -n "${REGISTRY_URL:-}" &&
+   HTTP_STATUS="$(curl -sS "${CURL_TLS_ARGS[@]}" \
+     --connect-timeout 10 --max-time 20 -o /dev/null -w '%{http_code}' \
+     -D "$RUN_DIR/verification/registry-v2-headers.txt" "$REGISTRY_URL/v2/")"; then
+  case "$HTTP_STATUS" in
+    200|401|403) P8_ENDPOINT_OK=1; echo "Registry reachable: HTTP $HTTP_STATUS" ;;
+    *) echo "STOP: unexpected HTTP $HTTP_STATUS from $REGISTRY_URL/v2/" >&2 ;;
+  esac
+else
+  echo "STOP: endpoint request failed; check the URL, network, and TLS error." >&2
+fi
+test "$P8_ENDPOINT_OK" = 1
+```
+
+Expected result: `Registry reachable` is printed and the block exits successfully. An anonymous
+`200`, `401`, or `403` response proves reachability only. A connection or TLS error fails this check;
+`502` or `504` usually indicates that a proxy or Ingress cannot reach the backend.
+
+Inspect the authentication challenge, if present:
+
+```bash
+grep -i '^WWW-Authenticate:' "$RUN_DIR/verification/registry-v2-headers.txt" || true
+```
+
+Confirm that the challenge's realm host and port are reachable through the approved entry point.
+See appendix A if they differ. No output means the response did not include this header.
+
+Set `TEST_NS` and `TEST_REPO` to an approved migrated test image, or review the first inventory entry
+selected by default. `TEST_REPO` uses `namespace/repository:tag` format.
+
+```bash
+TEST_NS="${TEST_NS:-$(jq -er '
+  .items[0].namespace | strings | select(length > 0)
+' "$RUN_DIR/final-inventory.json")}" &&
+TEST_REPO="${TEST_REPO:-$(jq -er '
+  .items[0] | select(.namespace and .repository and .tag) |
+  "\(.namespace)/\(.repository):\(.tag)"
+' "$RUN_DIR/final-inventory.json")}" &&
+export TEST_NS TEST_REPO &&
+printf 'TEST_NS=%s\nTEST_REPO=%s\n' "$TEST_NS" "$TEST_REPO"
+```
+
+Expected result: both values identify the approved migrated test image. If selection fails or the
+default is unsuitable, correct the values before continuing.
+
+### Check CLI Compatibility
+
+The compatibility client used by these `ac` commands currently skips Registry certificate
+verification internally. Successful queries do not validate TLS trust. Use the verified curl probe
+and successful OCI-client and kubelet pulls as TLS acceptance evidence.
+
+Query the namespace inventory in legacy mode:
+
+```bash
+P8_LEGACY_QUERY_OK=0
+if test "${P8_ENDPOINT_OK:-0}" = 1 && test -n "${TEST_NS:-}" &&
+   env AC_IMAGE_REGISTRY_MODE=legacy \
+     ac --kubeconfig "$KCFG" --context "$CTX" \
+     get images -n "$TEST_NS" -o json --registry-url "$REGISTRY_URL" \
+     > "$RUN_DIR/verification/legacy-images.json" &&
+   jq -se 'length == 1 and (.[0] | type == "array")' \
+     "$RUN_DIR/verification/legacy-images.json" >/dev/null; then
+  P8_LEGACY_QUERY_OK=1
+  jq -r '"Legacy query succeeded: \(length) items"' \
+    "$RUN_DIR/verification/legacy-images.json"
+else
+  echo "STOP: endpoint or legacy inventory check failed." >&2
+  false
+fi
+```
+
+Query the cluster inventory in modern mode:
+
+```bash
+P8_MODERN_QUERY_OK=0
+if test "${P8_ENDPOINT_OK:-0}" = 1 &&
+   env AC_IMAGE_REGISTRY_MODE=modern \
+     ac --kubeconfig "$KCFG" --context "$CTX" \
+     get images -A -o json --registry-url "$REGISTRY_URL" \
+     > "$RUN_DIR/verification/modern-images.json" &&
+   jq -se 'length == 1 and (.[0] | type == "array")' \
+     "$RUN_DIR/verification/modern-images.json" >/dev/null; then
+  P8_MODERN_QUERY_OK=1
+  jq -r '"Modern query succeeded: \(length) items"' \
+    "$RUN_DIR/verification/modern-images.json"
+else
+  echo "STOP: endpoint or modern inventory check failed." >&2
+  false
+fi
+```
+
+Expected result: each block prints its success message and saves one JSON array. The queries have
+different namespace scopes, so their counts need not match. Counts alone do not prove completeness.
+
+Run the delete previews only after both queries succeed. **Never add `--confirm`, `--yes`, or `-f`.**
+
+```bash
+if test "${P8_LEGACY_QUERY_OK:-0}" = 1 &&
+   test "${P8_MODERN_QUERY_OK:-0}" = 1 && test -n "${TEST_REPO:-}"; then
+  env AC_IMAGE_REGISTRY_MODE=legacy \
+    ac --kubeconfig "$KCFG" --context "$CTX" delete images \
+    --repo "$TEST_REPO" --registry-url "$REGISTRY_URL" &&
+  env AC_IMAGE_REGISTRY_MODE=modern \
+    ac --kubeconfig "$KCFG" --context "$CTX" delete images \
+    --repo "$TEST_REPO" --registry-url "$REGISTRY_URL"
+else
+  echo "STOP: both inventory queries and the test image selection must succeed." >&2
+  false
+fi
+```
+
+Expected result: both previews identify the approved tag without deleting it; dry-run wording varies
+by `ac` version. Both modes pass `--registry-url`, so these are HTTP compatibility checks. P7 verifies
+the public Image API separately. A failed check remains unverified even if a later block succeeds.
 
 The next snippet is a **limited credential-format check**, not a complete audit of every namespace. It examines `.dockerconfigjson` Secrets only; legacy chart pull Secrets commonly use `.dockercfg` and must be checked separately against the P1 handoff records and original SA references. Other registries' credentials need not contain this Registry host.
 
@@ -640,36 +735,82 @@ Before committing, create a disposable Pod with `imagePullPolicy=Always`, using 
 
 Do not run `ac adm prune images` or GC during this procedure. They require platform-level authority and can remove data. Confirm the recorded Pruner suspension value and whether scheduled cleanup may resume after P8.
 
-Run the next block only after those business and credential checks pass and an administrator approves opening writes with a controlled recovery plan. It directly asserts `businessProbeVerified` and `pullSecretHandoffVerified`; creating that evidence file is not the verification itself.
+### Commit and Verify the Cutover
+
+Continue only after the business and credential checks pass and an administrator approves opening
+writes with a controlled recovery plan. Prepare the approval evidence. Its verification fields
+record the completed checks; creating the file does not perform them.
 
 ```bash
-commit_run() {
-test -n "${ACTOR:-}" || { echo "ERROR: ACTOR is empty; export ACTOR=<platform admin account> and re-run this block" >&2; return 1; }
-jq --arg actor "$ACTOR" --arg at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-  '{version:"v1",runID:.runID,planDigest:.digest,observedAt:$at,actor:$actor,commitApproved:true,businessProbeVerified:true,pullSecretHandoffVerified:true}' \
-  "$RUN_DIR/plan.json" > "$RUN_DIR/commit-approval.json"
-jq -e '.actor | length > 0' "$RUN_DIR/commit-approval.json" >/dev/null ||
-  { echo "ERROR: commit-approval.json has an empty actor; the tool rejects it" >&2; return 1; }
-registry-migrate run --run-dir "$RUN_DIR" --stage P8-commit \
-  --evidence-file "$RUN_DIR/commit-approval.json" --kubeconfig "$KCFG" --approve
-acn get config.imageregistry.operator.alauda.io cluster -o json |
-  jq -e '.spec.readOnly == false and
-    .spec.imagePullSecret.managementState == "Managed" and
-    .spec.storage.managementState == "Unmanaged"' ||
-  echo "NOTE: the commit itself may have succeeded and only this Config assertion failed; check the state in registry-migrate report before considering rollback" >&2
-acn get imagepruner.imageregistry.operator.alauda.io cluster -o json | jq -e '
-  (.metadata.annotations["registry-migrate.original-suspend"] // "false") as $original |
-  .spec.suspend == ($original == "true")' ||
-  echo "NOTE: if the actual suspend value disagrees with the annotation, compare imagepruner-before.json from P4 before considering rollback" >&2
-registry-migrate verify --run-dir "$RUN_DIR" --kubeconfig "$KCFG"
-registry-migrate report --run-dir "$RUN_DIR"
-}
-commit_run
+(
+  test -n "${ACTOR:-}" || {
+    echo "STOP: set ACTOR to the platform administrator account." >&2
+    exit 1
+  }
+  jq --arg actor "$ACTOR" --arg at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" '
+    {version:"v1",runID:.runID,planDigest:.digest,observedAt:$at,actor:$actor,
+     commitApproved:true,businessProbeVerified:true,pullSecretHandoffVerified:true}
+  ' "$RUN_DIR/plan.json" > "$RUN_DIR/commit-approval.json" &&
+  jq -e '.actor | length > 0' "$RUN_DIR/commit-approval.json" >/dev/null
+)
 ```
 
-Success check: the report shows `committed`; Config has `readOnly=false`, pull Secret management is `Managed`, and storage stays `Unmanaged`. The Pruner returns to `registry-migrate.original-suspend`; `false` permits scheduled cleanup to resume. Storage being `Unmanaged` does not prevent that cleanup.
+Expected result: the block exits successfully and creates `commit-approval.json`. The parentheses
+keep an error from closing the migration terminal. After reviewing the evidence, commit the cutover:
 
-A failing post-commit assertion does not establish that writes stayed closed. Check the journal and live state before recovery; account for new images and credential rotation after cutover. Finally, use an approved OCI client to push and pull one disposable repository and retain the output. Fix authentication-realm or TLS failures and repeat the client test; curl manifest/blob reads are diagnostic evidence, not a replacement for successful OCI or kubelet pulls.
+```bash
+registry-migrate run --run-dir "$RUN_DIR" --stage P8-commit \
+  --evidence-file "$RUN_DIR/commit-approval.json" --kubeconfig "$KCFG" --approve
+```
+
+Expected result: P8 is recorded as `committed`. If the command fails, inspect
+`registry-migrate report --run-dir "$RUN_DIR"` and the live state before retrying or recovering;
+writes might already be open.
+
+Verify the Registry settings:
+
+```bash
+(
+  set -o pipefail
+  acn get config.imageregistry.operator.alauda.io cluster -o json |
+    jq -e '.spec.readOnly == false and
+      .spec.imagePullSecret.managementState == "Managed" and
+      .spec.storage.managementState == "Unmanaged"'
+)
+```
+
+Expected result: `true`. Verify the restored Pruner suspension state separately:
+
+```bash
+(
+  set -o pipefail
+  acn get imagepruner.imageregistry.operator.alauda.io cluster -o json |
+    jq -e '
+      (.metadata.annotations["registry-migrate.original-suspend"] // "false") as $original |
+      .spec.suspend == ($original == "true")'
+)
+```
+
+Expected result: `true`. If it is `false`, compare `imagepruner-before.json` from P4 with the
+recorded annotation before considering recovery. A restored value of `false` permits scheduled
+cleanup; `Unmanaged` storage does not prevent it.
+
+Run final verification:
+
+```bash
+registry-migrate verify --run-dir "$RUN_DIR" --kubeconfig "$KCFG"
+```
+
+Expected result: verification exits 0. Then retain the final report:
+
+```bash
+registry-migrate report --run-dir "$RUN_DIR"
+```
+
+A failing post-commit check does not mean that writes stayed closed. Account for new images and
+credential rotation when planning recovery. Finally, use an approved OCI client to push and pull one
+disposable repository and retain the output. Resolve authentication-realm or TLS failures and repeat
+the client test; API or curl reads do not replace successful OCI and kubelet pulls.
 
 ## Appendix A: known environment limitations
 
