@@ -38,6 +38,19 @@ Make the VIP domain name resolvable inside the cluster, in one of two ways.
    nslookup <vip-domain>
    ```
 
+   If NetworkManager or another tool generates `/etc/resolv.conf`, make the change there (for example `nmcli con mod <connection-name> ipv4.dns "<dns-server>"`), so it survives a reboot.
+
+   CoreDNS Pods normally run with `dnsPolicy: Default` and copy the node's resolver configuration only when they are created, so they keep forwarding to the old servers until they are recreated. Check the policy, and restart CoreDNS after every node has been changed:
+
+   > **Warning:** Restarting CoreDNS briefly interrupts DNS for Pods in the cluster while the new Pods start. Do it only after `nslookup <vip-domain>` works on every node. No rollback is needed for the restart itself.
+
+   ```bash
+   kubectl -n kube-system get deploy | grep -i coredns
+   kubectl -n kube-system get deploy <coredns-deployment> -o jsonpath='{.spec.template.spec.dnsPolicy}{"\n"}'
+   kubectl -n kube-system rollout restart deployment/<coredns-deployment>
+   kubectl -n kube-system rollout status deployment/<coredns-deployment>
+   ```
+
 2. **Add a static record to CoreDNS.** If the node DNS servers cannot be changed, add the record to the cluster DNS plugin:
 
    1. Open **Administrator** > **Marketplace** > **Cluster Plugins**, find **Alauda Container Platform Cluster DNS** and click **Update**.
@@ -88,4 +101,10 @@ Make the VIP domain name resolvable inside the cluster, in one of two ways.
 
    ```bash
    curl -k -m 5 https://<vip-address>:6443/healthz
+   ```
+
+5. Rule out a look-alike: if the VIP domain resolves inside Pods and the `tke-platform-api` log on `global` contains `x509` errors for `localhost:9443`, the console failure comes from an expired certificate held by a long-running `tke-platform-api`, not from DNS:
+
+   ```bash
+   kubectl -n cpaas-system logs deploy/tke-platform-api --tail=500 | grep -E 'localhost:9443|certificate has expired'
    ```
