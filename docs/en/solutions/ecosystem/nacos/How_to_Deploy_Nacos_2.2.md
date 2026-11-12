@@ -288,3 +288,14 @@ TopoLVM volumes are local to one node, so a Nacos Pod cannot move to another nod
    ```
 
 5. Repeat steps 3 and 4 for the next member until every member runs on a new node. Then remove the taints from the old nodes or take the nodes out of service.
+
+### Q10. Can workloads in another cluster reach this Nacos through its `svc.cluster.local` names?
+
+No. The in-cluster names in `NACOS_SERVERS` (`nacos-server-<n>.nacos-server.<namespace>.svc.cluster.local:8848`) resolve only inside the cluster where Nacos runs, and the multi-cluster Headless Service domain names (`<pod-name>.amcs-<service-name>.<namespace>.svc.cluster.local`) are not a supported way to reach Nacos. Cross-cluster access to Nacos is supported only by exposing the Nacos service outside its cluster through `NodePort` or `LoadBalancer`, as described under Architecture Overview, and pointing the clients in the other cluster at that address. Expose the gRPC port as well, and keep it at exactly the HTTP port plus 1000 on the outside (for example `8848` and `9848`).
+
+```bash
+kubectl -n <nacos-namespace> get svc -o wide
+kubectl -n <nacos-namespace> get sts <nacos-sts> -o jsonpath='{range .spec.template.spec.containers[0].env[*]}{.name}{"="}{.value}{"\n"}{end}' | grep -E 'NACOS_SERVERS|MODE|PREFER_HOST_MODE'
+```
+
+Only `ClusterIP` or headless Services in the output means Nacos is not yet reachable from another cluster.
