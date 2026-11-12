@@ -5,891 +5,852 @@ kind:
   - Solution
 ProductsVersion:
   - 4.x
-sourceSHA: a8df7361a9a2a9d00ee99bfb5ae573e09269e99080ee9d724484408f10801aa1
+sourceSHA: cfde46d9bccee98be2d112c1d231a4a32f770287bd5c8f6885c2c64690643b63
 ---
 
 # ACP Registry v2 迁移运行手册
 
-当现有的 ACP 环境将镜像工作负载从遗留 Registry 移动到 **Registry v2**（位于 `image-registry-system` 中）时，需要进行从遗留 ACP Registry 的迁移。Registry v2 是指由 `cluster-image-registry-operator` 部署和管理的 Registry。
+本手册将一个 ACP 业务集群从传统图表注册表迁移到由 `cluster-image-registry-operator` 管理的注册表 v2。独立的 `registry-migrate` 工具导入元数据，而注册表 v2 重用相同的 S3 存储桶、端点和前缀。
 
-迁移工作流程基于经过验证的 ACP `ac` 运行手册。无需专门的 Registry 迁移子命令。请使用以下 `ac` 命令：
+这些命令不会直接删除镜像或运行 GC。P5 删除传统图表资源及其剩余的 Ingress；P8 中的 `ac delete images` 调用是干运行。切勿添加 `--confirm`。P8 还会恢复记录的 Pruner 暂停状态：如果该状态为 `false`，则可以恢复计划的镜像清理。在批准切换之前确认该行为。
 
-- `ac get images` 导出遗留镜像列表。
-- `ac registry login` 写入 OCI registry 凭据。
-- `ac image mirror` 在源和目标注册表不共享存储时复制镜像 blob。
-- `ac image info` 从选定的注册表读取镜像摘要和媒体类型以进行元数据检查。
-- `ac create -f` 创建 `ImageStreamMapping` 资源并填充 Registry v2 镜像和 ImageStream 元数据。
+## 阶段概述
 
-在迁移过程中，尽可能使用维护窗口。至少，暂停对遗留 Registry 的写入。读取可以保持可用。如果在迁移期间推送了新镜像，请在最终切换之前重复镜像复制和元数据填充。
+| 阶段                  | 目的                                                              | 服务中断 | 失败后重试                               |
+| ---------------------- | -------------------------------------------------------------------- | -------- | ----------------------------------------- |
+| 0                      | 验证工具、凭证和业务集群上下文                                      | 否       | 是                                       |
+| P0 计划                | 生成并审查只读计划                                                 | 否       | 是                                       |
+| P1-备份              | 保存资源身份并准备恢复材料                                         | 否       | 是                                       |
+| P1-凭证              | 交接拉取凭证                                                       | 否       | 是                                       |
+| P2-停止写入者        | 停止传统写入者（**维护窗口开始**）                                 | **是**   | 是                                       |
+| P3-最终清单          | 冻结镜像清单和 S3 对象列表                                         | **是**   | 是；记录的保护选择是不可变的           |
+| P4-准备操作员        | 将操作员保持在零副本并准备只读配置                                 | **是**   | 是                                       |
+| P5-移除传统图表     | 卸载传统插件，然后移除其剩余的 Ingress                              | **是**   | 重试检查；不要重复已完成的卸载         |
+| P6-冷导入            | 导入元数据和命名空间限制                                           | **是**   | 是                                       |
+| P7-验证              | 恢复操作员并验证只读服务                                           | 读取访问恢复 | 是                                       |
+| P8-提交              | 验证业务访问并开启写入（**维护窗口结束**）                         | 恢复     | 首先检查记录的和实时状态               |
 
-元数据填充仅写入 Registry v2 镜像 API 对象。它不复制或修复注册表存储数据，例如清单、配置 blob、层、存储库修订链接或标签链接。在 Registry v2 可以通过存储重用或完成的镜像复制访问相应的镜像数据之前，请勿创建 `ImageStreamMapping` 对象。如果故意不保留遗留镜像数据，请勿对这些镜像运行元数据填充；请将镜像再次推送到 Registry v2。
+使用相同的运行目录进行重试。从第 0 节开始。
 
-## 迁移场景
+## 先决条件
 
-| 场景               | 使用时                                                                                                                                       | Blob 迁移                                                                                     | 元数据迁移                                                                                                                       |
-| ------------------ | -------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
-| 存储重用           | 遗留 Registry 和 Registry v2 在同一 ACP 环境和业务集群中运行，并且 Registry v2 重用遗留 Registry 存储。                                     | 不需要。Registry v2 附加到现有的 blob 存储。                                                | 需要。从遗留 Registry 读取摘要和媒体类型，然后填充 `ImageStream` 和 `ImageStreamMapping` 对象。                               |
-| 跨注册表同步      | 遗留 Registry 和 Registry v2 使用不同的存储、不同的集群或不同的 ACP 环境。                                                                  | 需要。使用 `ac image mirror` 将镜像从遗留 Registry 复制到目标 Registry。                      | 在镜像复制后需要。从 Registry v2 读取摘要和媒体类型，然后填充 `ImageStream` 和 `ImageStreamMapping` 对象。                   |
+- **工具和恢复程序**：请联系您的 ACP 服务提供商以获取批准的 `registry-migrate` 和兼容的 `ac` 二进制文件、注册表 v2 包以及平台暂停和 S3 恢复程序。
+- **命名空间**：默认的操作员安装命名空间为 `image-registry-system`；默认的注册表操作数命名空间为 `cpaas-system`。操作数命名空间在安装时固定。确认实际值并在整个迁移过程中使用 `scope.operandNamespace` 在 `plan.json` 中。
+- **存储范围**：如果传统注册表的镜像数据后端使用 PVC 或 HostPath，或者迁移包含非镜像 OCI 工件或非默认 S3 根/前缀，则停止，除非提供商已批准其他程序。仅由节点信任或解析器组件使用的 HostPath 挂载不是镜像数据存储。
+- **操作员暂停**：在 P4-P6 期间，操作员必须保持在零副本。手动 InstallPlan 批准不会暂停已运行的操作员。在 P4 之前和移除传统图表之前建立提供商批准的暂停。
+- **CLI 兼容性**：`AC_IMAGE_REGISTRY_MODE=legacy/modern` 选择模式，但显式的 `--registry-url` 可以保持请求在注册表 HTTP 兼容路径上。`AC_REGISTRY_COMPAT_OUTPUT` 选择输出合同；在这些检查中保持未设置或设置为 `4.3`。
 
-## 所需输入
+## 0. 准备终端和工具
 
-在运行迁移之前，请准备以下输入：
-
-| 变量                             | 描述                                                                                                                                                       | 示例                                               |
-| -------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------- |
-| `MIGRATION_KUBECONFIG`           | 仅用于迁移的可选 kubeconfig。                                                                                                                               | `/tmp/registry-migration/kubeconfig`              |
-| `ACP_PLATFORM_URL`               | ACP 平台登录 URL。                                                                                                                                         | `https://acp.example.com`                         |
-| `ACP_SESSION_NAME`               | 用于迁移的 ACP 登录会话名称。                                                                                                                               | `registry-migration`                              |
-| `ACP_USERNAME`                   | 用于迁移的 ACP 账户。                                                                                                                                      | `admin`                                           |
-| `ACP_PASSWORD`                   | ACP 密码。仅在私有环境文件中存储。                                                                                                                          | `******`                                          |
-| `ACP_CLUSTER`                    | 登录后选择的业务集群。                                                                                                                                   | `business-1`                                      |
-| `ACP_IDP`                        | 登录条目所需的可选身份提供者名称。                                                                                                                          | `ldap-test`                                       |
-| `ACP_AUTH_TYPE`                  | 登录条目所需的可选身份验证类型。                                                                                                                            | `ldap`                                            |
-| `LEGACY_REGISTRY_URL`            | `ac get images --registry-url` 使用的遗留 Registry URL。包括 `http://` 或 `https://`。                                                                     | `http://old-registry.example.com:5000`            |
-| `LEGACY_REGISTRY_HOST`           | `ac image mirror` 使用的遗留 Registry 外部主机。不要包含方案。                                                                                           | `old-registry.example.com:5000`                   |
-| `TARGET_REGISTRY_HOST`           | 用于镜像镜像、镜像检查、元数据填充和验证的 Registry v2 外部主机。不要包含方案。                                                                          | `image-registry.example.com`                      |
-| `IMAGE_LIST_FILE`                | 要迁移的镜像列表。每行格式为 `namespace/name:tag`。                                                                                                        | `/tmp/registry-migration/image-list.txt`          |
-| `IMAGE_DIGEST_FILE`              | 可选的镜像和摘要列表。每行格式为 `namespace/name:tag sha256:...`。                                                                                       | `/tmp/registry-migration/image-digests.txt`       |
-| `MAPPING_FILE`                   | 跨注册表同步的镜像映射文件。每行格式为 `source=target`。                                                                                                   | `/tmp/registry-migration/mirror-map.txt`          |
-| `METADATA_DIR`                   | `ac image info`、`ImageStreamMapping` 和应用结果的输出目录。                                                                                               | `/tmp/registry-migration/metadata`                |
-| `METADATA_INSPECT_REGISTRY_HOST` | 在检查摘要和媒体类型时用于元数据填充的注册表主机。对于存储重用使用遗留 Registry，对于跨注册表同步使用 Registry v2。                                     | `old-registry.example.com:5000`                   |
-| `REGISTRY_INSECURE_FLAG`         | 当注册表使用 HTTP、自签名证书或测试证书时设置为 `--insecure`。对于受信任的 HTTPS 设置为空字符串。                                                        | `--insecure`                                      |
-| `REGISTRY_AUTH_DIR`              | OCI 注册表身份验证目录。                                                                                                                                 | `/tmp/registry-migration/registry-auth`           |
-| `REGISTRY_AUTH_FILE`             | 由 `ac registry login --to` 写入的 OCI 注册表身份验证文件。                                                                                                 | `/tmp/registry-migration/registry-auth/config.json` |
-
-创建迁移工作区：
+使用一个专用的 **Bash** 终端进行所有迁移步骤；在交互式 zsh 会话中不要启用 `set -u`。登录令牌的生命周期取决于平台身份提供者。如果请求返回 `Unauthorized`，请刷新与用于迁移的 kubeconfig 关联的登录。首先列出可用的会话：
 
 ```bash
-export MIGRATION_DIR=/tmp/registry-migration
-mkdir -p "$MIGRATION_DIR"
-
-export MIGRATION_KUBECONFIG="$MIGRATION_DIR/kubeconfig"
-export IMAGE_LIST_FILE="$MIGRATION_DIR/image-list.txt"
-export IMAGE_DIGEST_FILE="$MIGRATION_DIR/image-digests.txt"
-export MAPPING_FILE="$MIGRATION_DIR/mirror-map.txt"
-export METADATA_DIR="$MIGRATION_DIR/metadata"
-export REGISTRY_AUTH_DIR="$MIGRATION_DIR/registry-auth"
-export REGISTRY_AUTH_FILE="$REGISTRY_AUTH_DIR/config.json"
-export REGISTRY_INSECURE_FLAG="${REGISTRY_INSECURE_FLAG:---insecure}"
-
-mkdir -p "$REGISTRY_AUTH_DIR" "$METADATA_DIR"
+ac config get-sessions
 ```
 
-如果遗留 Registry 使用 HTTP，则从 `LEGACY_REGISTRY_HOST` 派生 `LEGACY_REGISTRY_URL`。如果使用 HTTPS，则显式设置完整 URL：
+在 `CURRENT` 中标记为 `*` 的行是活动会话。使用其 `PLATFORM` 和 `SESSION` 值重新登录：
 
 ```bash
-export LEGACY_REGISTRY_URL="${LEGACY_REGISTRY_URL:-http://$LEGACY_REGISTRY_HOST}"
+printf 'PLATFORM: '; IFS= read -r PLATFORM
+printf 'SESSION: '; IFS= read -r SESSION
+ac login "$PLATFORM" --name "$SESSION"
 ```
 
-`REGISTRY_AUTH_DIR` 存储 OCI 注册表身份验证文件。设置此变量不会启动本地容器运行时。
-如果源和目标注册表都使用受信任的 HTTPS 证书，则禁用不安全标志：
+下面的代码块验证工具和凭证并选择上下文。对于单独的业务 kubeconfig，请在上述登录命令中添加 `--kubeconfig /absolute/path/to/business.kubeconfig`，并在块的 `export KCFG=` 行中使用相同的路径。设置会清除早期的 `KCFG` 值；登录到默认文件不会刷新单独的副本。
 
 ```bash
-export REGISTRY_INSECURE_FLAG=""
-```
-
-## 登录并检查注册表模式
-
-登录到 ACP 并创建仅用于迁移的 kubeconfig：
-
-```bash
-LOGIN_ARGS=(
-  ac login "$ACP_PLATFORM_URL"
-  --name "$ACP_SESSION_NAME"
-  --username "$ACP_USERNAME"
-  --password "$ACP_PASSWORD"
-  --kubeconfig "$MIGRATION_KUBECONFIG"
-)
-
-[ -z "${ACP_IDP:-}" ] || LOGIN_ARGS+=(--idp "$ACP_IDP")
-[ -z "${ACP_AUTH_TYPE:-}" ] || LOGIN_ARGS+=(--auth-type "$ACP_AUTH_TYPE")
-
-"${LOGIN_ARGS[@]}"
-
-export KUBECONFIG="$MIGRATION_KUBECONFIG"
-[ -z "${ACP_CLUSTER:-}" ] || ac config use-cluster "$ACP_CLUSTER"
-```
-
-如果集群同时具有遗留和 Registry v2 后端，则 `auto` 模式可能需要显式选择。以遗留模式开始迁移并确认可以发现遗留 Registry：
-
-```bash
-ac config set-registry-mode legacy
-ac config get-registry-mode
-ac registry info
-ac registry info --internal
-```
-
-`ac registry info` 显示当前模式下发现的注册表。它可能返回一个集群内服务，例如 `image-registry.cpaas-system`，该服务无法从管理员工作站直接访问。使用 `LEGACY_REGISTRY_URL` 进行镜像发现，并使用 `LEGACY_REGISTRY_HOST` 和 `TARGET_REGISTRY_HOST` 进行镜像复制。
-
-## 准备镜像列表
-
-导出当前 ACP 用户可见的遗留镜像列表：
-
-```bash
-ac config set-registry-mode legacy
-ac get images \
-  --registry-url "$LEGACY_REGISTRY_URL" \
-  > "$MIGRATION_DIR/legacy-images.txt"
-```
-
-从 `ac get images` 表格输出生成镜像列表和可选的摘要列表：
-
-```bash
-awk 'NR > 1 && NF >= 2 { print $1 ":" $2 }' \
-  "$MIGRATION_DIR/legacy-images.txt" \
-  | sort -u > "$IMAGE_LIST_FILE"
-
-awk 'NR > 1 && NF >= 4 && $4 != "unknown" { print $1 ":" $2 " " $4 }' \
-  "$MIGRATION_DIR/legacy-images.txt" \
-  | sort -u > "$IMAGE_DIGEST_FILE"
-```
-
-当仅选择特定镜像进行迁移时，您也可以手动编写列表：
-
-```bash
-cat >> "$IMAGE_LIST_FILE" <<EOF
-your-namespace/your-image:your-tag
-EOF
-
-cat >> "$IMAGE_DIGEST_FILE" <<EOF
-your-namespace/your-image:your-tag sha256:<digest>
-EOF
-```
-
-在继续之前检查生成的列表：
-
-```bash
-sed -n '1,20p' "$IMAGE_LIST_FILE"
-sed -n '1,20p' "$IMAGE_DIGEST_FILE"
-wc -l "$IMAGE_LIST_FILE"
-```
-
-从列表中删除临时测试镜像、退役命名空间和不正确的标签。
-
-## 写入注册表凭据
-
-为遗留和目标注册表写入凭据。`ac image mirror` 和 `ac image info` 读取此文件：
-
-```bash
-export DOCKER_CONFIG="$REGISTRY_AUTH_DIR"
-
-ac registry login \
-  --registry "$LEGACY_REGISTRY_HOST" \
-  --skip-check \
-  --to "$REGISTRY_AUTH_FILE" \
-  $REGISTRY_INSECURE_FLAG
-
-ac registry login \
-  --registry "$TARGET_REGISTRY_HOST" \
-  --skip-check \
-  --to "$REGISTRY_AUTH_FILE" \
-  $REGISTRY_INSECURE_FLAG
-```
-
-如果源和目标注册表属于不同的 ACP 环境，请将两个凭据写入同一身份验证文件中，并使用相应的 kubeconfig：
-
-```bash
-KUBECONFIG="$SOURCE_KUBECONFIG" \
-  ac registry login --registry "$LEGACY_REGISTRY_HOST" --skip-check --to "$REGISTRY_AUTH_FILE" $REGISTRY_INSECURE_FLAG
-
-KUBECONFIG="$TARGET_KUBECONFIG" \
-  ac registry login --registry "$TARGET_REGISTRY_HOST" --skip-check --to "$REGISTRY_AUTH_FILE" $REGISTRY_INSECURE_FLAG
-```
-
-## 准备元数据填充
-
-Registry v2 除了镜像 blob 之外，还需要镜像 API 元数据。使用 `ImageStreamMapping` 填充 `Image`、`ImageStream` 和标签元数据。
-
-在迁移 shell 会话中定义元数据填充函数：
-
-```bash
-ensure_imagestream() {
-  namespace="$1"
-  stream="$2"
-  stream_file="$METADATA_DIR/${namespace}-${stream}.imagestream.yaml"
-  stream_output_file="$METADATA_DIR/${namespace}-${stream}.imagestream.apply.txt"
-
-  if ac get imagestreams.image.alauda.io "$stream" -n "$namespace" >/dev/null 2>&1; then
-    return 0
-  fi
-
-  cat > "$stream_file" <<EOF
-apiVersion: image.alauda.io/v1
-kind: ImageStream
-metadata:
-  name: $stream
-  namespace: $namespace
-spec:
-  lookupPolicy:
-    local: false
-EOF
-
-  if ac create -f "$stream_file" > "$stream_output_file" 2>&1; then
-    return 0
-  fi
-
-  echo "[metadata] failed to create ImageStream $namespace/$stream; output=$stream_output_file" >&2
-  sed -n '1,20p' "$stream_output_file" >&2
-  return 1
+setup_run() {
+umask 077
+unset KCFG                      # 清除早期终端留下的过时路径
+export KCFG="$HOME/.kube/config"
+test -f "$KCFG" || { echo "错误：未找到 kubeconfig: $KCFG" >&2; echo "如果业务 kubeconfig 在其他地方，请编辑上面的 KCFG 行" >&2; return 1; }
+for b in registry-migrate ac jq curl; do
+  command -v "$b" >/dev/null || { echo "错误：未在 PATH 中找到 $b" >&2; return 1; }
+done
+printf '输入真实的平台管理员账户: '
+IFS= read -r ACTOR
+test -n "$ACTOR" || { echo "错误：需要管理员账户" >&2; return 1; }
+export REGISTRY_NS="cpaas-system"        # 用于首次运行时创建计划；在重运行时由 plan.json 重写
+export OPERATOR_NS="image-registry-system"
+CTX_LIST="$(ac --kubeconfig "$KCFG" config get-contexts -o name || true)"
+test -n "$CTX_LIST" || { echo "错误：$KCFG 中没有上下文" >&2; echo "首先登录: ac login --platform <PLATFORM> --name <SESSION>" >&2; return 1; }
+CTX="$(ac --kubeconfig "$KCFG" config current-context 2>/dev/null || true)"
+test -n "$CTX" || { test "$(echo "$CTX_LIST" | grep -c .)" -eq 1 && CTX="$CTX_LIST" || {
+  echo "可用上下文:" >&2; echo "$CTX_LIST" >&2; printf '输入要使用的上下文: ' >&2; IFS= read -r CTX; }; }
+echo "$CTX_LIST" | grep -Fxq "$CTX" || { echo "错误：未找到上下文: $CTX" >&2; return 1; }
+ac --kubeconfig "$KCFG" --context "$CTX" whoami >/dev/null 2>&1 || {
+  echo "错误：未对上下文 $CTX 进行身份验证（令牌过期？）" >&2
+  echo "现有会话:" >&2
+  ac --kubeconfig "$KCFG" config get-sessions >&2 || true
+  echo "重新登录: ac login --platform <PLATFORM> --name <SESSION>" >&2
+  return 1; }
+OUT="$PWD/registry-migrate-runs"
+if test -n "${RUN_DIR:-}" && ! test -f "$RUN_DIR/plan.json"; then
+  echo "警告：忽略过时的 RUN_DIR（没有 plan.json）：$RUN_DIR" >&2
+  unset RUN_DIR
+fi
+if test -n "${RUN_DIR:-}"; then
+  test -f "$RUN_DIR/plan.json" || { echo "错误：RUN_DIR 已设置但 plan.json 缺失: $RUN_DIR" >&2; echo "修复：取消设置 RUN_DIR 以开始新的迁移" >&2; return 1; }
+  RUN_ID="$(jq -er '.runID' "$RUN_DIR/plan.json")"
+  REGISTRY_NS="$(jq -er '.scope.operandNamespace' "$RUN_DIR/plan.json")"
+  OPERATOR_NS="$(jq -er '.scope.operatorNamespace' "$RUN_DIR/plan.json")"
+  REGISTRY_SERVICE="$(jq -er '.scope.serviceName' "$RUN_DIR/plan.json")"
+  REGISTRY_DEPLOY="$(jq -r '.discovery.deployment // empty' "$RUN_DIR/plan.json")"
+  GATEWAY_DEPLOY="$(jq -r '.discovery.gatewayDeployment // empty' "$RUN_DIR/plan.json")"
+  OUT="$(dirname "$RUN_DIR")"
+else
+  RUN_ID="$(date -u +%Y%m%dT%H%M%SZ)-business-$RANDOM"
+  RUN_DIR="$OUT/$RUN_ID"
+fi
+mkdir -p "$OUT"
+S3_ARGS=()
+FORCE_ARGS=()
+registry-migrate version
+ac version --client
+printf 'context=%s\nrun-dir=%s\n' "$CTX" "$RUN_DIR"
 }
+setup_run || echo "停止：第 0 节中止；修复上述错误并重新运行此块。终端保持打开。" >&2
+```
 
-write_imagestream_mapping() {
-  image="$1"
-  digest="${2:-}"
-  namespace="${image%%/*}"
-  rest="${image#*/}"
-  stream="${rest%%:*}"
-  tag="${rest##*:}"
-  inspect_registry_host="${METADATA_INSPECT_REGISTRY_HOST:-$TARGET_REGISTRY_HOST}"
-  source_ref="$inspect_registry_host/$image"
-  repo_ref="$TARGET_REGISTRY_HOST/$namespace/$stream"
-  inspect_ref="$source_ref"
-  name_prefix="${namespace}-${stream}-${tag}"
-  info_file="$METADATA_DIR/${name_prefix}.info.txt"
-  mapping_file="$METADATA_DIR/${name_prefix}.mapping.yaml"
-  apply_output_file="$METADATA_DIR/${name_prefix}.apply.txt"
-  BACKFILL_LAST_ACTION=""
+确认 `context=` 确定了预期的业务集群。在 P0 之前，使用 `ac --kubeconfig "$KCFG" config use-context "$CTX"` 选择它：`ac` 辅助工具使用 `CTX`，但 `registry-migrate` 使用文件的 `current-context`。
 
-  if [ -n "$digest" ]; then
-    inspect_ref="$inspect_registry_host/$namespace/$stream@$digest"
-  fi
+设置会创建 `OUT`；成功的 P0 创建 `$RUN_DIR`。对于重试，恢复原始绝对 `RUN_DIR`（附录 B），然后重新选择所需的 S3、强制、嵌套存储库和 P3 保护选项。不要丢弃有效计划以绕过故障。
 
-  if ! ac image info "$inspect_ref" \
-    --registry-config "$REGISTRY_AUTH_FILE" \
-    $REGISTRY_INSECURE_FLAG > "$info_file" 2>&1; then
-    BACKFILL_LAST_ACTION="failed"
-    echo "[metadata] failed to inspect $inspect_ref; output=$info_file" >&2
-    sed -n '1,20p' "$info_file" >&2
-    return 1
-  fi
+下一个代码块定义强制性助手。错误、超时或 `STOP` 消息意味着该步骤需要关注，即使终端保持打开或后续命令打印输出。在进入下一节之前确认阶段的成功检查。
 
-  [ -n "$digest" ] || digest="$(awk '/^Digest:/ { sub(/^Digest:[[:space:]]*/, ""); print; exit }' "$info_file")"
-  media_type="$(awk '/^Media Type:/ { sub(/^Media Type:[[:space:]]*/, ""); print; exit }' "$info_file")"
-
-  if [ -z "$digest" ]; then
-    echo "failed to read digest from $source_ref" >&2
-    return 1
-  fi
-  if [ -z "$media_type" ]; then
-    echo "failed to read media type from $source_ref" >&2
-    return 1
-  fi
-
-  ensure_imagestream "$namespace" "$stream" || return 1
-
-  current_line="$(
-    ac get imagestreamtags "$stream:$tag" -n "$namespace" 2>/dev/null \
-      | awk 'NR > 1 && $3 == "current" { print $4 " " $6; exit }'
-  )"
-  current_digest="${current_line%% *}"
-  current_reference="${current_line#* }"
-  expected_reference="$repo_ref@$digest"
-
-  if [ "$current_digest" = "$digest" ] && [ "$current_reference" = "$expected_reference" ]; then
-    BACKFILL_LAST_ACTION="skipped"
-    return 0
-  fi
-
-  cat > "$mapping_file" <<EOF
-apiVersion: image.alauda.io/v1
-kind: ImageStreamMapping
-metadata:
-  name: $stream
-  namespace: $namespace
-image:
-  metadata:
-    name: "$digest"
-  dockerImageReference: "$repo_ref@$digest"
-  dockerImageManifestMediaType: "$media_type"
-tag: "$tag"
-EOF
-
-  if ac create -f "$mapping_file" > "$apply_output_file" 2>&1; then
-    BACKFILL_LAST_ACTION="applied"
-    return 0
-  fi
-
-  BACKFILL_LAST_ACTION="failed"
-  echo "[metadata] failed $image; output=$apply_output_file" >&2
-  sed -n '1,20p' "$apply_output_file" >&2
-  return 1
+```bash
+acn() {
+  test -n "${CTX:-}" || { echo "错误：CTX 为空；请先运行第 0 节" >&2; return 1; }
+  ac --kubeconfig "${KCFG:-$HOME/.kube/config}" --context "$CTX" "$@"
 }
+acns() { acn -n "$REGISTRY_NS" "$@"; }
+evidence() {
+  jq --arg actor "$ACTOR" --arg at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --arg field "$2" \
+    '{version:"v1",runID:.runID,planDigest:.digest,observedAt:$at,actor:$actor,($field):true}' \
+    "$RUN_DIR/plan.json" > "$RUN_DIR/$1"
+}
+stop_deployment() {
+  local namespace="$1" name="$2" selector pods
+  acn -n "$namespace" get deployment "$name" -o wide || return 1
+  selector="$(acn -n "$namespace" get deployment "$name" -o json |
+    jq -er '.spec.selector.matchLabels | to_entries | map("\(.key)=\(.value)") | join(",") | select(length > 0)')" || return 1
+  acn -n "$namespace" scale deployment "$name" --replicas=0 || return 1
+  pods="$(acn -n "$namespace" get pods -l "$selector" -o name)" || return 1
+  if test -n "$pods"; then
+    acn -n "$namespace" wait --for=delete pod -l "$selector" --timeout=180s || true
+  fi
+}
+```
 
-backfill_metadata() {
-  total=0
-  success=0
-  applied=0
-  skipped=0
-  failed=0
-  progress_interval="${METADATA_PROGRESS_INTERVAL:-100}"
-  verbose="${METADATA_VERBOSE:-false}"
+## 1. P0: 创建并审查计划
 
-  if [ -n "${IMAGE_DIGEST_FILE:-}" ] && [ -s "$IMAGE_DIGEST_FILE" ]; then
-    echo "[metadata] start backfill source=$IMAGE_DIGEST_FILE output_dir=$METADATA_DIR progress_interval=$progress_interval"
-    while read -r image digest; do
-      [ -n "$image" ] || continue
-      total=$((total + 1))
-      if write_imagestream_mapping "$image" "$digest"; then
-        success=$((success + 1))
-        [ "$BACKFILL_LAST_ACTION" = "applied" ] && applied=$((applied + 1))
-        [ "$BACKFILL_LAST_ACTION" = "skipped" ] && skipped=$((skipped + 1))
-      else
-        failed=$((failed + 1))
-      fi
-      if [ "$verbose" = "true" ]; then
-        echo "[metadata] [$total] $image action=${BACKFILL_LAST_ACTION:-unknown}"
-      elif [ "$progress_interval" -gt 0 ] && [ $((total % progress_interval)) -eq 0 ]; then
-        echo "[metadata] progress: total=$total success=$success applied=$applied skipped=$skipped failed=$failed"
-      fi
-    done < "$IMAGE_DIGEST_FILE"
-  elif [ -n "${IMAGE_LIST_FILE:-}" ] && [ -s "$IMAGE_LIST_FILE" ]; then
-    echo "[metadata] start backfill source=$IMAGE_LIST_FILE output_dir=$METADATA_DIR progress_interval=$progress_interval"
-    while read -r image; do
-      [ -n "$image" ] || continue
-      total=$((total + 1))
-      if write_imagestream_mapping "$image"; then
-        success=$((success + 1))
-        [ "$BACKFILL_LAST_ACTION" = "applied" ] && applied=$((applied + 1))
-        [ "$BACKFILL_LAST_ACTION" = "skipped" ] && skipped=$((skipped + 1))
-      else
-        failed=$((failed + 1))
-      fi
-      if [ "$verbose" = "true" ]; then
-        echo "[metadata] [$total] $image action=${BACKFILL_LAST_ACTION:-unknown}"
-      elif [ "$progress_interval" -gt 0 ] && [ $((total % progress_interval)) -eq 0 ]; then
-        echo "[metadata] progress: total=$total success=$success applied=$applied skipped=$skipped failed=$failed"
-      fi
-    done < "$IMAGE_LIST_FILE"
+```bash
+registry-migrate plan --output-dir "$OUT" --run-id "$RUN_ID" \
+  --operand-namespace "$REGISTRY_NS" --operator-namespace "$OPERATOR_NS" \
+  --kubeconfig "$KCFG" &&
+jq -e '(.discovery.blockers // []) | length == 0' "$RUN_DIR/plan.json" &&
+REGISTRY_DEPLOY="$(jq -er '.discovery.deployment | select(length > 0)' "$RUN_DIR/plan.json")" &&
+GATEWAY_DEPLOY="$(jq -er '.discovery.gatewayDeployment | select(length > 0)' "$RUN_DIR/plan.json")" &&
+REGISTRY_SERVICE="$(jq -er '.scope.serviceName' "$RUN_DIR/plan.json")" &&
+jq '{scope,storage:.discovery.storage,routes:.discovery.routes,limits:.namespaceLimits,warnings:.discovery.warnings}' "$RUN_DIR/plan.json" &&
+echo "P0 OK: $RUN_DIR/plan.json"
+```
+
+`P0 OK` 表示计划已生成且阻塞检查通过。如果缺失，请停留在 P0 并检查错误或阻塞：
+
+```bash
+jq '.discovery.blockers' "$RUN_DIR/plan.json"
+```
+
+计划是只读的。比较范围、S3 存储桶/端点/前缀、原始主机/TLS/IngressClass、副本计数、调度和超时与变更记录和实时集群。任何不匹配时停止。如果 `scope.operandNamespace` 错误，请在再次计划之前在第 0 节中更正 `REGISTRY_NS`。
+
+在停止写入者之前检查是否存在预先存在的注册表 v2 元数据。传统图表测试镜像应推送到传统注册表；请勿手动创建备份的 ImageStream 对象作为迁移测试数据。现有元数据是审查条件，而不是删除它的理由。保存以下列表并检查此迁移所涵盖的存储库中的任何对象：
+
+```bash
+check_existing_streams() {
+  local crd
+  crd="$(acn get crd imagestreams.storage.image.alauda.io --ignore-not-found -o name)" || return 1
+  if test -z "$crd"; then
+    echo "尚不存在 Registry v2 支持的 ImageStream CRD。"
+    return 0
+  fi
+  acn get imagestreams.storage.image.alauda.io -A -o json \
+    > "$RUN_DIR/existing-image-streams.json" || return 1
+  jq -r '.items[] | [.metadata.namespace, .metadata.name, .metadata.uid,
+    (.metadata.annotations["registry-migrate.run-id"] // "unowned"),
+    (.metadata.annotations["registry-migrate.plan-digest"] // "")] | @tsv' \
+    "$RUN_DIR/existing-image-streams.json"
+}
+check_existing_streams_or_stop() {
+  check_existing_streams || {
+    echo "停止：现有 ImageStream 清单失败；在停止写入者或继续之前修复错误。" >&2
+    echo "在清单文件完整之前不要继续到 P1。" >&2
+    return 1
+  }
+}
+check_existing_streams_or_stop
+```
+
+## 2. P1-备份：保存恢复材料
+
+在 P1-凭证之前完成此阶段，该阶段会在原地重写拉取凭证内容。该工具创建一个经过编辑的注册表范围快照，包含资源身份、所有者、ServiceAccounts、引用和数据摘要。它**不包含**任何凭证数据或 S3 镜像数据。
+
+通过批准的恢复程序单独保留图表版本/值、平台对象和受保护的凭证数据。在恢复材料中保持私密且不被编辑。在删除图表之前确认恢复和保留安排。
+
+```bash
+registry-migrate backup --run-dir "$RUN_DIR" --kubeconfig "$KCFG" --approve
+```
+
+成功检查：命令以 0 退出并在 `$RUN_DIR` 下写入资源和凭证摘要。在失败时，解决报告的错误并在继续之前重试 P1-备份。
+
+## 3. P1-凭证：交接拉取凭证
+
+保持传统注册表可读。首先暂停管理 `sa-imagepullsecret-controller` 的平台源，以便它无法重新启动控制器。如果发现多个候选项，请使用 `acn get deployments -A -o wide | grep -i imagepull` 确定预期的控制器，然后再继续。
+
+```bash
+PULL_SECRET_REF="$(acn get deployments -A -o json | jq -er '
+  [.items[] | select((.metadata.name | test("sa-imagepullsecret-controller";"i")) or
+    ((.metadata.labels // {}) | tojson | test("sa-imagepullsecret-controller";"i"))) |
+    [.metadata.namespace,.metadata.name]] |
+  if length == 1 then .[0] | @tsv else error("请检查传统拉取凭证控制器候选项") end')"
+PULL_SECRET_NS=""; PULL_SECRET_DEPLOY=""
+IFS=$'\t' read -r PULL_SECRET_NS PULL_SECRET_DEPLOY <<< "$PULL_SECRET_REF"
+if test -z "$PULL_SECRET_DEPLOY"; then
+  echo "停止：无法解析传统拉取凭证控制器；修复上述 jq 错误并重新运行。阶段未记录。" >&2
+else
+  if test "${#FORCE_ARGS[@]}" -eq 0; then
+    stop_deployment "$PULL_SECRET_NS" "$PULL_SECRET_DEPLOY"
   else
-    echo "[metadata] no image list found; check IMAGE_DIGEST_FILE or IMAGE_LIST_FILE" >&2
+    acn -n "$PULL_SECRET_NS" get deployment "$PULL_SECRET_DEPLOY" -o wide
+    echo "强制模式：保持传统拉取凭证控制器状态不变"
+  fi
+  evidence controller-stopped.json legacyControllerStopped
+  registry-migrate run --run-dir "$RUN_DIR" --stage P1-凭证 \
+    --evidence-file "$RUN_DIR/controller-stopped.json" \
+    "${FORCE_ARGS[@]}" --kubeconfig "$KCFG" --approve
+fi
+```
+
+成功检查：该工具报告凭证计数和 `updated/skipped` 计数，并在日志中记录阶段。现有凭证名称/UID 及其 ServiceAccount 所有者 UID 保持不变。在正常路径中，验证旧控制器已停止，然后再将其停止证据视为有效。暂时不要卸载传统图表。
+
+## 4. P2-停止写入者：停止传统写入者（维护窗口开始）
+
+暂停管理传统图表的平台源。停止注册表和网关部署，暂停传统 Pruner CronJob（如果存在），并停止使用相同 S3 存储桶/前缀的外部作业或元数据写入者。暂停 CronJob 不会停止已激活的 Job。
+
+该块提示缺失的写入者记录字段并创建 `$RUN_DIR/writer-record.txt`；现有的非空 `WRITER_RECORD` 被重用。
+
+```bash
+stop_writers() {
+export WRITER_RECORD="${WRITER_RECORD:-$RUN_DIR/writer-record.txt}"
+if ! test -s "$WRITER_RECORD"; then
+  printf '维护窗口开始（RFC3339）：'
+  IFS= read -r WINDOW_START || { echo "停止：需要维护窗口开始；未停止任何内容。" >&2; return 1; }
+  test -n "$WINDOW_START" || { echo "停止：需要维护窗口开始；未停止任何内容。" >&2; return 1; }
+  printf '外部写入者（或无）：'
+  IFS= read -r EXTERNAL_WRITERS || { echo "停止：需要外部写入者记录；未停止任何内容。" >&2; return 1; }
+  test -n "$EXTERNAL_WRITERS" || { echo "停止：需要外部写入者记录；未停止任何内容。" >&2; return 1; }
+  printf '写入者停止时间（RFC3339）：'
+  IFS= read -r STOP_TIME || { echo "停止：需要写入者停止时间；未停止任何内容。" >&2; return 1; }
+  test -n "$STOP_TIME" || { echo "停止：需要写入者停止时间；未停止任何内容。" >&2; return 1; }
+  cat > "$WRITER_RECORD" <<EOF
+window_start=$WINDOW_START
+external_writers=$EXTERNAL_WRITERS
+stop_time=$STOP_TIME
+approver=$ACTOR
+EOF
+fi
+if ! test -s "$WRITER_RECORD"; then
+  echo "停止：WRITER_RECORD 缺失或为空：$WRITER_RECORD；未停止任何内容。" >&2
+  return 1
+fi
+if test "${#FORCE_ARGS[@]}" -eq 0; then
+  stop_deployment "$REGISTRY_NS" "$REGISTRY_DEPLOY"
+  stop_deployment "$REGISTRY_NS" "$GATEWAY_DEPLOY"
+else
+  acns get deployment "$REGISTRY_DEPLOY" "$GATEWAY_DEPLOY" -o wide
+  echo "强制模式：保持传统注册表/网关状态不变"
+fi
+LEGACY_PRUNER="$(acns get cronjob image-pruner --ignore-not-found -o name)"
+if test -n "$LEGACY_PRUNER"; then
+  if test "${#FORCE_ARGS[@]}" -eq 0; then
+    acns patch cronjob image-pruner --type=merge -p '{"spec":{"suspend":true}}'
+  else
+    echo "强制模式：保持传统 Pruner 状态不变"
+  fi
+fi
+acns get endpoints "$REGISTRY_SERVICE" -o wide
+acns get endpointslices.discovery.k8s.io -l "kubernetes.io/service-name=$REGISTRY_SERVICE" -o wide
+mkdir -p "$RUN_DIR/verification"
+acn get cronjob,job -A -o wide > "$RUN_DIR/verification/legacy-jobs.txt" ||
+  echo "警告：无法列出集群作业" >&2
+if test "$WRITER_RECORD" != "$RUN_DIR/writer-record.txt"; then
+  cp "$WRITER_RECORD" "$RUN_DIR/writer-record.txt"
+fi
+evidence writers-stopped.json legacyWritersStopped
+registry-migrate run --run-dir "$RUN_DIR" --stage P2-停止写入者 \
+  --evidence-file "$RUN_DIR/writers-stopped.json" \
+  "${FORCE_ARGS[@]}" --kubeconfig "$KCFG" --approve
+}
+stop_writers
+```
+
+正常路径成功检查：旧注册表/网关 Pods 和就绪端点消失，Pruner 被暂停，相关活动作业已完成，阶段被记录。检查 `verification/legacy-jobs.txt` 以获取影响此注册表的作业；与此迁移无关的平台作业不在此范围内。如果列出失败，请在 P3 之前解决该失败。
+
+根据 `WRITER_RECORD` 确认外部写入者。两个未更改的 S3 列表仅是支持观察：相等的对象计数和最新的 `LastModified` 值并不能证明所有写入者已停止或排除覆盖。
+
+如果平台无法保持旧组件停止，则在管理员接受一致性风险后仅使用 `FORCE_ARGS=(--force)`。记录其实际状态和工具的强制警告；不要声称这些 Pods 或端点缺失。请参阅附录 B。
+
+## 5. P3-最终清单：冻结清单和 S3 状态
+
+最终清单记录存储库/标签/摘要关系和清单/配置元数据。`s3-snapshot.json` 是对象列表快照，包含计数、字节和列表摘要；**它不是镜像内容的备份**。层保持在现有的 S3 存储桶/前缀中。
+
+作为恢复点，使用已测试的存储快照或备份。仅启用 S3 版本控制并不是经过验证的恢复证据。如果没有可用的恢复点，请选择显式跳过路径并保留其警告。
+
+一旦 P3 成功，其清单和保护状态被冻结。稍后添加的证明不会更改跳过验证的运行。在开始之前，选择以下路径中的一个；运行两个将分配最后一个选择，因此不要同时执行两个。
+
+**路径 1：显式跳过恢复验证。** 管理员接受尚未建立 S3 恢复点；工具记录警告和 `not-established`。
+
+```bash
+P3_PROTECTION=(--skip-s3-backup-verification)
+```
+
+**路径 2：提供经过验证的恢复点。** 工具记录验证声明和引用；它不会执行存储恢复。
+
+`RESTORE_REFERENCE` 标识实际经过验证的备份/快照或其恢复测试报告，例如 `backup-registry-20261104-001` 或 `/secure/recovery/registry-restore-test.json`。相关记录应标识源存储桶/前缀、恢复时间和恢复结果。存储桶名称或 S3 URL 不是恢复点引用。
+
+```bash
+printf '输入经过验证的 S3 恢复点标识符或报告路径: '
+IFS= read -r RESTORE_REFERENCE
+test -n "$RESTORE_REFERENCE"
+jq --arg actor "$ACTOR" --arg at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+  --arg ref "$RESTORE_REFERENCE" \
+  '{version:"v1",runID:.runID,planDigest:.digest,observedAt:$at,actor:$actor,restoreVerified:true,restoreReference:$ref}' \
+  "$RUN_DIR/plan.json" > "$RUN_DIR/restore-proof.json"
+P3_PROTECTION=(--evidence-file "$RUN_DIR/restore-proof.json")
+```
+
+嵌套存储库默认不被跳过。仅在管理员批准的历史测试残留中使用以下选项。检查 `legacy-metadata-report.json` 中的每个受影响的存储库；不要仅为了通过阶段而排除实时工作负载。
+
+```bash
+NESTED_ARGS=()
+# NESTED_ARGS=(--skip-nested-repositories)
+```
+
+如果 P3 无法解析集群内部 S3 端点，例如 `*.svc.cluster.local`，请建立端口转发并在附录 A 中设置 `S3_ARGS`，然后返回此处。
+
+此示例使用 `resume`。在当前工具中，`run` 和 `resume` 执行相同的选定阶段逻辑：不完整的 P3 可以重新扫描 S3 和元数据，而无需分页检查点。在记录 P3 后，重试验证其冻结的工件，而不是再次扫描实时源。
+
+```bash
+registry-migrate resume --run-dir "$RUN_DIR" --stage P3-最终清单 \
+  "${P3_PROTECTION[@]}" "${S3_ARGS[@]}" "${NESTED_ARGS[@]}" \
+  "${FORCE_ARGS[@]}" --kubeconfig "$KCFG" --approve
+
+registry-migrate report --run-dir "$RUN_DIR"
+
+jq '{items:(.items|length),digest,sample:(.items[0] // {} | {namespace,repository,tag})}' "$RUN_DIR/final-inventory.json"
+```
+
+成功检查：P3 被记录，`final-inventory.json` 和 `s3-snapshot.json` 存在。扫描读取标签链接、清单和配置，而不复制层。
+
+在使用 `NESTED_ARGS=(--skip-nested-repositories)` 重试不完整的 P3 之前，批准报告中的每个受影响的存储库。被排除的标签不会被导入。不要编辑成功的 P3 清单以添加它们；使用新批准的迁移运行。
+
+## 6. P4-准备操作员：准备只读注册表 v2
+
+在 ACP 控制台中，打开 **管理员 → Marketplace → OperatorHub**，选择目标业务集群，并在 `image-registry-system` 中安装或升级 `cluster-image-registry-operator`。将操作数命名空间设置为 `cpaas-system`（或 `plan.json` 中的命名空间），批准 InstallPlan，并等待 CSV 报告 `Succeeded` 和操作员部署存在。然后在 P4-P6 期间使用经过验证的暂停程序将操作员保持在零副本。
+
+记录原始操作员副本计数以备 P7 使用，与计划的注册表计数分开。P8 恢复 Pruner 基线；新的 ImagePruner 记录 `registry-migrate.original-suspend=false`，允许计划的清理。为了保持清理禁用，请在 P4 之前安排经过批准的暂停基线。之后不要更改记录的注释。
+
+```bash
+prepare_operator() {
+acn -n "$OPERATOR_NS" get subscription,installplan,csv -o wide || return 1
+if ! acn -n "$OPERATOR_NS" get deployment cluster-image-registry-operator -o wide >/dev/null; then
+  echo "停止：在 P4 之前安装或升级 cluster-image-registry-operator" >&2
+  return 1
+fi
+stop_deployment "$OPERATOR_NS" cluster-image-registry-operator || return 1
+PRUNER="$(acn get imagepruner.imageregistry.operator.alauda.io cluster --ignore-not-found -o name)" || return 1
+if test -n "$PRUNER"; then
+  acn get "$PRUNER" -o json > "$RUN_DIR/imagepruner-before.json" || return 1
+  jq '{annotations:.metadata.annotations,suspend:.spec.suspend}' "$RUN_DIR/imagepruner-before.json" || return 1
+  existing_run="$(jq -r '.metadata.annotations["registry-migrate.run-id"] // empty' "$RUN_DIR/imagepruner-before.json")" || return 1
+  existing_plan="$(jq -r '.metadata.annotations["registry-migrate.plan-digest"] // empty' "$RUN_DIR/imagepruner-before.json")" || return 1
+  current_run="$(jq -er '.runID' "$RUN_DIR/plan.json")" || return 1
+  current_plan="$(jq -er '.digest' "$RUN_DIR/plan.json")" || return 1
+  if test -n "$existing_run" && test "$existing_run" != "$current_run"; then
+    echo "停止：imagepruner 属于运行 $existing_run；拒绝重用" >&2
     return 1
   fi
-
-  echo "[metadata] summary: total=$total success=$success applied=$applied skipped=$skipped failed=$failed output_dir=$METADATA_DIR"
-  [ "$failed" -eq 0 ]
+  if test -n "$existing_plan" && test "$existing_plan" != "$current_plan"; then
+    echo "停止：imagepruner 是由不同计划 ($existing_plan) 准备的" >&2
+    return 1
+  fi
+  if test -z "$existing_run"; then
+    acn annotate "$PRUNER" "registry-migrate.run-id=$current_run" || return 1
+  fi
+  if test -z "$existing_plan"; then
+    acn annotate "$PRUNER" "registry-migrate.plan-digest=$current_plan" || return 1
+  fi
+fi
+evidence operator-paused.json operatorPaused || return 1
+registry-migrate run --run-dir "$RUN_DIR" --stage P4-准备操作员 \
+  --evidence-file "$RUN_DIR/operator-paused.json" \
+  "${FORCE_ARGS[@]}" --kubeconfig "$KCFG" --approve || return 1
+acn get config.imageregistry.operator.alauda.io cluster -o json |
+  jq -e '.spec.readOnly == true and
+    .spec.imagePullSecret.managementState == "Unmanaged" and
+    .spec.storage.managementState == "Unmanaged"' || return 1
+acn get imagepruner.imageregistry.operator.alauda.io cluster -o json |
+  jq -e '.spec.suspend == true' || return 1
 }
+prepare_operator
 ```
 
-确认当前 shell 中存在该函数：
+成功检查：报告显示 `prepared`；配置具有计划的 S3 设置/路由，`readOnly=true`，拉取凭证/存储管理均为 `Unmanaged`。Pruner 被暂停。如果 ImagePruner 属于另一个运行/计划，则停止；与提供商解决所有权。为 P8 保留 `registry-migrate.original-suspend`。在断言失败后，检查实时配置、CRD 版本和暂停状态，然后重试。
+
+## 7. P5-移除传统图表：卸载传统图表
+
+卸载图表会移除其工作负载；该工具无法自动重新安装它们。首先捕获下面的预卸载凭证列表。在重试卸载后保持此原始基线；之后捕获将隐藏损失。
 
 ```bash
-if type backfill_metadata >/dev/null 2>&1; then
-  echo "backfill_metadata loaded"
-fi
+date -u > "$RUN_DIR/pre-uninstall-secrets.at"
+acns get secret -o name > "$RUN_DIR/pre-uninstall-secrets.txt"
 ```
 
-对于大规模迁移，该函数默认每 100 个镜像打印一次进度。如有需要，可以调整间隔：
+在卸载之前，确认平台的保留程序保护原始业务拉取凭证/ServiceAccounts、计划的 Ingress TLS 凭证和 P4 目标 S3 凭证。P4 目标凭证为 `image-registry-private-configuration-user`；保留其 UID 和数据。不同名称的传统源 S3 凭证可能会在建立 P4 目标检查点后与图表一起退役。
+
+然后，管理员通过集群插件页面卸载传统注册表/网关插件。图表拥有的凭证可能会与图表一起删除，因此请立即检查：
 
 ```bash
-export METADATA_PROGRESS_INTERVAL=500
+test -s "$RUN_DIR/pre-uninstall-secrets.txt" ||
+  echo "停止：预卸载快照缺失；下面的差异无法证明任何内容" >&2
+printf '基线捕获时间: %s\n' "$(cat "$RUN_DIR/pre-uninstall-secrets.at" 2>/dev/null || echo unknown)"
+acns get secret -o name > "$RUN_DIR/post-uninstall-secrets.txt"
+diff "$RUN_DIR/pre-uninstall-secrets.txt" "$RUN_DIR/post-uninstall-secrets.txt" ||
+  echo "警告：凭证列表已更改；在继续之前确认 TLS 凭证和 S3 凭证仍然存在" >&2
 ```
 
-仅在排查小型镜像集时设置 `METADATA_VERBOSE=true`。
+将仅名称的差异视为初步损失检查。将所需 UID 与计划/P1 记录和 P4 的凭证检查点进行比较。如果缺少或重新创建所需的凭证/ServiceAccount，或目标 S3 凭证发生更改，则停止；使用受保护的恢复材料。重新创建名称不会恢复其 UID。
 
-## 场景 A：重用遗留存储
-
-当遗留 Registry 和 Registry v2 在同一 ACP 环境和业务集群中运行，并且 Registry v2 可以配置为访问遗留 Registry 使用的相同 blob 存储时，请使用此路径。
-
-此路径不复制镜像 blobs。但是，请不要假设 Registry v2 可以在元数据存在之前通过标签读取旧 blobs。正确的顺序是：
-
-1. 暂停对遗留 Registry 的写入。
-2. 将 Registry v2 附加到遗留 blob 存储。
-3. 从遗留 Registry 读取摘要和媒体类型。
-4. 在 Registry v2 中创建 `ImageStream` 和 `ImageStreamMapping` 对象。
-5. 通过 Registry v2 验证读取。
-
-在迁移被接受之前，请勿对任何 Registry 运行修剪或 Registry GC。
-
-设置注册表命名空间：
+一旦保留检查通过，移除剩余的 Ingress 并记录 P5。下一个代码块在比较其 UID 后删除计划的 `gateway=true` Ingress；在运行它之前保留路由备份。
 
 ```bash
-export LEGACY_REGISTRY_NAMESPACE="${LEGACY_REGISTRY_NAMESPACE:-cpaas-system}"
-export MODERN_REGISTRY_NAMESPACE="${MODERN_REGISTRY_NAMESPACE:-image-registry-system}"
-```
-
-### 文件系统或 PVC 存储重用
-
-对于 NFS 或 CephFS 等文件系统存储，使 Registry v2 PVC 指向相同的遗留 Registry 数据。确切的 PV/PVC 清单取决于存储后端。以下示例仅适用于遗留 Registry 使用 NFS CSI PV 的情况。
-
-定位遗留 Registry PVC 和 PV：
-
-```bash
-export LEGACY_REGISTRY_PVC="${LEGACY_REGISTRY_PVC:-image-registry}"
-export MODERN_REGISTRY_PVC="${MODERN_REGISTRY_PVC:-image-registry-storage}"
-export REUSE_PV_NAME="${REUSE_PV_NAME:-image-registry-legacy-reuse}"
-
-LEGACY_PV_NAME="$(
-  ac get pvc "$LEGACY_REGISTRY_PVC" -n "$LEGACY_REGISTRY_NAMESPACE" \
-    -o jsonpath='{.spec.volumeName}'
-)"
-test -n "$LEGACY_PV_NAME"
-
-ac get pvc "$LEGACY_REGISTRY_PVC" -n "$LEGACY_REGISTRY_NAMESPACE"
-ac get pv "$LEGACY_PV_NAME"
-```
-
-确认遗留 PV 使用 NFS CSI 驱动程序并收集重用所需的字段：
-
-```bash
-LEGACY_STORAGE_DRIVER="$(
-  ac get pv "$LEGACY_PV_NAME" -o jsonpath='{.spec.csi.driver}'
-)"
-test "$LEGACY_STORAGE_DRIVER" = "nfs.csi.k8s.io"
-
-LEGACY_NFS_SERVER="$(
-  ac get pv "$LEGACY_PV_NAME" -o jsonpath='{.spec.csi.volumeAttributes.server}'
-)"
-LEGACY_NFS_SHARE="$(
-  ac get pv "$LEGACY_PV_NAME" -o jsonpath='{.spec.csi.volumeAttributes.share}'
-)"
-LEGACY_NFS_SUBDIR="$(
-  ac get pv "$LEGACY_PV_NAME" -o jsonpath='{.spec.csi.volumeAttributes.subdir}'
-)"
-LEGACY_NFS_VOLUME_HANDLE="$(
-  ac get pv "$LEGACY_PV_NAME" -o jsonpath='{.spec.csi.volumeHandle}'
-)"
-LEGACY_STORAGE_SIZE="$(
-  ac get pv "$LEGACY_PV_NAME" -o jsonpath='{.spec.capacity.storage}'
-)"
-
-test -n "$LEGACY_NFS_SERVER"
-test -n "$LEGACY_NFS_SHARE"
-test -n "$LEGACY_NFS_SUBDIR"
-test -n "$LEGACY_NFS_VOLUME_HANDLE"
-test -n "$LEGACY_STORAGE_SIZE"
-```
-
-如果存储后端不是 NFS CSI，请勿重用此清单。请向存储管理员请求提供一个挂载相同遗留数据的 PV/PVC，并保持 PVC 名称与 `Config/cluster.spec.storage.pvc.claim` 对齐。
-
-在替换 Registry v2 存储之前，停止 Registry v2 运行时并等待数据平面部署被移除：
-
-```bash
-ac patch config.imageregistry.operator.alauda.io cluster \
-  --type merge \
-  -p '{"spec":{"managementState":"Removed"}}'
-
-while ac get deployment image-registry -n "$MODERN_REGISTRY_NAMESPACE" >/dev/null 2>&1; do
-  sleep 5
-done
-
-while ac get deployment image-api-server -n "$MODERN_REGISTRY_NAMESPACE" >/dev/null 2>&1; do
-  sleep 5
-done
-```
-
-创建一个指向遗留数据的静态 PV/PVC：
-
-```bash
-cat > "$MIGRATION_DIR/modern-registry-reuse-legacy-storage.yaml" <<EOF
-apiVersion: v1
-kind: PersistentVolume
-metadata:
-  name: $REUSE_PV_NAME
-spec:
-  capacity:
-    storage: $LEGACY_STORAGE_SIZE
-  accessModes:
-  - ReadWriteMany
-  persistentVolumeReclaimPolicy: Retain
-  storageClassName: ""
-  mountOptions:
-  - hard
-  - nfsvers=4.1
-  csi:
-    driver: nfs.csi.k8s.io
-    volumeHandle: $LEGACY_NFS_VOLUME_HANDLE
-    volumeAttributes:
-      server: $LEGACY_NFS_SERVER
-      share: $LEGACY_NFS_SHARE
-      subdir: $LEGACY_NFS_SUBDIR
----
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: $MODERN_REGISTRY_PVC
-  namespace: $MODERN_REGISTRY_NAMESPACE
-spec:
-  accessModes:
-  - ReadWriteMany
-  resources:
-    requests:
-      storage: $LEGACY_STORAGE_SIZE
-  storageClassName: ""
-  volumeName: $REUSE_PV_NAME
-EOF
-
-ac apply -f "$MIGRATION_DIR/modern-registry-reuse-legacy-storage.yaml"
-```
-
-使用未管理的 PVC 存储重新启动 Registry v2，并等待 Registry 和 Image API 服务器：
-
-```bash
-ac patch config.imageregistry.operator.alauda.io cluster \
-  --type merge \
-  -p '{"spec":{"managementState":"Managed","storage":{"managementState":"Unmanaged","pvc":{"claim":"'"$MODERN_REGISTRY_PVC"'"}}}}'
-
-while ! ac get deployment image-registry -n "$MODERN_REGISTRY_NAMESPACE" >/dev/null 2>&1; do
-  sleep 5
-done
-
-while ! ac get deployment image-api-server -n "$MODERN_REGISTRY_NAMESPACE" >/dev/null 2>&1; do
-  sleep 5
-done
-
-ac rollout status deployment/image-registry -n "$MODERN_REGISTRY_NAMESPACE" --timeout=300s
-ac rollout status deployment/image-api-server -n "$MODERN_REGISTRY_NAMESPACE" --timeout=300s
-```
-
-### 对象存储重用
-
-对于 S3、OSS、GCS、Azure、Swift 或 IBM COS 等对象存储，配置 Registry v2 使用与遗留 Registry 相同的存储桶或容器、端点、地域、路径前缀、凭据、CA 和访问参数。
-
-如果遗留 Registry 使用路径前缀且 Registry v2 无法配置相同的前缀，则请改用场景 B。如果 Registry v2 Operator 不支持遗留对象存储类型或所需的访问参数，也请使用场景 B。
-
-如果 Registry v2 已经使用其他存储后端，请在更改对象存储之前停止运行时：
-
-```bash
-ac patch config.imageregistry.operator.alauda.io cluster \
-  --type merge \
-  -p '{"spec":{"managementState":"Removed"}}'
-
-while ac get deployment image-registry -n "$MODERN_REGISTRY_NAMESPACE" >/dev/null 2>&1; do
-  sleep 5
-done
-
-while ac get deployment image-api-server -n "$MODERN_REGISTRY_NAMESPACE" >/dev/null 2>&1; do
-  sleep 5
-done
-```
-
-确认当前 Operator 版本中支持的存储字段：
-
-```bash
-ac explain configs.imageregistry.operator.alauda.io.spec.storage --recursive
-```
-
-然后检查遗留 Registry 配置和机密：
-
-```bash
-ac get deployment image-registry -n "$LEGACY_REGISTRY_NAMESPACE" -o yaml
-ac get configmap image-registry-config -n "$LEGACY_REGISTRY_NAMESPACE" -o yaml
-ac get secret -n "$LEGACY_REGISTRY_NAMESPACE"
-```
-
-以下 S3 结构仅为示例。使用 `ac explain` 和实际的遗留 Registry 配置作为真实来源，替换存储桶、地域、端点、CA 和相关访问设置，并删除当前环境不使用的字段：
-
-```yaml
-apiVersion: imageregistry.operator.alauda.io/v1
-kind: Config
-metadata:
-  name: cluster
-spec:
-  managementState: Managed
-  storage:
-    managementState: Unmanaged
-    s3:
-      bucket: <same-bucket>
-      region: <same-region>
-      regionEndpoint: <same-endpoint>
-      virtualHostedStyle: false
-      trustedCA:
-        name: <trusted-ca-configmap>
-```
-
-保存存储配置并应用：
-
-```bash
-ac apply -f "$MIGRATION_DIR/modern-registry-object-storage.yaml"
-
-while ! ac get deployment image-registry -n "$MODERN_REGISTRY_NAMESPACE" >/dev/null 2>&1; do
-  sleep 5
-done
-
-while ! ac get deployment image-api-server -n "$MODERN_REGISTRY_NAMESPACE" >/dev/null 2>&1; do
-  sleep 5
-done
-```
-
-请勿在迁移环境文件中存储对象存储凭据。创建或重用 Registry v2 Operator 所需的机密，然后验证 Registry pod 是否已获取存储设置：
-
-```bash
-ac get deployment image-registry -n "$MODERN_REGISTRY_NAMESPACE" -o yaml
-ac logs -n "$MODERN_REGISTRY_NAMESPACE" deployment/image-registry -c registry --tail=80
-
-ac rollout status deployment/image-registry -n "$MODERN_REGISTRY_NAMESPACE" --timeout=300s
-ac rollout status deployment/image-api-server -n "$MODERN_REGISTRY_NAMESPACE" --timeout=300s
-```
-
-配置对象存储重用后，通过检查遗留 Registry 填充元数据：
-
-```bash
-export METADATA_INSPECT_REGISTRY_HOST="$LEGACY_REGISTRY_HOST"
-ac config set-registry-mode modern
-backfill_metadata
-```
-
-如果 `ac image info "$TARGET_REGISTRY_HOST/$image"` 在元数据填充之前失败，这并不一定意味着存储重用已损坏。当 `Image` 和 `ImageStream` 元数据尚不存在时，Registry v2 可能返回 `NAME_UNKNOWN`。使用 `backfill_metadata` 的结果和以下验证步骤作为决策点。
-
-## 场景 B：在注册表之间复制镜像
-
-当源和目标注册表不共享存储时，请使用此路径。
-
-生成镜像映射文件。这保留命名空间、存储库和标签名称，仅替换注册表主机：
-
-```bash
-while read -r image; do
-  [ -n "$image" ] || continue
-  printf '%s/%s=%s/%s\n' \
-    "$LEGACY_REGISTRY_HOST" "$image" \
-    "$TARGET_REGISTRY_HOST" "$image"
-done < "$IMAGE_LIST_FILE" > "$MAPPING_FILE"
-
-sed -n '1,20p' "$MAPPING_FILE"
-wc -l "$MAPPING_FILE"
-```
-
-在复制之前运行干运行：
-
-```bash
-MIRROR_DRY_RUN_LOG="$MIGRATION_DIR/mirror-dry-run.log"
-
-ac image mirror \
-  -f "$MAPPING_FILE" \
-  --registry-config "$REGISTRY_AUTH_FILE" \
-  --dry-run \
-  --keep-manifest-list \
-  $REGISTRY_INSECURE_FLAG \
-  > "$MIRROR_DRY_RUN_LOG" 2>&1
-
-echo "mirror dry-run log: $MIRROR_DRY_RUN_LOG"
-sed -n '1,20p' "$MIRROR_DRY_RUN_LOG"
-wc -l "$MIRROR_DRY_RUN_LOG"
-```
-
-在审查计划后，复制镜像。`--continue-on-error` 在失败的镜像后继续后续映射，但如果任何映射失败，命令仍然返回非零退出代码。捕获该退出代码，以便即使在使用 `set -e` 的 shell 中，日志汇总仍然可以运行：
-
-```bash
-MIRROR_COPY_LOG="$MIGRATION_DIR/mirror-copy.log"
-mirror_rc=0
-
-ac image mirror \
-  -f "$MAPPING_FILE" \
-  --registry-config "$REGISTRY_AUTH_FILE" \
-  --continue-on-error \
-  --keep-manifest-list \
-  --max-per-registry 4 \
-  $REGISTRY_INSECURE_FLAG \
-  > "$MIRROR_COPY_LOG" 2>&1 || mirror_rc=$?
-
-echo "mirror copy summary: rc=$mirror_rc log=$MIRROR_COPY_LOG"
-grep -Ein 'error|failed|denied|unauthorized|forbidden' "$MIRROR_COPY_LOG" | sed -n '1,20p' || true
-
-if [ "$mirror_rc" -ne 0 ]; then
-  echo "mirror copy had failed mappings; fix the failures before metadata backfill or cutover" >&2
-  false
-fi
-```
-
-在迁移期间保留 `--keep-manifest-list` 以保留清单列表和多架构镜像。
-
-在镜像复制完成后，切换到现代模式并通过检查 Registry v2 填充元数据：
-
-```bash
-export METADATA_INSPECT_REGISTRY_HOST="$TARGET_REGISTRY_HOST"
-ac config set-registry-mode modern
-backfill_metadata
-```
-
-## 安全地重新运行
-
-迁移步骤设计为可重新运行。如果当前的 `ImageStreamTag` 已指向预期的摘要和目标注册表引用，则 `backfill_metadata` 将跳过创建新的 `ImageStreamMapping`，并将该项目计为 `skipped`。
-
-对于存储重用，重新运行元数据填充：
-
-```bash
-export METADATA_INSPECT_REGISTRY_HOST="$LEGACY_REGISTRY_HOST"
-ac config set-registry-mode modern
-backfill_metadata
-```
-
-对于跨注册表同步，重新运行镜像复制和元数据填充：
-
-```bash
-MIRROR_COPY_LOG="$MIGRATION_DIR/mirror-rerun.log"
-mirror_rc=0
-
-ac image mirror \
-  -f "$MAPPING_FILE" \
-  --registry-config "$REGISTRY_AUTH_FILE" \
-  --continue-on-error \
-  --keep-manifest-list \
-  --max-per-registry 4 \
-  $REGISTRY_INSECURE_FLAG \
-  > "$MIRROR_COPY_LOG" 2>&1 || mirror_rc=$?
-
-echo "mirror rerun summary: rc=$mirror_rc log=$MIRROR_COPY_LOG"
-grep -Ein 'error|failed|denied|unauthorized|forbidden' "$MIRROR_COPY_LOG" | sed -n '1,20p' || true
-
-if [ "$mirror_rc" -ne 0 ]; then
-  echo "mirror rerun had failed mappings; inspect $MIRROR_COPY_LOG before metadata backfill" >&2
-  false
-fi
-
-export METADATA_INSPECT_REGISTRY_HOST="$TARGET_REGISTRY_HOST"
-backfill_metadata
-```
-
-在重新运行后，确认相同的标签仍指向预期的摘要和目标注册表引用。
-
-## 验证迁移
-
-验证重要的业务镜像和随机样本。以下示例选择迁移列表中的第一个镜像：
-
-```bash
-VERIFY_IMAGE="$(awk 'NF > 0 { print $1; exit }' "$IMAGE_LIST_FILE")"
-test -n "$VERIFY_IMAGE"
-
-VERIFY_NAMESPACE="${VERIFY_IMAGE%%/*}"
-VERIFY_REST="${VERIFY_IMAGE#*/}"
-VERIFY_STREAM="${VERIFY_REST%%:*}"
-VERIFY_TAG="${VERIFY_REST##*:}"
-
-echo "verify image: $VERIFY_IMAGE"
-
-ac get imagestreamtags "$VERIFY_STREAM:$VERIFY_TAG" -n "$VERIFY_NAMESPACE"
-
-VERIFY_REF="$(
-  ac get imagestreamtags "$VERIFY_STREAM:$VERIFY_TAG" -n "$VERIFY_NAMESPACE" \
-    | awk 'NR > 1 && $3 == "current" { print $6; exit }'
-)"
-
-ac image info "$VERIFY_REF" \
-  --registry-config "$REGISTRY_AUTH_FILE" \
-  $REGISTRY_INSECURE_FLAG
-
-VERIFY_DIGEST="${VERIFY_REF##*@}"
-VERIFY_IMAGE_NAME="$(printf '%s\n' "$VERIFY_DIGEST" | sed 's/:/-/g')"
-VERIFY_IMAGES_OUTPUT="$MIGRATION_DIR/verify-modern-images.txt"
-
-ac get images > "$VERIFY_IMAGES_OUTPUT"
-awk -v digest="$VERIFY_DIGEST" -v safe="$VERIFY_IMAGE_NAME" '
-  NR > 1 && ($1 == digest || $1 == safe || index($2, digest) > 0) { found = 1 }
-  END { exit found ? 0 : 1 }
-' "$VERIFY_IMAGES_OUTPUT"
-```
-
-上述示例仅验证一个样本。在切换之前，针对迁移列表运行完整的存储和元数据一致性门：
-
-```bash
-VERIFY_SOURCE_FILE="$IMAGE_LIST_FILE"
-VERIFY_SOURCE_HAS_DIGEST=false
-if [ -n "${IMAGE_DIGEST_FILE:-}" ] && [ -s "$IMAGE_DIGEST_FILE" ]; then
-  VERIFY_SOURCE_FILE="$IMAGE_DIGEST_FILE"
-  VERIFY_SOURCE_HAS_DIGEST=true
-fi
-
-verify_failed=0
-
-while read -r image digest _; do
-  [ -n "$image" ] || continue
-  namespace="${image%%/*}"
-  rest="${image#*/}"
-  stream="${rest%%:*}"
-  tag="${rest##*:}"
-
-  tag_output_file="$MIGRATION_DIR/verify-${namespace}-${stream}-${tag}.imagestreamtag.txt"
-  tag_info_file="$MIGRATION_DIR/verify-${namespace}-${stream}-${tag}.tag.info.txt"
-  digest_info_file="$MIGRATION_DIR/verify-${namespace}-${stream}-${tag}.digest.info.txt"
-
-  if ! ac get imagestreamtags "$stream:$tag" -n "$namespace" > "$tag_output_file" 2>&1; then
-    echo "[verify] ImageStreamTag missing: $namespace/$stream:$tag output=$tag_output_file" >&2
-    verify_failed=$((verify_failed + 1))
+remove_legacy_chart() {
+acn -n "$OPERATOR_NS" get deployment cluster-image-registry-operator -o json |
+  jq -e '.spec.replicas == 0' >/dev/null ||
+  echo "警告：操作员副本不为 0；在移除传统图表之前确认其仍然暂停" >&2
+ROUTE_COUNT="$(jq -e '[.discovery.routes[] | select(.gateway == true)] | length' "$RUN_DIR/plan.json")" ||
+  { echo "停止：无法从 plan.json 读取路由" >&2; return 1; }
+test "$ROUTE_COUNT" -gt 0 ||
+  echo "警告：计划没有网关路由；在记录阶段之前确认没有传统 Ingress" >&2
+FAILED=""
+while IFS=$'\t' read -r name expected_uid; do
+  actual_uid="$(acns get ingress "$name" --ignore-not-found -o jsonpath='{.metadata.uid}')"
+  if test -z "$actual_uid"; then
+    echo "跳过：ingress $name 已经缺失"
     continue
   fi
-
-  ref="$(
-    awk 'NR > 1 && $3 == "current" { print $6; exit }' "$tag_output_file"
-  )"
-  if [ -z "$ref" ]; then
-    echo "[verify] failed to read current reference for $namespace/$stream:$tag output=$tag_output_file" >&2
-    verify_failed=$((verify_failed + 1))
+  if test "$actual_uid" != "$expected_uid"; then
+    echo "停止：ingress $name 的 UID 不同 ($actual_uid != $expected_uid)；不删除" >&2
+    FAILED=1
     continue
   fi
+  acns delete ingress "$name" --wait=true
+done < <(jq -r '.discovery.routes[] | select(.gateway == true) | [.name,.ingressUID] | @tsv' "$RUN_DIR/plan.json")
+test -z "$FAILED" || { echo "停止：传统 Ingress 清理不完整；阶段未记录。终端保持打开。" >&2; return 1; }
+registry-migrate run --run-dir "$RUN_DIR" --stage P5-移除传统图表 \
+  --kubeconfig "$KCFG" --approve
+}
+remove_legacy_chart
+```
 
-  if ! ac image info "$ref" \
-    --registry-config "$REGISTRY_AUTH_FILE" \
-    $REGISTRY_INSECURE_FLAG > "$tag_info_file" 2>&1; then
-    echo "[verify] target registry cannot inspect ImageStreamTag reference $ref output=$tag_info_file" >&2
-    verify_failed=$((verify_failed + 1))
-  fi
+成功检查：P5 被记录；旧的 Service/Deployments/routes 消失，计划的 TLS 凭证保持不变，业务凭证/ServiceAccount 身份保持不变。遇到 UID 不匹配时停止并咨询提供商。新的 Ingress 使用 `targetName`；旧名称仅为清理目标。
 
-  if [ "$VERIFY_SOURCE_HAS_DIGEST" = "true" ] && [ -n "$digest" ]; then
-    digest_ref="$TARGET_REGISTRY_HOST/$namespace/$stream@$digest"
-    if ! ac image info "$digest_ref" \
-      --registry-config "$REGISTRY_AUTH_FILE" \
-      $REGISTRY_INSECURE_FLAG > "$digest_info_file" 2>&1; then
-      echo "[verify] target registry cannot inspect expected digest $digest_ref output=$digest_info_file" >&2
-      verify_failed=$((verify_failed + 1))
-    fi
-  fi
-done < "$VERIFY_SOURCE_FILE"
+## 8. P6-冷导入：导入元数据和限制
 
-if [ "$verify_failed" -ne 0 ]; then
-  echo "[verify] migration storage/metadata consistency gate failed: $verify_failed images failed" >&2
+使用提供商批准的 `registry-migrate` 构建并进行预先存在的 ImageStream 检查。P6 在其第一次元数据写入之前检查所有目标流。仅匹配的摘要不足：存储库、源和注册表地址也必须与冻结的清单和计划地址匹配。等效的预先存在对象在不更改其 UID 或所有权的情况下被重用。已知的内部和外部地址不需要重写标签历史。
+
+保持新的操作员暂停。确认零副本和没有操作员 Pods，然后生成新的暂停证据并导入：
+
+```bash
+stop_deployment "$OPERATOR_NS" cluster-image-registry-operator
+acn -n "$OPERATOR_NS" get deployment cluster-image-registry-operator -o json | jq -e '.spec.replicas == 0' >/dev/null
+evidence operator-paused.json operatorPaused
+registry-migrate run --run-dir "$RUN_DIR" --stage P6-冷导入 \
+  --inventory-file "$RUN_DIR/final-inventory.json" \
+  --evidence-file "$RUN_DIR/operator-paused.json" \
+  "${FORCE_ARGS[@]}" --kubeconfig "$KCFG" --approve
+```
+
+成功检查：报告显示 `imported`，并显示唯一 ImageDigest 对象、ImageStream/标签关系和命名空间限制的进度。共享摘要仅存储一次，同时保留其存储库/标签引用。重试失败时，操作员仍保持暂停状态；第 9 节检查结果。
+
+如果预检报告摘要/源冲突或需要更改但不属于此迁移的现有流，则停止并根据 `final-inventory.json` 和保存的 ImageStream 快照解决。该工具不会更改对象。请勿手动添加 `registry-migrate.run-id` 或 `registry-migrate.plan-digest`：在工具日志之外写入的注释没有回滚记录，可能会阻止后续运行。提供商批准的日志记录采用程序必须单独验证 UID/resourceVersion 和存储库/标签/摘要映射。需要更改的相同摘要对象会自动重用。无论是 `--force` 还是删除清单/日志都无法解决元数据冲突。保留来自早期部分尝试的任何 ImageDigest 对象；P6 会重用匹配记录。
+
+在经过批准的、记录的采用程序后，使用新的暂停证据重新运行原始 P6 命令。该工具将合适的 DockerImage 标签源固定到经过验证的摘要，并保留现有历史；实际摘要冲突仍然是错误。UID/resourceVersion 测试失败意味着所选对象已更改：停止并检查新的快照。在 P6 为 `imported` 之前不要继续到 P7。
+
+旧网关限制成为每个计划命名空间的 `registry-migrate-image-limits` LimitRange：镜像大小使用 `type: alauda.io/Image` 和 `max.storage`；标签计数使用 `type: alauda.io/ImageStream` 和 `max["alauda.io/repository-tags"]`。传统的 `2GB/2000` 变为 `2Gi/2000`（`2Gi=2048Mi`）。**2000 是该命名空间中每个存储库/ImageStream 的标签限制，而不是命名空间范围的总数。** 计划选择特定于命名空间的规则。迁移不会覆盖用户定义的限制或对未来命名空间应用策略。
+
+## 9. P7-验证：恢复操作员并验证只读服务
+
+释放平台暂停并从变更记录中恢复操作员副本计数。下面的命令使用常见值 1；如果不同，请使用原始操作员计数。不要将其与注册表或镜像 API 实例副本计数混淆。
+
+```bash
+acn -n "$OPERATOR_NS" scale deployment cluster-image-registry-operator --replicas=1
+acn -n "$OPERATOR_NS" wait --for=condition=Available \
+  deployment/cluster-image-registry-operator --timeout=300s
+for deployment in image-registry image-api-server; do
+  acns wait --for=create "deployment/$deployment" --timeout=600s
+  acns wait --for=condition=Available "deployment/$deployment" --timeout=600s
+done
+acn wait --for=condition=Available apiservice/v1.image.alauda.io --timeout=300s
+acn get apiservice v1.image.alauda.io -o json |
+  jq -e '.status.conditions // [] | any(.[]; .type == "Available" and .status == "True" and .reason == "Passed")'
+registry-migrate run --run-dir "$RUN_DIR" --stage P7-验证 --kubeconfig "$KCFG" --approve
+registry-migrate verify --run-dir "$RUN_DIR" --kubeconfig "$KCFG"
+acn get config.imageregistry.operator.alauda.io cluster -o json |
+  jq -e '.spec.readOnly == true and
+    .spec.imagePullSecret.managementState == "Unmanaged" and
+    .spec.storage.managementState == "Unmanaged"'
+acn get imagepruner.imageregistry.operator.alauda.io cluster -o json |
+  jq -e '.spec.suspend == true'
+```
+
+成功检查：P7 被 `verified`，并且 `verify` 退出 0。确认操作员、注册表、镜像 API 和 APIService 已准备就绪，具有就绪端点和服务端口 `80→8080`、`443→5000` 和 `5000→5000`。检查新的 Ingress 后端、配置、元数据和限制。配置保持只读；存储和拉取凭证管理保持 `Unmanaged`；Pruner 保持暂停。
+
+读取访问在此恢复，而业务写入必须保持禁用。检查 `readOnly` 和工具的结果；仅凭身份验证失败并不能证明只读执行。如果意外成功的授权写入，请在 P8 之前停止。对于拉取失败，请检查原始镜像地址、SA/凭证引用、服务端口和 Ingress 后端。
+
+收集验证证据。警告意味着该文件未成功捕获；在接受检查点之前解决此问题：
+
+```bash
+mkdir -p "$RUN_DIR/verification"
+acn get imagedigests.image.alauda.io -o yaml > "$RUN_DIR/verification/imagedigests.yaml" ||
+  echo "警告：未捕获 imagedigests" >&2
+acn get imagestreams.image.alauda.io -A -o yaml > "$RUN_DIR/verification/imagestreams.yaml" ||
+  echo "警告：未捕获 imagestreams" >&2
+acn get limitrange -A --field-selector metadata.name=registry-migrate-image-limits -o yaml \
+  > "$RUN_DIR/verification/migration-limitranges.yaml" ||
+  echo "警告：未捕获 limitranges" >&2
+```
+
+比较摘要集而不是存储库/标签计数。这些命令查询 **公共** `image.alauda.io` API，该 API 暴露规范摘要名称。支持 `storage.image.alauda.io` CRD 的内部名称不可直接比较。
+
+```bash
+jq -r '.items[].digest | select(. != null)' "$RUN_DIR/final-inventory.json" | sort -u \
+  > "$RUN_DIR/verification/inventory-digests.txt"
+acn get imagedigests.image.alauda.io -o json |
+  jq -r '.items[].metadata.name' | sort -u > "$RUN_DIR/verification/cluster-digests.txt"
+wc -l < "$RUN_DIR/verification/inventory-digests.txt"
+comm -23 "$RUN_DIR/verification/inventory-digests.txt" "$RUN_DIR/verification/cluster-digests.txt"
+```
+
+`wc -l` 打印清单的唯一摘要计数。`comm -23` 列出缺失于集群的清单摘要；**其输出必须为空**。调查任何缺失条目。额外的集群摘要可能属于历史镜像；记录原因。摘要集的相等性并不取代工具的存储库/标签、凭证身份和限制检查。
+
+导入的 `LimitRange` 对象是计划涵盖的命名空间的静态设置，而不是为后续创建的命名空间定义的全局策略。
+
+## 10. P8-提交：验证业务访问，然后开启写入
+
+在 **同一个 Bash 会话** 中单独运行每个代码块，该会话用于 P0-P7，然后按 **Enter**。在运行下一个代码块之前，如果出现错误，请停止。如果终端保持在 `>` 提示符下，请按 **Ctrl+C** 并再次粘贴该完整块，而不带 Markdown 框标记。
+
+### 准备端点和测试镜像
+
+`REGISTRY_URL` 必须是新注册表的外部基本 URL，包括其方案和任何外部端口。默认使用计划的方案和主机名，而不带外部端口。当实际入口点不同时，在运行此块之前设置 `REGISTRY_URL_OVERRIDE`，例如 `https://registry.example.com:11780`。确认该地址提供此注册表。
+
+```bash
+P8_ENDPOINT_OK=0
+P8_LEGACY_QUERY_OK=0
+P8_MODERN_QUERY_OK=0
+unset REGISTRY_HOST REGISTRY_SCHEME REGISTRY_URL
+REGISTRY_HOST="$(jq -er '
+  ([.discovery.routes[] | select(.gateway == true)][0] //
+    .discovery.routes[0]).hostname | strings | select(length > 0)
+' "$RUN_DIR/plan.json")" &&
+REGISTRY_SCHEME="$(jq -er '
+  ([.discovery.routes[] | select(.gateway == true)][0] //
+    .discovery.routes[0]).scheme // "http"
+' "$RUN_DIR/plan.json")" &&
+REGISTRY_URL="${REGISTRY_URL_OVERRIDE:-$REGISTRY_SCHEME://$REGISTRY_HOST}" &&
+REGISTRY_URL="${REGISTRY_URL%/}" &&
+mkdir -p "$RUN_DIR/verification" &&
+printf '计划主机=%s\nREGISTRY_URL=%s\n' "$REGISTRY_HOST" "$REGISTRY_URL"
+```
+
+预期结果：打印计划的主机和批准的外部 URL。在继续之前解决任何错误或地址不匹配。
+
+对于 HTTPS，颁发者必须受信任，证书 SAN 必须与主机匹配。对于私有 CA，将 `REGISTRY_CA_BUNDLE` 设置为其 PEM 文件；以下代码块将其提供给 curl。`REGISTRY_TLS_INSECURE=1` 仅用于诊断；在接受 TLS 之前重复探测并启用证书验证。
+
+```bash
+CURL_TLS_ARGS=()
+if test -n "${REGISTRY_CA_BUNDLE:-}"; then
+  CURL_TLS_ARGS+=(--cacert "$REGISTRY_CA_BUNDLE")
+fi
+if test "${REGISTRY_TLS_INSECURE:-0}" = 1; then
+  CURL_TLS_ARGS+=(--insecure)
+fi
+```
+
+探测端点并在一次请求中保存其响应头：
+
+```bash
+P8_ENDPOINT_OK=0
+if test -n "${REGISTRY_URL:-}" &&
+   HTTP_STATUS="$(curl -sS "${CURL_TLS_ARGS[@]}" \
+     --connect-timeout 10 --max-time 20 -o /dev/null -w '%{http_code}' \
+     -D "$RUN_DIR/verification/registry-v2-headers.txt" "$REGISTRY_URL/v2/")"; then
+  case "$HTTP_STATUS" in
+    200|401|403) P8_ENDPOINT_OK=1; echo "注册表可达：HTTP $HTTP_STATUS" ;;
+    *) echo "停止：来自 $REGISTRY_URL/v2/ 的意外 HTTP $HTTP_STATUS" >&2 ;;
+  esac
+else
+  echo "停止：端点请求失败；检查 URL、网络和 TLS 错误。" >&2
+fi
+test "$P8_ENDPOINT_OK" = 1
+```
+
+预期结果：打印 `注册表可达`，并且块成功退出。匿名的 `200`、`401` 或 `403` 响应仅证明可达性。连接或 TLS 错误会使此检查失败；`502` 或 `504` 通常表示代理或 Ingress 无法访问后端。
+
+检查身份验证挑战（如果存在）：
+
+```bash
+grep -i '^WWW-Authenticate:' "$RUN_DIR/verification/registry-v2-headers.txt" || true
+```
+
+确认挑战的领域主机和端口可以通过批准的入口点访问。如果它们不同，请参见附录 A。没有输出意味着响应未包含此标头。
+
+设置 `TEST_NS` 和 `TEST_REPO` 为批准的迁移测试镜像，或查看默认选择的第一个清单条目。`TEST_REPO` 使用 `namespace/repository:tag` 格式。
+
+```bash
+TEST_NS="${TEST_NS:-$(jq -er '
+  .items[0].namespace | strings | select(length > 0)
+' "$RUN_DIR/final-inventory.json")}" &&
+TEST_REPO="${TEST_REPO:-$(jq -er '
+  .items[0] | select(.namespace and .repository and .tag) |
+  "\(.namespace)/\(.repository):\(.tag)"
+' "$RUN_DIR/final-inventory.json")}" &&
+export TEST_NS TEST_REPO &&
+printf 'TEST_NS=%s\nTEST_REPO=%s\n' "$TEST_NS" "$TEST_REPO"
+```
+
+预期结果：两个值都标识批准的迁移测试镜像。如果选择失败或默认值不合适，请在继续之前更正这些值。
+
+### 检查 CLI 兼容性
+
+这些 `ac` 命令使用的兼容客户端当前在内部跳过注册表证书验证。成功的查询不验证 TLS 信任。使用经过验证的 curl 探测和成功的 OCI 客户端和 kubelet 拉取作为 TLS 接受证据。
+
+以传统模式查询命名空间清单：
+
+```bash
+P8_LEGACY_QUERY_OK=0
+if test "${P8_ENDPOINT_OK:-0}" = 1 && test -n "${TEST_NS:-}" &&
+   env AC_IMAGE_REGISTRY_MODE=legacy \
+     ac --kubeconfig "$KCFG" --context "$CTX" \
+     get images -n "$TEST_NS" -o json --registry-url "$REGISTRY_URL" \
+     > "$RUN_DIR/verification/legacy-images.json" &&
+   jq -se 'length == 1 and (.[0] | type == "array")' \
+     "$RUN_DIR/verification/legacy-images.json" >/dev/null; then
+  P8_LEGACY_QUERY_OK=1
+  jq -r '"传统查询成功：\(length) 项"' \
+    "$RUN_DIR/verification/legacy-images.json"
+else
+  echo "停止：端点或传统清单检查失败。" >&2
   false
 fi
 ```
 
-如果此门失败，则至少有一个 Image API 元数据条目与可读的 Registry v2 存储数据不匹配。请勿切换流量、修剪镜像或运行注册表垃圾回收。首先修复存储重用或镜像复制，或在明确接受遗留镜像数据不会被保留后删除过时的填充元数据。
-
-验收标准：
-
-- Registry v2 可以从 `ImageStreamTag` 检查或拉取当前摘要引用。
-- `ImageStreamMapping` 创建成功。
-- 重新运行不会产生无法解释的失败。
-- `ImageStreamTag` 指向预期的摘要和 Registry v2 地址。
-- 在现代模式下，`ac get images` 通过 ACP 镜像 API 显示迁移的镜像资源。
-- 每个迁移列表中的迁移图像都通过完整的存储和元数据一致性门。
-- 关键业务命名空间中的示例镜像可以被读取。
-
-## 切换注册表模式
-
-验证后，将当前 kubeconfig 上下文切换到现代 Registry 模式：
+以现代模式查询集群清单：
 
 ```bash
-ac config set-registry-mode modern
-ac config get-registry-mode
+P8_MODERN_QUERY_OK=0
+if test "${P8_ENDPOINT_OK:-0}" = 1 &&
+   env AC_IMAGE_REGISTRY_MODE=modern \
+     ac --kubeconfig "$KCFG" --context "$CTX" \
+     get images -A -o json --registry-url "$REGISTRY_URL" \
+     > "$RUN_DIR/verification/modern-images.json" &&
+   jq -se 'length == 1 and (.[0] | type == "array")' \
+     "$RUN_DIR/verification/modern-images.json" >/dev/null; then
+  P8_MODERN_QUERY_OK=1
+  jq -r '"现代查询成功：\(length) 项"' \
+    "$RUN_DIR/verification/modern-images.json"
+else
+  echo "停止：端点或现代清单检查失败。" >&2
+  false
+fi
 ```
 
-`ac config set-registry-mode` 默认仅更改当前上下文的集群。仅在 ACP 会话中的每个集群完成 Registry 迁移后，才使用 `--all-clusters`。
+预期结果：每个块打印其成功消息并保存一个 JSON 数组。查询具有不同的命名空间范围，因此它们的计数不必匹配。计数本身并不能证明完整性。
 
-运行干运行镜像管理命令以确认后端已切换到 Registry v2：
+仅在两个查询成功后运行删除预览。**切勿添加 `--confirm`、`--yes` 或 `-f`。**
 
 ```bash
-ac get images
-ac delete images --repo "$VERIFY_IMAGE"
-ac adm prune images
+if test "${P8_LEGACY_QUERY_OK:-0}" = 1 &&
+   test "${P8_MODERN_QUERY_OK:-0}" = 1 && test -n "${TEST_REPO:-}"; then
+  env AC_IMAGE_REGISTRY_MODE=legacy \
+    ac --kubeconfig "$KCFG" --context "$CTX" delete images \
+    --repo "$TEST_REPO" --registry-url "$REGISTRY_URL" &&
+  env AC_IMAGE_REGISTRY_MODE=modern \
+    ac --kubeconfig "$KCFG" --context "$CTX" delete images \
+    --repo "$TEST_REPO" --registry-url "$REGISTRY_URL"
+else
+  echo "停止：必须成功完成两个清单查询和测试镜像选择。" >&2
+  false
+fi
 ```
 
-`ac delete images` 和 `ac adm prune images` 默认是干运行的。仅在审查输出后添加 `--confirm`。
+预期结果：两个预览都识别批准的标签而不删除它；干运行措辞因 `ac` 版本而异。两个模式都传递 `--registry-url`，因此这些是 HTTP 兼容性检查。P7 单独验证公共镜像 API。失败的检查即使后续块成功也保持未验证。
 
-## 回滚
-
-如果工作负载在切换后无法读取业务镜像，请将受影响的上下文切换回遗留模式：
+下一个代码块是**有限凭证格式检查**，而不是对每个命名空间的完整审计。它仅检查 `.dockerconfigjson` 凭证；传统图表拉取凭证通常使用 `.dockercfg`，必须根据 P1 交接记录和原始 SA 引用单独检查。其他注册表的凭证不需要包含此注册表主机。
 
 ```bash
-ac config set-registry-mode legacy
-ac config get-registry-mode
+acn get secret -A -o json |
+  jq -r --arg h "$REGISTRY_HOST" '
+    .items[] | select(.type == "kubernetes.io/dockerconfigjson") |
+    (.data[".dockerconfigjson"] | @base64d | fromjson? | (.auths // {}) | keys) as $k |
+    select(($k | any(test($h))) | not) |
+    "审核 \(.metadata.namespace)/\(.metadata.name)：没有 \($h) 的 auth 条目"'
 ```
 
-保留以下工件以进行故障排除和重新运行：
+没有输出并不证明所有拉取凭证都经过检查或注册表地址完全匹配：该代码块使用正则表达式，而不是精确的主机/端口比较。交叉检查 P1 范围、传统的 `.dockercfg` 对象、每个原始镜像的注册表地址/端口和 SA 引用。另一个注册表的 `REVIEW` 条目并不自动表示迁移失败。
 
-- 镜像列表。
-- 镜像映射文件。
-- `ac image mirror` 输出。
-- `ac image info` 输出。
-- 生成的 `ImageStreamMapping` YAML 文件。
-- `ac create -f` 输出。
-- 迁移验证输出。
+在 P8 之前，拉取凭证管理为 `Unmanaged`，因此操作员**不会自动轮换或修复这些凭证**。在批准交接之前解决缺失条目或无效令牌；不要等待后台刷新。
 
-在问题修复后，从镜像列表继续。您无需从头开始重建迁移范围。
+在提交之前，创建一个一次性 Pod，使用 `imagePullPolicy=Always`，使用批准的迁移测试镜像的**原始地址、ServiceAccount 和拉取凭证**。验证相关业务节点和每个工作负载使用的地址/端口上的实际 kubelet 拉取。记录 Pod、摘要和拉取结果，然后删除测试 Pod。仅 API 查询或现有运行的 Pods 并不能证明新的拉取工作。
+
+在此过程中不要运行 `ac adm prune images` 或 GC。它们需要平台级权限，可能会删除数据。确认记录的 Pruner 暂停值以及计划的清理是否可以在 P8 后恢复。
+
+### 提交并验证切换
+
+仅在业务和凭证检查通过且管理员批准开启写入时继续，并制定受控的恢复计划。准备批准证据。其验证字段记录完成的检查；创建文件并不执行它们。
+
+```bash
+(
+  test -n "${ACTOR:-}" || {
+    echo "停止：将 ACTOR 设置为平台管理员账户。" >&2
+    exit 1
+  }
+  jq --arg actor "$ACTOR" --arg at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" '
+    {version:"v1",runID:.runID,planDigest:.digest,observedAt:$at,actor:$actor,
+     commitApproved:true,businessProbeVerified:true,pullSecretHandoffVerified:true}
+  ' "$RUN_DIR/plan.json" > "$RUN_DIR/commit-approval.json" &&
+  jq -e '.actor | length > 0' "$RUN_DIR/commit-approval.json" >/dev/null
+)
+```
+
+预期结果：该块成功退出并创建 `commit-approval.json`。括号防止错误关闭迁移终端。在审核证据后，提交切换：
+
+```bash
+registry-migrate run --run-dir "$RUN_DIR" --stage P8-提交 \
+  --evidence-file "$RUN_DIR/commit-approval.json" --kubeconfig "$KCFG" --approve
+```
+
+预期结果：P8 被记录为 `committed`。如果命令失败，请检查 `registry-migrate report --run-dir "$RUN_DIR"` 和实时状态，然后重试或恢复；写入可能已经开启。
+
+验证注册表设置：
+
+```bash
+(
+  set -o pipefail
+  acn get config.imageregistry.operator.alauda.io cluster -o json |
+    jq -e '.spec.readOnly == false and
+      .spec.imagePullSecret.managementState == "Managed" and
+      .spec.storage.managementState == "Unmanaged"'
+)
+```
+
+预期结果：`true`。单独验证恢复的 Pruner 暂停状态：
+
+```bash
+(
+  set -o pipefail
+  acn get imagepruner.imageregistry.operator.alauda.io cluster -o json |
+    jq -e '
+      (.metadata.annotations["registry-migrate.original-suspend"] // "false") as $original |
+      .spec.suspend == ($original == "true")'
+)
+```
+
+预期结果：`true`。如果为 `false`，请将 P4 中的 `imagepruner-before.json` 与记录的注释进行比较，然后再考虑恢复。恢复值为 `false` 允许计划的清理；`Unmanaged` 存储不阻止它。
+
+运行最终验证：
+
+```bash
+registry-migrate verify --run-dir "$RUN_DIR" --kubeconfig "$KCFG"
+```
+
+预期结果：验证退出 0。然后保留最终报告：
+
+```bash
+registry-migrate report --run-dir "$RUN_DIR"
+```
+
+失败的提交后检查并不意味着写入保持关闭。在规划恢复时考虑新镜像和凭证轮换。最后，使用批准的 OCI 客户端推送和拉取一个一次性存储库并保留输出。解决身份验证领域或 TLS 故障并重复客户端测试；API 或 curl 读取不能替代成功的 OCI 和 kubelet 拉取。
+
+## 附录 A：已知环境限制
+
+### S3 仅在集群内部可达
+
+如果计划的 S3 端点是集群内部的，则该机器可能无法解析它，P3 可能会停止并显示 `dial tcp: lookup ... no such host`。在 **第二个终端** 中建立端口转发，并保持其在前台。
+
+在该终端中将 `KCFG` 和 `CTX` 设置为迁移终端使用的确切值。其环境是独立的，默认/当前上下文可能标识另一个集群。如果 kubeconfig 没有 `current-context`，请显式提供所选的 `CTX`。将 `minio-system/service/minio` 和端口替换为实际的 S3 服务详细信息：
+
+```bash
+: "${KCFG:=$HOME/.kube/config}"
+: "${CTX:=$(ac --kubeconfig "$KCFG" config current-context)}"
+ac --kubeconfig "$KCFG" --context "$CTX" -n minio-system port-forward service/minio 19000:9000
+```
+
+回到 **迁移终端**，确认隧道工作并设置覆盖：
+
+```bash
+curl --fail --connect-timeout 5 --max-time 10 http://127.0.0.1:19000/minio/health/live
+S3_ARGS=(--s3-endpoint http://127.0.0.1:19000)
+```
+
+此覆盖仅更改 P3 的传输地址；在计划/快照中记录的端点和目标配置保持源端点。端口转发不会将 HTTP 转换为 HTTPS。重新建立掉落的隧道并重试相同的运行。
+
+### 身份验证领域和 Ingress 端口不一致
+
+来自 `/v2/` 的 401 响应可能会宣传一个 `WWW-Authenticate` 领域，其端口与外部可达的 Ingress 端口不同，例如 443 而不是 11780。注册表数据在 OCI 身份验证失败时仍然可读。使用第 10 节中定义的 `REGISTRY_URL` 检查挑战：
+
+```bash
+curl -sS -k -D - -o /dev/null "$REGISTRY_URL/v2/" | grep -i '^www-authenticate:'
+```
+
+将诊断 `-k` 替换为系统信任或 `--cacert /path/to/ca.pem` 以进行验证的 TLS。如果领域无法访问，请使用 curl 诊断，纠正入口点配置并重复 OCI/kubelet 拉取检查。将入口点失败单独记录，而不是元数据完整性；成功的 curl 读取并不建立完整的业务接受。
+
+## 附录 B：重试、例外和恢复
+
+### 在终端退出后继续同一运行
+
+```bash
+export RUN_DIR="/absolute/path/to/registry-migrate-runs/original-run-id"
+# 重新设置您需要的数组，如第 5 节所述（跳过不使用的数组）：
+#   S3_ARGS=(--s3-endpoint http://127.0.0.1:19000)
+#   FORCE_ARGS=(--force)
+#   NESTED_ARGS=(--skip-nested-repositories)
+```
+
+恢复原始绝对 `RUN_DIR`，再次运行第 0 节，然后重新选择所需的 S3、强制、嵌套存储库和 P3 保护选项；第 0 节会重置某些数组。`P3_PROTECTION` 必须与记录的选择匹配。不要重复已完成的手动卸载或捕获新的后卸载基线，仿佛它是原始的。
+
+### 逃生舱口
+
+| 开关                                          | 何时使用                                                     | 效果                                                                                                                                                          |
+| ----------------------------------------------- | ------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `FORCE_ARGS=(--force)`                          | 管理员接受相关的传统组件仍在运行 | 仅绕过传统写入者围栏；API、UID、S3、元数据、阶段和 P4/P6 操作员暂停检查仍然存在。记录强制警告和实际运行状态。 |
+| `P3_PROTECTION=(--skip-s3-backup-verification)` | 管理员接受没有建立的 S3 恢复点         | 记录警告和 `not-established`；稍后添加的证明无法更改此运行中的成功 P3。                                                           |
+| `NESTED_ARGS=(--skip-nested-repositories)`      | 受影响的嵌套存储库是批准的历史测试残留  | 记录排除；被排除的标签不会被导入。逐个检查它们。                                                                                   |
+
+原始的 4.3 `ac` 没有 `set-registry-mode`。使用其显式注册表 URL、kubeconfig 和上下文进行传统查询。单独的兼容性接受记录涵盖其完整的权限/分页矩阵；不要将不同客户端的成功视为原始二进制文件的证明。
+
+### 回滚
+
+`rollback` 在日志中记录 `rollback-requested` 并阻止该运行中的后续阶段推进。**它不执行恢复**：它不会重新安装图表、重新创建原始 UID、删除注册表 v2 资源或恢复 S3 对象。使用报告和以下检查表进行管理员拥有的恢复：
+
+```bash
+registry-migrate rollback --run-dir "$RUN_DIR" --kubeconfig "$KCFG" --approve
+registry-migrate report --run-dir "$RUN_DIR"
+```
+
+- **在图表移除之前**：使用变更记录恢复原始副本、平台/Pruner 状态和图表配置；使用单独保护的材料恢复凭证数据。P1 摘要提供身份证据，而不是凭证内容。
+- **在图表移除之后**：首先停止新的注册表写入和协调，然后恢复图表/平台配置、凭证和 S3 访问，通过批准的恢复程序。
+- **在 P8 之后**：还要考虑新镜像和令牌轮换。不要在没有协调恢复边界的情况下重新激活传统 S3 写入者。
+- **在恢复之后**：创建一个新的运行 ID。不要编辑旧计划/日志以绕过身份漂移。
+
+该工具在一个运行中是幂等的：已完成的工作会被跳过或重新验证。保留计划、日志、备份摘要、清单、快照、证据、验证输出和单独的恢复材料。
