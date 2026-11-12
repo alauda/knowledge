@@ -597,6 +597,69 @@ a
 }
 
 // ---------------------------------------------------------------------------
+// English-only edits are translated on main. An unchanged generated translation
+// is pending regeneration, not a broken translation introduced by the branch.
+// The named-file scope must still catch that mismatch after translation runs.
+// ---------------------------------------------------------------------------
+{
+  const root = makeGitTree({
+    'en/a.mdx': `${FRONTMATTER}# T\n\nProse.\n`,
+    'zh/a.mdx': `${FRONTMATTER}# T\n\n正文。\n`,
+  })
+  fs.appendFileSync(path.join(root, 'en', 'a.mdx'), '\n## New section\n\n```bash\necho ready\n```\n')
+  commitAll(root, 'update English only')
+  const before = read(root, 'zh', 'a.mdx')
+
+  const scoped = check(root, '--since', 'HEAD~1')
+  ok(scoped.status === 0, 'an English-only edit defers its unchanged automatic translation', scoped.out)
+  ok(scoped.out.includes('PENDING') && scoped.out.includes('zh/a.mdx'), 'the pending translation is named', scoped.out)
+  ok(read(root, 'zh', 'a.mdx') === before, 'branch checks leave the pending translation untouched')
+
+  const strict = check(root, '--only', path.join(root, 'zh', 'a.mdx'))
+  ok(strict.status === 1, 'post-translation checks still reject the outdated translation', strict.out)
+  const full = check(root)
+  ok(full.status === 1, 'the full translation scan still rejects the outdated translation', full.out)
+  fs.rmSync(root, { recursive: true, force: true })
+}
+
+// ---------------------------------------------------------------------------
+// If the branch changes both languages, it owns the new translation and must
+// provide all the new English content rather than deferring the damaged pair.
+// ---------------------------------------------------------------------------
+{
+  const root = makeGitTree({
+    'en/a.md': `${FRONTMATTER}# T\n\nProse.\n`,
+    'zh/a.md': `${FRONTMATTER}# T\n\n正文。\n`,
+  })
+  fs.appendFileSync(path.join(root, 'en', 'a.md'), '\n## New section\n\n```bash\necho ready\n```\n')
+  fs.appendFileSync(path.join(root, 'zh', 'a.md'), '\n更新了正文。\n')
+  commitAll(root, 'change both languages with an incomplete translation')
+
+  const { status, out } = check(root, '--since', 'HEAD~1')
+  ok(status === 1, 'an incomplete translation changed with its source still fails the branch', out)
+  ok(!out.includes('PENDING'), 'a changed translation is never deferred', out)
+  fs.rmSync(root, { recursive: true, force: true })
+}
+
+// ---------------------------------------------------------------------------
+// An English-only edit to a hand-translated page cannot be deferred to main:
+// the automatic translator is explicitly disabled for that page.
+// ---------------------------------------------------------------------------
+for (const i18n of ['i18n:\n  disableAutoTranslation: true\n', 'i18n: { disableAutoTranslation: true }\n']) {
+  const root = makeGitTree({
+    'en/a.md': `---\nid: KB1\n${i18n}---\n# T\n\nProse.\n`,
+    'zh/a.md': `${FRONTMATTER}# T\n\n正文。\n`,
+  })
+  fs.appendFileSync(path.join(root, 'en', 'a.md'), '\n## New section\n\nProse.\n')
+  commitAll(root, 'update a hand-translated source only')
+
+  const { status, out } = check(root, '--since', 'HEAD~1')
+  ok(status === 1, 'an outdated hand translation fails an English-only branch', out)
+  ok(!out.includes('PENDING'), 'hand translations are never deferred', out)
+  fs.rmSync(root, { recursive: true, force: true })
+}
+
+// ---------------------------------------------------------------------------
 // A new English page on a branch has no translation yet and is not supposed to
 // -- translate writes it on main. Failing the branch for that would block every
 // pull request that adds a page.

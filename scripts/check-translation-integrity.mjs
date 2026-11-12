@@ -28,8 +28,9 @@
  *                    untracked -- i.e. the ones translate just (re)wrote
  *   --all            every file under docs/<target>
  *   --only <file>    just this file (repeatable); overrides every other scope
- *   --since <ref>    every pair this branch touches since <ref> -- the pull
- *                    request scope, where nothing is modified in the worktree
+ *   --since <ref>    translations changed since <ref>, plus hand-translated
+ *                    pairs whose source changed; automatic translations of
+ *                    English-only edits are generated and checked on main
  *   --docs <dir>     check a docs tree outside this repo (implies a full scan)
  *   --failures <f>   write the failing documents to <f>, one path per line, for
  *                    translate-verified.mjs to hand back to the translator
@@ -116,14 +117,9 @@ const changedTargetFiles = () => {
 }
 
 /**
- * Target files of every pair this branch touches since <ref>.
- *
- * The default scope reads the working tree, which is right on main -- translate
- * has just rewritten those files. On a pull request the tree is clean, so that
- * scope selects nothing and the documents the branch actually changed go
- * unchecked; the only thing running on a pull request was the check's own unit
- * tests. A source-language edit counts too: it can leave an existing
- * translation short of a section that was only just added.
+ * Pairs touched since <ref>, and which translations the branch changed.
+ * Unchanged automatic translations are regenerated on main; hand-translated
+ * pages and translations changed by the branch still need checking here.
  */
 const changedSince = (ref) => {
   const stdout = execFileSync(
@@ -137,18 +133,21 @@ const changedSince = (ref) => {
   )
   const targets = new Set()
   const sources = new Set()
+  const changedTargets = new Set()
   for (const line of stdout.split('\n')) {
     if (!line.trim()) continue
     const abs = path.resolve(docsDir, line.trim())
     if (!DOC_EXTENSIONS.has(path.extname(abs))) continue
     // Either language names the same pair; the scan below is driven by targets.
     const fromSource = abs.startsWith(sourceDir + path.sep)
+    if (!fromSource && !abs.startsWith(targetDir + path.sep)) continue
     const source = fromSource ? abs : path.join(sourceDir, path.relative(targetDir, abs))
     const target = fromSource ? path.join(targetDir, path.relative(sourceDir, abs)) : abs
     sources.add(source)
     if (fs.existsSync(target)) targets.add(target)
+    if (!fromSource) changedTargets.add(target)
   }
-  return { targets: [...targets], sources }
+  return { targets: [...targets], sources, changedTargets }
 }
 
 // Computed once: the missing-translation audit below needs the source side of
@@ -825,7 +824,15 @@ const selectTargets = () => {
     })
   }
   if (scanAll) return walk(targetDir)
-  if (branchScope) return branchScope.targets
+  if (branchScope) {
+    return branchScope.targets.filter((file) => {
+      const sourceFile = path.join(sourceDir, path.relative(targetDir, file))
+      if (branchScope.changedTargets.has(file) || !fs.existsSync(sourceFile)) return true
+      if (disablesAutoTranslation(fs.readFileSync(sourceFile, 'utf8'))) return true
+      console.log(`PENDING ${relative(file)} -- regenerated and checked from ${relative(sourceFile)} on main`)
+      return false
+    })
+  }
   return changedTargetFiles()
 }
 const targetFiles = selectTargets().filter((file) =>
