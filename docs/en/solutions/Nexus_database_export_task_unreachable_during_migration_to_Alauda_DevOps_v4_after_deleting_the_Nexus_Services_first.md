@@ -6,11 +6,11 @@ products:
 ProductsVersion: []
 ---
 
-# Nexus v4 migration: database export task unreachable after deleting the Nexus Services first
+# Nexus database export task unreachable during migration to Alauda DevOps v4 after deleting the Nexus Services first
 
 ## Issue
 
-While migrating a platform-deployed Nexus to v4, the migration steps are run in their numbered order:
+While migrating a platform-deployed Nexus to Alauda DevOps v4 (the Nexus version itself does not change), the migration steps are run in their numbered order:
 
 - 1.1 Service shutdown: uninstall the old-version operator, then delete the Nexus Services with `kubectl -n ${INSTANCE_NAMESPACE} delete service -l release=${INSTANCE_NAME}`.
 - 1.2 Back up Blob storage with `kubectl cp` from the Nexus Pod.
@@ -55,7 +55,15 @@ The correct execution order is: complete steps 1.2 and 1.3 first, while the Serv
    5. Frequency: manual.
    6. Run the task and confirm that it completes.
 
-4. Step 1.1, shut down the service. Uninstall the old-version operator first; otherwise the deleted Services are recreated automatically. Then save and delete the Services:
+   The export files are written inside the Nexus data volume, and step 1.2 copies only `/nexus-data/blobs`. Copy the export out of the Pod as well, so that the database backup does not exist only on the volume being migrated:
+
+   ```bash
+   mkdir -p nexus-backup/db
+   kubectl -n ${INSTANCE_NAMESPACE} cp ${POD_NAME}:<backup-location> nexus-backup/db
+   ls -la nexus-backup/db
+   ```
+
+4. Step 1.1, shut down the service, only after the blob backup and the database export are both in `nexus-backup/`. Uninstall the old-version operator first; otherwise the deleted Services are recreated automatically. Then save and delete the Services:
 
    > **Warning:** After the Services are deleted, Nexus is no longer reachable by users, build tools or the web UI. Do this only after steps 1.2 and 1.3 have completed and the backups are confirmed. To restore access, re-apply the saved Service manifests (remove `metadata.resourceVersion`, `metadata.uid`, `spec.clusterIP` and `spec.clusterIPs` first).
 
@@ -72,7 +80,7 @@ If the Services were already deleted before the database export, the web UI can 
 kubectl -n ${INSTANCE_NAMESPACE} port-forward pod/${POD_NAME} 8081:8081
 ```
 
-Open `http://localhost:8081` on the machine running the command, then perform step 1.3.
+Open `http://localhost:8081` on the machine running the command, then perform step 1.3 and copy the export out of the Pod as described above.
 
 ## Diagnostic Steps
 

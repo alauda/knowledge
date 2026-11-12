@@ -4,7 +4,7 @@ kind:
 products:
   - Alauda DevOps
 ProductsVersion:
-  - 4.3.3
+  - 4.3.x
 ---
 
 # Tekton pipeline Pod rejected by Pod Security admission because of the katanomi-setting-init init container

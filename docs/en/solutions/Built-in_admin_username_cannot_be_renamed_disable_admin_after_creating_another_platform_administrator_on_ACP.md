@@ -4,7 +4,7 @@ kind:
 products:
   - Alauda Container Platform
 ProductsVersion:
-  - 4.2.4
+  - 4.2.x
 ---
 
 # Built-in admin username cannot be renamed: disable admin after creating another platform administrator on ACP

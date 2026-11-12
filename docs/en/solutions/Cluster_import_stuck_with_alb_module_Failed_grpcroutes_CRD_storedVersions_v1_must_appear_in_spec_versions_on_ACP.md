@@ -4,7 +4,7 @@ kind:
 products:
   - Alauda Container Platform
 ProductsVersion:
-  - 4.0.11
+  - 4.0.x
 ---
 
 # Cluster import stuck with the alb module Failed: grpcroutes CRD status.storedVersions v1 must appear in spec.versions on ACP

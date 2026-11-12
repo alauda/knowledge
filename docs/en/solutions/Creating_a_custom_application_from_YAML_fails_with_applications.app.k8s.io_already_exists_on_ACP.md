@@ -10,7 +10,7 @@ ProductsVersion: []
 
 ## Issue
 
-Creating a custom application from the YAML page of the console fails with `资源已存在` (resource already exists). Renaming the application and creating it again fails the same way, while applying the same resources with `kubectl` works.
+Creating a custom application from the YAML page of the console fails with a **Resource already exists** error. Renaming the application and creating it again fails the same way, while applying the same resources with `kubectl` works.
 
 The error details show:
 

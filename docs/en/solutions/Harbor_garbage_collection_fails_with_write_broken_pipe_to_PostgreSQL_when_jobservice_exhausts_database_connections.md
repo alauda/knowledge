@@ -10,7 +10,7 @@ ProductsVersion: []
 
 ## Issue
 
-Harbor garbage collection (GC) no longer frees storage. In the GC history every recent run, scheduled (`定时`) and manual (`手动`), is in the `错误` (Error) state. The GC job log stops in the mark phase with a `broken pipe` on the connection to the Harbor database on port 5432:
+Harbor garbage collection (GC) no longer frees storage. In the GC history every recent run, with trigger type **Schedule** and **Manual** alike, is in the **Error** state. The GC job log stops in the mark phase with a `broken pipe` on the connection to the Harbor database on port 5432:
 
 ```text
 [INFO] [/jobservice/job/impl/gc/garbage_collection.go:144]: Garbage Collection parameters: [delete_untagged: false, dry_run: false, time_window: 2]

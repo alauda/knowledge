@@ -4,7 +4,7 @@ kind:
 products:
   - Alauda Container Platform
 ProductsVersion:
-  - 4.3.3
+  - 4.3.x
 ---
 
 # Integrated product link fails with Redirect to untrusted host is not allowed after upgrading to ACP 4.3.3

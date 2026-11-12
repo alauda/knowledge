@@ -10,6 +10,8 @@ ProductsVersion: []
 
 ## Issue
 
+This article applies to pipelines of the DevOps v3 (katanomi) components, whose triggers register the GitLab webhook. The `Katanomi` resource described below belongs to those v3 components.
+
 A CI/CD pipeline is configured to build automatically when GitLab code changes. The webhook that the platform registers in the GitLab project (**Settings > Webhooks**, Project Hooks) points to an old address, for example `http://<old-platform-domain>/...`, instead of the address through which the platform is actually reached, for example `https://<current-platform-domain>/...`. The question is where this default address comes from and how to change it.
 
 ## Root Cause

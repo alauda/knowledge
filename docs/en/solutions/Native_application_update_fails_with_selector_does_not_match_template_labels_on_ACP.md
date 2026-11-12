@@ -10,7 +10,7 @@ ProductsVersion: []
 
 ## Issue
 
-A native application shows `失败` (Failed) in the console after an update, although its Deployments show `运行中` (Running) with all replicas ready. The update never reaches the Deployment.
+A native application shows **Failed** in the console after an update, although its Deployments show **Running** with all replicas ready. The update never reaches the Deployment.
 
 The `archon` component logs on the global cluster show the update being rejected by the Kubernetes API server:
 
@@ -62,7 +62,7 @@ A configuration error in another resource of the same application can also leave
 
    Then redeploy the native application from the console, or re-run the release that renders the corrected template.
 
-4. Confirm that the native application status changes from `失败` (Failed) to Running, and that `archon` no longer logs the error for this Deployment.
+4. Confirm that the native application status changes from **Failed** to **Running**, and that `archon` no longer logs the error for this Deployment.
 
 ## Diagnostic Steps
 
