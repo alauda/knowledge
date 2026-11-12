@@ -48,7 +48,9 @@ Restarting `harbor-jobservice` closes the connections it holds and GC can run ag
    kubectl -n <harbor-namespace> rollout status deployment/<harbor-jobservice-deployment>
    ```
 
-3. Run GC manually from **Administration > Clean Up** (**Garbage Collection**) in the Harbor portal and confirm that it finishes as `Success`. The scheduled runs then succeed again.
+3. Run GC manually from **Administration > Clean Up** (**Garbage Collection**) in the Harbor portal and confirm that it finishes as `Success`. The scheduled runs then succeed again. Use **Dry Run** first to see what a real run would delete.
+
+   > **Warning:** A GC run that is not a dry run permanently deletes blobs that no artifact references, and with **Allow garbage collection on untagged artifacts** enabled it also deletes untagged artifacts. Use the same options as the scheduled job unless the registry owner has agreed to other values. Deleted blobs cannot be recovered from Harbor.
 
 ## Diagnostic Steps
 
@@ -59,7 +61,7 @@ Restarting `harbor-jobservice` closes the connections it holds and GC can run ag
    curl -sk -u 'admin:<password>' 'https://<harbor-host>/api/v2.0/system/gc/<gc-id>/log'
    ```
 
-   Expected for this cause: `failed to execute GC job at mark phase` with `write: broken pipe` towards port 5432. A different error in the GC log is a different problem.
+   Expected for this cause: `failed to execute GC job at mark phase` with `write: broken pipe` towards port 5432. A different error in the GC log is a different problem. If the GC log shows `too many clients already (SQLSTATE 53300)` instead, the database refused a new session and restarting jobservice is not the fix; see [Harbor PostgreSQL rejects sessions with too many clients already (SQLSTATE 53300)](Harbor_PostgreSQL_rejects_sessions_with_too_many_clients_already_SQLSTATE_53300.md).
 
 2. Check the database Pod and its log:
 
