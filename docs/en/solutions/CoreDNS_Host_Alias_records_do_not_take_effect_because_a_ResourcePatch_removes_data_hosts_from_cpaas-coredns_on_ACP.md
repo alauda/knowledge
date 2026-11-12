@@ -3,7 +3,9 @@ kind:
   - Troubleshooting
 products:
   - Alauda Container Platform
-ProductsVersion: []
+ProductsVersion:
+  - 4.2.x
+  - 4.3.x
 ---
 
 # CoreDNS Host Alias records do not take effect because a ResourcePatch removes data hosts from cpaas-coredns on ACP
@@ -37,6 +39,22 @@ As a result:
 
 - new Host Alias entries never reach CoreDNS;
 - after a restart, CoreDNS starts with no static records, and because of `fallthrough` the names are resolved by the upstream DNS instead, which can return a different, stale address.
+
+### Other reasons a static record does not reach CoreDNS
+
+The same symptom (a name added for CoreDNS never resolves in Pods) has two more causes, even when no ResourcePatch removes `/data/hosts`.
+
+**A direct edit of `cpaas-coredns` is converted into a ResourcePatch.** `cpaas-coredns` is a chart-rendered platform resource. The `sentry` component watches UPDATE and DELETE of objects that carry the `helm.sh/chart-name` label, through the `ValidatingWebhookConfiguration` named `sentry` (its webhook `vsentry.kb.io` calls the sentry Service `/validate`). A `kubectl edit` or `kubectl patch` of the ConfigMap returns:
+
+```text
+admission webhook "vsentry.kb.io" denied the request: The operation is denied, but ResourcePatch <name> is created. Please wait sentry to apply the ResourcePatch.
+```
+
+The edit is not rejected for good: sentry applies the ResourcePatch it created. Whichever copy sentry applied last is the one CoreDNS serves, so a ResourcePatch can keep an older hosts list after the plugin page was saved, or the opposite, and the **Host Alias** list and the ConfigMap disagree.
+
+**A hosts entry added by hand is in the wrong format or is overridden.** The Corefile loads the `hosts` plugin from a file (`hosts /etc/coredns/hosts`), and that file is the `hosts` data key of the same ConfigMap. A mapping written as a line inside the Corefile `hosts` block, or as a single-line data field `hosts: <ip> <domain>`, is not what the `hosts` key needs; it must be a multiline block (`hosts: |` followed by one `<ip> <domain>` line per entry). Even with the format corrected and CoreDNS restarted, a hand edit can still be overridden by the plugin-managed copy (the same mechanism as above); the entry then takes effect only when it is entered under **Host Alias**.
+
+**Host Alias** is also the way to publish additional names to Pods when the node `/etc/resolv.conf` cannot take more nameservers.
 
 ## Resolution
 
@@ -82,6 +100,44 @@ As a result:
 
 Do not add a `remove /data/hosts` operation to a ResourcePatch for CoreDNS again. Keep static records in **Host Alias** and limit the ResourcePatch to the Corefile changes that cannot be made in the plugin.
 
+### If a direct edit was denied by vsentry.kb.io
+
+The edit was converted into a ResourcePatch for sentry to apply; modification is not prohibited. Do not send a second patch. Wait, then check that the ResourcePatch was applied and that the ConfigMap contains the change:
+
+```bash
+kubectl get validatingwebhookconfiguration sentry -o yaml
+kubectl get rpch -A
+kubectl get rpch <resourcepatch-name> -o yaml
+kubectl -n kube-system get cm cpaas-coredns -o yaml
+```
+
+When the **Host Alias** list and the ConfigMap disagree, pick one writer and keep to it:
+
+- **ConfigMap edits** (when other custom lines must stay in the ConfigMap): keep editing `cpaas-coredns` and let sentry apply the ResourcePatch.
+- **Host Alias only**: back up the ConfigMap and the ResourcePatch as in step 1, delete the ResourcePatch that overrides the plugin, and enter the IP and the domains (separated by spaces) under **Host Alias**.
+
+  > **Warning:** Deleting the ResourcePatch removes every ConfigMap customization that is not on the plugin page, including a hand-written `forward` block. Confirm with the application owners which lines must be re-entered first. To roll back, apply the saved ResourcePatch and ConfigMap.
+
+### If a hand-added hosts entry is ignored after a restart
+
+1. Enter the record under **Host Alias** in **Alauda Container Platform Cluster DNS** (fields **IP** and **Domains**). On ACP 4.x this setting is reloaded without a CoreDNS restart. Then query again from the workload Pod:
+
+   ```bash
+   kubectl -n <namespace> exec <pod> -- nslookup <domain>
+   ```
+
+2. If the record must stay in the ConfigMap instead, keep it in one place only (not both the Corefile and the `hosts` key), and write the `hosts` key as a multiline block:
+
+   ```yaml
+   data:
+     hosts: |
+       192.0.2.10 app.example.com
+   ```
+
+   > **Warning:** Editing `cpaas-coredns` changes DNS for every Pod in the cluster, and a malformed Corefile or hosts file can stop CoreDNS from loading. Back up the ConfigMap first (step 1). Sentry turns the write into a ResourcePatch, as described above. To roll back, run `kubectl apply -f cpaas-coredns.before.yaml`.
+
+   If the ConfigMap edit still does not show up in answers, move the entry to **Host Alias**.
+
 ## Diagnostic Steps
 
 1. Check whether the ConfigMap carries the static records. A `Corefile` that references `/etc/coredns/hosts` but no `hosts` key matches this issue:
@@ -112,3 +168,9 @@ Do not add a `remove /data/hosts` operation to a ResourcePatch for CoreDNS again
    kubectl -n <namespace> exec <pod> -- cat /etc/resolv.conf
    kubectl -n <namespace> exec <pod> -- nslookup <domain> <coredns-service-ip>
    ```
+
+5. Tell the causes apart:
+
+   - `cpaas-coredns` has no `hosts` key and a ResourcePatch on it has `op: remove` on `/data/hosts`: the ResourcePatch removes the hosts data (this article's main cause).
+   - A direct edit returned `admission webhook "vsentry.kb.io" denied the request`, or the **Host Alias** list and the ConfigMap `hosts` entries differ: the edit was converted into a ResourcePatch.
+   - A hosts line was added to `cpaas-coredns` by hand and a CoreDNS restart did not help: check the format of the `hosts` key and move the entry to **Host Alias**.
