@@ -53,12 +53,13 @@
 
 - 与单集群控制面相同的组件，但不跑业务。
 - 对应产品 global 资源评估的 Medium 档（纳管不超过 50 个集群）。纳管更多集群时，按产品的 Large 档（24 核 / 48 GB）重新评估。
+- 平台自用的 Ingress Gateway 在控制面上，仍按 Medium 档取 16 核 / 32 GiB。产品档位是否已包含这个 Gateway，文档没有写明；即使不包含，按 3 × 1 核 / 1 GiB 叠加后每台约 14.0 核 / 22.5 GiB，16 核 / 32 GiB 仍够用。
 
 ### global infra：12 核 / 32 GiB
 
 - 只跑 global 自己的日志和监控。比单集群 infra 少了业务 Ingress 和镜像仓库；监控只管 global 自己的 6 个节点，用 Small 档；日志量也远小于单集群。
 - 单集群 infra 按 5,000 条/秒取 16 核，global 取 12 核与之一致，也不再出现 global 规格高于单集群的倒挂。
-- 估算每台约 11.8 核 / 23.3 GiB。CPU 按平台自用的 Ingress Gateway 落在 infra 上计算，余量很小；Gateway 不在 infra 上时约 10.8 核。
+- 估算每台约 10.8 核 / 22.3 GiB，12 核下 CPU 占用约 91%，32 GiB 下内存占用约 81%。平台自用的 Ingress Gateway 在控制面上，不计入 infra。
 - 前提：workload 集群的日志不汇聚到 global。客户要把日志集中到 global 时，需要重新评估。
 - 备选：如果更看重 global 所有节点用同一机型，可以取 16 核 / 32 GiB，主、备 6 台共多 24 核。
 - TopoLVM 数据盘 650 GiB：日志与单集群相同（ClickHouse 305 + Kafka 161 + Keeper、KRaft 15）+ 监控 26 GiB，再留 20% 余量；没有镜像仓库。
@@ -119,7 +120,7 @@
 | 单集群 infra 12 核不对吧？应该是 16 核？ | 12 核不够。按 5,000 条/秒估算，每台约 15.0 核，取 16 核。 | §2 单集群 infra；§6.3 |
 | 20 核太多；日志组件是高内存而不是高 CPU？16 核 / 48 GiB 是否更合理？ | 同意 16 核 / 48 GiB。产品日志容量页只有 20,000 条/秒一档，按 5,000 条/秒下调日志组件后每台约 15.0 核。日志栈 CPU 多是因为 Pod 多，单组件约 1 核 : 2 GiB，余量留在内存上。 | §2 单集群 infra；§6.3 |
 | global infra 少了 Ingress，为什么 CPU 反而更高、内存少这么多？ | 已改为 global infra 12 核 / 32 GiB，单集群和 workload (a) 的 infra 16 核 / 48 GiB，不再倒挂。 | §2 global infra |
-| global infra 能否要求低一点，16 核 / 32 GiB 还是 12 核 / 32 GiB？取值要考虑实际机型 | 建议 12 核 / 32 GiB，每台估算约 11.8 核 / 23.3 GiB；前提是 workload 的日志不汇聚到 global。看重机型统一时，可以取 16 核 / 32 GiB。所有规格已按 4、8、12、16、24、32 核和 8–64 GiB 的常见机型取值。 | §2 global infra；§6.1 |
+| global infra 能否要求低一点，16 核 / 32 GiB 还是 12 核 / 32 GiB？取值要考虑实际机型 | 建议 12 核 / 32 GiB，每台估算约 10.8 核 / 22.3 GiB（平台 Ingress Gateway 在控制面上）；前提是 workload 的日志不汇聚到 global。看重机型统一时，可以取 16 核 / 32 GiB。所有规格已按 4、8、12、16、24、32 核和 8–64 GiB 的常见机型取值。 | §2 global infra；§6.1 |
 | workload (a) 的 infra 理论上应该和单集群一样？ | 是。两者装的组件相同，都取 16 核 / 48 GiB。 | §2 单集群 infra |
 | monitor 真需要 12 核 / 48 GiB？ | 不需要这么多内存。每台约 10.1 核 / 14.5 GiB，取 12 核 / 24 GiB。 | §2 workload (b) monitor |
 | ingress、monitor、log 的资源对不对？ | ingress 8 核 / 8 GiB（轻载 4 核 / 8 GiB），monitor 12 核 / 24 GiB，log 12 核 / 32 GiB。 | §2 workload (b) 各池 |
@@ -206,11 +207,12 @@ workload 集群有存储需求时，在该集群内部署：
   对照：日志按产品参考值时每台 17.7 核，按机型取值会到 24 核
 
 global infra
-  日志 16.6 / 45.6 + 监控 Small 7.9 / 12.6 + 平台 Ingress Gateway 3.0 / 3.0
-  + TopoLVM 1.4 / 2.1 + DaemonSet 3 × (2.10 + 0.05) / 3 × (2.12 + 0.05) = 35.4 核 / 69.8 GiB
-  ÷ 3 = 每台 11.8 核 / 23.3 GiB
-  CPU 11.8 + 0.1 → 12 核（99%）；Gateway 不在 infra 时 10.8 核（91%）
-  内存 23.3 + 3.6 = 26.8，占 84% → 32 GiB
+  日志 16.6 / 45.6 + 监控 Small 7.9 / 12.6
+  + TopoLVM 1.4 / 2.1 + DaemonSet 3 × (2.10 + 0.05) / 3 × (2.12 + 0.05) = 32.4 核 / 66.9 GiB
+  ÷ 3 = 每台 10.8 核 / 22.3 GiB
+  CPU 10.8 + 0.1 → 12 核（91%）
+  内存 22.3 + 3.6 = 25.8，占 81% → 32 GiB
+  平台 Ingress Gateway（3 × 1 核 / 1 GiB）在 control-plane 上，不计入
 
 workload (b) log
   日志 16.6 / 45.6 + TopoLVM 1.4 / 2.1 + DaemonSet 3 × 2.30 / 3 × 2.33 = 24.9 核 / 54.7 GiB
@@ -232,6 +234,7 @@ control-plane
   单集群 / global：核心最低 8 核 / 16 GB + 扩展（监控 API、日志查询、存储 operator、MetalLB controller、
     keepalived、日志采集 operator）8.35 核 / 9.8 GiB ÷ 3 + DaemonSet 2.25 / 2.28
     = 每台约 13.0 核 / 21.5 GiB → 产品推荐 16 核 / 32 GB
+    平台 Ingress Gateway 若不在产品档位内，再加每台 1 核 / 1 GiB：14.0 核 / 22.5 GiB，16 核（88%）/ 32 GiB（81%）仍够用
   workload (a)：产品 24 worker 档 4 核 / 16 GB + 扩展 0.45 / 0.6 + DaemonSet 2.25 / 2.28
     = 6.7 核 / 18.9 GiB；内存在 24 GiB 档占 92% → 产品下一档 8 核 / 32 GB
   workload (b)：直接取产品 120 worker 档 8 核 / 32 GB
