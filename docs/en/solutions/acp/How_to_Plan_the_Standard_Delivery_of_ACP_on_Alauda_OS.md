@@ -28,10 +28,19 @@ global 集群同时用作 workload 集群，不做容灾。
 | 节点池 | 台数 | CPU | 内存 | 用途 |
 |---|---:|---|---|---|
 | bootstrap | 1 | 4 核 | 8 GB | 运行安装程序；也可兼作平台镜像仓库 |
-| control-plane | 3 | 16 核 | 32 GiB | 控制面和平台组件 |
-| infra | 3 | 12 核 | 48 GiB | 监控、日志、Ingress、镜像仓库 |
+| control-plane | 3 | 16 核 | 32 GiB | 控制面和平台组件；产品对单集群推荐的规格 |
+| infra | 3 | 16 核 | 48 GiB | 日志和监控的主要占用者，另有 Ingress 和镜像仓库；日志按 5,000 条/秒、保留 7 天规划，日志量更大时客户自行扩容磁盘 |
 
-- 以上规格是建议值，不是强制要求。使用 ARM 节点时，按 [Machines][plan-machines] 中的规则放大。
+**磁盘**（每台，GiB）
+
+| 节点池 | 系统盘 | `/var/lib/containerd` | `/var/lib/kubelet` | `/var/lib/etcd` | `/var/cpaas` | 数据盘 |
+|---|---:|---:|---:|---:|---:|---|
+| bootstrap | ≥ 300（含安装包解压目录和 `/var/cpaas`） | — | — | — | — | — |
+| control-plane | 100 | 150 | 100 | 20 | 200 | — |
+| infra | 100 | 150 | 100 | — | 100 | TopoLVM 1 TiB |
+
+- 表中是每台的最低建议规格。物理机通常远大于此，按不低于本表的规格选型即可。使用 ARM 节点时，按 [Machines][plan-machines] 中的规则放大。
+- 平台盘的取值见 [Disk Configuration][disk]；etcd 盘建议用高 IO 的独立盘。
 - bootstrap 的 4 核 / 8 GB 是 x86 的最低要求；磁盘和 arm64 的要求见 [Bootstrap Node][bootstrap-hw]。
 - 规格按约 20 个业务 worker 估算，仅供参考。业务 worker 的数量和规格由业务决定，不在本文范围内。安装后按控制面节点的负载评估，需要时扩容，见 [Evaluating Resources for Workload Cluster][eval-workload]。单集群的 global 同时是 workload 集群，所以按 workload 集群评估。
 - 客户提供不了镜像仓库、机器资源又有限时，可以在 bootstrap 上部署 mirror-registry，作为平台镜像仓库。这样 bootstrap 装完后不能回收，并且要满足 mirror-registry 的要求，见 [Create an Image Registry with mirror-registry][mirror-registry]。
@@ -121,8 +130,8 @@ global 只承载平台，不跑业务；业务都在 workload 集群上。global
 | 节点池 | 台数（每套） | CPU | 内存 | 用途 |
 |---|---:|---|---|---|
 | bootstrap | 1 | 4 核 | 8 GB | 运行安装程序；也可兼作平台镜像仓库 |
-| control-plane | 3 | 16 核 | 32 GiB | 控制面和平台组件 |
-| infra | 3 | 16 核 | 32 GiB | global 自己的监控和日志 |
+| control-plane | 3 | 16 核 | 32 GiB | 控制面和平台组件；对应纳管不超过 50 个集群的档位 |
+| infra | 3 | 16 核 | 32 GiB | global 自己的监控和日志；与 control-plane 同一机型 |
 
 **workload 集群**：按业务规模选一档。
 
@@ -130,34 +139,55 @@ global 只承载平台，不跑业务；业务都在 workload 集群上。global
 
 | 节点池 | 台数 | CPU | 内存 | 用途 |
 |---|---:|---|---|---|
-| control-plane | 3 | 8 核 | 16 GiB | 控制面和平台组件 |
-| infra | 3 | 12 核 | 48 GiB | 监控、日志、Ingress、镜像仓库 |
+| control-plane | 3 | 8 核 | 32 GiB | 控制面和平台组件 |
+| infra | 3 | 16 核 | 48 GiB | 日志和监控的主要占用者，另有 Ingress 和镜像仓库；日志按 5,000 条/秒、保留 7 天规划，日志量更大时客户自行扩容磁盘 |
 
 (b) 约 150 个业务 worker，非业务节点分池：
 
 | 节点池 | 台数 | CPU | 内存 | 用途 |
 |---|---:|---|---|---|
-| control-plane | 3 | 8 核 | 16 GiB | 控制面和平台组件 |
-| ingress | 2 | 4 核 | 8 GiB | Ingress |
-| monitor | 3 | 12 核 | 48 GiB | 监控 |
-| log | 3 | 12 核 | 48 GiB | 日志 |
+| control-plane | 3 | 8 核 | 32 GiB | 控制面和平台组件；按产品 120 个 worker 的档位 |
+| ingress | 2 | 8 核 | 16 GiB | Ingress；按每台约 4,000 请求/秒 |
+| monitor | 3 | 12 核 | 24 GiB | 监控 |
+| log | 3 | 12 核 | 48 GiB | 日志；日志按 5,000 条/秒、保留 7 天规划，日志量更大时客户自行扩容磁盘 |
 
-**DevOps 集群**：需要 DevOps 工具（Harbor、GitLab、Tekton、SonarQube、Nexus）时，建议单独准备一个集群。DevOps 工具依赖的存储和中间件都装在这个集群里。规格待定。
+**workload 集群内的 Ceph**：workload 集群有存储需求时，建议在该集群内部署中小规模的 Ceph，使用专用的 storage 节点池：
 
-**workload 集群内的 Ceph**：workload 集群有存储需求时，建议在该集群内部署中小规模的 Ceph。节点池和规格待定；Ceph 的最低要求见 [Ceph Planning][ceph-plan]。
+| 节点池 | 台数 | CPU | 内存 | 用途 |
+|---|---:|---|---|---|
+| storage | 3 | 12 核 | 24 GiB | Ceph；3 台分属 3 个故障域，不与 infra、worker 共用 |
 
-- 以上规格是建议值，不是强制要求。使用 ARM 节点时，按 [Machines][plan-machines] 中的规则放大。
+**磁盘**（每台，GiB）
+
+| 集群 | 节点池 | 系统盘 | `/var/lib/containerd` | `/var/lib/kubelet` | `/var/lib/etcd` | `/var/cpaas` | 数据盘 |
+|---|---|---:|---:|---:|---:|---:|---|
+| 所有集群 | bootstrap | ≥ 300（含安装包解压目录和 `/var/cpaas`） | — | — | — | — | — |
+| global、workload | control-plane | 100 | 150 | 100 | 20 | 200 | — |
+| global | infra | 100 | 150 | 100 | — | 100 | TopoLVM 1 TiB |
+| workload (a) | infra | 100 | 150 | 100 | — | 100 | TopoLVM 1 TiB |
+| workload (b) | ingress | 100 | 150 | 100 | — | 100 | — |
+| workload (b) | monitor | 100 | 150 | 100 | — | 100 | TopoLVM 100 |
+| workload (b) | log | 100 | 150 | 100 | — | 100 | TopoLVM 1 TiB |
+| workload（有存储需求时） | storage | 100 | 150 | 100 | — | 100 | Ceph OSD 裸盘 500（SSD）；`/var/lib/rook` 持久盘 100 |
+
+- Ceph 的可用容量约为 OSD 裸容量的 1/3，按存储需求增加 OSD 盘。`/var/lib/rook` 必须是持久盘，OSD 必须是独立的裸盘，见 [Ceph on Alauda OS][ceph-aos]；Ceph 的规划见 [Ceph Planning][ceph-plan]。
+
+- 表中是每台的最低建议规格。物理机通常远大于此，按不低于本表的规格选型即可。使用 ARM 节点时，按 [Machines][plan-machines] 中的规则放大。
+- 平台盘的取值见 [Disk Configuration][disk]；etcd 盘建议用高 IO 的独立盘。
 - bootstrap 的 4 核 / 8 GB 是 x86 的最低要求；磁盘和 arm64 的要求见 [Bootstrap Node][bootstrap-hw]。
 - global 的规格适用于纳管不超过 50 个集群。超过时，按 [Evaluating Resources for Global Cluster][eval-global] 重新评估。
 - workload 的两档按业务 worker 数量估算，仅供参考。业务 worker 的数量和规格由业务决定，不在本文范围内。安装后按控制面节点的负载评估，需要时扩容，见 [Evaluating Resources for Workload Cluster][eval-workload]。(b) 档还要结合监控数据量和日志保留期核实。
 - 客户提供不了镜像仓库时，可以在 bootstrap 上部署 mirror-registry 作为平台镜像仓库；做容灾时主、备两侧各部署一套。多个集群共用一个 mirror-registry 会形成单点，workload 集群较多时建议用客户的高可用镜像仓库。见 [mirror-registry][mirror-registry]。
 - 客户希望用 Alauda Storage 替代商业存储、大规模使用时，需要先联系 Alauda 评估。
 
+**DevOps 集群**：需要 DevOps 工具（Harbor、GitLab、Tekton、SonarQube、Nexus）时，建议单独准备一个集群。DevOps 工具依赖的存储和中间件都装在这个集群里。规格待定。
+
 **节点池**
 
 - 所有集群的 `deployMode` 都保持默认值 `normal`。字段说明见 [Installation Reference][install-config]。
 - global 和 workload (a) 档的 infra 池：集群建好后，按 [Create Infra Nodes on Alauda OS Nodes][infra-aos] 在节点池上声明标签和污点。
 - workload (b) 档的 ingress、monitor、log 各建一个节点池，每个池使用自己的角色标签和污点，见 [Custom Role Nodes][custom-role]。
+- workload 集群部署 Ceph 时，再建一个 storage 节点池，同样使用自己的角色标签和污点。
 
 **控制面端点**
 
