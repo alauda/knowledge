@@ -79,6 +79,12 @@ Huawei Cloud Stack 例外，只能用 provider 创建的 ELB。各 provider 支�
 | Alauda Container Platform Ingress Controller | 应用入口 |
 | Alauda Container Platform Registry | 镜像仓库（业务镜像） |
 
+ClickHouse、Kafka 和镜像仓库不会自动调度到 infra，安装时要显式配置放置：
+
+- **ClickHouse**：在实例上配置 infra 的容忍和节点亲和，见 [Deploy as ACP logging storage][ck-logging]。
+- **Kafka**：创建实例时，在调度配置里设置节点标签（Node Label）和容忍。节点标签在实例创建后不能修改，必须在创建前定好。见 [Create Instance][kafka-create]。
+- **镜像仓库**：在 `Config/cluster` 中配置节点选择和容忍，见 [Configure Registry][registry-config]。
+
 ### 3. 操作步骤
 
 | # | 做什么 | 文档 |
@@ -200,6 +206,8 @@ workload (b)：
 
 DevOps 集群的 infra 上装的插件与 global 相同。
 
+ClickHouse、Kafka 和镜像仓库的放置要在安装时显式配置，方法和单集群相同；Kafka 的节点标签必须在创建实例前定好。
+
 ### 3. 操作步骤
 
 | # | 做什么 | 文档 |
@@ -256,6 +264,8 @@ DevOps 集群的 infra 上装的插件与 global 相同。
 [metallb-place]: https://docs.alauda.io/container_platform/4.5/networking/operators/metallb_operator.html#configure-component-placement
 [metallb-pool]: https://docs.alauda.io/container_platform/4.5/networking/functions/configure_metallb.html#configure_ip_pool
 [registry-install]: https://docs.alauda.io/container_platform/4.5/configure/registry/image_registry_operator.html
+[ck-logging]: https://docs.alauda.io/clickhouse/4.4/how_to/deploy_as_logging_storage.html
+[kafka-create]: https://docs.alauda.io/kafka/4.3/functions/10-create-instance.html
 [registry-config]: https://docs.alauda.io/container_platform/4.5/configure/registry/setting_up_and_configuring_the_registry.html
 [etcd-backup]: https://docs.alauda.io/container_platform/4.5/configure/backup/etcd.html
 [next-steps]: https://docs.alauda.io/container_platform/4.5/install/next_steps.html
