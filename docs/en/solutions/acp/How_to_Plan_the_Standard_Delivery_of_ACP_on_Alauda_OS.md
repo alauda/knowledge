@@ -27,11 +27,12 @@ global 集群同时用作 workload 集群，不做容灾。
 
 | 节点池 | 台数 | CPU | 内存 | 用途 |
 |---|---:|---|---|---|
-| bootstrap | 1 | 见 [Bootstrap Node][bootstrap-hw] | 见 [Bootstrap Node][bootstrap-hw] | 运行安装程序；也可兼作平台镜像仓库 |
+| bootstrap | 1 | 4 核 | 8 GB | 运行安装程序；也可兼作平台镜像仓库 |
 | control-plane | 3 | 16 核 | 32 GiB | 控制面和平台组件 |
 | infra | 3 | 12 核 | 48 GiB | 监控、日志、Ingress、镜像仓库 |
 
 - 以上规格是建议值，不是强制要求。使用 ARM 节点时，按 [Machines][plan-machines] 中的规则放大。
+- bootstrap 的 4 核 / 8 GB 是 x86 的最低要求；磁盘和 arm64 的要求见 [Bootstrap Node][bootstrap-hw]。
 - 规格按约 20 个业务 worker 估算，仅供参考。业务 worker 的数量和规格由业务决定，不在本文范围内。安装后按控制面节点的负载评估，需要时扩容，见 [Evaluating Resources for Workload Cluster][eval-workload]。单集群的 global 同时是 workload 集群，所以按 workload 集群评估。
 - 客户提供不了镜像仓库、机器资源又有限时，可以在 bootstrap 上部署 mirror-registry，作为平台镜像仓库。这样 bootstrap 装完后不能回收，并且要满足 mirror-registry 的要求，见 [Create an Image Registry with mirror-registry][mirror-registry]。
 
@@ -62,7 +63,7 @@ Huawei Cloud Stack 例外，只能用 provider 创建的 ELB。各 provider 支�
 | 功能 | 选型 | 存储 |
 |---|---|---|
 | 监控 | VictoriaMetrics | TopoLVM |
-| 日志 | ClickHouse + Kafka | TopoLVM |
+| 日志 | ClickHouse | TopoLVM |
 | 应用入口 | Ingress NGINX | — |
 | 应用入口 VIP | 客户有商业负载均衡时用商业负载均衡；没有时用 MetalLB | — |
 | 镜像仓库（业务镜像） | ACP Registry，单副本 | TopoLVM |
@@ -113,7 +114,7 @@ global 只承载平台，不跑业务；业务都在 workload 集群上。global
 
 | 节点池 | 台数（每套） | CPU | 内存 | 用途 |
 |---|---:|---|---|---|
-| bootstrap | 1 | 见 [Bootstrap Node][bootstrap-hw] | 见 [Bootstrap Node][bootstrap-hw] | 运行安装程序；也可兼作平台镜像仓库 |
+| bootstrap | 1 | 4 核 | 8 GB | 运行安装程序；也可兼作平台镜像仓库 |
 | control-plane | 3 | 16 核 | 32 GiB | 控制面和平台组件 |
 | infra | 3 | 16 核 | 32 GiB | global 自己的监控和日志 |
 
@@ -135,18 +136,16 @@ global 只承载平台，不跑业务；业务都在 workload 集群上。global
 | monitor | 3 | 12 核 | 48 GiB | 监控 |
 | log | 3 | 12 核 | 48 GiB | 日志 |
 
-**客户没有商业存储时，还需要两个集群**
+**DevOps 集群**：需要 DevOps 工具（Harbor、GitLab、Tekton、SonarQube、Nexus）时，建议单独准备一个集群。DevOps 工具依赖的存储和中间件都装在这个集群里。规格待定。
 
-| 集群 | 用途 | 节点池 | 规格 |
-|---|---|---|---|
-| 存储集群 | 运行 Ceph，给其他集群提供块存储（RBD）和对象存储（RGW） | control-plane、infra、storage | 待定。Ceph 的最低要求见 [Ceph Planning][ceph-plan] |
-| DevOps 集群 | 运行 Harbor、GitLab、Tekton、SonarQube、Nexus | control-plane、infra、devops | 待定 |
+**workload 集群内的 Ceph**：workload 集群有存储需求时，建议在该集群内部署中小规模的 Ceph。节点池和规格待定；Ceph 的最低要求见 [Ceph Planning][ceph-plan]。
 
 - 以上规格是建议值，不是强制要求。使用 ARM 节点时，按 [Machines][plan-machines] 中的规则放大。
+- bootstrap 的 4 核 / 8 GB 是 x86 的最低要求；磁盘和 arm64 的要求见 [Bootstrap Node][bootstrap-hw]。
 - global 的规格适用于纳管不超过 50 个集群。超过时，按 [Evaluating Resources for Global Cluster][eval-global] 重新评估。
 - workload 的两档按业务 worker 数量估算，仅供参考。业务 worker 的数量和规格由业务决定，不在本文范围内。安装后按控制面节点的负载评估，需要时扩容，见 [Evaluating Resources for Workload Cluster][eval-workload]。(b) 档还要结合监控数据量和日志保留期核实。
 - 客户提供不了镜像仓库时，可以在 bootstrap 上部署 mirror-registry 作为平台镜像仓库；做容灾时主、备两侧各部署一套。多个集群共用一个 mirror-registry 会形成单点，workload 集群较多时建议用客户的高可用镜像仓库。见 [mirror-registry][mirror-registry]。
-- 客户在意机器数量时，可以把存储集群和 DevOps 集群合成一个，包含控制面、infra、devops、存储四类节点。客户有商业存储时不需要存储集群；如果客户也没有对象存储，仍需部署 Ceph 提供对象存储。
+- 客户希望用 Alauda Storage 替代商业存储、大规模使用时，需要先联系 Alauda 评估。
 
 **节点池**
 
@@ -167,30 +166,39 @@ global 和每个 workload 集群都需要控制面端点，方式和单集群相
 | 功能 | 选型 | 存储 |
 |---|---|---|
 | 监控 | VictoriaMetrics，每个集群各装一套 | TopoLVM |
-| 日志 | ClickHouse + Kafka，每个集群各装一套 | TopoLVM |
+| 日志 | ClickHouse，每个集群各装一套 | TopoLVM |
 | 应用入口（workload） | Ingress NGINX | — |
 | 应用入口 VIP（workload） | 客户有商业负载均衡时用商业负载均衡；没有时用 MetalLB | — |
-| 镜像仓库（业务镜像，workload） | ACP Registry | 存储集群的 Ceph RGW |
-| workload 上其他需要持久卷的组件 | 以 External Mode 接入存储集群 | Ceph RBD |
-| 虚拟机（如交付） | — | Ceph RBD |
-| 存储集群 | Ceph，用 COSI 分配对象存储桶 | 节点上的独立数据盘 |
-| DevOps 工具 | Harbor、GitLab、Tekton、SonarQube、Nexus | 数据库和数据目录用 Ceph RBD；Harbor 镜像层用 Ceph RGW |
+| 镜像仓库（业务镜像，workload） | ACP Registry | 待定 |
+| workload 上其他需要持久卷的组件 | 在该集群内部署中小规模的 Ceph | Ceph |
+| DevOps 工具 | Harbor、GitLab、Tekton、SonarQube、Nexus，装在单独的 DevOps 集群 | 装在 DevOps 集群内，待定 |
 
 每个集群的监控和日志只存自己的数据，不要送往 global。容灾只同步 global 的 etcd，监控和日志不会复制到备集群，见 [Observability Placement][dr-observability]。
 
 **装在 infra 上的插件**
 
-| 集群 | 节点池 | 插件 |
-|---|---|---|
-| global | infra | Alauda Container Platform Advanced Monitoring、Alauda Container Platform Log Storage Management、Alauda Data Services Analytical Database E1、Alauda Data Services Streaming E1 |
-| workload (a) | infra | Advanced Monitoring、Log Storage Management、Analytical Database E1、Streaming E1、Alauda Container Platform Ingress Controller、Alauda Container Platform Registry |
-| workload (b) | ingress | Ingress Controller |
-| | monitor | Advanced Monitoring |
-| | log | Log Storage Management、Analytical Database E1、Streaming E1 |
-| | 待定 | Registry |
-| 存储集群 | infra | Advanced Monitoring、Log Storage Management、Analytical Database E1、Streaming E1 |
-| | storage | Alauda Storage（Ceph） |
-| DevOps 集群 | infra | Advanced Monitoring、Log Storage Management、Analytical Database E1、Streaming E1 |
+global（主、备相同）：
+
+| 节点池 | 插件 |
+|---|---|
+| infra | Alauda Container Platform Advanced Monitoring、Alauda Container Platform Log Storage Management、Alauda Data Services Analytical Database E1、Alauda Data Services Streaming E1 |
+
+workload (a)：
+
+| 节点池 | 插件 |
+|---|---|
+| infra | Advanced Monitoring、Log Storage Management、Analytical Database E1、Streaming E1、Alauda Container Platform Ingress Controller、Alauda Container Platform Registry |
+
+workload (b)：
+
+| 节点池 | 插件 |
+|---|---|
+| ingress | Ingress Controller |
+| monitor | Advanced Monitoring |
+| log | Log Storage Management、Analytical Database E1、Streaming E1 |
+| 待定 | Registry |
+
+DevOps 集群的 infra 上装的插件与 global 相同。
 
 ### 3. 操作步骤
 
@@ -207,14 +215,13 @@ global 和每个 workload 集群都需要控制面端点，方式和单集群相
 | 9 | 向主、备 global 发布 Common Extensions | [Publish the Common Extensions][publish] |
 | 10 | 在两套 global 上都声明 infra 标签和污点，并安装 TopoLVM、监控、日志、etcd 备份插件。这些插件要等两套都装好、同步运行后再装 | [Install the Cluster Plugins][dr-plugins]、[Infra Nodes][infra-aos]、[Install TopoLVM][topolvm]、[Advanced Monitoring][mon-vm]、[日志快速安装][log-fast]、[etcd Backup and Restore][etcd-backup] |
 | 11 | 在 global 上安装要用到的 provider | [Install the Providers][wl-providers] |
-| 12 | 客户没有商业存储时，先建存储集群，部署 Ceph 和 COSI。workload 集群上用到 RBD 或 RGW 的插件都依赖它 | [Cluster Creation Workflow][wl-workflow]、[Ceph on Alauda OS][ceph-aos]、[Install Ceph][ceph-install]、[COSI][cosi] |
-| 13 | 需要 DevOps 工具时，建 DevOps 集群 | [Cluster Creation Workflow][wl-workflow] |
-| 14 | 建 workload 集群：选定镜像仓库，按 (a) 或 (b) 档建节点池，再在节点池上声明角色标签和污点 | [Cluster Creation Workflow][wl-workflow]、[Choose the Image Registry][wl-registry]、[Custom Role Nodes][custom-role] |
-| 15 | 在 workload 集群上依次安装：TopoLVM → 接入 Ceph → 监控 → 日志 → Ingress（没有商业负载均衡时加 MetalLB）→ 镜像仓库 → etcd 备份插件 | [Install TopoLVM][topolvm]、[External Mode][ceph-ext]、[Advanced Monitoring][mon-vm]、[日志快速安装][log-fast]、[Ingress Controller][ingress]、[MetalLB 组件位置][metallb-place]、[Install Registry][registry-install]、[Configure Registry][registry-config]、[etcd Backup and Restore][etcd-backup] |
+| 12 | 需要 DevOps 工具时，单独建 DevOps 集群，DevOps 依赖的存储和中间件都装在这个集群里 | [Cluster Creation Workflow][wl-workflow] |
+| 13 | 建 workload 集群：选定镜像仓库，按 (a) 或 (b) 档建节点池，再在节点池上声明角色标签和污点 | [Cluster Creation Workflow][wl-workflow]、[Choose the Image Registry][wl-registry]、[Custom Role Nodes][custom-role] |
+| 14 | 在 workload 集群上依次安装：TopoLVM → Ceph（有存储需求时，部署在本集群内）→ 监控 → 日志 → Ingress（没有商业负载均衡时加 MetalLB）→ 镜像仓库 → etcd 备份插件 | [Install TopoLVM][topolvm]、[Ceph on Alauda OS][ceph-aos]、[Install Ceph][ceph-install]、[Advanced Monitoring][mon-vm]、[日志快速安装][log-fast]、[Ingress Controller][ingress]、[MetalLB 组件位置][metallb-place]、[Install Registry][registry-install]、[Configure Registry][registry-config]、[etcd Backup and Restore][etcd-backup] |
 | — | 故障切换 | [Fail Over][failover] |
 | — | 以后升级 | [Upgrade Overview][upgrade]、[容灾环境的升级][upgrade-dr] |
 
-[bootstrap-hw]: https://docs.alauda.io/container_platform/4.5/install/alauda_os/prerequisites.html#bootstrap-host-requirements
+[bootstrap-hw]: https://docs.alauda.io/container_platform/4.5/install/alauda_os/prerequisites.html#bootstrap-host-hardware
 [plan]: https://docs.alauda.io/container_platform/4.5/install/prepare/planning.html
 [plan-machines]: https://docs.alauda.io/container_platform/4.5/install/prepare/planning.html#machines
 [comm-app]: https://docs.alauda.io/container_platform/4.5/install/prepare/communication_matrix.html#applicability
@@ -269,5 +276,4 @@ global 和每个 workload 集群都需要控制面端点，方式和单集群相
 [ceph-plan]: https://docs.alauda.io/container_platform/4.5/storage/storagesystem_ceph/planning.html
 [ceph-aos]: https://docs.alauda.io/container_platform/4.5/storage/storagesystem_ceph/installation/immutable_infrastructure_prerequisites.html
 [ceph-install]: https://docs.alauda.io/container_platform/4.5/storage/storagesystem_ceph/installation/
-[ceph-ext]: https://docs.alauda.io/container_platform/4.5/storage/storagesystem_ceph/installation/access_storage_service.html
-[cosi]: https://docs.alauda.io/container_platform/4.5/configure/storage/cosi/install.html
+
