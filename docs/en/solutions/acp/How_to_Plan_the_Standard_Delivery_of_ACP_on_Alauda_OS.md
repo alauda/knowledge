@@ -131,7 +131,7 @@ global 只承载平台，不跑业务；业务都在 workload 集群上。global
 |---|---:|---|---|---|
 | bootstrap | 1 | 4 核 | 8 GB | 运行安装程序；也可兼作平台镜像仓库 |
 | control-plane | 3 | 16 核 | 32 GiB | 控制面和平台组件；对应纳管不超过 50 个集群的档位 |
-| infra | 3 | 16 核 | 32 GiB | global 自己的监控和日志；与 control-plane 同一机型 |
+| infra | 3 | 12 核 | 32 GiB | global 自己的监控和日志；也可以取 16 核 / 32 GiB，与 control-plane 同一机型 |
 
 **workload 集群**：按业务规模选一档。
 
@@ -149,7 +149,7 @@ global 只承载平台，不跑业务；业务都在 workload 集群上。global
 | control-plane | 3 | 8 核 | 32 GiB | 控制面和平台组件；按产品 120 个 worker 的档位 |
 | ingress | 2 | 8 核 | 16 GiB | Ingress；按每台约 4,000 请求/秒 |
 | monitor | 3 | 12 核 | 24 GiB | 监控 |
-| log | 3 | 12 核 | 48 GiB | 日志；日志按 5,000 条/秒、保留 7 天规划，日志量更大时客户自行扩容磁盘 |
+| log | 3 | 12 核 | 32 GiB | 日志；日志按 5,000 条/秒、保留 7 天规划，日志量更大时客户自行扩容磁盘 |
 
 **workload 集群内的 Ceph**：workload 集群有存储需求时，建议在该集群内部署中小规模的 Ceph，使用专用的 storage 节点池：
 
