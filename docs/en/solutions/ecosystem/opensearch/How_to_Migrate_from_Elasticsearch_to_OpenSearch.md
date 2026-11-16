@@ -10,6 +10,8 @@ id: KB260100026
 
 :::info
 Applicable Version: OpenSearch Operator ~= 2.8.*, OpenSearch ~= 2.x / 3.x
+
+For **Alauda Data Services Search Engine E1 3.0** (`opensearch.org/v1`), use the product documentation instead: [Migrate from Elasticsearch to OpenSearch](https://docs.alauda.io/opensearch/3.0/how_to/migrate_from_elasticsearch.html). Use this article only for OpenSearch Operator 2.8.x (`opensearch.opster.io/v1`) deployments.
 :::
 
 This document provides detailed guidance for migrating from Elasticsearch (ES) to OpenSearch.
