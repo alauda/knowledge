@@ -19,6 +19,7 @@ A GitLab toolchain integration of DevOps v3 is configured and does not work in p
 - After the GitLab credential is updated, requests intermittently return `Internal error`.
 - `GET /integrations/v1alpha1/namespaces/<ns>/integrations/<gitlab-integration>/projects/<ns>` returns `500 (Internal Server Error)` on every call.
 - After GitLab projects are assigned, the code management list shows an extra entry named like `project_<id>_bot_<hash>` that does not exist as a project in GitLab.
+- The integration instance shows an abnormal status with `gitlab returned error: GET .../api/v4/todos: 403 {message: 403 Forbidden - Your account has been blocked.}`.
 
 These integrations are served by katanomi (`katanomi-api` and `katanomi-plugin` in `cpaas-system`). Each platform project is expected to have a namespace of the same name in the cluster. Related articles: "Harbor toolchain integration fails: images not selectable, katanomi-plugin timeout, or push asks for credentials" covers the Harbor integration.
 
@@ -43,6 +44,10 @@ The DNS server configured on the node is malfunctioning. katanomi cannot resolve
 ### Cause 5: an extra `project_<id>_bot_<hash>` entry with subtype `GitUser`
 
 When an external GitLab is integrated with root permissions and projects are assigned, the code management list of the project can show an extra entry named like `project_62_bot_<hash>`, labelled as platform-assigned, whose code repository tab is empty. GitLab creates a bot user of that name when a project access token is created for project ID `<id>`. The platform syncs GitLab user (personal) namespaces as well as groups, so the bot user's personal namespace is synced as a tool project with `subType: GitUser`. The entry does not affect usage.
+
+### Cause 6: `403 Forbidden - Your account has been blocked` because the credential password no longer matches the GitLab account
+
+The password stored in the integration's credential no longer matches the GitLab account's current password, for example because the password was changed in GitLab. GitLab rejects the integration's API requests with `403 Forbidden - Your account has been blocked.`, and logging in to the GitLab web console with the same account and password returns `Invalid login or password.`
 
 ## Resolution
 
@@ -118,6 +123,13 @@ kubectl get projects.meta.katanomi.dev -A -o yaml | grep -n -B4 -A8 '_bot_'
 
 The object shows `subType: GitUser`. In GitLab, open `/projects/<id>` for the ID in the name; it redirects to the project whose access token created the bot. No action is required. The DevOps v4 GitLab integration, available from ACP 4.1, is the alternative when this listing is not wanted.
 
+### Cause 6: `403 Forbidden - Your account has been blocked` because the credential password no longer matches the GitLab account
+
+1. Log in to the GitLab web console with the account and password stored in the integration's credential. `Invalid login or password.` confirms the mismatch.
+2. Find out the account's current password from its owner, or reset it in GitLab.
+3. Update the credential used by the integration with the current password, then check the integration status again. It returns to normal once GitLab accepts the credential.
+4. If GitLab still answers `Your account has been blocked`, a GitLab administrator checks the account in **Admin Area > Users** and unblocks it.
+
 ## Diagnostic Steps
 
 ```bash
@@ -132,6 +144,7 @@ Capture the failing request in the browser developer tools; the path and the sta
 - Intermittent `Internal error` after a credential update: Cause 3.
 - `500` on the integration projects API, and DNS resolution of the GitLab host fails on the node: Cause 4.
 - An extra `project_<id>_bot_<hash>` tool project with subtype `GitUser`: Cause 5.
+- `403 Forbidden - Your account has been blocked` from the integration, and the same account gets `Invalid login or password.` on the GitLab login page: Cause 6.
 
 When katanomi logs domain resolution timeouts for a platform Service name such as `katanomi-plugin.cpaas-system`, rather than for the GitLab host, the fault is cluster DNS, not GitLab. Check the node `/etc/resolv.conf` for a `search` line with site domains, and the CoreDNS log for that Service name being forwarded upstream:
 
