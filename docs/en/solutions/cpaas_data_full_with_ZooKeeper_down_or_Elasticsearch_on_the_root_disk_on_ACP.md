@@ -22,6 +22,10 @@ The log storage on Alauda Container Platform is abnormal because `/cpaas` is ful
 - A production pod (for example Redis) cannot be scheduled and the event mentions `disk-pressure`.
 - Many pods, including `nevermore`, keep restarting, and `/` is above 85%.
 - Local disk on the global masters is high because Elasticsearch and MinIO both store data there.
+- After space was freed, Elasticsearch shard recovery is very slow (`"decision" : "THROTTLE"`, `reached the limit of incoming shard recoveries [2]`), or Kafka still exits with `kafka.zookeeper.ZooKeeperClientTimeoutException`.
+- The Elasticsearch log storage plugin keeps restarting with `/cpaas` at 100%, and the stored logs do not need to be kept.
+- `/cpaas` is full of data that is not the running log store, such as Prometheus monitoring data or ClickHouse log data from an earlier installation.
+- The platform cannot be opened after the log disk filled: `kubectl get ars -A` shows `auth-manager` as `Failed`, and `apollo` stays abnormal after the disk was freed.
 
 Logging components on ACP 4.x are in `cpaas-system` (StatefulSet `cpaas-elasticsearch`, DaemonSet `nevermore`). Audit indices or leftover Elasticsearch data filling `/cpaas`, and index deletes that free nothing, are covered in [/cpaas filled by Elasticsearch audit indices or leftover Elasticsearch data on ACP](./cpaas_filled_by_Elasticsearch_audit_indices_or_leftover_Elasticsearch_data_on_ACP.md), together with how to read the Elasticsearch credentials.
 
@@ -63,6 +67,22 @@ The same root cause shows up as `nevermore` and other pods restarting while `/` 
 ### Cause 4: the global masters hold both Elasticsearch and MinIO
 
 Both components store data on the local disk of the global masters. There is no procedure to move Elasticsearch onto other global nodes; that relocation is a feature request. What can be done now is index cleanup or a larger disk.
+
+### Cause 5: after space is freed, shard recovery is throttled and Kafka still cannot reach ZooKeeper
+
+The components do not all come back by themselves after the disk is cleaned. Elasticsearch recovers shards at most 2 incoming and 2 outgoing at a time per node by default, so the allocation explain shows `THROTTLE` and recovery of a large store is slow; raising concurrency to 10 and recovery bandwidth to 400MB for the duration, then reverting, speeds it up. Kafka lost its ZooKeeper connection while the disk was full and keeps failing with `Fatal error during KafkaServer startup` and `ZooKeeperClientTimeoutException`; restarting the ZooKeeper pods first and then the Kafka pods restores it.
+
+### Cause 6: /cpaas is 100% full and the stored logs can be discarded
+
+The log storage plugin keeps restarting because Elasticsearch, Kafka, and ZooKeeper under `/cpaas/data` cannot write, and the owner accepts losing all stored logs. Stopping the log components, clearing the Elasticsearch, Kafka, and ZooKeeper data on the data nodes, and starting the stores in order brings the plugin back. This is the only full-disk case in which ZooKeeper data is cleared. In a narrower variant only the ZooKeeper and Kafka data were cleared; the Elasticsearch indices came back yellow and recovered once their shards were allocated again. Check with `du` which directory actually holds the bytes first: in one case `/cpaas/data/elasticsearch/data` was only 157G of a full 1.8T.
+
+### Cause 7: /cpaas is filled by data that is not the current log store
+
+`du` names a directory that does not belong to the running Elasticsearch: Prometheus monitoring data (a `monitoring` directory) on the same disk as the log storage, or ClickHouse log data under `/cpaas/data` from an earlier ClickHouse log storage installation that the console no longer lists. Removing that data frees the space. `/cpaas/audit`, `/cpaas/event`, and `/cpaas/log` are not this cause; they are the live queue of the `nevermore` log agent.
+
+### Cause 8: the console is unreachable after the log disk filled, and apollo stays abnormal
+
+`auth-manager` is `Failed`, and `apollo`, Kafka, and ZooKeeper pods are abnormal. Kafka and ZooKeeper failed because `/cpaas` on the log storage node was full. After the disk was freed, `apollo` stayed abnormal and recovered only after the Secret `global-kubeconfig` was backed up and deleted and `apollo` was restarted. Why that Secret blocked `apollo` is not known.
 
 ## Resolution
 
@@ -161,6 +181,70 @@ du -x -d 1 -h /cpaas
 
 Clean up indices as described in the audit-indices article, or expand the disk. Moving Elasticsearch to other global nodes has no supported procedure.
 
+### Cause 5: after space is freed, shard recovery is throttled and Kafka still cannot reach ZooKeeper
+
+1. Check why shards wait (set `ES_USER` and `ES_PASS` as in the audit-indices article, and `ES_HOST` and `ES_PORT` as in Diagnostic Steps):
+
+```bash
+curl -s -u "$ES_USER:$ES_PASS" "http://$ES_HOST:$ES_PORT/_cluster/allocation/explain?pretty" | grep -E '"decision"|reached the limit'
+```
+
+2. Raise the recovery limits for the duration, and reset them when health is green:
+
+```bash
+curl -s -u "$ES_USER:$ES_PASS" -X PUT "http://$ES_HOST:$ES_PORT/_cluster/settings" -H 'Content-Type: application/json' \
+  -d '{"transient":{"cluster.routing.allocation.node_concurrent_recoveries":10,"indices.recovery.max_bytes_per_sec":"400mb"}}'
+# when health is green:
+curl -s -u "$ES_USER:$ES_PASS" -X PUT "http://$ES_HOST:$ES_PORT/_cluster/settings" -H 'Content-Type: application/json' \
+  -d '{"transient":{"cluster.routing.allocation.node_concurrent_recoveries":null,"indices.recovery.max_bytes_per_sec":null}}'
+```
+
+3. If Kafka still fails on ZooKeeper, restart ZooKeeper first, then Kafka.
+
+> **Warning:** Restarting ZooKeeper and Kafka pauses log ingestion until both are Ready. Precondition: `/cpaas` has free space and the previous Kafka log shows `ZooKeeperClientTimeoutException`. Rollback: none needed; the StatefulSets recreate the pods.
+
+```bash
+kubectl -n cpaas-system logs cpaas-kafka-0 -p --tail 50 | grep -E 'Fatal error during KafkaServer startup|ZooKeeperClientTimeoutException'
+kubectl -n cpaas-system delete pods -l service_name=cpaas-zookeeper
+kubectl -n cpaas-system rollout status sts/cpaas-zookeeper
+kubectl -n cpaas-system delete pods -l service_name=cpaas-kafka
+kubectl -n cpaas-system rollout status sts/cpaas-kafka
+```
+
+### Cause 6: /cpaas is 100% full and the stored logs can be discarded
+
+Only when `du` shows the log store holds the bytes and the owner accepts losing every stored log and unconsumed Kafka record. Follow the stop, clear, and start sequence in Cause 2 of [Platform log Kafka brokers fail: no leader election, exit 137, Pending on DiskPressure, Ceph write errors, or OOM on ACP](Platform_log_Kafka_brokers_fail_no_leader_election_exit_137_Pending_on_DiskPressure_Ceph_write_errors_or_OOM_on_ACP.md), with the data directories under `/cpaas/data` (for example `elasticsearch`, `kafka0`, and `zookeeper`). Record owner and mode with `stat` before clearing, and give recreated directories the same. If the log nodes are cordoned to keep them for logging, uncordon them before scaling up and cordon them again once the pods are Running. For the narrower variant, clear only the Kafka and ZooKeeper directories, then retry allocation (`_cluster/reroute?retry_failed=true`) until the indices are green.
+
+### Cause 7: /cpaas is filled by data that is not the current log store
+
+```bash
+du -sh /cpaas/* /cpaas/data/* 2>/dev/null | sort -h | tail -20
+kubectl get pods -A -o wide | grep <node> | grep -Ei 'prometheus|clickhouse|elasticsearch'
+```
+
+> **Warning:** Uninstalling Prometheus monitoring and clearing its data deletes the stored metrics and stops collection until monitoring is installed again. Precondition: the owner accepted removing Prometheus monitoring from this cluster, and the directory is its data directory on each node. Rollback: reinstall the monitoring plugin; old metrics do not return.
+
+Uninstall the Prometheus monitoring plugin, then on each node run `rm -rf /cpaas/<monitoring-data-dir>/*`.
+
+> **Warning:** Deleting old ClickHouse data removes those logs permanently. Precondition: no ClickHouse pod runs on the node (`kubectl get pods -A -o wide | grep -i clickhouse`), and the owner accepts the loss. Rollback: none.
+
+Remove the leftover ClickHouse data with `rm -rf /cpaas/data/<clickhouse-data-dir>`. Clean it before reinstalling ClickHouse log storage on that node.
+
+### Cause 8: the console is unreachable after the log disk filled, and apollo stays abnormal
+
+Recover the disk first. Then, only when `apollo` is still abnormal after Kafka and ZooKeeper are Running:
+
+> **Warning:** Deleting `global-kubeconfig` removes a Secret that `apollo` reads; what recreates it is not documented. Precondition: the backup file is written and readable, the disk is no longer full, and Kafka and ZooKeeper are Running. Rollback: `kubectl apply -f /tmp/global-kubeconfig.bak.yaml`.
+
+```bash
+kubectl get secret -A | grep global-kubeconfig
+kubectl -n <namespace> get secret global-kubeconfig -o yaml > /tmp/global-kubeconfig.bak.yaml
+kubectl -n <namespace> delete secret global-kubeconfig
+kubectl -n <namespace> rollout restart deploy/<apollo-deploy>
+```
+
+If `apollo` stays abnormal, restore the backup and collect its log. To keep the log disk from filling again, set a project-level log retention and watch index sizes.
+
 ## Diagnostic Steps
 
 1. Split `/cpaas` from `/var/cpaas` with `df` and `du`. A full `/var` with a small `/cpaas` is the log collector cache, not an Elasticsearch problem.
@@ -175,3 +259,6 @@ ES_HOST=$(kubectl get svc -n cpaas-system cpaas-elasticsearch -o jsonpath='{.spe
 ES_PORT=$(kubectl get svc -n cpaas-system cpaas-elasticsearch -o jsonpath='{.spec.ports[0].port}')
 curl -u "$ES_USER:$ES_PASS" "http://$ES_HOST:$ES_PORT/_cat/indices?v&s=store.size:desc" | head -n 20
 ```
+
+7. After cleanup, `THROTTLE` in the allocation explain or `ZooKeeperClientTimeoutException` in the previous Kafka log: Cause 5. A full log store whose data may be discarded: Cause 6. The largest directory is not Elasticsearch, Kafka, ZooKeeper, or the `nevermore` queue: Cause 7. `auth-manager` `Failed` and `apollo` abnormal after the disk is free: Cause 8.
+8. If `ls /cpaas` or `ls /cpaas/data` returns `Input/output error` instead of listing files, the disk is not full but the file system or the block device under it has failed. Check `dmesg` and the device (`lsblk`, and `multipath -ll` on multipath storage) before freeing space or deleting data.

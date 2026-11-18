@@ -5,6 +5,7 @@ products:
   - Alauda Container Platform
 ProductsVersion:
   - 3.12.x
+  - 3.18.x
   - 4.0.x
   - 4.1.x
   - 4.2.x
@@ -21,6 +22,8 @@ A node alarm on Alauda Container Platform names `/cpaas`, or `df` shows `/cpaas`
 - Application-log retention in the log center was shortened, and the disk did not shrink.
 - Elasticsearch log search fails, `curl` against the Elasticsearch API returns 503, or a delete of old indices returns success and the disk does not move.
 - `/cpaas/data/elasticsearch` is very large although the cluster now uses an external Elasticsearch.
+- Logs were moved to a new disk mounted at the old path, and the root disk stays full although `du` finds nothing large.
+- Elasticsearch keeps restarting with a CPU alarm after an application upgrade, and the system log indices are the large ones.
 
 Do not treat every directory under `/cpaas` as disposable log cache: ZooKeeper data can live on the same filesystem. When `/cpaas/data` is full and ZooKeeper does not start, when the console shows no logs while `kubectl logs` works, or when Elasticsearch shares the root disk, see [/cpaas/data full with ZooKeeper down or Elasticsearch on the root disk on ACP](./cpaas_data_full_with_ZooKeeper_down_or_Elasticsearch_on_the_root_disk_on_ACP.md).
 
@@ -45,6 +48,14 @@ There are two recoveries: expand the disk, wait until health is not red, clear t
 `du` under `/cpaas` finds a large Elasticsearch tree that no running Elasticsearch process uses, for example data left after a move or an upgrade. Removing the leftover tree frees the space while the running Elasticsearch stays healthy. This is different from deleting the live data directory in Cause 2.
 
 After a switch to an external Elasticsearch, `/cpaas/data/elasticsearch` on a global node can still hold the old indices. For example, `du -sh *` shows `nodes` at 114G; under `nodes/0`, `indices` is 114G, `node.lock` 0, and `_state` 64K, and all index directories are dated long before the switch.
+
+### Cause 4: the old log files are hidden under the mount of the new log disk
+
+The logs were migrated to another disk that is mounted on the old path (for example `/cpaas/data`), and the root file system stays full. The files that were written to that path before the new disk was mounted are still on the root file system, but the mount hides them: `du` on the mounted path only sees the new disk, so nothing large shows up. They can be removed only by unmounting the new disk or by reaching the underlying file system through a second mount point. In the recovery that cleared this, the log files on the new disk were removed as well, and the log history was not kept.
+
+### Cause 5: system log collection left on after an application upgrade floods Elasticsearch
+
+After an application upgrade, system log collection stayed enabled, the system log indices grew quickly, and Elasticsearch kept restarting with a CPU alarm. Disabling system log collection and deleting those indices stopped the restarts and the alarm. There is no per-project collection quota and no switch to collect only some log levels; what exists is a retention policy per project and the retention of `log-workload` in the log policy settings.
 
 ## Resolution
 
@@ -156,6 +167,48 @@ rm -rf /cpaas/data/elasticsearch/nodes/0/indices/*
 df -h /cpaas
 ```
 
+### Cause 4: the old log files are hidden under the mount of the new log disk
+
+1. Confirm that the root file system is full while `du` cannot account for it, and find the mount that sits on the old path:
+
+```bash
+df -hT / /cpaas /cpaas/data
+du -x -d 1 -h / 2>/dev/null | sort -h | tail
+findmnt -T /cpaas/data -o TARGET,SOURCE,FSTYPE
+```
+
+2. Stop the log pods that hold the mount (scale the log storage workloads to 0 as in Cause 2 and record their replica counts), then reach the root file system through a second mount point and list what lies under the old path:
+
+```bash
+mkdir -p /mnt/rootfs
+mount --bind / /mnt/rootfs
+du -sh /mnt/rootfs/cpaas/data/* 2>/dev/null
+```
+
+> **Warning:** Deleting the hidden tree removes the old log files permanently. Precondition: the path is under `/mnt/rootfs` (the root file system seen without the new disk), not the live mount of the new log disk, and `lsof` shows no process using it. Rollback: none.
+
+```bash
+rm -rf /mnt/rootfs/cpaas/data/<old-log-dir>
+umount /mnt/rootfs
+df -h /
+```
+
+3. Scale the log storage workloads back to their recorded replica counts.
+
+### Cause 5: system log collection left on after an application upgrade floods Elasticsearch
+
+1. Confirm that system log indices dominate (credentials as in Cause 1):
+
+```bash
+kubectl -n cpaas-system exec cpaas-elasticsearch-0 -c cpaas-elasticsearch -- \
+  curl -sS -u "${ES_USER}:${ES_PASS}" \
+  'http://cpaas-elasticsearch:9200/_cat/indices/log-system-*?v&h=index,docs.count,store.size&s=store.size:desc'
+```
+
+2. Disable system log collection in the log collector settings.
+3. Delete the large system log indices by name, with the same warning and command as Cause 1.
+4. To keep the remaining volume down, shorten the retention of `log-workload` in the log policy settings or set a retention for the noisy project.
+
 ## Diagnostic Steps
 
 1. Split `/cpaas` from `/var/cpaas` with `df` and `du` as at the start of the Resolution.
@@ -167,7 +220,7 @@ kubectl -n cpaas-system exec cpaas-elasticsearch-0 -c cpaas-elasticsearch -- \
   curl -sS -u "${ES_USER}:${ES_PASS}" 'http://cpaas-elasticsearch:9200/_cluster/health?pretty'
 ```
 
-3. Health green and the large indices are audit: Cause 1. Health red, 503, or a delete that frees nothing: Cause 2. A large Elasticsearch directory that `lsof` shows no process using: Cause 3.
+3. Health green and the large indices are audit: Cause 1. Health red, 503, or a delete that frees nothing: Cause 2. A large Elasticsearch directory that `lsof` shows no process using: Cause 3. A full root file system that `du` cannot account for, with a log disk mounted on the old path: Cause 4. Large `log-system-*` indices after an application upgrade: Cause 5.
 4. To see which components produce the log volume, list indices by size from a master node through the Service address:
 
 ```bash
