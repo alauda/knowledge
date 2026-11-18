@@ -20,6 +20,7 @@ A GitLab toolchain integration of DevOps v3 is configured and does not work in p
 - `GET /integrations/v1alpha1/namespaces/<ns>/integrations/<gitlab-integration>/projects/<ns>` returns `500 (Internal Server Error)` on every call.
 - After GitLab projects are assigned, the code management list shows an extra entry named like `project_<id>_bot_<hash>` that does not exist as a project in GitLab.
 - The integration instance shows an abnormal status with `gitlab returned error: GET .../api/v4/todos: 403 {message: 403 Forbidden - Your account has been blocked.}`.
+- A Jenkins pipeline fails to pull code from GitLab with `ERROR: Error cloning remote repo 'origin'`, `git fetch ... returned status code 128`, `remote: HTTP Basic: Access denied`, and `fatal: Authentication failed for '<repo-url>.git/'`, after the API address of the GitLab integration was changed in its integration card.
 
 These integrations are served by katanomi (`katanomi-api` and `katanomi-plugin` in `cpaas-system`). Each platform project is expected to have a namespace of the same name in the cluster. Related articles: "Harbor toolchain integration fails: images not selectable, katanomi-plugin timeout, or push asks for credentials" covers the Harbor integration.
 
@@ -48,6 +49,10 @@ When an external GitLab is integrated with root permissions and projects are ass
 ### Cause 6: `403 Forbidden - Your account has been blocked` because the credential password no longer matches the GitLab account
 
 The password stored in the integration's credential no longer matches the GitLab account's current password, for example because the password was changed in GitLab. GitLab rejects the integration's API requests with `403 Forbidden - Your account has been blocked.`, and logging in to the GitLab web console with the same account and password returns `Invalid login or password.`
+
+### Cause 7: `HTTP Basic: Access denied` on clone after the integration's API address was changed away from the GitLab domain name
+
+The GitLab service is addressed by a domain name. When the API address of an existing GitLab integration is changed through the integration card to a different address, the platform does not recognize the GitLab service correctly under the new address. Code pulls from Jenkins then fail authentication with `remote: HTTP Basic: Access denied` and `fatal: Authentication failed`. Changing the integration's API address back to the GitLab domain name restores the pulls; the repository's clone URL (`spec.httpCloneUrl` of its `GitRepository` object, `meta.katanomi.dev/v1alpha1`) then uses the domain-based address again. This differs from Cause 1, where a new integration is created rather than the address of an existing one being edited.
 
 ## Resolution
 
@@ -130,6 +135,13 @@ The object shows `subType: GitUser`. In GitLab, open `/projects/<id>` for the ID
 3. Update the credential used by the integration with the current password, then check the integration status again. It returns to normal once GitLab accepts the credential.
 4. If GitLab still answers `Your account has been blocked`, a GitLab administrator checks the account in **Admin Area > Users** and unblocks it.
 
+### Cause 7: `HTTP Basic: Access denied` on clone after the integration's API address was changed away from the GitLab domain name
+
+1. In the failed Jenkins job log, note the host in the `git fetch ... -- https://<host>/<group>/<project>` line, and compare it with the domain name under which GitLab is served.
+2. Open the GitLab integration and check its API address in the integration card. If it was changed from the GitLab domain name to another address, change it back to the domain name and save.
+3. Check the repository's clone URL in the platform: the `GitRepository` object of the repository shows `spec.httpCloneUrl` starting with `https://<gitlab-domain>/` again.
+4. Run the pipeline again. The clone stage completes.
+
 ## Diagnostic Steps
 
 ```bash
@@ -145,6 +157,7 @@ Capture the failing request in the browser developer tools; the path and the sta
 - `500` on the integration projects API, and DNS resolution of the GitLab host fails on the node: Cause 4.
 - An extra `project_<id>_bot_<hash>` tool project with subtype `GitUser`: Cause 5.
 - `403 Forbidden - Your account has been blocked` from the integration, and the same account gets `Invalid login or password.` on the GitLab login page: Cause 6.
+- Jenkins clone fails with `HTTP Basic: Access denied`, and the integration's API address is no longer the GitLab domain name: Cause 7. To check the token separately from the address, run `git ls-remote https://oauth2:<token>@<gitlab-domain>/<group>/<project>.git` from a machine that reaches GitLab; a list of refs means the token is valid and the address is the problem.
 
 When katanomi logs domain resolution timeouts for a platform Service name such as `katanomi-plugin.cpaas-system`, rather than for the GitLab host, the fault is cluster DNS, not GitLab. Check the node `/etc/resolv.conf` for a `search` line with site domains, and the CoreDNS log for that Service name being forwarded upstream:
 
