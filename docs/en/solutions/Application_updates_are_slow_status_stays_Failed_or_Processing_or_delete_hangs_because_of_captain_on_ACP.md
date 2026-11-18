@@ -4,6 +4,7 @@ kind:
 products:
   - Alauda Container Platform
 ProductsVersion:
+  - "3.12"
   - "3.16"
   - "3.18"
   - "4.0"
@@ -24,6 +25,11 @@ Native applications and Helm chart applications are reconciled by `captain` (`ca
 - A pipeline-published native application stays on `处理中(1/1)` (Processing).
 - Deleting a Helm application stays on `删除中` (Deleting) with `处理中(0/0)` for hours.
 - `captain` crash-loops and application updates fail.
+- A Helm application stays `删除中` (Deleting) while its workloads are still `Running`, so a redeploy cannot start.
+- The native application page shows no compute components (`0/0`) while its Deployments are `Running`.
+- An application exported to a chart and imported again stays processing (`0/0`) with no error and no event.
+- A manual edit of an object rendered by the chart disappears at the next sync.
+- The application history shows a new revision that nobody created.
 
 The `captain` log often contains `Unauthorized, requeuing`, `failed to list *v1.HelmRequest: Unauthorized`, or a `nil pointer dereference` panic in the `chartrepo` controller.
 
@@ -77,6 +83,32 @@ Observed a panic in reconciler: runtime error: invalid memory address or nil poi
 ```
 
 The stack runs through `repo.ChartVersions.Less`, `IndexFile.SortEntries`, `loadIndex`, and `(*ChartRepoReconciler).syncCharts`: `captain` panics while sorting that repository's index entries. Removing the repository from the platform returns `captain` to `Running`.
+
+### Cause 8: an expired captain certificate leaves a delete stuck while the workloads still run
+
+The Application keeps phase `Succeeded` with `metadata.deletionTimestamp` set, and the matching HelmRequest is `phase: Synced` with a `deletionTimestamp`. The workloads are still `Running` because the uninstall never ran. `captain` logs `failed to list *v1.HelmRequest: Unauthorized` and `failed to watch *v1.HelmRequest: failed to list *v1.HelmRequest: Unauthorized`. The certificate `captain` uses expired and was not rotated. This is a product defect fixed in ACP 4.2.5; a `captain` that still holds the expired certificate, including on 4.2.5, needs a restart of `captain-controller-manager` and `metis`, after which the delete finishes. Unlike Cause 6, the workloads still exist and the finalizer is not removed by hand.
+
+### Cause 9: no compute components because metis cannot impersonate groups
+
+The console asks `metis` (Deployment `metis` in `cpaas-system`) to draw native-application components. When the ClusterRole bound to `system:serviceaccount:cpaas-system:metis` allows impersonating `users` but not `groups`, the page shows `0/0` while the Deployments are `Running`, and the application has an event:
+
+```text
+Failed: groups "<group>" is forbidden: User "system:serviceaccount:cpaas-system:metis" cannot impersonate resource "groups" in API group "" at the cluster scope
+```
+
+This gap exists on ACP 4.2.4. Adding the missing impersonation rule is the fix.
+
+### Cause 10: a re-imported chart application stays processing because the Harbor registry is unhealthy
+
+After an application is exported to a chart and imported again, it stays processing (`0/0`), `spec.assemblyPhase` stays `pending`, and there are no events. The ChartRepo can still be `Synced` while the Harbor `registry` component is unhealthy: the status sync of the chart-backed application times out talking to that registry. Repairing the Harbor registry ends the processing state; setting `spec.assemblyPhase` by hand (Cause 3) is not the repair.
+
+### Cause 11: manual edits are reverted when the HelmRequest syncs
+
+Objects changed with `kubectl edit` or in the console are put back to the rendered chart at the next HelmRequest sync. Persistent changes belong in HelmRequest `spec.values` or the Application annotation `app.cpaas.io/chart.values`.
+
+### Cause 12: a captain restart re-applies applications and adds a revision nobody made
+
+On ACP 3.12, when `captain` restarts, its check of whether a HelmRequest changed is faulty: it resyncs and re-applies the application's resources, which writes a new revision to the application history without any user action. The Kubernetes audit log shows a `patch` of the application's objects (for example a Service) with `fieldManager=manager`, user agent `Go-http-client/2.0`, by a platform service account such as `system:serviceaccount:kube-system:admin`, setting `app.kubernetes.io/managed-by: Helm`; the objects carry `meta.helm.sh/release-name`. This is a product defect fixed in ACP 3.15 and later.
 
 ## Resolution
 
@@ -199,6 +231,78 @@ Retry the Helm update after the new Pod is `Running`. Upgrade to a version that 
 
 3. `captain` stays `Running`.
 
+### Cause 8: an expired captain certificate leaves a delete stuck while the workloads still run
+
+1. Confirm both the `deletionTimestamp` and the `Unauthorized` list/watch error (Diagnostic Steps), and record the images:
+
+   ```bash
+   kubectl -n cpaas-system get deploy captain-controller-manager metis \
+     -o jsonpath='{range .items[*]}{.metadata.name}{" "}{.spec.template.spec.containers[0].image}{"\n"}{end}'
+   ```
+
+2. Restart both components. Below 4.2.5, also upgrade to 4.2.5 or later to get the fix.
+
+   > **Warning:** Only when the `Unauthorized` error and a `deletionTimestamp` are both present. Impact: HelmRequest reconciliation and native-application status pause until both Deployments are `Ready`. The restart reloads access state and does not delete the Application. Rollback: `kubectl -n cpaas-system rollout undo deployment/<name>` for each.
+
+   ```bash
+   kubectl -n cpaas-system rollout restart deployment/captain-controller-manager deployment/metis
+   kubectl -n cpaas-system rollout status deployment/captain-controller-manager
+   kubectl -n cpaas-system rollout status deployment/metis
+   ```
+
+3. The uninstall runs and the Application leaves the console.
+
+### Cause 9: no compute components because metis cannot impersonate groups
+
+1. Check the permission and find the ClusterRole bound to metis. `no` plus the event text confirms this cause:
+
+   ```bash
+   kubectl auth can-i impersonate groups --as=system:serviceaccount:cpaas-system:metis
+   kubectl get clusterrolebinding -o jsonpath='{range .items[*]}{.roleRef.name}{"\t"}{range .subjects[*]}{.namespace}{"/"}{.name}{" "}{end}{"\n"}{end}' | grep cpaas-system/metis
+   ```
+
+2. Add this rule to that ClusterRole:
+
+   > **Warning:** The rule lets metis act as the groups named in user tokens. Add only this rule, to the ClusterRole already bound to metis; do not grant `impersonate` on `*`. Precondition: `kubectl get clusterrole <metis-role> -o yaml > metis-role.yaml`. Rollback: `kubectl apply -f metis-role.yaml`.
+
+   ```yaml
+   - apiGroups: [""]
+     resources: ["groups"]
+     verbs: ["impersonate"]
+   ```
+
+3. Run the `auth can-i` command again until it prints `yes`, then reopen the application; the Running Deployments are listed as compute components.
+
+### Cause 10: a re-imported chart application stays processing because the Harbor registry is unhealthy
+
+Repair the Harbor `registry` component until its Pods are `Ready` and Harbor reports the registry healthy, then retry the import or the HelmRequest sync. A ChartRepo in `Synced` is not evidence that the registry is healthy.
+
+```bash
+kubectl get application -n <namespace> <name> -o jsonpath='{.spec.assemblyPhase}{"\n"}'
+kubectl get pods -A | grep harbor-registry
+```
+
+### Cause 11: manual edits are reverted when the HelmRequest syncs
+
+Put the change in HelmRequest `spec.values` (or the `app.cpaas.io/chart.values` annotation of the Application) so the next sync renders it. Repeating the edit on the Deployment does not stick.
+
+```bash
+kubectl get helmrequest -n <namespace> <name> -o jsonpath='{.spec.values}{"\n"}'
+kubectl edit helmrequest -n <namespace> <name>
+```
+
+### Cause 12: a captain restart re-applies applications and adds a revision nobody made
+
+1. Compare the time of the unexplained revision with the start time of the `captain` Pod:
+
+   ```bash
+   kubectl get pods -n cpaas-system | grep captain
+   kubectl get pod -n cpaas-system <captain-controller-manager-pod> -o jsonpath='{.status.startTime}{" "}{.status.containerStatuses[*].lastState}{"\n"}'
+   ```
+
+2. When they match and the audit log shows the `patch` described in Root Cause, the revision re-applied the application's own chart and needs no rollback. Hand edits made outside the chart are lost (Cause 11).
+3. Upgrade to ACP 3.15 or later to stop restarts from creating revisions.
+
 ## Diagnostic Steps
 
 ```bash
@@ -217,4 +321,9 @@ pipeline application 处理中, spec.assemblyPhase Pending                      
 Helm update stays Failed after a permission error, admin retry fails         -> Cause 5
 Helm delete stuck, workloads gone, error syncing Unauthorized                -> Cause 6
 captain crash-loop, chartrepo panic in SortEntries                           -> Cause 7
+Deleting, workloads still Running, deletionTimestamp, list HelmRequest Unauthorized -> Cause 8
+0/0 components, event: metis cannot impersonate resource "groups"            -> Cause 9
+re-imported chart app processing, assemblyPhase pending, Harbor registry down -> Cause 10
+objects revert after a sync                                                  -> Cause 11
+unexplained revision at a captain restart, audit patch by fieldManager=manager -> Cause 12
 ```

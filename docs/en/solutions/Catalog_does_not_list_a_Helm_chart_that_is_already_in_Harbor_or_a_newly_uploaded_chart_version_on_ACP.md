@@ -4,6 +4,7 @@ kind:
 products:
   - Alauda Container Platform
 ProductsVersion:
+  - "4.0"
   - "4.2"
 ---
 
@@ -16,6 +17,7 @@ A Helm chart is in Harbor, or an upload reported success, but Catalog, the versi
 - `helm push` printed `Pushed: <harbor>/<project>/<chart>:<version>`, Harbor shows the chart, but the template repository and Catalog stay on the old list or show nothing.
 - A newly added chart repository lists none of the charts already stored in it. The repository detail page says `无应用模板` ("no application templates") or `暂时没有找到符合过滤条件的应用模板` ("no application templates match the filter").
 - A new chart package was uploaded (for example with `violet push`), but the template version dropdown still offers only the previous version, and the repository (for example `public-charts`) shows last sync time `-`.
+- Upload reported `上传成功` (upload successful) and Harbor has the tag, but with a namespace of an ARM cluster selected, Catalog shows `共 0 个应用` (0 applications), `Helm Charts (0个)`, and `无应用列表` (no application list), while x86 clusters list the chart. Or the chart details open but the deploy form has no version to select. Or, after a version was deleted and the same version uploaded again, the whole chart disappears from Catalog, and creating it again reports that the version already exists.
 
 Restarting OLM Pods and refreshing the browser does not make the chart appear. `helm show chart` against the Harbor URL proves only that the registry has the package, not that Catalog has indexed it.
 
@@ -40,6 +42,18 @@ After an OCI chart repository is added, the `ChartRepo` reaches phase `Synced`, 
 ### Cause 4: the chart repository did not resynchronize after an accepted upload
 
 The upload succeeded, the architecture of the package matches the cluster, but the repository index did not refresh: last sync time is `-`, and the template list and the version selector of the create form still offer only the previous version. Setting the repository status to `Pending` triggers a resynchronization, after which the new version is available.
+
+### Cause 5: the chart's hardware architecture does not include the cluster's architecture
+
+Application templates support two hardware architectures, x86 and ARM, and default to x86. A cluster does not display chart packages whose architecture does not match its own: an x86-only template is listed on x86 clusters (and on C86 clusters), not on ARM clusters. Charts uploaded to the platform chart repository are marked x86 only by default. The chart details page under Platform Management shows the value as Hardware Architecture `x86`.
+
+The value is the `cpaas.io/arch` label of the platform `Chart` resource (`app.alauda.io/v1beta1`, in `cpaas-system` on the `global` cluster), taken from the package's `Chart.yaml`: `cpaas.io/arch: amd64` is stored as x86, `cpaas.io/arch: amd64.arm64` as x86 and ARM. Node architectures are reported as `amd64` / `arm64`; the template values are `x86` / `arm`. The mismatch shows up three ways:
+
+- The chart is not listed for a namespace of an ARM cluster.
+- The chart details load on a cluster of another architecture, but the version picker is empty. On an ARM cluster, changing the version's label from `x86` to `arm` makes the versions selectable.
+- A new upload of a package whose `cpaas.io/arch` is `amd64` only writes the label back to x86, even if the chart had been set to x86 and ARM. The chart then looks deleted from ARM clusters, although `kubectl get chart -A` still lists it (named `<chartrepo>-<directory>-<chart>.<chartrepo>`) with the re-uploaded version. Deleting the version is not what removed it; the label written by the new package is.
+
+Restarting `captain` components does not make the chart appear.
 
 ## Resolution
 
@@ -97,6 +111,31 @@ kubectl get artifact,artifactversion -n cpaas-system
 
 4. After the repository leaves `Pending`, the uploaded version is available in the application templates.
 
+### Cause 5
+
+1. On the `global` cluster, confirm the chart resource exists and read its architecture; on the affected cluster, read the node architecture:
+
+   ```bash
+   kubectl get chart -A | grep <chart>
+   kubectl get chart -n cpaas-system <chart-object> -o jsonpath='{.metadata.labels.cpaas\.io/arch}{"\n"}'
+   kubectl get nodes -o custom-columns=NAME:.metadata.name,ARCH:.status.nodeInfo.architecture
+   ```
+
+   A label without `arm64` on a chart that an ARM cluster cannot see confirms this cause.
+
+2. Change the hardware architecture in the UI: Platform Management > App Marketplace Management > Chart Repositories > `<chartrepo>` > the chart, and edit Hardware Architecture to include ARM (x86 and ARM). On releases that name the menu App Store Management > Template Repository, the same control is on the application template details page. Keep x86 when x86 or C86 clusters must still see the chart. For an empty version picker on an ARM-only cluster, set the version's architecture to `arm`.
+
+   > **Warning:** Changing the hardware architecture changes which clusters list this chart; a cluster whose architecture you remove stops showing it. Precondition: note the current value on the details page. Rollback: set that value again. No chart object or Harbor blob is deleted.
+
+3. Reopen Catalog with a namespace of the affected cluster; the chart and its versions are listed.
+
+4. Make it persistent: the next upload of a package with `cpaas.io/arch: amd64` overwrites the UI change. Set the annotation in `Chart.yaml`, repackage, and upload:
+
+   ```yaml
+   annotations:
+     cpaas.io/arch: amd64.arm64
+   ```
+
 ## Diagnostic Steps
 
 ```bash
@@ -112,6 +151,8 @@ helm show chart <chart> --version <version>
 | OCI repository phase `Synced`, `captain-chartmuseum` only logs `No change detected between cache and storage`, page says `无应用模板`, no `Artifact` pair in `cpaas-system` on `global` | Cause 3 |
 | Upload succeeded, version missing from the dropdown, last sync time `-`, architecture matches | Cause 4 |
 | `violet push` says `artifact <chart> already exist`, and the `cpaas.io/chart-purpose` labels differ | Reused Artifact (Cause 4, step 1) |
-| The chart is hidden only in an ARM cluster namespace (`共 0 个应用`, "0 applications in total") | The chart's architecture label, not synchronization |
+| The chart is hidden only in an ARM cluster namespace (`共 0 个应用`, "0 applications in total") | The chart's architecture label, not synchronization (Cause 5) |
+| Chart details load, the version picker is empty, and the node architecture and the `x86` / `arm` label disagree | Cause 5 |
+| The chart vanished from Catalog after a re-upload, `kubectl get chart -A` still lists it, its `cpaas.io/arch` label has no `arm64` | Cause 5 |
 
 On ACP 4.2, Cause 1 and Cause 2 can both apply: there is no background synchronization, and a Catalog upload is also the event that registers the chart. A synced phase together with a missing `Artifact` pair is Cause 3, not Cause 4. Restarting OLM Pods does not fix any of these causes.
