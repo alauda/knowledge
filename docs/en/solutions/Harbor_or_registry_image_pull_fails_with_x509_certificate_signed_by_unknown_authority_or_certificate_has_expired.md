@@ -125,4 +125,12 @@ The certificate presented for the registry hostname has expired or is not yet va
 
    `crictl` failing with x509 while `nerdctl` succeeds, on a node without the registry's `hosts.toml`, is the single-node form of Cause 1.
 
+   The two tools read different trust locations: `nerdctl` reads both `/etc/containerd/certs.d` and `/etc/docker/certs.d` by default, while CRI (`crictl` and the kubelet) reads only the `config_path` set in `/etc/containerd/config.toml`. A CA file under `/etc/docker/certs.d/<harbor-host>:<port>/` can therefore explain why `nerdctl` pulls while `crictl` does not:
+
+   ```bash
+   ls -la /etc/containerd/certs.d/<harbor-host>:<port>/ /etc/docker/certs.d/<harbor-host>:<port>/
+   ```
+
+   Before adding a host file on that one node, also compare `sha256sum /usr/bin/containerd` with a healthy node of the same platform version. A different checksum with Docker installed on the node means the runtime binaries were overwritten; see [Container runtime conflicts on ACP nodes: Docker, podman, docker-runc, and overwritten runtime binaries](Container_runtime_conflicts_on_ACP_nodes_Docker_podman_docker-runc_and_overwritten_runtime_binaries.md) and restore the binaries instead.
+
 4. If the error is `server gave HTTP response to HTTPS client` or `connection refused` on 443 instead of x509, see the related article under Issue.

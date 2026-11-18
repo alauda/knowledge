@@ -19,6 +19,7 @@ ProductsVersion:
 - The monitoring page shows kube-controller-manager as down, but `telnet 127.0.0.1 10257` on the node succeeds and the Pod is healthy. On a managed cluster the platform raises `集群内KubeScheduler的健康状态 != 1 且持续 1 分钟` and `集群内ControllerManager的健康状态 != 1 且持续 1 分钟` ("KubeScheduler / ControllerManager health status in the cluster != 1 for 1 minute", policy `cpaas-cluster-rules`), while both Pods are `1/1 Running` with no restarts.
 - `kubectl get componentstatuses` shows `controller-manager` and `scheduler` as `Unhealthy`.
 - An inspection reports apiserver errors tied to an already-compacted etcd revision and a connection reset.
+- The apiserver error-rate alert rises and stays high after worker nodes were removed from the cluster, and the failed requests are mostly `404` on `nodes`.
 
 Check admission webhooks before scaling kube-apiserver or compacting etcd.
 
@@ -57,6 +58,10 @@ Monitoring probes kube-controller-manager on `<node-ip>:10257` (and kube-schedul
 ### Cause 6: apiserver errors from an already-compacted revision, with no leader change
 
 The requested historical revision was already removed by etcd auto-compaction, and the connection was reset. etcd has not restarted and is not changing leader. These errors have no impact and can be ignored. A cluster that also logs `leader changed` is not covered by this conclusion.
+
+### Cause 7: removed worker machines are still running and keep requesting their deleted Node objects
+
+Worker nodes were removed from the cluster, so their Node objects no longer exist, but the machines themselves were left running. Each of them keeps sending `GET` requests to kube-apiserver for its own Node object, and every such request returns `404`. The constant 404 stream raises the apiserver error rate even though the cluster itself is healthy. The 404 rate jumps when the nodes are removed and then stays flat; nearly all of it is `verb=GET` on resource `nodes`, while `PATCH` on `nodes/status` stays at zero and other resources show almost no errors. Shutting down the removed machines brings the error rate back to normal.
 
 ## Resolution
 
@@ -172,6 +177,32 @@ kubectl -n kube-system logs etcd-<node-name> --tail=200 | grep -F 'leader change
 
 With a compacted-revision error plus a connection reset, no etcd restart, and no leader changes, ignore the lines. A `NOSPACE` alarm or leader changes need the etcd quota or disk investigation instead.
 
+### Cause 7: removed worker machines are still running and keep requesting their deleted Node objects
+
+1. Break the error rate down by code, then by resource, in the monitoring UI:
+
+   ```text
+   sum by (code) (apiserver_request_count_rate_5m_sum_by_instance_and_code)
+   topk(20, sum by (resource, code) (apiserver_request_count_rate_5m_sum_by_resource_and_code{code=~"(4|5)..",code!="429"}))
+   sum by (verb, subresource) (rate(apiserver_request_total{job="apiserver",resource="nodes",code="404"}[5m]))
+   ```
+
+   This cause matches when `code="404", resource="nodes"` dominates, almost all of it is `verb="GET"`, and the rise started when the nodes were removed.
+
+2. Confirm the machines that send these requests are no longer cluster members: their names are absent from `kubectl get nodes`, and the machines are still powered on.
+
+3. Shut down the removed machines.
+
+   > **Warning:** Shutting a machine down stops everything still running on it. Do this only for machines whose Node objects were deliberately removed from the cluster and that carry nothing else in use. Roll back by powering the machine on again; it will resume the 404 requests until it is shut down or rejoined.
+
+   If a machine has to stay powered on for another purpose, stop and disable the kubelet on it instead, so that it no longer contacts the cluster:
+
+   ```bash
+   systemctl disable --now kubelet
+   ```
+
+4. Re-run the queries in step 1 after a few minutes. The `404` rate on `nodes` should drop to near zero and the error-rate alert should clear.
+
 ## Diagnostic Steps
 
 Webhooks first, then the log signatures, then the controller-manager port:
@@ -195,5 +226,6 @@ kubectl get endpoints,pods,deploy -n <webhook-namespace>
 - `10257` open on `127.0.0.1` and refused on the node IP, or the KubeScheduler / ControllerManager health alerts with ports bound to `127.0.0.1`: Cause 4.
 - `kubectl get componentstatuses` Unhealthy with the Pods Running and no monitoring failure: Cause 5.
 - Compacted-revision errors with a quiet etcd: Cause 6.
+- The error rate is mostly `404` from `GET` on `nodes`, starting when worker nodes were removed: Cause 7.
 
-Read-success alerts that are mostly HTTP 403 are authorization failures, not a webhook timeout. Capture one request's user and verb before deleting any webhook.
+Read-success alerts that are mostly HTTP 403 are authorization failures, not a webhook timeout. Capture one request's user and verb before deleting any webhook. When the 403s come with cert-manager webhook denials for `{cpaas-ca ClusterIssuer ait.alauda.io}` in the kube-apiserver log, they are expected; see *Certificate alerts from a custom VMRule, ait.alauda.io webhook denials, or by-design short-lived certificates on ACP* (Cause 2).
