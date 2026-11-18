@@ -19,6 +19,7 @@ ProductsVersion:
 The monitoring page of a workload cluster, the cluster overview, or Grafana shows no data, or the overview shows the banner that the monitoring component is abnormal. Prometheus or VictoriaMetrics on that workload cluster is healthy, vmui inside the cluster has series, and port 11780 on the cluster VIP answers. Typical situations:
 
 - A newly created or newly attached cluster never loads monitoring, even with ports 11780 and 11781 open.
+- After Prometheus was reinstalled on a workload cluster, none of that cluster's monitoring data is displayed, model inference monitoring included, while monitoring of the `global` cluster is normal.
 - In the browser developer tools (F12, **Network**) the failing request returns HTTP 500 with `"message": "get cluster <cluster-name> from cache error"`.
 - An inspection or monitoring API call fails with `bad_response: invalid character '<' looking for beginning of value`.
 - After a disaster-recovery switchover of the `global` cluster, every business cluster's Prometheus is shown as not deployed although it is running.
@@ -32,7 +33,7 @@ Related article: [Monitoring pages return 502 or context deadline exceeded becau
 
 ### Cause 1: courier-api has a stale cluster list
 
-`courier-api` logs a cache error, vmui already has series, the VictoriaMetrics Pods are `Running` and not CPU-bound, and a newly built or newly attached cluster does not load in the UI. `courier-api` has not picked up the new cluster. A `config-reloader` line such as `Post "http://localhost:8429/-/reload": dial tcp [::1]:8429: connect: connection refused` can appear at the same time; it is a missed reload, not the reason the cluster list is stale.
+`courier-api` logs a cache error, vmui already has series, the VictoriaMetrics Pods are `Running` and not CPU-bound, and a newly built or newly attached cluster does not load in the UI. `courier-api` has not picked up the new cluster. The same applies after the Prometheus of a workload cluster is reinstalled: the cluster's monitoring stays empty until `courier-api` is restarted, while `global` monitoring is unaffected. Why `courier-api` does not pick up the reinstalled backend on its own is not known. A `config-reloader` line such as `Post "http://localhost:8429/-/reload": dial tcp [::1]:8429: connect: connection refused` can appear at the same time; it is a missed reload, not the reason the cluster list is stale.
 
 ### Cause 2: the response body is HTML, not JSON
 
@@ -66,7 +67,7 @@ On a standby `global` cluster that is not serving traffic, an abnormal monitorin
 
 ### Cause 1: courier-api has a stale cluster list
 
-> **Warning:** Recreating `courier-api` fails in-flight monitoring and inspection calls until the new Pod is `Ready`. Do this only when the `courier-api` log shows the cache error, preferably in a quiet period if this `global` cluster serves many workload clusters. The Deployment recreates the Pod; nothing needs rolling back if the new Pod is healthy.
+> **Warning:** Recreating `courier-api` fails in-flight monitoring and inspection calls until the new Pod is `Ready`. Do this only when the `courier-api` log shows the cache error, or when a workload cluster's monitoring stays empty after its Prometheus was reinstalled and the Prometheus Pods there are `Running`, preferably in a quiet period if this `global` cluster serves many workload clusters. The Deployment recreates the Pod; nothing needs rolling back if the new Pod is healthy.
 
 ```bash
 kubectl -n cpaas-system get pod -o wide | grep courier-api
@@ -166,6 +167,7 @@ kubectl -n cpaas-system delete pod <courier-pod>
 
 3. Match the log or F12 response to a cause:
    - `cache error` in `courier-api`: Cause 1.
+   - The cluster's Prometheus was reinstalled shortly before its monitoring went empty, and `global` monitoring is normal: Cause 1.
    - `Unauthorized` on `clusters` in `courier`, or `bad_response: invalid character '<'`: Cause 2.
    - `get cluster <cluster-name> from cache error` or `cluster <cluster-name> not found` in `apollo` or in the F12 response: Cause 4, even when port 11780 is open.
 
