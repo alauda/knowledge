@@ -465,6 +465,28 @@ After the standby cluster is successfully running, verify that its External IP i
    kubectl exec <primary-pod> -- psql -c "UPDATE sys_operator.multi_cluster_info SET external_ip='<STANDBY-LB-IP>' WHERE cluster_name='<standby-cluster-name>';"
    ```
 
+#### Configure the Peer Connection on the Primary Cluster as Well
+
+The standby cluster's `peerHost` / `peerPort` / `bootstrapSecret` let it reach the primary. After a switchover the
+roles are reversed, and the former primary — which usually has none of these fields — becomes the standby. Once
+the standby cluster is running, add the same three fields to the **primary** cluster, pointing at the standby:
+
+1. In the primary cluster's namespace, create a `kubernetes.io/basic-auth` Secret holding the **standby** cluster's
+   `postgres` password (read it from `postgres.<standby-cluster>.credentials.postgresql.acid.zalan.do` in the standby
+   cluster).
+2. Patch the primary cluster:
+
+```bash
+kubectl -n $NAMESPACE patch pg $PRIMARY_CLUSTER --type=merge -p '{"spec":{"clusterReplication":{"peerHost":"<standby node IP>","peerPort":<standby master NodePort>,"bootstrapSecret":"<secret name>"}}}'
+```
+
+:::warning Required with Operator v4.3.4 before any switchover or operator restart
+With Operator v4.3.4, a standby cluster that has no `peerHost` cannot resolve its peer after the operator restarts
+(including the restart caused by upgrading the operator). Every sync of that cluster then fails, and a switchover that
+promotes it is never applied — both clusters remain `Standby Leader`. Configuring the peer connection on both clusters
+avoids this. See [Promotion never takes effect after an operator restart](#promotion-never-takes-effect-after-an-operator-restart).
+:::
+
 ## Normal Operations
 
 ### Switchover Procedure
@@ -508,8 +530,11 @@ $ kubectl -n $NAMESPACE exec $PRIMARY_CLUSTER-0 -- patronictl list
 #### Phase 2: Promote Standby to Primary
 
 ```bash
-kubectl -n $NAMESPACE patch pg $STANDBY_CLUSTER --type=merge -p '{"spec":{"clusterReplication":{"isReplica":false},"numberOfInstances":2}}'
+kubectl -n $NAMESPACE patch pg $STANDBY_CLUSTER --type=merge -p '{"spec":{"clusterReplication":{"isReplica":false}}}'
 ```
+
+Leave `numberOfInstances` at `1` in this step. Scale out afterwards, as described in
+[Phase 2b](#phase-2b-restore-high-availability-on-the-new-primary).
 
 Verify promotion:
 ```bash
@@ -518,8 +543,39 @@ $ kubectl -n $NAMESPACE exec $STANDBY_CLUSTER-0 -- patronictl list
 | Member         | Host             | Role         | State     | TL | Lag in MB |
 +----------------+------------------+--------------+-----------+----+-----------+
 | acid-standby-0 | fd00:10:16::29b8 | Leader       | running   |  2 |           |
-| acid-standby-1 | fd00:10:16::2a2e | Sync Standby | streaming |  2 |         0 |
 +----------------+------------------+--------------+-----------+----+-----------+
+```
+
+#### Phase 2b: Restore High Availability on the New Primary
+
+:::warning Remove the leftover data volume before scaling out
+When a cluster is scaled down to one instance (as in Phase 1 of an earlier switchover), the StatefulSet **keeps** the
+volume of the removed instance (`pgdata-<cluster>-1`). If the cluster is scaled out again, that instance starts on
+the **old** data. During the rolling update that follows a promotion the operator can restart the leader while this
+stale instance is up, and the stale instance can take over as leader — discarding every transaction committed since
+its data was last current, on both clusters.
+:::
+
+1. Wait until the new primary is stable and no pod is being recreated (`patronictl list` shows one `Leader`,
+   `running`).
+2. Check for a leftover volume and, if it exists, delete it (the cluster has only one instance, so this volume is not
+   in use):
+
+```bash
+kubectl -n $NAMESPACE get pvc pgdata-$STANDBY_CLUSTER-1
+kubectl -n $NAMESPACE delete pvc pgdata-$STANDBY_CLUSTER-1
+```
+
+3. Scale out. The new instance is created from the current leader:
+
+```bash
+kubectl -n $NAMESPACE patch pg $STANDBY_CLUSTER --type=merge -p '{"spec":{"numberOfInstances":2}}'
+```
+
+4. Verify that every member follows the leader on the same timeline (`TL`) with no lag:
+
+```bash
+$ kubectl -n $NAMESPACE exec $STANDBY_CLUSTER-0 -- patronictl list
 ```
 
 #### Phase 3: Repoint the Application to the New Primary
@@ -805,6 +861,57 @@ kubectl -n <ns> exec <primary-leader-pod> -c postgres -- psql -U postgres -x -c 
 
 An empty `restart_lsn` means the slot is reserving nothing, and WAL will be recycled regardless of
 `max_slot_wal_keep_size`. A missing row means no slot exists and the peer has no retention at all.
+
+#### Promotion Never Takes Effect After an Operator Restart
+
+##### Symptoms
+
+- After Phase 2 of a switchover, both clusters show `Standby Leader` in `patronictl list`; no cluster accepts writes.
+- The cluster being promoted reports (in `status.message`, its events and the operator log):
+
+```text
+could not run before update cluster hook: can not determine peer cluster info and no peer host is configured
+(local: can not get connection to local database: secrets ".<cluster>.credentials.postgresql.acid.zalan.do" not found)
+```
+
+  The secret name starting with `.` is the signature of this problem.
+
+##### Cause
+
+Operator v4.3.4 resolves the peer cluster before it has loaded the cluster's system users. Immediately after an
+operator restart (including an operator upgrade), it therefore cannot log in to the cluster's own database to read the
+peer information from `sys_operator.multi_cluster_info`, and it falls back to `spec.clusterReplication.peerHost`. A
+cluster without `peerHost` — typically the cluster that was originally created as the primary — can then never be
+synchronised or promoted. The error appears from the first sync after the restart, not only at switchover time.
+
+##### Solution
+
+1. **Confirm which cluster has the newest data.** On the leader pod of **both** clusters run:
+
+```bash
+kubectl -n $NAMESPACE exec <leader-pod> -c postgres -- psql -U postgres -XAtc \
+  "select pg_last_wal_receive_lsn(), pg_last_wal_replay_lsn()"
+```
+
+   Promote the cluster you intended to promote only if its replay LSN is **greater than or equal to** the other
+   cluster's. Otherwise, contact support before changing anything.
+
+2. In the namespace of the cluster being promoted, create a `kubernetes.io/basic-auth` Secret with `username: postgres`
+   and the **other** cluster's `postgres` password.
+
+3. Apply a single patch to the cluster being promoted. Keep `numberOfInstances` at `1`:
+
+```bash
+kubectl -n $NAMESPACE patch pg $CLUSTER --type=merge -p '{"spec":{"numberOfInstances":1,"clusterReplication":{"peerHost":"<peer node IP>","peerPort":<peer master NodePort>,"bootstrapSecret":"<secret name>"}}}'
+```
+
+4. Verify with `patronictl list` on both clusters: the promoted cluster shows `Leader`, the other `Standby Leader` /
+   `streaming` on the same timeline. Then restore high availability as described in
+   [Phase 2b](#phase-2b-restore-high-availability-on-the-new-primary).
+
+:::info
+The console may show stale pod roles for a while after the promotion; `patronictl list` is authoritative.
+:::
 
 #### Stale Replication Metadata After Recreating a Cluster
 
