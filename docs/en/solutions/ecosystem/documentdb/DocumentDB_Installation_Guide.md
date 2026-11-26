@@ -5,6 +5,10 @@ kind:
   - Solution
 ProductsVersion:
   - '4.0'
+  - '4.2'
+  - '4.3'
+  - '4.4'
+  - '4.5'
 ---
 
 <!--
@@ -45,10 +49,10 @@ DocumentDB cluster (application namespace)
 <!-- factory:auto:supported-versions BEGIN -->
 | Item | Version |
 |------|---------|
-| ACP | 4.0 (verified on ACP 4.0.12, Kubernetes 1.30) |
-| Architectures | amd64 (x86_64), arm64 |
-| Network | IPv4 |
-| DocumentDB Operator (bundle) | v1.2.1 |
+| ACP | 4.0, 4.2, 4.3, 4.4, 4.5 (verified on ACP 4.0.12, 4.2.6, 4.3.3, 4.4.0, 4.5.0) |
+| Architectures | amd64 (x86_64) verified; multi-arch amd64/arm64 images |
+| Network | IPv4 (dual-stack IPv4/IPv6 verified on ACP 4.2.6 and 4.5.0) |
+| DocumentDB Operator (bundle) | v1.2.2 |
 | DocumentDB Kubernetes Operator | 1.2.1 |
 | DocumentDB Engine | 1.0.1 (PostgreSQL 18 combined image) |
 | Bundled CloudNativePG Operator | 1.29.1 (chart 0.28.3) |
@@ -60,9 +64,9 @@ DocumentDB cluster (application namespace)
 
 | Requirement | Details |
 |---|---|
-| Platform | ACP `4.0.12` (Kubernetes `1.30` / `1.31`) with `cluster-admin` access |
-| Container runtime | `containerd` (verified on `1.7.23`); `docker` is compatible by design because `combined` image mode does not require Kubernetes `ImageVolume`, though not separately tested |
-| `cert-manager` | **Required.** The cluster must provide the `cert-manager.io/v1` API (`Issuer` and `Certificate`). On ACP `4.0.12`, `cert-manager` is pre-installed. If it is absent, the Kubernetes API server rejects installation with `no matches for kind "Issuer" in version "cert-manager.io/v1"`. |
+| Platform | ACP `4.0`, `4.2`–`4.5` (Kubernetes `1.30`–`1.36`) with `cluster-admin` access |
+| Container runtime | `containerd` (verified on ACP `4.0.12` and `4.2`–`4.5`); `docker` is compatible by design because `combined` image mode does not require Kubernetes `ImageVolume`, though not separately tested |
+| `cert-manager` | **Required.** The cluster must provide the `cert-manager.io/v1` API (`Issuer` and `Certificate`). On ACP `4.0`–`4.5`, `cert-manager` is pre-installed. If it is absent, the Kubernetes API server rejects installation with `no matches for kind "Issuer" in version "cert-manager.io/v1"`. |
 | Storage | A dynamically provisioned `StorageClass` (for example, TopoLVM) |
 | CloudNativePG mutual exclusion | **Only one CloudNativePG operator may exist per cluster.** See below. |
 | OperatorHub plugin | The **DocumentDB** (`documentdb-operator`) package uploaded to the target cluster's OperatorHub |
@@ -81,7 +85,7 @@ Alauda CloudNativePG package) in the same cluster.
 ### Verify Prerequisites
 
 ```bash
-kubectl version                                    # Server Version: v1.30.x / v1.31.x
+kubectl version                                    # Server Version: v1.30.x – v1.36.x
 kubectl api-resources --api-group=cert-manager.io  # Must list certificates and issuers
 kubectl get crd clusters.postgresql.cnpg.io        # Fresh cluster must return NotFound
 kubectl get storageclass                           # Confirm target StorageClass exists
@@ -114,7 +118,7 @@ five multi-arch (`amd64` / `arm64`) runtime images (~600 MiB compressed total fo
 
 1. **Upload the plugin package** (if not yet present in OperatorHub):
    ```bash
-   violet push documentdb-operator.alpha.ALL.v1.2.1.tgz \
+   violet push documentdb-operator.alpha.ALL.v1.2.2.tgz \
      --platform-address="https://<acp-console>" \
      --platform-username="<user>" --platform-password="<password>" \
      --clusters="<target-cluster>"
@@ -124,16 +128,16 @@ five multi-arch (`amd64` / `arm64`) runtime images (~600 MiB compressed total fo
    cluster, find **DocumentDB**, and click **Install**.
    - Keep the default channel (`alpha`) and the **All Namespaces** installation mode.
    - Use the suggested namespace **`documentdb-operator`**.
-   - Wait until the CSV `documentdb-operator.v1.2.1` reaches phase `Succeeded`.
+   - Wait until the CSV `documentdb-operator.v1.2.2` reaches phase `Succeeded`.
 3. **Create the `DocumentDBOperator` resource**:
    Installing the Operator from OperatorHub does not deploy the DocumentDB and CloudNativePG
    controllers yet. Create a single `DocumentDBOperator` resource in `documentdb-operator` with
    the default empty `spec: {}`:
    ```yaml
-   apiVersion: charts.documentdb-operator/v1alpha1
+   apiVersion: documentdb-operator.alauda.io/v1
    kind: DocumentDBOperator
    metadata:
-     name: documentdb-operator
+     name: documentdb
      namespace: documentdb-operator
    spec: {}
    ```
@@ -154,7 +158,7 @@ kubectl get certificate -A | grep -E 'documentdb-operator|cnpg-system'
 
 Expected:
 
-- `documentdb-operator.v1.2.1` is in phase `Succeeded`.
+- `documentdb-operator.v1.2.2` is in phase `Succeeded`.
 - `documentdb-operator` (in `documentdb-operator`) and `cloudnative-pg` + `sidecar-injector`
   (in `cnpg-system`) are `Available` with `0` restarts.
 - All three `cert-manager` Certificates report `READY=True`.
@@ -254,9 +258,14 @@ Operational notes:
   due to an upstream `1.2.1` validation bug.
 - **`collation` is not supported.** Queries, indexes, or collections that rely on MongoDB
   `collation` fail (`collation is not supported in the find command yet`).
-- **Combined image mode only on ACP 4.0.** Kubernetes `1.30` / `1.31` lacks `ImageVolume`, so
-  this package uses `combined` mode. Target-side Change Streams (`wal_level=logical` with
-  separate changestream images) are unverified in this mode.
+- **Combined image mode.** This package uses `combined` image mode for compatibility across
+  Kubernetes `1.30`–`1.36` (without requiring `ImageVolume`). Target-side Change Streams
+  (`wal_level=logical` with separate changestream images) are unverified in this mode.
+- **ACP 4.1 image-rewrite note.** On older ACP `4.1` patch releases whose Marketplace image
+  admission policy predates newer Alauda registry domains, the default `ImageWhiteList` may
+  rewrite bundle images under an extra `/3rdparty/` prefix. Either upgrade to a supported ACP
+  release (`4.2+`) or add a matching `rewriteRules` entry on the `documentdb-operator`
+  `ImageWhiteList` in `cpaas-system`.
 - **Default PV reclaim policy is `Retain`.** Deleting a `DocumentDB` resource leaves its
   PersistentVolumes in `Released` state until manually reclaimed. Set
   `persistentVolumeReclaimPolicy: Delete` only for disposable test instances.

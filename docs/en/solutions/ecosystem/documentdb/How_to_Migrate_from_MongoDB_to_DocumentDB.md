@@ -5,6 +5,10 @@ kind:
   - Solution
 ProductsVersion:
   - '4.0'
+  - '4.2'
+  - '4.3'
+  - '4.4'
+  - '4.5'
 ---
 
 # How to Migrate from MongoDB to DocumentDB
@@ -12,8 +16,9 @@ ProductsVersion:
 ## Introduction
 
 This guide describes how to migrate existing **MongoDB** instances (hundreds of GB to **1 TB+**
-per instance) to **DocumentDB** (`documentdb-operator` `1.2.1`, DocumentDB engine `1.0.1`,
-bundled CloudNativePG `1.29.1`) running on **ACP `4.0.12`** (Kubernetes `1.30` / `1.31`).
+per instance) to **DocumentDB** (`documentdb-operator` bundle `v1.2.2`, upstream operator `1.2.1`,
+DocumentDB engine `1.0.1`, bundled CloudNativePG `1.29.1`) running on **ACP `4.0`, `4.2`–`4.5`**
+(Kubernetes `1.30`–`1.36`).
 
 All benchmark and compatibility results reported as *verified* in this guide were measured on
 an ACP `4.0.12` test environment (`Kubernetes v1.30.14`, `containerd 1.7.23`, `amd64`, IPv4,
