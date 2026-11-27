@@ -9,6 +9,7 @@ ProductsVersion:
   - '4.3'
   - '4.4'
   - '4.5'
+id: KB261100029
 ---
 
 # How to Migrate from MongoDB to DocumentDB
